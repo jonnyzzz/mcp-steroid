@@ -121,6 +121,23 @@ Comprehensive documentation and examples covering:
 
 ---
 
+## Configuration
+
+MCP Steroid can be configured via IntelliJ's Registry (`Help → Find Action → Registry`) or JVM system properties.
+
+| Registry Key | Default | Description |
+|--------------|---------|-------------|
+| `mcp.steroid.server.port` | 6315 | MCP server port (0 for auto-assign) |
+| `mcp.steroid.server.host` | 127.0.0.1 | Bind address (use 0.0.0.0 for Docker) |
+| `mcp.steroid.review.mode` | ALWAYS | Review mode: ALWAYS, TRUSTED, or NEVER |
+| `mcp.steroid.storage.path` | (empty) | Custom storage path (default: .idea/mcp-steroid/) |
+
+**Finding the MCP Server URL:** When the plugin starts, it writes the server URL to `.idea/mcp-steroid.md` in each open project. The first line contains the URL (e.g., `http://127.0.0.1:6315/mcp`).
+
+See the full [Configuration Documentation](https://mcp-steroid.jonnyzzz.com#configuration-options) on the website.
+
+---
+
 ## Architecture
 
 - **Technology:** Kotlin 2.2.21 on Java 21
