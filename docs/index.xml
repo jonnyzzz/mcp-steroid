@@ -1,19 +1,8 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>MCP Steroid on MCP Steroid - Give AI the whole IDE, not just the files</title><link>https://mcp-steroid.jonnyzzz.com/</link><description>Recent content in MCP Steroid on MCP Steroid - Give AI the whole IDE, not just the files</description><generator>Hugo</generator><language>en-us</language><atom:link href="https://mcp-steroid.jonnyzzz.com/index.xml" rel="self" type="application/rss+xml"/><item><title>Getting Started</title><link>https://mcp-steroid.jonnyzzz.com/docs/getting-started/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/getting-started/</guid><description>&lt;h2 id="installation">Installation&lt;/h2>
-&lt;p>MCP Steroid is distributed as an IntelliJ plugin. Currently in early access - &lt;a href="https://linkedin.com/in/jonnyzzz">message Eugene Petrenko on LinkedIn&lt;/a> to get access.&lt;/p>
-&lt;h3 id="requirements">Requirements&lt;/h3>
-&lt;ul>
-&lt;li>IntelliJ IDEA 2025.3+ (or any IntelliJ-based IDE: Rider, Android Studio, GoLand, WebStorm, PyCharm, etc.)&lt;/li>
-&lt;li>An MCP-compatible AI agent (Claude, GPT, Gemini, Cursor, or any MCP client)&lt;/li>
-&lt;/ul>
-&lt;h3 id="install-the-plugin">Install the Plugin&lt;/h3>
-&lt;ol>
-&lt;li>Download the plugin ZIP file (provided via LinkedIn)&lt;/li>
-&lt;li>In IntelliJ, go to &lt;strong>Settings &amp;gt; Plugins &amp;gt; Gear icon &amp;gt; Install Plugin from Disk&lt;/strong>&lt;/li>
-&lt;li>Select the downloaded ZIP file&lt;/li>
-&lt;li>Restart IntelliJ&lt;/li>
-&lt;/ol>
-&lt;h2 id="connecting-your-ai-agent">Connecting Your AI Agent&lt;/h2>
-&lt;p>When the plugin starts, it automatically creates a description file at &lt;code>.idea/mcp-steroid.md&lt;/code> in each open project. This file contains the MCP server URL.&lt;/p></description></item><item><title>Configuration</title><link>https://mcp-steroid.jonnyzzz.com/docs/configuration/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/configuration/</guid><description>&lt;p>MCP Steroid can be configured via IntelliJ&amp;rsquo;s Registry (&lt;code>Help &amp;gt; Find Action &amp;gt; Registry&lt;/code>) or via JVM system properties (&lt;code>-D&lt;/code> flags). All settings use the &lt;code>mcp.steroid.*&lt;/code> prefix.&lt;/p>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>MCP Steroid on MCP Steroid - Give AI the whole IDE, not just the files</title><link>https://mcp-steroid.jonnyzzz.com/</link><description>Recent content in MCP Steroid on MCP Steroid - Give AI the whole IDE, not just the files</description><generator>Hugo</generator><language>en-us</language><atom:link href="https://mcp-steroid.jonnyzzz.com/index.xml" rel="self" type="application/rss+xml"/><item><title>Getting Started</title><link>https://mcp-steroid.jonnyzzz.com/docs/getting-started/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/getting-started/</guid><description>&lt;h2 id="what-is-mcp-steroid">What is MCP Steroid?&lt;/h2>
+&lt;p>MCP Steroid gives AI agents &lt;strong>visual understanding and full control&lt;/strong> of your IntelliJ-based IDE through the Model Context Protocol. Unlike traditional code assistants that only see text, MCP Steroid lets agents SEE your IDE: dialogs, toolbars, debugger state, test results, and visual elements.&lt;/p>
+&lt;p>&lt;strong>&lt;a href="https://jonnyzzz.com/blog/2026/01/04/mcp-steroids-intellij/">Read the full introduction →&lt;/a>&lt;/strong>&lt;/p>
+&lt;h2 id="installation">Installation&lt;/h2>
+&lt;p>MCP Steroid is distributed as an IntelliJ plugin. Currently in early access - &lt;a href="https://linkedin.com/in/jonnyzzz">message Eugene Petrenko on LinkedIn&lt;/a> to get access.&lt;/p></description></item><item><title>Configuration</title><link>https://mcp-steroid.jonnyzzz.com/docs/configuration/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/configuration/</guid><description>&lt;p>MCP Steroid can be configured via IntelliJ&amp;rsquo;s Registry (&lt;code>Help &amp;gt; Find Action &amp;gt; Registry&lt;/code>) or via JVM system properties (&lt;code>-D&lt;/code> flags). All settings use the &lt;code>mcp.steroid.*&lt;/code> prefix.&lt;/p>
 &lt;h2 id="server-settings">Server Settings&lt;/h2>
 &lt;table>
  &lt;thead>
