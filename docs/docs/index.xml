@@ -129,5 +129,5 @@
  &lt;/tbody>
 &lt;/table>
 &lt;hr>
-&lt;div class="note">
-&lt;p>&lt;strong>Finding the MCP Server URL:&lt;/strong> When the plugin starts, it writes the server URL to &lt;code>.idea/mcp-steroid.md&lt;/code> in each open project. The first line contains the URL (e.g., &lt;code>http://127.0.0.1:6315/mcp&lt;/code>). This file is your MCP client&amp;rsquo;s connection target.&lt;/p></description></item></channel></rss>
+&lt;blockquote>
+&lt;p>&lt;strong>Note:&lt;/strong> When the plugin starts, it writes the server URL to &lt;code>.idea/mcp-steroid.md&lt;/code> in each open project. The first line contains the URL (for example, &lt;code>http://127.0.0.1:6315/mcp&lt;/code>). This file is your MCP client&amp;rsquo;s connection target.&lt;/p></description></item></channel></rss>
