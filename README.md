@@ -16,6 +16,9 @@
   <a href="https://linkedin.com/in/jonnyzzz">Get Trial Access</a>
 </p>
 
+
+<iframe src="https://github.com/sponsors/jonnyzzz/button" title="Sponsor jonnyzzz" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
+
 ---
 
 ## About MCP Steroid
