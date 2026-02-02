@@ -130,4 +130,8 @@
 &lt;/table>
 &lt;hr>
 &lt;blockquote>
-&lt;p>&lt;strong>Note:&lt;/strong> When the plugin starts, it writes the server URL to &lt;code>.idea/mcp-steroid.md&lt;/code> in each open project. The first line contains the URL (for example, &lt;code>http://127.0.0.1:6315/mcp&lt;/code>). This file is your MCP client&amp;rsquo;s connection target.&lt;/p></description></item></channel></rss>
+&lt;p>&lt;strong>Note:&lt;/strong> When the plugin starts, it writes the server URL to &lt;code>.idea/mcp-steroid.md&lt;/code> in each open project. The first line contains the URL (for example, &lt;code>http://127.0.0.1:6315/mcp&lt;/code>). This file is your MCP client&amp;rsquo;s connection target.&lt;/p></description></item><item><title>How to Debug an IDE (for AI Agents)</title><link>https://mcp-steroid.jonnyzzz.com/docs/how-to-debug-ide/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/how-to-debug-ide/</guid><description>&lt;blockquote>
+&lt;p>&lt;strong>This documentation was written entirely by AI agents&lt;/strong> using MCP Steroid while working on the IntelliJ Platform codebase. It demonstrates what autonomous AI agents can discover and document when given full IDE access through MCP Steroid.&lt;/p>
+&lt;p>&lt;strong>Note:&lt;/strong> Specific plugin names, paths, and internal details have been redacted. Replace placeholders like &lt;code>YOUR_PLUGIN_ID&lt;/code>, &lt;code>YourAction&lt;/code>, and example paths with your actual values.&lt;/p>
+&lt;/blockquote>
+&lt;p>&lt;strong>Guide for AI Agents:&lt;/strong> Debugging IntelliJ-based IDEs (CLion, IDEA, Rider, etc.) using IntelliJ&amp;rsquo;s debugger&lt;/p></description></item></channel></rss>
