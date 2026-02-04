@@ -581,6 +581,30 @@ text-decoration: underline;
     font-size: 0.75rem;
     font-weight: 500;
 }
+.video-play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 56px;
+    height: 56px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.2s;
+}
+.video-play-overlay svg {
+    width: 28px;
+    height: 28px;
+    color: white;
+    margin-left: 3px;
+}
+.video-card:hover .video-play-overlay {
+    background: rgba(254, 40, 87, 0.9);
+    transform: translate(-50%, -50%) scale(1.1);
+}
 .video-info {
     padding: 1rem;
 }
