@@ -1,5 +1,99 @@
 <!doctype html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1"><title>MCP Steroid Preview Release v0.86.0 | MCP Steroid - Give AI the whole IDE, not just the files</title>
-<meta name=description content="Early access preview of MCP Steroid plugin"><link rel=icon type=image/svg+xml href=/pluginIcon.svg><style>:root{--color-primary:#ffffff;--color-secondary:#d0d0e0;--color-tertiary:#b0b0c0;--color-quaternary:#909090;--gradient-brand:linear-gradient(135deg, #6B57FF 0%, #FE2857 100%);--color-brand-purple:#6B57FF;--color-brand-pink:#FE2857;--bg-gradient:linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);--bg-overlay:rgba(255, 255, 255, 0.05);--bg-code:rgba(0, 0, 0, 0.3);--color-link:#a0a0ff;--color-code:#c0c0ff}*{margin:0;padding:0;box-sizing:border-box}body{min-height:100vh;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,segoe ui,Roboto,Oxygen,Ubuntu,sans-serif;background:var(--bg-gradient);color:var(--color-primary)}a{color:var(--color-link);text-decoration:none}a:hover{text-decoration:underline}.nav{position:sticky;top:0;z-index:1000;background:rgba(26,26,46,.95);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.1)}.nav-container{max-width:1200px;margin:0 auto;padding:.75rem 2rem;display:flex;align-items:center;justify-content:space-between}.nav-brand{display:flex;align-items:center;gap:.75rem;text-decoration:none;color:var(--color-primary)}.nav-brand:hover{text-decoration:none}.nav-logo{width:32px;height:32px}.nav-brand{padding:6px 0;min-height:44px;display:flex;align-items:center}.nav-title{font-weight:700;font-size:1.1rem;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}.nav-links{display:flex;align-items:center;gap:2rem}.nav-link{color:var(--color-tertiary);text-decoration:none;font-size:.95rem;font-weight:500;transition:color .2s;display:flex;align-items:center;gap:.25rem;min-height:44px;padding:8px 0}.nav-link:hover{color:var(--color-primary);text-decoration:none}.nav-link.active{color:var(--color-primary)}.nav-link svg{width:16px;height:16px}.nav-toggle{display:none;background:0 0;border:none;color:var(--color-primary);cursor:pointer;padding:.5rem;min-width:44px;min-height:44px}.nav-toggle svg{width:24px;height:24px}@media(max-width:768px){.nav-toggle{display:block}.nav-links{position:absolute;top:100%;left:0;right:0;flex-direction:column;gap:0;background:rgba(26,26,46,.98);border-bottom:1px solid rgba(255,255,255,.1);display:none}.nav-links.open{display:flex}.nav-link{padding:1rem 1.5rem;width:100%;border-bottom:1px solid rgba(255,255,255,5%)}.social-links a{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:10px}}.main-content{flex:1;display:flex;flex-direction:column;align-items:center;padding:3rem 2rem;max-width:1200px;margin:0 auto;width:100%}footer{margin-top:auto;padding:2rem 1rem;text-align:center;border-top:1px solid rgba(255,255,255,.1)}.social-links{display:flex;gap:1.5rem;justify-content:center;align-items:center}.social-links a{color:var(--color-quaternary);transition:color .2s}.social-links a:hover{color:var(--color-tertiary);text-decoration:none}.social-links svg{width:24px;height:24px}.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.875rem 1.5rem;color:var(--color-primary);text-decoration:none;border-radius:8px;font-weight:600;font-size:1rem;transition:transform .2s,box-shadow .2s;min-height:44px;min-width:44px}.btn:hover{text-decoration:none;transform:translateY(-2px);box-shadow:0 10px 30px rgba(107,87,255,.3)}.btn-primary{background:var(--gradient-brand)}.btn-secondary{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2)}.btn-icon{width:20px;height:20px}code{font-family:sf mono,SFMono-Regular,ui-monospace,Menlo,monospace;background:var(--bg-code);padding:.1rem .4rem;border-radius:4px;color:var(--color-code);font-size:.9em}pre{background:var(--bg-code);border-radius:8px;padding:1rem;overflow-x:auto;max-width:100%}pre code{background:0 0;padding:0}a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--color-brand-purple);outline-offset:2px;border-radius:4px}a:focus-visible{background:rgba(107,87,255,.1)}.skip-link{position:absolute;top:-40px;left:0;background:var(--color-brand-purple);color:var(--color-primary);padding:8px 16px;z-index:1001;text-decoration:none;border-radius:0 0 4px 0}.skip-link:focus{top:0}.page-content{max-width:800px;width:100%}.page-content h1{font-size:2.5rem;margin-bottom:1.5rem;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}.page-content h2{font-size:1.5rem;color:var(--color-secondary);margin-top:2.5rem;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid rgba(255,255,255,.1)}.page-content h3{font-size:1.2rem;color:var(--color-secondary);margin-top:2rem;margin-bottom:.75rem}.page-content p{color:var(--color-tertiary);line-height:1.7;margin-bottom:1rem}.page-content ul,.page-content ol{color:var(--color-tertiary);margin-bottom:1rem;padding-left:1.5rem}.page-content li{margin-bottom:.5rem;line-height:1.6}.page-content pre{overflow-x:auto;max-width:100%}.page-content code{word-wrap:break-word;overflow-wrap:break-word}.page-content p{overflow-wrap:break-word;word-wrap:break-word}.page-content .note{background:rgba(107,87,255,.1);border-left:3px solid var(--color-brand-purple);border-radius:0 8px 8px 0;padding:1rem 1.25rem;margin:1.5rem 0}.page-content .note p{margin:0;color:var(--color-secondary)}.page-content .note strong{color:var(--color-primary)}.page-content .warning{background:rgba(254,40,87,.1);border-left:3px solid var(--color-brand-pink);border-radius:0 8px 8px 0;padding:1rem 1.25rem;margin:1.5rem 0}.page-content .warning p{margin:0;color:var(--color-secondary)}.page-content .warning strong{color:var(--color-brand-pink)}.page-content .success{background:rgba(40,167,69,.15);border-left:3px solid #28a745;border-radius:0 8px 8px 0;padding:1rem 1.25rem;margin:1.5rem 0}.page-content .success p{margin:0;color:var(--color-secondary)}.page-content .success strong{color:#5cb85c}</style><script defer src=https://static.cloudflareinsights.com/beacon.min.js data-cf-beacon='{"token": "dd1a589b6e154b0a985f8f14ca8c4a4a"}'></script></head><body><a href=#main-content class=skip-link>Skip to main content</a><nav class=nav><div class=nav-container><a href=/ class=nav-brand><img src=/pluginIcon.svg alt="MCP Steroid" class=nav-logo>
+<meta name=description content="Early access preview of MCP Steroid plugin"><link rel=icon type=image/svg+xml href=/pluginIcon.svg><link rel=stylesheet href=/css/site.css>.page-content {
+max-width: 800px;
+width: 100%;
+}
+.page-content h1 {
+font-size: 2.5rem;
+margin-bottom: 1.5rem;
+background: var(--gradient-brand);
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+background-clip: text;
+}
+.page-content h2 {
+font-size: 1.5rem;
+color: var(--color-secondary);
+margin-top: 2.5rem;
+margin-bottom: 1rem;
+padding-bottom: 0.5rem;
+border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.page-content h3 {
+font-size: 1.2rem;
+color: var(--color-secondary);
+margin-top: 2rem;
+margin-bottom: 0.75rem;
+}
+.page-content p {
+color: var(--color-tertiary);
+line-height: 1.7;
+margin-bottom: 1rem;
+}
+.page-content ul, .page-content ol {
+color: var(--color-tertiary);
+margin-bottom: 1rem;
+padding-left: 1.5rem;
+}
+.page-content li {
+margin-bottom: 0.5rem;
+line-height: 1.6;
+}
+.page-content pre {
+overflow-x: auto;
+max-width: 100%;
+}
+.page-content code {
+word-wrap: break-word;
+overflow-wrap: break-word;
+}
+.page-content p {
+overflow-wrap: break-word;
+word-wrap: break-word;
+}
+.page-content .note {
+background: rgba(107, 87, 255, 0.1);
+border-left: 3px solid var(--color-brand-purple);
+border-radius: 0 8px 8px 0;
+padding: 1rem 1.25rem;
+margin: 1.5rem 0;
+}
+.page-content .note p {
+margin: 0;
+color: var(--color-secondary);
+}
+.page-content .note strong {
+color: var(--color-primary);
+}
+.page-content .warning {
+background: rgba(254, 40, 87, 0.1);
+border-left: 3px solid var(--color-brand-pink);
+border-radius: 0 8px 8px 0;
+padding: 1rem 1.25rem;
+margin: 1.5rem 0;
+}
+.page-content .warning p {
+margin: 0;
+color: var(--color-secondary);
+}
+.page-content .warning strong {
+color: var(--color-brand-pink);
+}
+.page-content .success {
+background: rgba(40, 167, 69, 0.15);
+border-left: 3px solid #28a745;
+border-radius: 0 8px 8px 0;
+padding: 1rem 1.25rem;
+margin: 1.5rem 0;
+}
+.page-content .success p {
+margin: 0;
+color: var(--color-secondary);
+}
+.page-content .success strong {
+color: #5cb85c;
+}
+<script defer src=https://static.cloudflareinsights.com/beacon.min.js data-cf-beacon='{"token": "dd1a589b6e154b0a985f8f14ca8c4a4a"}'></script></head><body><a href=#main-content class=skip-link>Skip to main content</a><nav class=nav><div class=nav-container><a href=/ class=nav-brand><img src=/pluginIcon.svg alt="MCP Steroid" class=nav-logo>
 <span class=nav-title>MCP Steroid</span>
 </a><button class=nav-toggle aria-label="Toggle navigation"><svg viewBox="0 0 24 24" fill="currentcolor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg></button><div class=nav-links><a href=/ class=nav-link>Home
 </a><a href=/docs/ class=nav-link>Docs
