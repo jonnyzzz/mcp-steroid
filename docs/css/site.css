@@ -1029,3 +1029,62 @@ h1 {
         background: rgba(107, 87, 255, 0.2);
     }
 }
+
+/* Docs listing page */
+.docs-header {
+    text-align: center;
+    max-width: 700px;
+    margin-bottom: 3rem;
+}
+.docs-header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    background: var(--gradient-brand);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.docs-header p {
+    color: var(--color-tertiary);
+    font-size: 1.1rem;
+    line-height: 1.6;
+}
+.docs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    width: 100%;
+    max-width: 900px;
+}
+.doc-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+.doc-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 40px rgba(107, 87, 255, 0.2);
+    text-decoration: none;
+}
+.doc-card h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+    color: var(--color-primary);
+    text-align: left;
+}
+.doc-card p {
+    color: var(--color-tertiary);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin: 0;
+}
+.doc-card .arrow {
+    color: var(--color-brand-purple);
+    margin-top: 1rem;
+    display: block;
+    font-size: 0.9rem;
+}
