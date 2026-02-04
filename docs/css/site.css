@@ -514,85 +514,133 @@ text-decoration: none;
     .learn-more-link:hover {
 text-decoration: underline;
     }
-.videos-grid {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-gap: 1rem;
+/* Videos carousel */
+.videos-carousel {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(107, 87, 255, 0.5) rgba(255, 255, 255, 0.1);
+    padding-bottom: 0.5rem;
+    margin-right: -2rem;
+    padding-right: 2rem;
 }
-    .video-card {
-background: rgba(255, 255, 255, 0.06);
-border-radius: 12px;
-overflow: hidden;
-transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .video-card:hover {
-transform: translateY(-4px);
-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    }
+.videos-carousel::-webkit-scrollbar {
+    height: 6px;
+}
+.videos-carousel::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+.videos-carousel::-webkit-scrollbar-thumb {
+    background: rgba(107, 87, 255, 0.5);
+    border-radius: 3px;
+}
+.videos-carousel::-webkit-scrollbar-thumb:hover {
+    background: rgba(107, 87, 255, 0.7);
+}
+.videos-carousel .video-card {
+    flex: 0 0 240px;
+    scroll-snap-align: start;
+}
+.video-card {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.video-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
 .video-card a {
-text-decoration: none;
-color: inherit;
+    text-decoration: none;
+    color: inherit;
 }
-    .video-thumbnail {
-position: relative;
-padding-bottom: 56.25%;
-background: #000;
-    }
-    .video-thumbnail img {
-position: absolute;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-object-fit: cover;
-    }
-    .video-duration {
-position: absolute;
-bottom: 8px;
-right: 8px;
-background: rgba(0, 0, 0, 0.8);
-padding: 2px 6px;
-border-radius: 4px;
-font-size: 0.75rem;
-font-weight: 500;
-    }
-    .video-info {
-padding: 1rem;
-    }
-    .video-title {
-font-size: 0.95rem;
-font-weight: 600;
-line-height: 1.4;
-margin-bottom: 0.5rem;
-color: var(--color-primary);
-    }
+.video-thumbnail {
+    position: relative;
+    padding-bottom: 56.25%;
+    background: #000;
+}
+.video-thumbnail img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.video-duration {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+.video-info {
+    padding: 1rem;
+}
+.video-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.4;
+    margin-bottom: 0.5rem;
+    color: var(--color-primary);
+}
 .video-meta {
-font-size: 0.8rem;
-color: var(--color-quaternary);
+    font-size: 0.8rem;
+    color: var(--color-quaternary);
+}
+/* View more card in carousel */
+.view-more-card {
+    background: linear-gradient(135deg, rgba(107, 87, 255, 0.2) 0%, rgba(254, 40, 87, 0.2) 100%);
+    border: 1px solid rgba(107, 87, 255, 0.3);
+    display: flex;
+    align-items: stretch;
+}
+.view-more-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(107, 87, 255, 0.5);
+}
+.view-more-card a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 200px;
+}
+.view-more-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    text-align: center;
+}
+.view-more-icon {
+    width: 48px;
+    height: 48px;
+    color: var(--color-brand-purple);
+    opacity: 0.8;
+}
+.view-more-text {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-primary);
+}
+.view-more-count {
+    font-size: 0.85rem;
+    color: var(--color-quaternary);
 }
 .videos-box {
     padding: 1.5rem 2rem;
+    overflow: hidden;
 }
-.videos-box .videos-grid {
-    margin-bottom: 0.5rem;
-}
-.playlist-link {
-    margin-top: 0.5rem;
-    text-align: right;
-}
-.more-videos-link {
-    color: var(--color-link);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.95rem;
-}
-.more-videos-link:hover {
-    text-decoration: underline;
-}
-    .playlist-link {
-text-align: center;
-margin-top: 1.5rem;
-    }
                     
     /* Responsive design */
     @media (max-width: 768px) {
@@ -640,8 +688,8 @@ h1 {
 .cta-card {
     padding: 1.5rem;
 }
-.videos-grid {
-    grid-template-columns: 1fr;
+.videos-carousel .video-card {
+    flex: 0 0 200px;
 }
     }
 
