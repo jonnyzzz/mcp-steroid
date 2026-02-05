@@ -873,6 +873,12 @@ h1 {
 }
 
 /* Docs layout */
+.docs-layout {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 2.5rem;
+}
 .docs-sidebar {
     width: 220px;
     flex-shrink: 0;
@@ -1002,6 +1008,12 @@ h1 {
     color: var(--color-primary);
 }
 
+
+@media (max-width: 900px) {
+    .docs-layout {
+        flex-direction: column;
+    }
+}
 /* Docs layout responsive */
 @media (max-width: 900px) {
     .docs-sidebar {
