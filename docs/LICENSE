@@ -1,6 +1,6 @@
 MCP Steroid Plugin - End User License Agreement (EULA)
 
-Last modified: February 4, 2026
+Last modified: February 6, 2026
 
 This EULA is concluded between You and the Developer with respect to the Plugin.
 If You are accepting this EULA on behalf of an entity, You represent that You
@@ -12,9 +12,6 @@ BY DOWNLOADING, INSTALLING, OR USING THE PLUGIN, YOU ACKNOWLEDGE THAT YOU HAVE
 READ, UNDERSTOOD, AND AGREE TO BE BOUND BY THE TERMS AND CONDITIONS OF THIS EULA.
 IF YOU DO NOT AGREE TO THESE TERMS, DO NOT DOWNLOAD, INSTALL, OR USE THE PLUGIN.
 
-IMPORTANT: Each Plugin Build is available for a LIMITED TIME only and will
-AUTOMATICALLY EXPIRE. See Section 3 for details.
-
 Based on the JetBrains Marketplace Standard EULA template.
 Original template: https://plugins.jetbrains.com/docs/marketplace/eula.html#standard-eula
 
@@ -25,10 +22,6 @@ Original template: https://plugins.jetbrains.com/docs/marketplace/eula.html#stan
 "Documentation" means the latest versions of all online technical documentation
 available for the Plugin at https://mcp-steroid.jonnyzzz.com and any other
 relevant Plugin documentation provided by the Developer.
-
-"Expiration Date" means the date embedded in a Plugin Build after which the
-Plugin will cease to function. Each Plugin Build has a predetermined Expiration
-Date set at build time.
 
 "JetBrains" means JetBrains s.r.o., which has its registered office at
 Na Hrebenech II 1718/8, Prague, 14000, Czech Republic, registered with the
@@ -43,8 +36,7 @@ to work with JetBrains Products, distributed by the Developer under this EULA.
 "Plugin Binaries" means the compiled, distributable form of the Plugin, including
 ZIP archives and JAR files.
 
-"Plugin Build" means a specific distribution of the Plugin Binaries that includes
-an embedded Expiration Date.
+"Plugin Build" means a specific distribution of the Plugin Binaries.
 
 "Source Code" means the human-readable source code, scripts, or build files for
 the Plugin.
@@ -62,7 +54,7 @@ as the use is in line with the Documentation and the limits set out in this EULA
 You may:
 
 - install the Plugin;
-- use the Plugin until the Expiration Date; and
+- use the Plugin; and
 - make backup copies of the Plugin for archival purposes.
 
 All rights not expressly granted to You in this EULA are reserved by the Developer.
@@ -75,101 +67,77 @@ All rights not expressly granted to You in this EULA are reserved by the Develop
 - remove, obscure, or alter any copyright or proprietary notices in the Plugin Binaries;
 - sublicense any rights to the Plugin;
 - redistribute the Plugin Binaries without prior written authorization from the Developer;
-- attempt to circumvent, disable, or interfere with the time-limited functionality
-  or the automatic expiration mechanism;
 - attempt to circumvent, disable, or interfere with the update check mechanism;
 - use the Plugin in violation of applicable laws or third-party rights; or
 - use the Plugin to execute code, scripts, or actions that You do not have the
   legal right or authorization to run.
 
-2.3. Duration of License. The license granted under this EULA is TIME-LIMITED.
-Each Plugin Build has an Expiration Date embedded at build time. After the
-Expiration Date, the Plugin Build will automatically cease to function. To
-continue using the Plugin, You must obtain a newer Plugin Build with a later
-Expiration Date.
-
-2.4. Source Code. This EULA does not grant any rights to Source Code. If the
+2.3. Source Code. This EULA does not grant any rights to Source Code. If the
 Developer makes any Source Code available, it is licensed under a separate
 license, if any.
 
-3. Time-Limited Builds and Automatic Expiration
+3. Update Checks and Network Communication
 
-3.1. Limited Availability. The Plugin is provided as time-limited Plugin Builds. Each
-Plugin Build contains an embedded Expiration Date after which the Plugin will
-automatically stop functioning.
-
-3.2. Automatic Expiration. Upon reaching the Expiration Date:
-- The Plugin will cease to function automatically;
-- No prior notice is required before expiration;
-- The Developer is under no obligation to provide replacement Plugin Builds;
-- You may download a newer Plugin Build (if available) to continue using the Plugin.
-
-3.3. No Perpetual License. This Plugin does not offer perpetual licenses. All
-Plugin Builds are subject to automatic expiration. Continued use requires
-obtaining newer Plugin Builds as they become available.
-
-4. Update Checks and Network Communication
-
-4.1. Automatic Update Checks. The Plugin periodically communicates with the
+3.1. Automatic Update Checks. The Plugin periodically communicates with the
 Update Server at https://mcp-steroid.jonnyzzz.com to:
 - Check for available Plugin updates;
 - Retrieve version information;
 - Notify You of newer Plugin Builds;
 - Modify or remove certain features or functionality.
 
-4.2. Data Transmitted. During update checks, the following information may be
+3.2. Data Transmitted. During update checks, the following information may be
 transmitted to the Update Server:
 - Current Plugin version;
 - JetBrains Product version and type;
 - Operating system information.
 
-4.3. Consent. By installing and using the Plugin, You consent to these automatic
+3.3. Consent. By installing and using the Plugin, You consent to these automatic
 update checks and the transmission of the information described above. The
 update check functionality is integral to the Plugin's operation.
 
-4.4. Privacy. The update check mechanism is not intended to collect personal data.
+3.4. Privacy. The update check mechanism is not intended to collect personal data.
 Standard server logs (if any) may include technical connection metadata such as
 IP address, timestamps, and request headers. For detailed privacy practices, see
 the Documentation.
 
-4.5. Network Availability. You are responsible for your network configuration,
+3.5. Network Availability. You are responsible for your network configuration,
 security settings, and any data charges. If update checks cannot reach the Update
 Server, the Plugin may not function correctly or may stop functioning.
 
-5. Code Execution, Data, and Security
+4. Code Execution, Data, and Security
 
-5.1. Code Execution. The Plugin can execute code or perform actions within your
+4.1. Code Execution. The Plugin can execute code or perform actions within your
 JetBrains Product or environment at your direction. You are solely responsible
 for any code, scripts, prompts, commands, or inputs you provide and for reviewing
 outputs before applying them.
 
-5.2. Data Access and Backups. The Plugin may access, modify, or transmit data in
+4.2. Data Access and Backups. The Plugin may access, modify, or transmit data in
 your IDE, project files, or environment as part of its operation. You are
 responsible for maintaining appropriate backups, access controls, and security
 measures. The Developer does not provide data recovery or incident response
 services.
 
-5.3. High-Risk Activities. THE PLUGIN IS NOT DESIGNED, INTENDED, OR LICENSED FOR
+4.3. High-Risk Activities. THE PLUGIN IS NOT DESIGNED, INTENDED, OR LICENSED FOR
 USE IN SAFETY-CRITICAL, MEDICAL, LIFE-SUPPORT, OR HIGH-RISK ENVIRONMENTS WHERE
 FAILURE COULD LEAD TO DEATH, PERSONAL INJURY, OR SEVERE PROPERTY OR
 ENVIRONMENTAL DAMAGE.
 
-6. Intellectual Property
+5. Intellectual Property
 
-6.1. Ownership. The Plugin is protected by copyright and other intellectual property laws and
+5.1. Ownership. The Plugin is protected by copyright and other intellectual property laws and
 treaties. The Developer owns all title, copyright, and other intellectual
 property rights to the Plugin. All rights not expressly granted are reserved by
 the Developer. No license or right is granted to use the Developer's or
 JetBrains' trademarks, service marks, or logos.
 
-6.2. Feedback. If You provide any feedback, suggestions, or comments to the
+5.2. Feedback. If You provide any feedback, suggestions, or comments to the
 Developer regarding the Plugin ("Feedback"), You hereby grant the Developer a
 worldwide, non-exclusive, perpetual, irrevocable, royalty-free, fully paid,
 sublicensable and transferable license to use, reproduce, modify, distribute,
 display, perform, and otherwise exploit the Feedback for any purpose, without
 any obligation or compensation to You.
 
-7. Disclaimer of Warranty
+6. Disclaimer of Warranty
 
 UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING, THE DEVELOPER
 PROVIDES THE PLUGIN ON AN "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
@@ -190,7 +158,6 @@ THE DEVELOPER DOES NOT WARRANT THAT:
 - THE PLUGIN WILL BE COMPATIBLE WITH ANY PARTICULAR JETBRAINS PRODUCT VERSION
   OR THIRD-PARTY PLUGINS;
 - THE PLUGIN WILL PREVENT DATA LOSS, DATA CORRUPTION, OR UNAUTHORIZED ACCESS;
-- NEWER PLUGIN BUILDS WILL BE MADE AVAILABLE BEFORE OR AFTER THE EXPIRATION DATE;
 - SUPPORT SERVICES WILL BE PROVIDED.
 
 ANY UPDATES AND UPGRADES TO THE PLUGIN WILL ONLY BE PROVIDED ON AN "AS AVAILABLE"
@@ -199,7 +166,7 @@ BASIS, AT THE DEVELOPER'S SOLE DISCRETION.
 SOME JURISDICTIONS DO NOT ALLOW THE EXCLUSION OF CERTAIN WARRANTIES OR
 CONDITIONS, SO SOME OF THE ABOVE EXCLUSIONS MAY NOT APPLY TO YOU.
 
-8. Limitation of Liability
+7. Limitation of Liability
 
 IN NO EVENT AND UNDER NO LEGAL THEORY, WHETHER IN TORT (INCLUDING NEGLIGENCE),
 CONTRACT, OR OTHERWISE, UNLESS REQUIRED BY APPLICABLE LAW (SUCH AS DELIBERATE
@@ -213,10 +180,7 @@ BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
 WITHOUT LIMITING THE FOREGOING, THE DEVELOPER IS NOT LIABLE FOR ANY DAMAGES
 ARISING FROM:
-- THE AUTOMATIC EXPIRATION OF THE PLUGIN;
-- THE UNAVAILABILITY OF NEWER PLUGIN BUILDS;
-- THE INABILITY TO USE THE PLUGIN AFTER THE EXPIRATION DATE;
-- DATA LOSS OR CORRUPTION RESULTING FROM PLUGIN USE OR EXPIRATION;
+- DATA LOSS OR CORRUPTION RESULTING FROM PLUGIN USE;
 - ANY ACTIONS TAKEN BY THE PLUGIN OR ANY CONSEQUENCES THEREOF;
 - INTERRUPTION OF BUSINESS OR LOSS OF PROFITS.
 
@@ -231,9 +195,9 @@ CERTAIN DAMAGES, SO SOME OF THE ABOVE LIMITATIONS MAY NOT APPLY TO YOU.
 
 JETBRAINS' LIABILITY IS EXCLUDED IN ITS ENTIRETY AS JETBRAINS IS NOT A PARTY
 TO THE CONTRACTUAL RELATIONSHIP BETWEEN THE DEVELOPER AND YOU.
-JETBRAINS IS AN INTENDED THIRD-PARTY BENEFICIARY OF THIS SECTION 8.
+JETBRAINS IS AN INTENDED THIRD-PARTY BENEFICIARY OF THIS SECTION 7.
 
-9. Indemnification
+8. Indemnification
 
 YOU AGREE TO INDEMNIFY, DEFEND, AND HOLD HARMLESS THE DEVELOPER FROM AND
 AGAINST ANY AND ALL CLAIMS, DAMAGES, LOSSES, COSTS, AND EXPENSES (INCLUDING
@@ -247,7 +211,7 @@ REASONABLY COOPERATE WITH THE DEVELOPER IN DEFENDING SUCH CLAIMS. YOU WILL NOT
 SETTLE ANY CLAIM SUBJECT TO INDEMNIFICATION WITHOUT THE DEVELOPER'S PRIOR
 WRITTEN CONSENT.
 
-10. Third-Party Components
+9. Third-Party Components
 
 The Plugin may include or depend on third-party software components. Such
 components are subject to their respective licenses, and You agree to comply
@@ -256,51 +220,73 @@ license with respect to a component, the third-party license will control for
 that component. The Developer makes no warranties regarding third-party
 components.
 
-11. Termination
+9.1. Third-Party Analytics Services
 
-11.1. This EULA is effective until terminated.
+The Plugin and its website use third-party analytics services to improve the
+product and prioritize development. The analytics are minimalistic and
+privacy-conscious.
 
-11.2. This EULA terminates automatically when:
-- The Plugin reaches its Expiration Date;
-- You breach any term of this EULA.
+(a) PostHog (https://posthog.com). The Plugin uses PostHog as a server-side
+analytics service. The Plugin may collect and send the following technical
+event data:
+- JetBrains IDE build, version, and product code;
+- Plugin version;
+- Anonymous project identifier (random UUID, not the project name); and
+- exec_code call events (success/error).
 
-11.3. Upon termination, the license granted in Section 2 immediately ceases, and
+No personally identifiable information is collected by this analytics feature.
+You may opt out of Plugin analytics by disabling the
+`mcp.steroid.analytics.enabled` registry key in the IDE.
+
+(b) Cloudflare Web Analytics (https://www.cloudflare.com/web-analytics/).
+The Plugin website at https://mcp-steroid.jonnyzzz.com uses Cloudflare Web
+Analytics for privacy-first website traffic measurement. Cloudflare Web
+Analytics does not use client-side state (such as cookies) and does not
+track individuals across sites.
+
+10. Termination
+
+10.1. This EULA is effective until terminated.
+
+10.2. This EULA terminates automatically when You breach any term of this EULA.
+
+10.3. Upon termination, the license granted in Section 2 immediately ceases, and
 You must cease all use of the Plugin and destroy all copies in Your possession.
 
-11.4. Survival. Sections 5 through 12 survive termination.
+10.4. Survival. Sections 4 through 11 survive termination.
 
-12. General Provisions
+11. General Provisions
 
-12.1. Entire Agreement. This EULA constitutes the entire agreement between You
+11.1. Entire Agreement. This EULA constitutes the entire agreement between You
 and the Developer regarding the Plugin and supersedes all prior agreements and
 understandings.
 
-12.2. Severability. If any provision of this EULA is held to be unenforceable,
+11.2. Severability. If any provision of this EULA is held to be unenforceable,
 the remaining provisions shall continue in full force and effect.
 
-12.3. No Waiver. The failure of the Developer to enforce any right or provision
+11.3. No Waiver. The failure of the Developer to enforce any right or provision
 of this EULA shall not constitute a waiver of such right or provision.
 
-12.4. Governing Law and Venue. This EULA is governed by the laws of the
+11.4. Governing Law and Venue. This EULA is governed by the laws of the
 jurisdiction where the Developer is domiciled at the time You accept this EULA,
 without regard to conflict of laws principles. You and the Developer consent to
 the exclusive jurisdiction and venue of the courts located in that jurisdiction,
 to the extent permitted by applicable law. Nothing in this section limits any
 consumer rights that cannot be waived or limited by law.
 
-12.5. Assignment. You may not assign or transfer this EULA or any rights under
+11.5. Assignment. You may not assign or transfer this EULA or any rights under
 it without the Developer's prior written consent. The Developer may assign this
 EULA to a successor in connection with a merger, acquisition, or sale of assets,
 or by operation of law.
 
-12.6. Export Control. You agree to comply with all applicable export control and
+11.6. Export Control. You agree to comply with all applicable export control and
 sanctions laws and regulations. You represent that You are not located in, under
 the control of, or a national or resident of any prohibited country or on any
 prohibited party list.
 
-12.7. Changes to this EULA. The Developer may modify this EULA from time to time.
+11.7. Changes to this EULA. The Developer may modify this EULA from time to time.
 The updated EULA will apply to any new Plugin Build or updated Plugin that You
 download, install, or use after the effective date of the changes.
 
-12.8. Contact. For questions regarding this EULA, contact the Developer through
+11.8. Contact. For questions regarding this EULA, contact the Developer through
 the Plugin's official website at https://mcp-steroid.jonnyzzz.com.
