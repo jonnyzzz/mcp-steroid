@@ -55,6 +55,11 @@ the more research an agent must do &amp;ndash; and the more tokens it burns &amp
  &lt;td>&lt;code>600&lt;/code>&lt;/td>
  &lt;td>Script execution timeout in seconds.&lt;/td>
  &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>mcp.steroid.dialog.killer.enabled&lt;/code>&lt;/td>
+ &lt;td>&lt;code>true&lt;/code>&lt;/td>
+ &lt;td>Automatically close modal dialogs before code execution. Prevents execution failures when dialogs are blocking the IDE.&lt;/td>
+ &lt;/tr>
  &lt;/tbody>
 &lt;/table>
 &lt;h2 id="storage">Storage&lt;/h2>
@@ -133,8 +138,9 @@ the more research an agent must do &amp;ndash; and the more tokens it burns &amp
  &lt;/tr>
  &lt;/tbody>
 &lt;/table>
-&lt;blockquote>
-&lt;p>&lt;strong>Note:&lt;/strong> When the plugin starts, it writes the server URL to &lt;code>.idea/mcp-steroid.md&lt;/code> in each open project. The first line contains the URL (for example, &lt;code>http://127.0.0.1:6315/mcp&lt;/code>). This file is your MCP client&amp;rsquo;s connection target.&lt;/p></description></item><item><title>Learning Methodology</title><link>https://mcp-steroid.jonnyzzz.com/docs/learning-methodology/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/learning-methodology/</guid><description>&lt;h2 id="why-this-exists">Why this exists&lt;/h2>
+&lt;hr>
+&lt;h2 id="dialog-killer">Dialog Killer&lt;/h2>
+&lt;p>The &lt;strong>Dialog Killer&lt;/strong> feature automatically closes modal dialogs before code execution. This prevents execution failures when dialogs (like Settings, refactoring confirmations, or error messages) are blocking the IDE.&lt;/p></description></item><item><title>Learning Methodology</title><link>https://mcp-steroid.jonnyzzz.com/docs/learning-methodology/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/learning-methodology/</guid><description>&lt;h2 id="why-this-exists">Why this exists&lt;/h2>
 &lt;p>MCP Steroid targets fast-changing AI Agents on fast-changing IntelliJ-based IDE platform. Static documentation alone
 is not enough. We need a repeatable loop that measures what works, what fails, and what should change next.&lt;/p>
 &lt;p>We treat the MCP server itself as a always improving product, that learn from usages. Every prompt, skill description, and tool schema is
