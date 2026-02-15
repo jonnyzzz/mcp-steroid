@@ -1,12 +1,4 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Releases on MCP Steroid - Give AI the whole IDE, not just the files</title><link>https://mcp-steroid.jonnyzzz.com/releases/</link><description>Recent content in Releases on MCP Steroid - Give AI the whole IDE, not just the files</description><generator>Hugo</generator><language>en-us</language><atom:link href="https://mcp-steroid.jonnyzzz.com/releases/index.xml" rel="self" type="application/rss+xml"/><item><title>v0.88.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.88.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.88.0/</guid><description>&lt;div class="success">
-&lt;p>&lt;strong>MCP Steroid v0.88.0 is here!&lt;/strong> This release adds support for IntelliJ 2026.1 EAP, updates the bundled Kotlin compiler to 2.3.10, adds integration tests for IntelliJ IDEA, PyCharm, GoLand, and WebStorm, and delivers debugger improvements and stability fixes.&lt;/p>
-&lt;/div>
-&lt;p>&lt;strong>Release Date:&lt;/strong> February 15, 2026&lt;/p>
-&lt;p>Note: this plugin is currently tested only on macOS.&lt;/p>
-&lt;h2 id="reporting-issues">Reporting issues&lt;/h2>
-&lt;p>Use &amp;ldquo;Collect Logs and Diagnostics Data&amp;rdquo; action in IntelliJ
-to collect information about the problem.
-Review the log file for specific problem.&lt;/p></description></item><item><title>v0.86.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</guid><description>&lt;div class="success">
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Releases on MCP Steroid - Give AI the whole IDE, not just the files</title><link>https://mcp-steroid.jonnyzzz.com/releases/</link><description>Recent content in Releases on MCP Steroid - Give AI the whole IDE, not just the files</description><generator>Hugo</generator><language>en-us</language><atom:link href="https://mcp-steroid.jonnyzzz.com/releases/index.xml" rel="self" type="application/rss+xml"/><item><title>v0.86.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</guid><description>&lt;div class="success">
 &lt;p>&lt;strong>MCP Steroid v0.86.0&lt;/strong> — First public preview release.&lt;/p>
 &lt;/div>
 &lt;p>&lt;strong>Release Date:&lt;/strong> February 1, 2026&lt;/p>
@@ -32,4 +24,12 @@ Review the log file for specific problem.&lt;/p>
 &lt;p>Message Eugene on LinkedIn for a Slack invite: &lt;a href="https://linkedin.com/in/jonnyzzz">linkedin.com/in/jonnyzzz&lt;/a>
 Workspace: &lt;a href="https://mcp-steroid.slack.com">mcp-steroid.slack.com&lt;/a>&lt;/p>
 &lt;p>Direct invite link: &lt;a href="https://join.slack.com/t/mcp-steroid/shared_invite/zt-3p3oq91kx-BXJng8GSXveqncFVYWUcpQ">join.slack.com/t/mcp-steroid/shared_invite/zt-3p3oq91kx-BXJng8GSXveqncFVYWUcpQ&lt;/a>&lt;/p>
-&lt;p>That is the best place to discuss the plugin, ideas, features.&lt;/p></description></item></channel></rss>
+&lt;p>That is the best place to discuss the plugin, ideas, features.&lt;/p></description></item><item><title>v0.88.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.88.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.88.0/</guid><description>&lt;div class="success">
+&lt;p>&lt;strong>MCP Steroid v0.88.0 is here!&lt;/strong> This release adds support for IntelliJ 2026.1 EAP, updates the bundled Kotlin compiler to 2.3.10, adds integration tests for IntelliJ IDEA, PyCharm, GoLand, and WebStorm, and delivers debugger improvements and stability fixes.&lt;/p>
+&lt;/div>
+&lt;p>&lt;strong>Release Date:&lt;/strong> February 15, 2026&lt;/p>
+&lt;p>Note: this plugin is currently tested only on macOS.&lt;/p>
+&lt;h2 id="reporting-issues">Reporting issues&lt;/h2>
+&lt;p>Use &amp;ldquo;Collect Logs and Diagnostics Data&amp;rdquo; action in IntelliJ
+to collect information about the problem.
+Review the log file for specific problem.&lt;/p></description></item></channel></rss>

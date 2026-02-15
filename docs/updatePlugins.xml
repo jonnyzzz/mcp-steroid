@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugins>
+  <plugin id="com.jonnyzzz.mcp-steroid" url="https://github.com/jonnyzzz/mcp-steroid/releases/download/0.88.0/mcp-steroid-0.88.0-b1747bb.zip" version="0.88.0">
+    <idea-version since-build="253"/>
+    <name>MCP Steroid</name>
+  </plugin>
+</plugins>
