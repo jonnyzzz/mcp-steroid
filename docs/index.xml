@@ -3,8 +3,33 @@
 that only see text, MCP Steroid lets agents SEE your IDE: dialogs, toolbars, debugger state, test results, and visual elements.&lt;/p>
 &lt;p>&lt;strong>&lt;a href="https://jonnyzzz.com/blog/2026/01/04/mcp-steroids-intellij/">Read the full introduction →&lt;/a>&lt;/strong>&lt;/p>
 &lt;h2 id="installation">Installation&lt;/h2>
-&lt;p>MCP Steroid is distributed as an IntelliJ plugin. Currently, in early access - &lt;a href="https://linkedin.com/in/jonnyzzz">message Eugene Petrenko on LinkedIn&lt;/a> to get access.&lt;/p></description></item><item><title>v0.87.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.87.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.87.0/</guid><description>&lt;div class="success">
-&lt;p>&lt;strong>MCP Steroid v0.87.0 is here!&lt;/strong> This release brings a completely redesigned skills and resources system, automatic modal dialog closing, and important stability fixes.&lt;/p>
+&lt;p>MCP Steroid is distributed as an IntelliJ plugin. Currently, in early access - &lt;a href="https://linkedin.com/in/jonnyzzz">message Eugene Petrenko on LinkedIn&lt;/a> to get access.&lt;/p></description></item><item><title>v0.88.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.88.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.88.0/</guid><description>&lt;div class="success">
+&lt;p>&lt;strong>MCP Steroid v0.88.0 is here!&lt;/strong> This release adds support for IntelliJ 2026.1 EAP, updates the bundled Kotlin compiler to 2.3.10, adds integration tests for IntelliJ IDEA, PyCharm, GoLand, and WebStorm, and delivers debugger improvements and stability fixes.&lt;/p>
+&lt;/div>
+&lt;p>&lt;strong>Release Date:&lt;/strong> February 15, 2026&lt;/p>
+&lt;p>Note: this plugin is currently tested only on macOS.&lt;/p>
+&lt;h2 id="reporting-issues">Reporting issues&lt;/h2>
+&lt;p>Use &amp;ldquo;Collect Logs and Diagnostics Data&amp;rdquo; action in IntelliJ
+to collect information about the problem.
+Review the log file for specific problem.&lt;/p></description></item><item><title>Strategy</title><link>https://mcp-steroid.jonnyzzz.com/docs/strategy/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/strategy/</guid><description>&lt;h2 id="give-ai-the-whole-ide-not-just-the-files">Give AI the whole IDE, not just the files&lt;/h2>
+&lt;p>MCP Steroid makes AI Agents code with IDEs, not just with files. File-only workflows break on real tasks because agents cannot
+run inspections, execute refactorings, launch debugger flows, or use live IDE context and actions. The larger the repository,
+the more research an agent must do &amp;ndash; and the more tokens it burns &amp;ndash; without IDE-level access.&lt;/p>
+&lt;p>MCP Steroid closes that gap by exposing IDE APIs, visual state, and runtime environment from JetBrains IDEs to AI Agents.&lt;/p></description></item><item><title>v0.86.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</guid><description>&lt;div class="success">
+&lt;p>&lt;strong>MCP Steroid v0.86.0&lt;/strong> — First public preview release.&lt;/p>
+&lt;/div>
+&lt;p>&lt;strong>Release Date:&lt;/strong> February 1, 2026&lt;/p>
+&lt;h2 id="preview-release">Preview Release&lt;/h2>
+&lt;p>This is an &lt;strong>early preview version&lt;/strong> of MCP Steroid. Thank you for helping us test and improve the plugin!&lt;/p>
+&lt;div class="warning">
+&lt;p>&lt;strong>Important:&lt;/strong> This preview build has expired. Please &lt;a href="https://mcp-steroid.jonnyzzz.com/releases/0.87.0/">upgrade to v0.87.0&lt;/a>.&lt;/p>
+&lt;/div>
+&lt;p>Note: this preview plugin is currently tested only on macOS.&lt;/p>
+&lt;h2 id="reporting-issues">Reporting issues&lt;/h2>
+&lt;p>Use &amp;ldquo;Collect Logs and Diagnostics Data&amp;rdquo; action in IntelliJ
+to collect information about the problem.
+Review the log file for specific problem.&lt;/p></description></item><item><title>v0.87.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.87.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.87.0/</guid><description>&lt;div class="success">
+&lt;p>&lt;strong>MCP Steroid v0.87.0&lt;/strong> — Redesigned skills and resources system, automatic modal dialog closing, and important stability fixes.&lt;/p>
 &lt;/div>
 &lt;p>&lt;strong>Release Date:&lt;/strong> February 8, 2026&lt;/p>
 &lt;p>Note: this plugin is currently tested only on macOS.&lt;/p>
@@ -14,25 +39,9 @@ to collect information about the problem.
 Review the log file for specific problem.&lt;/p>
 &lt;h2 id="slack-community">Slack Community&lt;/h2>
 &lt;p>Message Eugene on LinkedIn for a Slack invite: &lt;a href="https://linkedin.com/in/jonnyzzz">linkedin.com/in/jonnyzzz&lt;/a>
-Workspace: &lt;a href="https://mcp-steroid.slack.com">mcp-steroid.slack.com&lt;/a>&lt;/p></description></item><item><title>Strategy</title><link>https://mcp-steroid.jonnyzzz.com/docs/strategy/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/strategy/</guid><description>&lt;h2 id="give-ai-the-whole-ide-not-just-the-files">Give AI the whole IDE, not just the files&lt;/h2>
-&lt;p>MCP Steroid makes AI Agents code with IDEs, not just with files. File-only workflows break on real tasks because agents cannot
-run inspections, execute refactorings, launch debugger flows, or use live IDE context and actions. The larger the repository,
-the more research an agent must do &amp;ndash; and the more tokens it burns &amp;ndash; without IDE-level access.&lt;/p>
-&lt;p>MCP Steroid closes that gap by exposing IDE APIs, visual state, and runtime environment from JetBrains IDEs to AI Agents.&lt;/p></description></item><item><title>v0.86.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</guid><description>&lt;div class="warning">
-&lt;p>&lt;strong>A newer version is available!&lt;/strong> &lt;a href="https://mcp-steroid.jonnyzzz.com/releases/0.87.0/">v0.87.0&lt;/a> has been released with significant improvements:&lt;/p>
-&lt;ul>
-&lt;li>Plugin no longer expires — the time-bomb has been removed&lt;/li>
-&lt;li>Automatic modal dialog closing (opt-in)&lt;/li>
-&lt;li>Redesigned skills &amp; resources system&lt;/li>
-&lt;li>Fix for project paths with spaces&lt;/li>
-&lt;li>MCP session stability improvements&lt;/li>
-&lt;li>Reduced storage noise&lt;/li>
-&lt;/ul>
-&lt;p>&lt;strong>&lt;a href="https://mcp-steroid.jonnyzzz.com/releases/0.87.0/">Upgrade to v0.87.0 &amp;rarr;&lt;/a>&lt;/strong>&lt;/p>
-&lt;/div>
-&lt;p>&lt;strong>Release Date:&lt;/strong> February 1, 2026&lt;/p>
-&lt;h2 id="preview-release">Preview Release&lt;/h2>
-&lt;p>This is an &lt;strong>early preview version&lt;/strong> of MCP Steroid. Thank you for helping us test and improve the plugin!&lt;/p></description></item><item><title>Configuration</title><link>https://mcp-steroid.jonnyzzz.com/docs/configuration/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/configuration/</guid><description>&lt;p>MCP Steroid can be configured via IntelliJ&amp;rsquo;s Registry (&lt;code>Help &amp;gt; Find Action &amp;gt; Registry&lt;/code>) or via JVM system properties (&lt;code>-D&lt;/code> flags). All settings use the &lt;code>mcp.steroid.*&lt;/code> prefix.&lt;/p>
+Workspace: &lt;a href="https://mcp-steroid.slack.com">mcp-steroid.slack.com&lt;/a>&lt;/p>
+&lt;p>Direct invite link: &lt;a href="https://join.slack.com/t/mcp-steroid/shared_invite/zt-3p3oq91kx-BXJng8GSXveqncFVYWUcpQ">join.slack.com/t/mcp-steroid/shared_invite/zt-3p3oq91kx-BXJng8GSXveqncFVYWUcpQ&lt;/a>&lt;/p>
+&lt;p>That is the best place to discuss the plugin, ideas, features.&lt;/p></description></item><item><title>Configuration</title><link>https://mcp-steroid.jonnyzzz.com/docs/configuration/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/configuration/</guid><description>&lt;p>MCP Steroid can be configured via IntelliJ&amp;rsquo;s Registry (&lt;code>Help &amp;gt; Find Action &amp;gt; Registry&lt;/code>) or via JVM system properties (&lt;code>-D&lt;/code> flags). All settings use the &lt;code>mcp.steroid.*&lt;/code> prefix.&lt;/p>
 &lt;h2 id="server-settings">Server Settings&lt;/h2>
 &lt;table>
  &lt;thead>

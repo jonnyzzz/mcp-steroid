@@ -1,5 +1,26 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Releases on MCP Steroid - Give AI the whole IDE, not just the files</title><link>https://mcp-steroid.jonnyzzz.com/releases/</link><description>Recent content in Releases on MCP Steroid - Give AI the whole IDE, not just the files</description><generator>Hugo</generator><language>en-us</language><atom:link href="https://mcp-steroid.jonnyzzz.com/releases/index.xml" rel="self" type="application/rss+xml"/><item><title>v0.87.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.87.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.87.0/</guid><description>&lt;div class="success">
-&lt;p>&lt;strong>MCP Steroid v0.87.0 is here!&lt;/strong> This release brings a completely redesigned skills and resources system, automatic modal dialog closing, and important stability fixes.&lt;/p>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Releases on MCP Steroid - Give AI the whole IDE, not just the files</title><link>https://mcp-steroid.jonnyzzz.com/releases/</link><description>Recent content in Releases on MCP Steroid - Give AI the whole IDE, not just the files</description><generator>Hugo</generator><language>en-us</language><atom:link href="https://mcp-steroid.jonnyzzz.com/releases/index.xml" rel="self" type="application/rss+xml"/><item><title>v0.88.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.88.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.88.0/</guid><description>&lt;div class="success">
+&lt;p>&lt;strong>MCP Steroid v0.88.0 is here!&lt;/strong> This release adds support for IntelliJ 2026.1 EAP, updates the bundled Kotlin compiler to 2.3.10, adds integration tests for IntelliJ IDEA, PyCharm, GoLand, and WebStorm, and delivers debugger improvements and stability fixes.&lt;/p>
+&lt;/div>
+&lt;p>&lt;strong>Release Date:&lt;/strong> February 15, 2026&lt;/p>
+&lt;p>Note: this plugin is currently tested only on macOS.&lt;/p>
+&lt;h2 id="reporting-issues">Reporting issues&lt;/h2>
+&lt;p>Use &amp;ldquo;Collect Logs and Diagnostics Data&amp;rdquo; action in IntelliJ
+to collect information about the problem.
+Review the log file for specific problem.&lt;/p></description></item><item><title>v0.86.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</guid><description>&lt;div class="success">
+&lt;p>&lt;strong>MCP Steroid v0.86.0&lt;/strong> — First public preview release.&lt;/p>
+&lt;/div>
+&lt;p>&lt;strong>Release Date:&lt;/strong> February 1, 2026&lt;/p>
+&lt;h2 id="preview-release">Preview Release&lt;/h2>
+&lt;p>This is an &lt;strong>early preview version&lt;/strong> of MCP Steroid. Thank you for helping us test and improve the plugin!&lt;/p>
+&lt;div class="warning">
+&lt;p>&lt;strong>Important:&lt;/strong> This preview build has expired. Please &lt;a href="https://mcp-steroid.jonnyzzz.com/releases/0.87.0/">upgrade to v0.87.0&lt;/a>.&lt;/p>
+&lt;/div>
+&lt;p>Note: this preview plugin is currently tested only on macOS.&lt;/p>
+&lt;h2 id="reporting-issues">Reporting issues&lt;/h2>
+&lt;p>Use &amp;ldquo;Collect Logs and Diagnostics Data&amp;rdquo; action in IntelliJ
+to collect information about the problem.
+Review the log file for specific problem.&lt;/p></description></item><item><title>v0.87.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.87.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.87.0/</guid><description>&lt;div class="success">
+&lt;p>&lt;strong>MCP Steroid v0.87.0&lt;/strong> — Redesigned skills and resources system, automatic modal dialog closing, and important stability fixes.&lt;/p>
 &lt;/div>
 &lt;p>&lt;strong>Release Date:&lt;/strong> February 8, 2026&lt;/p>
 &lt;p>Note: this plugin is currently tested only on macOS.&lt;/p>
@@ -9,18 +30,6 @@ to collect information about the problem.
 Review the log file for specific problem.&lt;/p>
 &lt;h2 id="slack-community">Slack Community&lt;/h2>
 &lt;p>Message Eugene on LinkedIn for a Slack invite: &lt;a href="https://linkedin.com/in/jonnyzzz">linkedin.com/in/jonnyzzz&lt;/a>
-Workspace: &lt;a href="https://mcp-steroid.slack.com">mcp-steroid.slack.com&lt;/a>&lt;/p></description></item><item><title>v0.86.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.86.0/</guid><description>&lt;div class="warning">
-&lt;p>&lt;strong>A newer version is available!&lt;/strong> &lt;a href="https://mcp-steroid.jonnyzzz.com/releases/0.87.0/">v0.87.0&lt;/a> has been released with significant improvements:&lt;/p>
-&lt;ul>
-&lt;li>Plugin no longer expires — the time-bomb has been removed&lt;/li>
-&lt;li>Automatic modal dialog closing (opt-in)&lt;/li>
-&lt;li>Redesigned skills &amp; resources system&lt;/li>
-&lt;li>Fix for project paths with spaces&lt;/li>
-&lt;li>MCP session stability improvements&lt;/li>
-&lt;li>Reduced storage noise&lt;/li>
-&lt;/ul>
-&lt;p>&lt;strong>&lt;a href="https://mcp-steroid.jonnyzzz.com/releases/0.87.0/">Upgrade to v0.87.0 &amp;rarr;&lt;/a>&lt;/strong>&lt;/p>
-&lt;/div>
-&lt;p>&lt;strong>Release Date:&lt;/strong> February 1, 2026&lt;/p>
-&lt;h2 id="preview-release">Preview Release&lt;/h2>
-&lt;p>This is an &lt;strong>early preview version&lt;/strong> of MCP Steroid. Thank you for helping us test and improve the plugin!&lt;/p></description></item></channel></rss>
+Workspace: &lt;a href="https://mcp-steroid.slack.com">mcp-steroid.slack.com&lt;/a>&lt;/p>
+&lt;p>Direct invite link: &lt;a href="https://join.slack.com/t/mcp-steroid/shared_invite/zt-3p3oq91kx-BXJng8GSXveqncFVYWUcpQ">join.slack.com/t/mcp-steroid/shared_invite/zt-3p3oq91kx-BXJng8GSXveqncFVYWUcpQ&lt;/a>&lt;/p>
+&lt;p>That is the best place to discuss the plugin, ideas, features.&lt;/p></description></item></channel></rss>
