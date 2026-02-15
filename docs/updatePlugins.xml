@@ -3,5 +3,46 @@
   <plugin id="com.jonnyzzz.mcp-steroid" url="https://github.com/jonnyzzz/mcp-steroid/releases/download/0.88.0/mcp-steroid-0.88.0-b1747bb.zip" version="0.88.0">
     <idea-version since-build="253"/>
     <name>MCP Steroid</name>
+    <vendor>jonnyzzz.com</vendor>
+    <description><![CDATA[<p><b>MCP Steroid</b> brings the full power of the IntelliJ Platform to AI agents through the Model Context Protocol (MCP).</p>
+<p>IntelliJ platform works for AI agents as great as for human developers.</p>
+<ul>
+<li><b>9 MCP Tools:</b> Control IntelliJ IDEA programmatically — execute code, take screenshots, discover actions, debug, and more</li>
+<li><b>58 MCP Resources:</b> Comprehensive guides covering LSP, IDE operations, debugger, tests, VCS, and more</li>
+<li><b>Vision Capabilities:</b> AI agents can see your IDE with screenshots and OCR</li>
+<li><b>Deep Integration:</b> Access PSI, inspections, refactorings, and full IntelliJ Platform API</li>
+<li><b>Human Oversight:</b> Review and approve code execution with configurable safety controls</li>
+</ul>
+<p>Compatible with all IntelliJ Platform-based IDEs: IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, Rider, and more.</p>
+<p>Requirements: IntelliJ IDEA 2025.3 or newer (build 253 or later).</p>
+<p>Visit <a href="https://mcp-steroid.jonnyzzz.com">mcp-steroid.jonnyzzz.com</a> for documentation and examples.</p>]]></description>
+    <change-notes><![CDATA[<h2>What's New in v0.88.0</h2>
+<h3>IntelliJ 2026.1 EAP Support</h3>
+<p>MCP Steroid now supports IntelliJ 2026.1 EAP IDE versions, with EAP smoke testing infrastructure to ensure compatibility with upcoming IDE releases.</p>
+<h3>Kotlin Compiler 2.3.10</h3>
+<p>The bundled Kotlin compiler has been updated to 2.3.10, aligned with the version shipped in the latest IDE builds.</p>
+<h3>Integration Tests for All Supported IDEs</h3>
+<p>Integration tests now cover IntelliJ IDEA, PyCharm, GoLand, and WebStorm — verifying plugin compatibility across all supported JetBrains IDEs in automated Docker-based test runs.</p>
+<h3>Debugger Improvements</h3>
+<li>New MCP resources for debugger expression evaluation, step-over operations, and run configurations</li>
+<li>Fixed "Collecting data..." race condition in debugger expression evaluation</li>
+<li>Added polling fallback for complex object presentation after step-over</li>
+<h3>Improved Dialog Killer</h3>
+<p>The automatic modal dialog closer has been hardened with better exception handling and EDT threading fixes. Integration tests have been expanded to cover more dialog scenarios.</p>
+<h3>Stability & Bug Fixes</h3>
+<li><b>OCR fixes</b> — Fixed native library loading with macOS dylib alias support and pinned lept4j version for reliable text recognition</li>
+<li><b>Screenshot reliability</b> — Fixed filename collisions by using unique subdirectories</li>
+<li><b>Resource leak fixes</b> — Fixed critical resource leaks in coroutine lifecycle management</li>
+<li><b>MCP server stability</b> — Fixed test restart on same port with configurable test port</li>
+<li><b>Plugin deployment</b> — Fixed unzip to overwrite existing files, enabling test run directory reuse</li>
+<li><b>Docker test fixes</b> — Fixed reaper multi-endpoint connectivity for builder containers</li>
+<h3>Build & Infrastructure</h3>
+<li>Centralized plugin versions and aligned Kotlin version with IDE</li>
+<li>Updated IntelliJ SDK version</li>
+<li>Refactored test infrastructure with extracted LayoutManager, GitDriver, and ConsoleDriver</li>
+<li>Three new debugger integration tests with improved evidence validation</li>
+<li>Enforced no hardcoded MCP resource URIs in source code</li>
+<p>Full release notes: <a href="https://mcp-steroid.jonnyzzz.com/releases/0.88.0/">mcp-steroid.jonnyzzz.com/releases/0.88.0/</a></p>]]></change-notes>
   </plugin>
 </plugins>
+
