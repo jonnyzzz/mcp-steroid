@@ -1101,3 +1101,17 @@ h1 {
     font-size: 0.9rem;
 }
 
+.releases-footer {
+    width: 100%;
+    max-width: 900px;
+    margin-top: 2.5rem;
+}
+
+.releases-footer-title {
+    margin-bottom: 1rem;
+    color: var(--color-secondary);
+}
+
+.releases-footer-grid .doc-card p + p {
+    margin-top: 0.75rem;
+}
