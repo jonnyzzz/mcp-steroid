@@ -3,11 +3,120 @@
 that only see text, MCP Steroid lets agents SEE your IDE: dialogs, toolbars, debugger state, test results, and visual elements.&lt;/p>
 &lt;p>&lt;strong>&lt;a href="https://jonnyzzz.com/blog/2026/01/04/mcp-steroids-intellij/">Read the full introduction →&lt;/a>&lt;/strong>&lt;/p>
 &lt;h2 id="installation">Installation&lt;/h2>
-&lt;p>MCP Steroid is distributed as an IntelliJ plugin. Currently, in early access - &lt;a href="https://linkedin.com/in/jonnyzzz">message Eugene Petrenko on LinkedIn&lt;/a> to get access.&lt;/p></description></item><item><title>Strategy</title><link>https://mcp-steroid.jonnyzzz.com/docs/strategy/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/strategy/</guid><description>&lt;h2 id="give-ai-the-whole-ide-not-just-the-files">Give AI the whole IDE, not just the files&lt;/h2>
+&lt;p>MCP Steroid is distributed as an IntelliJ plugin. Currently, in early access - &lt;a href="https://linkedin.com/in/jonnyzzz">message Eugene Petrenko on LinkedIn&lt;/a> to get access.&lt;/p></description></item><item><title>Support the Project</title><link>https://mcp-steroid.jonnyzzz.com/docs/need-your-experiments-and-support/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/need-your-experiments-and-support/</guid><description>&lt;h2 id="why-community-scenarios-matter">Why community scenarios matter&lt;/h2>
+&lt;p>MCP Steroid improves by learning from real-world usage. The more diverse the repositories,
+languages, and workflows we test against, the more reliable the product becomes for every user.&lt;/p>
+&lt;p>If your repository works in an IntelliJ-based IDE, it is in scope. Support the project and share your scenarios with us.&lt;/p>
+&lt;h2 id="usage-logs-sharing">Usage logs sharing&lt;/h2>
+&lt;p>Beyond full scenario submissions, you can help by sharing your tool call logs.
+The &lt;code>.idea/mcp-steroid&lt;/code> folder in your project contains a log of every tool call
+your AI agent sent to the plugin. This data helps us fine-tune prompts, skills,
+and documentation to make agents more effective.&lt;/p></description></item><item><title>How it works</title><link>https://mcp-steroid.jonnyzzz.com/docs/how-it-works/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/how-it-works/</guid><description>&lt;h2 id="the-pattern">The pattern&lt;/h2>
+&lt;p>&lt;a href="https://modelcontextprotocol.io/">Model Context Protocol&lt;/a> (MCP) is an open standard that lets AI agents call external tools at runtime.
+An &lt;strong>MCP server&lt;/strong> is a program that exposes tools — actions the agent can invoke, with structured inputs and outputs.
+The agent discovers what tools exist, decides which to call, calls them, and acts on the results.&lt;/p>
+&lt;p>This pattern is used across the industry today:&lt;/p>
+&lt;ul>
+&lt;li>&lt;strong>&lt;a href="https://github.com/microsoft/playwright-mcp">Playwright MCP&lt;/a>&lt;/strong> — runs an HTTP server that gives agents control of a real browser: navigate to a URL, click a button, read the accessibility tree, take a screenshot&lt;/li>
+&lt;li>&lt;strong>&lt;a href="https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/">Cloudflare MCP servers&lt;/a>&lt;/strong> — run remote HTTP servers that give agents control of cloud infrastructure: deploy a Worker, query DNS analytics, inspect observability logs&lt;/li>
+&lt;/ul>
+&lt;p>MCP Steroid follows the same pattern — but for the &lt;strong>IDE&lt;/strong>. It runs an HTTP server inside IntelliJ&amp;rsquo;s JVM process and exposes tools that give agents full access to the IDE&amp;rsquo;s understanding of your project.&lt;/p></description></item><item><title>Strategy</title><link>https://mcp-steroid.jonnyzzz.com/docs/strategy/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/strategy/</guid><description>&lt;h2 id="give-ai-the-whole-ide-not-just-the-files">Give AI the whole IDE, not just the files&lt;/h2>
 &lt;p>MCP Steroid makes AI Agents code with IDEs, not just with files. File-only workflows break on real tasks because agents cannot
 run inspections, execute refactorings, launch debugger flows, or use live IDE context and actions. The larger the repository,
 the more research an agent must do &amp;ndash; and the more tokens it burns &amp;ndash; without IDE-level access.&lt;/p>
-&lt;p>MCP Steroid closes that gap by exposing IDE APIs, visual state, and runtime environment from JetBrains IDEs to AI Agents.&lt;/p></description></item><item><title>Configuration</title><link>https://mcp-steroid.jonnyzzz.com/docs/configuration/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/configuration/</guid><description>&lt;p>MCP Steroid can be configured via IntelliJ&amp;rsquo;s Registry (&lt;code>Help &amp;gt; Find Action &amp;gt; Registry&lt;/code>) or via JVM system properties (&lt;code>-D&lt;/code> flags). All settings use the &lt;code>mcp.steroid.*&lt;/code> prefix.&lt;/p>
+&lt;p>MCP Steroid closes that gap by exposing IDE APIs, visual state, and runtime environment from JetBrains IDEs to AI Agents.&lt;/p></description></item><item><title>Project Assessment — 2026-02-22</title><link>https://mcp-steroid.jonnyzzz.com/docs/project-assessment-2026-02-22/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/project-assessment-2026-02-22/</guid><description>&lt;h2 id="project-identity">Project Identity&lt;/h2>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Field&lt;/th>
+ &lt;th>Value&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;strong>Product&lt;/strong>&lt;/td>
+ &lt;td>MCP Steroid — IntelliJ Platform plugin&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Current Version&lt;/strong>&lt;/td>
+ &lt;td>0.88.0&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>What It Does&lt;/strong>&lt;/td>
+ &lt;td>Exposes full IntelliJ IDE APIs to AI agents (Claude, Codex, Gemini) via Model Context Protocol (MCP), enabling agents to write, compile, debug, refactor, and test code through the IDE rather than raw file editing&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Creator&lt;/strong>&lt;/td>
+ &lt;td>Eugene Petrenko (jonnyzzz)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Website&lt;/strong>&lt;/td>
+ &lt;td>&lt;a href="https://mcp-steroid.jonnyzzz.com/">mcp-steroid.jonnyzzz.com&lt;/a>&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Target Platform&lt;/strong>&lt;/td>
+ &lt;td>IntelliJ IDEA 2025.3+ (GoLand, WebStorm expansion underway)&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;hr>
+&lt;h2 id="development-velocity--effort">Development Velocity &amp;amp; Effort&lt;/h2>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Metric&lt;/th>
+ &lt;th>Value&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;strong>Project age&lt;/strong>&lt;/td>
+ &lt;td>75 days (Dec 10, 2025 — Feb 22, 2026)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Total commits&lt;/strong>&lt;/td>
+ &lt;td>1,306&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Active development days&lt;/strong>&lt;/td>
+ &lt;td>52 of 75 (69% utilization)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Avg commits per active day&lt;/strong>&lt;/td>
+ &lt;td>~25&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Peak velocity&lt;/strong>&lt;/td>
+ &lt;td>100 commits in 3 days (Feb 20-22)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Contributors&lt;/strong>&lt;/td>
+ &lt;td>1 human developer + automated bots&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Releases&lt;/strong>&lt;/td>
+ &lt;td>2 tagged (0.87.0, 0.88.0) + 1 snapshot&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Total lines inserted&lt;/strong>&lt;/td>
+ &lt;td>391,197&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Active roadmap&lt;/strong>&lt;/td>
+ &lt;td>1,935 lines across TODO files&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;p>Development pattern: solo developer operating at extremely high velocity with sustained daily commitment. The 25 commits/day average with atomic, descriptive messages indicates a disciplined, professional workflow.&lt;/p></description></item><item><title>Reinforced Learning Approach</title><link>https://mcp-steroid.jonnyzzz.com/docs/learning-methodology/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/learning-methodology/</guid><description>&lt;h2 id="why-this-exists">Why this exists&lt;/h2>
+&lt;p>MCP Steroid targets fast-changing AI Agents on fast-changing IntelliJ-based IDE platform. Static documentation alone
+is not enough. We need a repeatable loop that measures what works, what fails, and what should change next.&lt;/p>
+&lt;p>We treat the MCP server itself as a always improving product, that learn from usages. Every prompt, skill description, and tool schema is
+refined through data-driven iteration &amp;ndash; a user manual designed specifically for AI Agents, our primary audience.&lt;/p></description></item><item><title>Connect your AI Agents</title><link>https://mcp-steroid.jonnyzzz.com/docs/settings-connection-info/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/settings-connection-info/</guid><description>&lt;blockquote>
+&lt;p>&lt;strong>Available from 0.89.0.&lt;/strong> Earlier versions only show connection info while a project is open.&lt;/p>
+&lt;/blockquote>
+&lt;h2 id="overview">Overview&lt;/h2>
+&lt;p>MCP Steroid includes a built-in &lt;strong>Settings panel&lt;/strong> that always shows your server&amp;rsquo;s connection details — server URL, ready-to-paste CLI commands for Claude, Codex, and Gemini, and a full JSON config block you can drop directly into your MCP client&amp;rsquo;s config file.&lt;/p>
+&lt;p>Starting from &lt;strong>0.89.0&lt;/strong>, the MCP server starts as soon as IntelliJ starts — before any project opens. The Settings page reflects this: the connection URL is always there, whether or not you have a project open.&lt;/p></description></item><item><title>MCP Steroid Configuration</title><link>https://mcp-steroid.jonnyzzz.com/docs/configuration/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/configuration/</guid><description>&lt;p>MCP Steroid can be configured via IntelliJ&amp;rsquo;s Registry (&lt;code>Help &amp;gt; Find Action &amp;gt; Registry&lt;/code>) or via JVM system properties (&lt;code>-D&lt;/code> flags). All settings use the &lt;code>mcp.steroid.*&lt;/code> prefix.&lt;/p>
 &lt;h2 id="server-settings">Server Settings&lt;/h2>
 &lt;table>
  &lt;thead>
@@ -140,20 +249,13 @@ the more research an agent must do &amp;ndash; and the more tokens it burns &amp
 &lt;/table>
 &lt;hr>
 &lt;h2 id="dialog-killer">Dialog Killer&lt;/h2>
-&lt;p>The &lt;strong>Dialog Killer&lt;/strong> feature automatically closes modal dialogs before code execution. This prevents execution failures when dialogs (like Settings, refactoring confirmations, or error messages) are blocking the IDE.&lt;/p></description></item><item><title>Learning Methodology</title><link>https://mcp-steroid.jonnyzzz.com/docs/learning-methodology/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/learning-methodology/</guid><description>&lt;h2 id="why-this-exists">Why this exists&lt;/h2>
-&lt;p>MCP Steroid targets fast-changing AI Agents on fast-changing IntelliJ-based IDE platform. Static documentation alone
-is not enough. We need a repeatable loop that measures what works, what fails, and what should change next.&lt;/p>
-&lt;p>We treat the MCP server itself as a always improving product, that learn from usages. Every prompt, skill description, and tool schema is
-refined through data-driven iteration &amp;ndash; a user manual designed specifically for AI Agents, our primary audience.&lt;/p></description></item><item><title>How to Debug an IDE (for AI Agents)</title><link>https://mcp-steroid.jonnyzzz.com/docs/how-to-debug-ide/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/how-to-debug-ide/</guid><description>&lt;blockquote>
+&lt;p>The &lt;strong>Dialog Killer&lt;/strong> feature automatically closes modal dialogs before code execution. This prevents execution failures when dialogs (like Settings, refactoring confirmations, or error messages) are blocking the IDE.&lt;/p></description></item><item><title>Review AI Code Execution</title><link>https://mcp-steroid.jonnyzzz.com/docs/code-review/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/code-review/</guid><description>&lt;blockquote>
+&lt;p>&lt;strong>Available from 0.89.0.&lt;/strong> Earlier versions did not include the always-on server or per-project review settings in Settings.&lt;/p>
+&lt;/blockquote>
+&lt;h2 id="overview">Overview&lt;/h2>
+&lt;p>When an AI agent calls &lt;code>steroid_execute_code&lt;/code>, MCP Steroid opens the code in your editor &lt;strong>before running it&lt;/strong> so you can review what the agent is about to execute. A yellow notification banner appears at the top of the editor with three action buttons.&lt;/p>
+&lt;p>You are always in control. No code runs without your approval.&lt;/p></description></item><item><title>Debugging IDE with MCP Steroid</title><link>https://mcp-steroid.jonnyzzz.com/docs/how-to-debug-ide/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/how-to-debug-ide/</guid><description>&lt;blockquote>
 &lt;p>&lt;strong>This documentation was written entirely by AI agents&lt;/strong> using MCP Steroid while working on the IntelliJ Platform codebase. It demonstrates what autonomous AI agents can discover and document when given full IDE access through MCP Steroid.&lt;/p>
 &lt;p>&lt;strong>Note:&lt;/strong> Specific plugin names, paths, and internal details have been redacted. Replace placeholders like &lt;code>YOUR_PLUGIN_ID&lt;/code>, &lt;code>YourAction&lt;/code>, and example paths with your actual values.&lt;/p>
 &lt;/blockquote>
-&lt;p>&lt;strong>Guide for AI Agents:&lt;/strong> Debugging IntelliJ-based IDEs (CLion, IDEA, Rider, etc.) using IntelliJ&amp;rsquo;s debugger&lt;/p></description></item><item><title>Need Your Experiments and Support</title><link>https://mcp-steroid.jonnyzzz.com/docs/need-your-experiments-and-support/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/docs/need-your-experiments-and-support/</guid><description>&lt;h2 id="why-community-scenarios-matter">Why community scenarios matter&lt;/h2>
-&lt;p>MCP Steroid improves by learning from real-world usage. The more diverse the repositories,
-languages, and workflows we test against, the more reliable the product becomes for every user.&lt;/p>
-&lt;p>If your repository works in an IntelliJ-based IDE, it is in scope. Support the project and share your scenarios with us.&lt;/p>
-&lt;h2 id="usage-logs-sharing">Usage logs sharing&lt;/h2>
-&lt;p>Beyond full scenario submissions, you can help by sharing your tool call logs.
-The &lt;code>.idea/mcp-steroid&lt;/code> folder in your project contains a log of every tool call
-your AI agent sent to the plugin. This data helps us fine-tune prompts, skills,
-and documentation to make agents more effective.&lt;/p></description></item></channel></rss>
+&lt;p>&lt;strong>Guide for AI Agents:&lt;/strong> Debugging IntelliJ-based IDEs (CLion, IDEA, Rider, etc.) using IntelliJ&amp;rsquo;s debugger&lt;/p></description></item></channel></rss>

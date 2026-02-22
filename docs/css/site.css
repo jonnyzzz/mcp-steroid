@@ -898,6 +898,21 @@ h1 {
 .docs-sidebar li {
     margin-bottom: 0.5rem;
 }
+.sidebar-group {
+    margin-bottom: 0.5rem;
+}
+.sidebar-group + .sidebar-group {
+    margin-top: 1.25rem;
+}
+.sidebar-group-label {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--color-quaternary);
+    margin-bottom: 0.35rem;
+    padding-left: 1rem;
+}
 .docs-sidebar a {
     color: var(--color-tertiary);
     text-decoration: none;
@@ -1061,12 +1076,30 @@ h1 {
     font-size: 1.1rem;
     line-height: 1.6;
 }
-.docs-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.5rem;
+.docs-groups {
     width: 100%;
     max-width: 900px;
+}
+.docs-group-section {
+    margin-bottom: 2rem;
+}
+.docs-group-section + .docs-group-section {
+    margin-top: 2.5rem;
+}
+.docs-group-heading {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--color-quaternary);
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.docs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    width: 100%;
 }
 .doc-card {
     background: rgba(255, 255, 255, 0.05);
@@ -1082,7 +1115,8 @@ h1 {
     box-shadow: 0 10px 40px rgba(107, 87, 255, 0.2);
     text-decoration: none;
 }
-.doc-card h2 {
+.doc-card h2,
+.doc-card h3 {
     font-size: 1.25rem;
     margin-bottom: 0.75rem;
     color: var(--color-primary);
