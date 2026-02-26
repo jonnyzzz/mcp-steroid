@@ -292,4 +292,11 @@ Workspace: &lt;a href="https://mcp-steroid.slack.com">mcp-steroid.slack.com&lt;/
 &lt;h2 id="reporting-issues">Reporting issues&lt;/h2>
 &lt;p>Use &amp;ldquo;Collect Logs and Diagnostics Data&amp;rdquo; action in IntelliJ
 to collect information about the problem.
-Review the log file for specific problem.&lt;/p></description></item></channel></rss>
+Review the log file for specific problem.&lt;/p></description></item><item><title>v0.89.0</title><link>https://mcp-steroid.jonnyzzz.com/releases/0.89.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://mcp-steroid.jonnyzzz.com/releases/0.89.0/</guid><description>&lt;div class="success">
+&lt;p>&lt;strong>MCP Steroid v0.89.0 is here!&lt;/strong> This release adds Codex agent output support, overhauls the prompt system, introduces DPAIA arena testing infrastructure, refactors Docker test infrastructure, and adds a new settings UI.&lt;/p>
+&lt;/div>
+&lt;p>&lt;strong>Release Date:&lt;/strong> February 26, 2026&lt;/p>
+&lt;p>Note: this plugin is currently tested only on macOS.&lt;/p>
+&lt;h2 id="demo-codex-debugs-in-intellij-idea">Demo: Codex Debugs in IntelliJ IDEA&lt;/h2>
+&lt;iframe width="560" height="315" src="https://www.youtube.com/embed/HtDDNyAoLak" frameborder="0" allowfullscreen>&lt;/iframe>
+&lt;p>In this video, Codex debugs an application in IntelliJ IDEA. The demo is powered by the MCP Steroid plugin for IntelliJ-based IDEs.&lt;/p></description></item></channel></rss>
