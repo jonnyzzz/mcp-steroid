@@ -1,23 +1,25 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.execution
 
-import com.intellij.diagnostic.AbstractMessage
-import com.intellij.diagnostic.MessagePool
-import com.intellij.diagnostic.MessagePoolListener
 import com.intellij.ide.plugins.PluginUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.util.ExceptionUtil
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Handler
+import java.util.logging.Level
+import java.util.logging.LogRecord
+import java.util.logging.Logger
 
 /**
- * Captured exception information from the IDE's error system.
+ * Captured exception information from the IDE's logger error pipeline.
  */
 data class CapturedIdeException(
     val timestamp: Instant,
@@ -28,9 +30,9 @@ data class CapturedIdeException(
 )
 
 /**
- * Application-level service that captures IDE exceptions via MessagePool.
+ * Application-level service that captures IDE exceptions from the [Logger].
  *
- * This service registers a MessagePoolListener lazily on first use and emits
+ * This service installs a j.u.l. [Handler] on the root logger lazily on first use and emits
  * exceptions to a SharedFlow with no buffer - only active subscribers receive
  * exceptions at the moment they occur.
  *
@@ -45,10 +47,11 @@ data class CapturedIdeException(
  * }
  * ```
  */
-@Suppress("UnstableApiUsage")
 @Service(Service.Level.APP)
 class ExceptionCaptureService : Disposable {
     private val initialized = AtomicBoolean(false)
+    private val rootLogger = Logger.getLogger("")
+    private val handler = CapturingIdeErrorsHandler(::captureException)
 
     /**
      * SharedFlow of captured IDE exceptions.
@@ -56,7 +59,8 @@ class ExceptionCaptureService : Disposable {
      */
     private val _exceptions = MutableSharedFlow<CapturedIdeException>(
         replay = 0,
-        extraBufferCapacity = 0
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
     /**
@@ -69,33 +73,26 @@ class ExceptionCaptureService : Disposable {
             return _exceptions.asSharedFlow()
         }
 
-    private val listener = object : MessagePoolListener {
-        override fun beforeEntryAdded(message: AbstractMessage): Boolean {
-            captureException(message)
-            // Return true to allow normal processing (show in IDE error dialog)
-            return true
-        }
-
-        override fun newEntryAdded() {
-            // Not needed - we capture in beforeEntryAdded
-        }
-    }
-
     private fun ensureInitialized() {
         if (initialized.compareAndSet(false, true)) {
-            runCatching { registerListener() }
+            try {
+                registerJulHandler()
+            } catch (e: ProcessCanceledException) {
+                initialized.set(false)
+                throw e
+            } catch (e: Exception) {
+                initialized.set(false)
+                thisLogger().warn("Failed to install IDE exception capture JUL handler", e)
+            }
         }
     }
 
-    private fun registerListener() {
-        MessagePool.getInstance().addListener(listener)
-        Disposer.register(this) {
-            MessagePool.getInstance().removeListener(listener)
-        }
+    private fun registerJulHandler() {
+        rootLogger.addHandler(handler)
     }
 
-    private fun captureException(message: AbstractMessage) {
-        val throwable = message.throwable
+    private fun captureException(record: LogRecord) {
+        val throwable = record.thrown ?: return
         val stacktrace = ExceptionUtil.getThrowableText(throwable)
 
         // Try to find the plugin that caused the exception
@@ -104,14 +101,17 @@ class ExceptionCaptureService : Disposable {
         }.getOrNull()
 
         var msg = ""
-        message.message?.let {
-            msg += "\n$it"
+        record.message?.let {
+            msg += it
         }
         if (msg.isNotEmpty()) {
             msg += ": "
         }
         throwable.message?.let {
             msg += it
+        }
+        if (record.parameters.isNotEmpty()) {
+            msg += "\n" + record.parameters.joinToString(", ")
         }
 
         val captured = CapturedIdeException(
@@ -126,5 +126,25 @@ class ExceptionCaptureService : Disposable {
         _exceptions.tryEmit(captured)
     }
 
-    override fun dispose() = Unit
+    override fun dispose() {
+        rootLogger.removeHandler(handler)
+    }
+}
+
+private class CapturingIdeErrorsHandler(private val onRecord: (LogRecord) -> Unit) : Handler() {
+    init {
+        level = Level.SEVERE
+    }
+
+    override fun publish(record: LogRecord?) {
+        if (record == null) return
+        if (!isLoggable(record)) return
+        if (record.thrown == null) return
+
+        onRecord(record)
+    }
+
+    override fun flush() = Unit
+
+    override fun close() = Unit
 }
