@@ -13,6 +13,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.File
@@ -34,6 +35,11 @@ import java.util.concurrent.TimeUnit
  *
  * To run a specific test case, set the system property:
  *   -Darena.test.instanceId=dpaia__empty__maven__springboot3-3
+ *
+ * To run only specific agents (comma-separated), set:
+ *   -Darena.test.agents=claude
+ *   -Darena.test.agents=claude,gemini
+ * When omitted, all agents run.
  *
  * To run a single agent+mode:
  *   --tests '*DpaiaArenaTest.claude with mcp'
@@ -85,6 +91,15 @@ class DpaiaArenaTest {
     // ── Test execution ───────────────────────────────────────────────────────
 
     private fun runArenaTest(agentName: String, withMcp: Boolean) {
+        val enabledAgents = System.getProperty("arena.test.agents")
+            ?.split(",")
+            ?.map { it.trim().lowercase() }
+            ?.filter { it.isNotEmpty() }
+        Assumptions.assumeTrue(
+            enabledAgents == null || agentName.lowercase() in enabledAgents,
+            "Agent '$agentName' not in arena.test.agents=${enabledAgents?.joinToString(",")}"
+        )
+
         val testCase = resolvedTestCase
         val modeLabel = if (withMcp) "mcp" else "none"
         val caseConfig = DpaiaCuratedCases.CASE_CONFIGS[testCase.instanceId]
