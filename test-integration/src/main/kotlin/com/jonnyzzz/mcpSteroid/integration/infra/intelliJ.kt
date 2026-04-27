@@ -22,6 +22,8 @@ class IntelliJDriver(
     private val guestDir: String,
     val ideProduct: IdeProduct,
     private val skipChangedFilesScanOnStartup: Boolean = false,
+    private val disableProjectTrustChecks: Boolean = true,
+    private val trustAllProjectPaths: Boolean = true,
 ) {
     private val intelliJGuestHomeDir = "/opt/idea"
     // Keep project sources on container-local filesystem (not host-mounted volume)
@@ -116,7 +118,8 @@ class IntelliJDriver(
                 !idea.isRunning() || (logFile.exists() && logFile.length() > 0L)
             }
             logFile.exists() && logFile.length() > 0L
-        } catch (_: Throwable) {
+        } catch (e: Exception) {
+            driver.log("Timed out waiting for ${ideProduct.displayName} log file: ${e.message}")
             false
         }
 
@@ -200,7 +203,9 @@ class IntelliJDriver(
             appendLine("-DJETBRAINS_LICENSE_SERVER=https://flsv1.labs.jb.gg")
             appendLine()
             appendLine("# Skip EULA, consent dialogs, trust prompts, and onboarding")
-            appendLine("-Didea.trust.disabled=true")
+            if (disableProjectTrustChecks) {
+                appendLine("-Didea.trust.disabled=true")
+            }
             appendLine("-Djb.consents.confirmation.enabled=false")
             appendLine("-Djb.privacy.policy.text=<!--999.999-->")
             appendLine("-Djb.privacy.policy.ai.assistant.text=<!--999.999-->")
@@ -350,13 +355,15 @@ class IntelliJDriver(
             appendLine("""      </map>""")
             appendLine("""    </option>""")
             appendLine("""  </component>""")
-            appendLine("""  <component name="Trusted.Paths.Settings">""")
-            appendLine("""    <option name="TRUSTED_PATHS">""")
-            appendLine("""      <list>""")
-            appendLine("""        <option value="/" />""")
-            appendLine("""      </list>""")
-            appendLine("""    </option>""")
-            appendLine("""  </component>""")
+            if (trustAllProjectPaths) {
+                appendLine("""  <component name="Trusted.Paths.Settings">""")
+                appendLine("""    <option name="TRUSTED_PATHS">""")
+                appendLine("""      <list>""")
+                appendLine("""        <option value="/" />""")
+                appendLine("""      </list>""")
+                appendLine("""    </option>""")
+                appendLine("""  </component>""")
+            }
             appendLine("""</application>""")
         }
 

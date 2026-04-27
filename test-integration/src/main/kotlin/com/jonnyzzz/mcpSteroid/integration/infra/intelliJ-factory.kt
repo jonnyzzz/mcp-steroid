@@ -77,6 +77,16 @@ fun IntelliJContainer.Companion.create(
      * Use together with warm snapshot images that already contain project checkout + ide-system.
      */
     reuseProjectFromImage: Boolean = false,
+    /**
+     * Default true keeps ordinary Docker tests immune to trust prompts. Tests that validate
+     * project-trust behavior can set this false and rely on explicit trusted paths.
+     */
+    disableProjectTrustChecks: Boolean = true,
+    /**
+     * Default true mirrors the historical test image setup that trusts every path. Tests that
+     * need an actually-untrusted secondary project can set this false.
+     */
+    trustAllProjectPaths: Boolean = true,
 ): IntelliJContainer {
     val ideProduct = distribution.product
     val selectedDockerBase = if (dockerFileBase == "ide-agent") ideProduct.dockerImageBase else dockerFileBase
@@ -565,6 +575,8 @@ fun IntelliJContainer.Companion.create(
         "$containerMountedPath/intellij",
         ideProduct,
         skipChangedFilesScanOnStartup = reuseProjectFromImage,
+        disableProjectTrustChecks = disableProjectTrustChecks,
+        trustAllProjectPaths = trustAllProjectPaths,
     )
     console.writeInfo("Deploying MCP Steroid plugin...")
     ijDriver.deployPluginToContainer(IdeTestFolders.pluginZip)

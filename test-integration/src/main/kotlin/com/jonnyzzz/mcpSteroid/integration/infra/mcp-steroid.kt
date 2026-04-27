@@ -200,7 +200,7 @@ class McpSteroidDriver(
      * Open a project directory in IntelliJ IDEA via steroid_open_project.
      * Call this during the pre-warm phase (before the measured agent run).
      */
-    fun mcpOpenProject(projectPath: String) {
+    fun mcpOpenProject(projectPath: String, trustProject: Boolean? = true) {
         val sessionId = mcpInitialize()
         val request = buildJsonObject {
             put("jsonrpc", "2.0")
@@ -212,7 +212,9 @@ class McpSteroidDriver(
                     put("task_id", "prewarm-open-project")
                     put("project_path", projectPath)
                     put("reason", "Pre-warm: open arena project before measured agent run")
-                    put("trust_project", true)
+                    if (trustProject != null) {
+                        put("trust_project", trustProject)
+                    }
                 }
             }
         }.toString()
@@ -1078,8 +1080,8 @@ withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
                 timeout = 15,
                 dialogKiller = false,
             )
-        } catch (_: Exception) {
-            // Best-effort — don't fail the wait loop if dialog killing fails
+        } catch (e: Exception) {
+            driver.log("[startup-dialog-killer] Failed to kill startup blocking dialogs: ${e.message}")
         }
     }
 

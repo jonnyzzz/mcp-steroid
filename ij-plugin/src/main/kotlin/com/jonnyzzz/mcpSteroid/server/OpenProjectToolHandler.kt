@@ -1,20 +1,18 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
-import com.intellij.ide.impl.OpenProjectTask
+import com.intellij.ide.GeneralSettings
 import com.intellij.ide.trustedProjects.TrustedProjects
-import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
-import com.intellij.openapi.project.ex.ProjectManagerEx
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
@@ -37,7 +35,8 @@ import java.nio.file.Path
  * the trust dialog.
  */
 class OpenProjectToolHandler : McpRegistrar {
-    private val log = thisLogger()
+    private val logger = thisLogger()
+    private val openProjectLock = Any()
     private val toolDescription = """
         Open a project in the IDE. This tool initiates the project opening process and returns quickly.
 
@@ -104,21 +103,29 @@ class OpenProjectToolHandler : McpRegistrar {
             ?: return errorResult("Missing required parameter: reason")
         val trustProject = args["trust_project"]?.jsonPrimitive?.boolean ?: true
 
-        val projectPath = try {
-            Path.of(projectPathStr)
+        val requestedProjectPath = try {
+            Path.of(projectPathStr).toAbsolutePath().normalize()
         } catch (e: Exception) {
+            logger.warn("Invalid project path: $projectPathStr", e)
             return errorResult("Invalid project path: $projectPathStr - ${e.message}")
         }
 
         // Validate that the path exists
-        if (!Files.exists(projectPath)) {
-            return errorResult("Project path does not exist: $projectPath")
+        if (!Files.isDirectory(requestedProjectPath)) {
+            return errorResult("Project path is not a directory: $requestedProjectPath")
+        }
+
+        val projectPath = try {
+            requestedProjectPath.toRealPath()
+        } catch (e: Exception) {
+            logger.warn("Failed to resolve project path: $requestedProjectPath", e)
+            return errorResult("Failed to resolve project path: $requestedProjectPath - ${e.message}")
         }
 
         // Check if project is already open
         val existingProject = readAction {
             ProjectManager.getInstance().openProjects.find { project ->
-                project.basePath?.let { Path.of(it) == projectPath.toAbsolutePath() } == true
+                project.basePath?.let { Path.of(it).toAbsolutePath().normalize() == projectPath } == true
             }
         }
 
@@ -141,34 +148,15 @@ class OpenProjectToolHandler : McpRegistrar {
             if (trustProject) {
                 log("Trusting project path: $projectPath")
                 TrustedProjects.setProjectTrusted(projectPath, isTrusted = true)
+                check(TrustedProjects.isProjectTrusted(projectPath)) {
+                    "TrustedProjects did not mark path as trusted: $projectPath"
+                }
                 log("Project path trusted successfully")
             }
 
             log("Initiating project open: $projectPath")
-            log("force_new_frame: ${true}")
 
-            // Open the project with proper UI-level initialization
-            // Using runConfigurators=true ensures modules and project structure are loaded
-            withContext(Dispatchers.EDT) {
-                try {
-                    val task = OpenProjectTask.build().copy(
-                        forceOpenInNewFrame = true,
-                        showWelcomeScreen = false,
-                        projectToClose = null,
-                        runConfigurators = true,  // Critical: ensures modules are loaded properly
-                    )
-                    val result = ProjectManagerEx.getInstanceExAsync().openProject(projectPath, task)
-                    if (result != null) {
-                        log.info("Project opened successfully: ${result.name}")
-                    } else {
-                        log.warn("Project opening returned null (may have been cancelled)")
-                    }
-                } catch (e: Exception) {
-                    // Project opening errors are logged to IDE logs
-                    // The client should use screenshots to see the state
-                    log.warn("Project opening failed: ${e.message}", e)
-                }
-            }
+            scheduleProjectOpen(projectPath)
 
             log("Project opening initiated. The process runs in the background.")
             log("")
@@ -190,12 +178,40 @@ class OpenProjectToolHandler : McpRegistrar {
                 log("NOTE: trust_project was false. A 'Trust Project' dialog may appear.")
                 log("      Set trust_project=true to skip the trust dialog.")
             }
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             val message = "Failed to initiate project open: ${e.message}"
+            logger.warn(message, e)
             builder.addTextContent("ERROR: $message").markAsError()
         }
 
         return builder.build()
+    }
+
+    private fun scheduleProjectOpen(projectPath: Path) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            synchronized(openProjectLock) {
+                val settings = GeneralSettings.getInstance()
+                val originalOpenProjectMode = settings.confirmOpenNewProject
+                try {
+                    settings.confirmOpenNewProject = GeneralSettings.OPEN_PROJECT_NEW_WINDOW
+
+                    val result = ProjectManager.getInstance().loadAndOpenProject(projectPath.toString())
+                    if (result != null) {
+                        logger.info("Project opened successfully: ${result.name}")
+                    } else {
+                        logger.warn("Project opening returned null (may have been cancelled): $projectPath")
+                    }
+                } catch (e: ProcessCanceledException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn("Project opening failed: $projectPath - ${e.message}", e)
+                } finally {
+                    settings.confirmOpenNewProject = originalOpenProjectMode
+                }
+            }
+        }
     }
 
     private fun errorResult(message: String) = ToolCallResult(
