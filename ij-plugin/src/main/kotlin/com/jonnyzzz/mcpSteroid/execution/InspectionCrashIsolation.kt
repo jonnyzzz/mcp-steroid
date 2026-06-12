@@ -6,6 +6,7 @@ import com.intellij.codeInspection.LocalInspectionToolSession
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiFile
@@ -70,13 +71,22 @@ class InspectionRunResult(
  * ORIGINAL inspection EP by short name — language applicability filtering, IDs and severity
  * mapping behave exactly as for the undecorated tool.
  *
- * Control-flow exceptions (ProcessCanceledException, CancellationException) are always rethrown
- * and never recorded. After the first failure the tool stops visiting (only the first exception
- * per tool is recorded).
+ * Control-flow and environment exceptions are always rethrown and never recorded:
+ * ProcessCanceledException / CancellationException (cancellation), IndexNotReadyException
+ * (transient dumb mode — a retryable condition of the IDE, not a bug in the tool) and
+ * OutOfMemoryError (the VM heap is exhausted; "recording and continuing" is meaningless and
+ * may itself fail). StackOverflowError and LinkageError stay ISOLATED on purpose — both are
+ * tool-local failure modes (a runaway recursive visitor; a broken plugin classpath) that the
+ * rest of the sweep can and should survive. After the first failure the tool stops visiting
+ * (only the first exception per tool is recorded).
+ *
+ * [onToolFailure] receives the delegate's class so the caller can attribute the logged error
+ * to the crashing inspection's plugin via `PluginException.createByClass` (the platform
+ * convention used by `InspectionEngine.createVisitor`).
  */
 internal class CrashIsolatingLocalInspectionTool(
     private val delegate: LocalInspectionTool,
-    private val onToolFailure: (toolId: String, error: Throwable) -> Unit,
+    private val onToolFailure: (toolId: String, toolClass: Class<*>, error: Throwable) -> Unit,
 ) : LocalInspectionTool() {
 
     @Volatile
@@ -84,10 +94,10 @@ internal class CrashIsolatingLocalInspectionTool(
 
     private fun recordFailure(error: Throwable) {
         failed = true
-        onToolFailure(delegate.shortName, error)
+        onToolFailure(delegate.shortName, delegate.javaClass, error)
     }
 
-    /** Run [block]; rethrow control-flow exceptions, record anything else and return [fallback]. */
+    /** Run [block]; rethrow control-flow/environment exceptions, record anything else and return [fallback]. */
     private inline fun <T> isolating(fallback: T, block: () -> T): T {
         if (failed) return fallback
         return try {
@@ -95,6 +105,13 @@ internal class CrashIsolatingLocalInspectionTool(
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: CancellationException) {
+            throw e
+        } catch (e: IndexNotReadyException) {
+            // Transient dumb mode, not a tool crash — propagate so the caller's smart read
+            // action machinery can retry the sweep under smart mode.
+            throw e
+        } catch (e: OutOfMemoryError) {
+            // VM-fatal: the heap is gone; isolation cannot meaningfully continue.
             throw e
         } catch (e: Throwable) {
             recordFailure(e)
