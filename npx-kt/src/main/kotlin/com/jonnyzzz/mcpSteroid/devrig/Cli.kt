@@ -66,6 +66,12 @@ sealed interface DevrigCommand {
         override val json: Boolean = false,
     ) : DevrigCommand
 
+    data class DevrigCommandInstallPlugin(
+        val id: String? = null,
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
     data class DevrigCommandHelp(
         override val debug: Boolean = false,
         override val json: Boolean = false,
@@ -209,14 +215,35 @@ private class ProjectCommand(
 private class InstallCommand(
     selected: SelectedDevrigCommand,
     parent: DevrigCliktCommand,
-) : DevrigCliktCommand("install", selected, parent) {
-    private val agent by argument("agent")
+) : DevrigCliktCommand("install", selected, parent, invokeWithoutSubcommand = true) {
+    init {
+        subcommands(InstallPluginCommand(selected, this))
+    }
+
+    private val agent by argument("agent").optional()
 
     override fun run() {
         val options = options()
-        val target = AiAgentCli.parse(agent)
+        if (agent == null) {
+            // No agent arg but no subcommands matched: show help
+            select(DevrigCommand.DevrigCommandHelp(debug = options.debug, json = options.json))
+            return
+        }
+        val target = AiAgentCli.parse(agent!!)
             ?: throw UsageError("agent must be one of: claude, codex, gemini")
         select(DevrigCommand.DevrigCommandInstall(target, debug = options.debug, json = options.json))
+    }
+}
+
+private class InstallPluginCommand(
+    selected: SelectedDevrigCommand,
+    parent: DevrigCliktCommand,
+) : DevrigCliktCommand("plugin", selected, parent) {
+    private val id by argument("id").optional()
+
+    override fun run() {
+        val options = options()
+        select(DevrigCommand.DevrigCommandInstallPlugin(id = id, debug = options.debug, json = options.json))
     }
 }
 
@@ -327,6 +354,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandBackendProvision -> runBackendProvisionCommand(command)
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
             is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
+            is DevrigCommand.DevrigCommandInstallPlugin -> runInstallPluginCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

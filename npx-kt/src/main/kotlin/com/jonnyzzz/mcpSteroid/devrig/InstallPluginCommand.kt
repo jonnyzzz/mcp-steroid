@@ -2,9 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
-import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IntelliJPortDiscovery
-import io.ktor.client.HttpClient
 import org.slf4j.LoggerFactory
 import java.io.PrintStream
 import java.nio.file.Files
@@ -17,14 +14,11 @@ import org.apache.commons.compress.archivers.zip.ZipFile
 
 private val log = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.devrig.InstallPluginCommand")
 
-const val INSTALL_PLUGIN_ACTION_ID = "install-plugin"
-
 fun DevrigServices.runInstallPluginCommand(
     command: DevrigCommand.DevrigCommandInstallPlugin,
 ): Int = runInstallPluginCommand(
     out = mcpStdout,
     err = System.err,
-    httpClient = commandHttpClient,
     backendId = command.id,
     homePaths = homePaths,
 )
@@ -32,86 +26,44 @@ fun DevrigServices.runInstallPluginCommand(
 fun runInstallPluginCommand(
     out: PrintStream,
     err: PrintStream,
-    httpClient: HttpClient,
     backendId: String?,
     homePaths: HomePaths = resolveHomePaths(),
 ): Int {
-    if (backendId == null) {
-        val ides = scanMarkersOnce(homePaths)
-        val provisionTargets = runBlocking {
-            detectProvisionTargets(httpClient, IntelliJPortDiscovery.DEFAULT_PORT_RANGES)
-        }
-        return runInstallPluginListCommand(out, ides, provisionTargets)
-    }
-
     val ides = scanMarkersOnce(homePaths)
-    val provisionTargets = runBlocking {
-        detectProvisionTargets(httpClient, IntelliJPortDiscovery.DEFAULT_PORT_RANGES)
+
+    if (backendId == null) {
+        return runInstallPluginListCommand(out, ides)
     }
 
-    val targetIde = resolveIdeForInstall(ides, provisionTargets, backendId)
+    val target = resolveMarkerIde(ides, backendId)
         ?: return runInstallPluginErrorMessage(out, "Unknown IDE target '$backendId'. Run 'devrig install plugin' with no id to list available.")
 
-    return runInstallPluginInstall(out, err, targetIde)
+    return runInstallPluginInstall(out, err, target)
 }
 
-private fun resolveIdeForInstall(
+private fun resolveMarkerIde(
     ides: Set<DiscoveredIde>,
-    provisionTargets: List<ProvisionTarget>,
     backendId: String,
-): InstallTarget? {
-    // Try pid-based id format: "pid-12345"
-    val pidSuffix = backendId.removePrefix("pid-")
-    if (pidSuffix != backendId) {
-        val targetPid = pidSuffix.toLongOrNull() ?: return null
-        val ide = ides.find { it.pid == targetPid }
-        if (ide != null) {
-            return InstallTarget.Marker(ide)
-        }
-    }
-
-    // Try port-based id format: "port-63342"
-    val portSuffix = backendId.removePrefix("port-")
-    if (portSuffix != backendId) {
-        val port = portSuffix.toIntOrNull() ?: return null
-        val target = provisionTargets.find { it.id == backendId }
-        if (target != null) {
-            return InstallTarget.Port(target.ide)
-        }
-    }
-
-    return null
+): DiscoveredIde? {
+    val pid = backendId.removePrefix("pid-").toLongOrNull() ?: return null
+    return ides.find { it.pid == pid }
 }
 
 fun runInstallPluginListCommand(
     out: PrintStream,
     ides: Set<DiscoveredIde>,
-    provisionTargets: List<ProvisionTarget>,
 ): Int {
-    val targets = buildList {
-        ides.forEach { ide ->
-            add(InstallTarget.Marker(ide))
-        }
-        provisionTargets.forEach { target ->
-            add(InstallTarget.Port(target.ide))
-        }
-    }
-
-    if (targets.isEmpty()) {
+    if (ides.isEmpty()) {
         out.println("No running IDEs discovered.")
         out.println()
-        return 64
+        return 0
     }
 
     out.println("Discovered IDEs for plugin installation:")
     out.println()
-    for ((index, target) in targets.withIndex()) {
-        val label = when (target) {
-            is InstallTarget.Marker -> "${target.ide.label}"
-            is InstallTarget.Port -> "${target.ide.label} (port-discovered)"
-        }
-        out.println("  [${index + 1}] ${label}")
-        out.println("        run: devrig install plugin ${backendIdForTarget(target)}")
+    for ((index, ide) in ides.sortedBy { it.pid }.withIndex()) {
+        out.println("  [${index + 1}] ${ide.label}")
+        out.println("        run: devrig install plugin pid-${ide.pid}")
     }
     out.println()
     return 0
@@ -123,30 +75,13 @@ private fun runInstallPluginErrorMessage(out: PrintStream, message: String): Int
     return 64
 }
 
-private sealed interface InstallTarget {
-    val pid: Long
-    val ideLabel: String
-
-    data class Marker(val ide: DiscoveredIde) : InstallTarget {
-        override val pid: Long get() = ide.pid
-        override val ideLabel: String get() = ide.label
-    }
-
-    data class Port(val ide: DiscoveredIdeByPort) : InstallTarget {
-        override val pid: Long get() = ide.port.toLong()
-        override val ideLabel: String get() = ide.label
-    }
-}
-
 private fun runInstallPluginInstall(
     out: PrintStream,
     err: PrintStream,
-    target: InstallTarget,
+    ide: DiscoveredIde,
 ): Int {
-    val pluginsDir = when (target) {
-        is InstallTarget.Marker -> resolvePluginsDirForMarker(target.ide)
-        is InstallTarget.Port -> null // Port-discovered IDEs need the plugin to already be running
-    } ?: return 64
+    val pluginsDir = resolvePluginsDirForMarker(ide)
+        ?: return runInstallPluginErrorMessage(out, "Could not resolve plugins directory for ${ide.label}.")
 
     val pluginZip = DevrigRoot.ijPluginZip()
     if (!Files.isRegularFile(pluginZip)) {
@@ -156,17 +91,16 @@ private fun runInstallPluginInstall(
 
     val pluginDestDir = pluginsDir.resolve("mcp-steroid")
 
-    // Check if already installed
     if (pluginDestDir.isDirectory() && (pluginDestDir.resolve("lib").isDirectory() || pluginDestDir.resolve("EULA").isRegularFile())) {
-        out.println("MCP Steroid plugin already installed in ${target.ideLabel}.")
-        out.println("  Location: ${pluginDestDir}")
+        out.println("MCP Steroid plugin already installed in ${ide.label}.")
+        out.println("  Location: $pluginDestDir")
         out.println()
         return 0
     }
 
-    out.println("Installing MCP Steroid plugin into ${target.ideLabel}...")
+    out.println("Installing MCP Steroid plugin into ${ide.label}...")
     out.println("  Plugin source: $pluginZip")
-    out.println("  Target: ${pluginDestDir}")
+    out.println("  Target: $pluginDestDir")
     out.println()
 
     try {
@@ -174,7 +108,7 @@ private fun runInstallPluginInstall(
         out.println("Plugin installed successfully.")
         out.println()
         out.println("Restart the IDE to load the plugin.")
-        out.println("Then run: devrig backend provision ${backendIdForTarget(target)} to register it.")
+        out.println("Then run: devrig backend provision pid-${ide.pid}")
         return 0
     } catch (e: Exception) {
         err.println("Failed to install plugin: ${e.message}")
@@ -183,7 +117,6 @@ private fun runInstallPluginInstall(
 }
 
 private fun resolvePluginsDirForMarker(ide: DiscoveredIde): Path? {
-    // Read the discovery JSON file for marker-discovered IDEs
     val markerPath = Path.of(ide.markerPath)
     val discoveryDir = markerPath.parent.parent.resolve("discovery")
     val discoveryFile = discoveryDir.resolve("${ide.pid}-ide-instance.json")
@@ -224,9 +157,4 @@ private fun unpackPluginZip(source: Path, target: Path) {
             }
         }
     }
-}
-
-private fun backendIdForTarget(target: InstallTarget): String = when (target) {
-    is InstallTarget.Marker -> "pid-${target.ide.pid}"
-    is InstallTarget.Port -> "port-${target.ide.port}"
 }

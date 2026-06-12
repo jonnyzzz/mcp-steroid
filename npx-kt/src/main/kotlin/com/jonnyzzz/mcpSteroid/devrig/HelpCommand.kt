@@ -24,10 +24,16 @@ fun printHelp(out: PrintStream) : Int {
                                          `--json` emits a single machine-readable
                                          object on stdout; default is human text.
 
-          devrig install claude|codex|gemini
-                                         register this devrig binary as the
-                                         mcp-steroid stdio MCP server in the
-                                         selected coding agent.
+devrig install claude|codex|gemini
+                                          register this devrig binary as the
+                                          mcp-steroid stdio MCP server in the
+                                          selected coding agent.
+
+           devrig install plugin [<id>] [--json]
+                                          no id → list discovered IDEs available for
+                                          plugin installation. With id (e.g., pid-12345
+                                          or port-63342), copy the bundled plugin into
+                                          that IDE's config/plugins directory.
 
           devrig backend download [<id>] [--version <v>] [--json]
                                          no id → list IDEs available for download.

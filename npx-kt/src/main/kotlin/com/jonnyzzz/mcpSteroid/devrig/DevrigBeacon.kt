@@ -68,7 +68,8 @@ class DevrigBeacon(
             is DevrigCommand.DevrigCommandBackendDownload,
             is DevrigCommand.DevrigCommandBackendStart,
             is DevrigCommand.DevrigCommandBackendStop,
-            is DevrigCommand.DevrigCommandBackendProvision -> "backend"
+            is DevrigCommand.DevrigCommandBackendProvision,
+            is DevrigCommand.DevrigCommandInstallPlugin -> "backend"
             is DevrigCommand.DevrigCommandProject -> "project"
             is DevrigCommand.DevrigCommandInstall -> "install"
             is DevrigCommand.DevrigCommandHelp -> null
