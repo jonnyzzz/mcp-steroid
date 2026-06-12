@@ -79,5 +79,6 @@ See [Configuration](/docs/configuration/) for the full list of server settings.
 
 ## Related
 
-- [Getting Started](/docs/getting-started/) — initial plugin setup and first connection
+- [Getting Started](/docs/devrig/) — start with the devrig CLI
+- [Manual plugin installation](/docs/getting-started/) — plugin setup and first connection
 - [Configuration](/docs/configuration/) — registry keys for port and host

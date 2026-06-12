@@ -1,7 +1,7 @@
 ---
-title: "Devrig CLI"
-description: "A standalone CLI that registers MCP Steroid with your AI Agent, bridges it to a running IDE, and can download and start a managed IntelliJ backend"
-weight: 15
+title: "Getting Started"
+description: "Start with the devrig CLI: register MCP Steroid with your AI Agent, bridge it to every running IDE, and download and start a managed IntelliJ backend"
+weight: 10
 group: "Getting Started"
 ---
 
@@ -45,7 +45,11 @@ point at a Java 25 home.
 
 ## Install
 
-Register devrig as the `mcp-steroid` stdio MCP server in your coding agent:
+Download the `devrig-*.zip` from the
+[latest GitHub release](https://github.com/jonnyzzz/mcp-steroid/releases/latest),
+unpack it, and put the `devrig` launcher on your `PATH`.
+
+Then register devrig as the `mcp-steroid` stdio MCP server in your coding agent:
 
 ```bash
 devrig install claude
@@ -162,6 +166,6 @@ devrig backend stop idea-community
 
 ## Next Steps
 
-- [Getting Started](/docs/getting-started/) — install the MCP Steroid plugin and connect your AI Agent
+- [Manual plugin installation](/docs/getting-started/) — install the MCP Steroid plugin into an IDE you already run
 - [Connect your AI Agents](/docs/settings-connection-info/) — server URL and ready-to-paste CLI commands
 - [GitHub Issues](https://github.com/jonnyzzz/mcp-steroid/issues) — report bugs or request features
