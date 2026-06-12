@@ -24,39 +24,10 @@ fun printHelp(out: PrintStream) : Int {
                                          `--json` emits a single machine-readable
                                          object on stdout; default is human text.
 
-          devrig install claude|codex|gemini [--check]
+          devrig install claude|codex|gemini
                                          register this devrig binary as the
                                          mcp-steroid stdio MCP server in the
-                                         selected coding agent. `--check` is a
-                                         read-only dry-run: it reports the current
-                                         registration, the changes install would
-                                         apply, and how many IDE backends with the
-                                         MCP Steroid plugin are reachable; exits 1
-                                         when install would change anything.
-
-          devrig prompt [<uri-or-path>]  no argument → print the root mcp-steroid://
-                                         prompt index (server instructions, the skill
-                                         index article, and a catalog of every
-                                         resource URI). With an argument (full URI,
-                                         'ide/apply-patch', or a unique bare name),
-                                         print that resource to stdout. Uses a running
-                                         IDE's product/version for conditional content
-                                         when one is discovered; otherwise shows all
-                                         content with IDE gates annotated.
-
-          devrig exec-code --project <project_name> --file <script.kt>
-                          [--task-id <id>] [--reason <text>]
-                          [--modal smart_non_modal|non_modal|unleashed]
-                          [--timeout <sec>]
-                                         run the steroid_execute_code tool against a
-                                         running IDE with the Kotlin snippet read
-                                         from --file. Same parameters and defaults
-                                         as the MCP tool; <project_name> as listed
-                                         by 'devrig project'. Progress streams to
-                                         stderr, the result prints to stdout; exits
-                                         non-zero when the script fails (and with a
-                                         distinct code when no IDE/project is
-                                         reachable).
+                                         selected coding agent.
 
           devrig backend download [<id>] [--version <v>] [--json]
                                          no id → list IDEs available for download.

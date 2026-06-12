@@ -190,6 +190,7 @@ class BackendCommandJsonRenderTest {
         assertEquals(true, backend["routable"]?.jsonPrimitive?.boolean)
         assertEquals(true, backend["reachable"]?.jsonPrimitive?.boolean)
         assertEquals(backendDisplayName(row), backend["displayName"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(backendLocatorLabel(row), backend["locator"]?.jsonPrimitive?.contentOrNull)
         assertEquals(1234L, backend["pid"]?.jsonPrimitive?.long)
         assertEquals("IU", backend["ideProductCode"]?.jsonPrimitive?.contentOrNull)
         assertEquals("IU-253.21581.142", backend["build"]?.jsonPrimitive?.contentOrNull)
@@ -197,8 +198,6 @@ class BackendCommandJsonRenderTest {
         // The marker's IdeInfo type stays on the disk/wire side: the agent schema carries the
         // identity only as displayName/build/ideProductCode — no embedded `ide` object.
         assertNull(backend["ide"], "agent schema must not embed the marker IdeInfo: " + backend)
-        // #90: build/pid are the canonical fields — no derived `locator` string repeating them.
-        assertNull(backend["locator"], "locator was dropped from BackendInfo (#90): $backend")
 
         // plugins[] carries one entry tagged kind=mcp-steroid (replaces the old `plugin` block + flag).
         val plugin = backend["plugins"]!!.jsonArray.single().jsonObject
@@ -212,9 +211,8 @@ class BackendCommandJsonRenderTest {
         assertNull(backend["portDetail"], "marker row carries no port detail: $backend")
         assertNull(backend["managedDetail"], "marker row carries no managed detail: $backend")
 
-        // #90: each project serializes exactly once — in the flat top-level projects[], joined to its
-        // backend via backend_name. No embedded per-backend list.
-        assertNull(backend["openProjects"], "openProjects was dropped from BackendInfo (#90): $backend")
+        // The marker's projects are embedded under the backend AND flattened at the top level.
+        assertEquals(1, backend["openProjects"]!!.jsonArray.size)
         val projects = root["projects"]!!.jsonArray
         assertEquals(1, projects.size)
         val p = projects.single().jsonObject
@@ -275,18 +273,16 @@ class BackendCommandJsonRenderTest {
         assertEquals(false, backend["routable"]?.jsonPrimitive?.boolean, "port rows have no bridge: $backend")
         assertEquals(true, backend["reachable"]?.jsonPrimitive?.boolean)
         assertEquals(backendDisplayName(row), backend["displayName"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(backendLocatorLabel(row), backend["locator"]?.jsonPrimitive?.contentOrNull)
         assertEquals(63342, backend["port"]?.jsonPrimitive?.int)
-        assertEquals("IU-253.21581.142", backend["build"]?.jsonPrimitive?.contentOrNull)
-        assertNull(backend["locator"], "locator was dropped from BackendInfo (#90): $backend")
 
         val detail = backend["portDetail"]!!.jsonObject
         assertEquals("http://127.0.0.1:63342", detail["baseUrl"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("IDEA", detail["productName"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("IntelliJ IDEA Ultimate", detail["productFullName"]?.jsonPrimitive?.contentOrNull)
         assertEquals("IU", detail["edition"]?.jsonPrimitive?.contentOrNull)
         assertEquals(253, detail["baselineVersion"]?.jsonPrimitive?.int)
-        // #90: the product name lives only in displayName, the build string only in `build`.
-        assertNull(detail["productName"], "portDetail.productName was dropped (#90): $detail")
-        assertNull(detail["productFullName"], "portDetail.productFullName was dropped (#90): $detail")
-        assertNull(detail["buildNumber"], "portDetail.buildNumber was dropped (#90): $detail")
+        assertEquals("IU-253.21581.142", detail["buildNumber"]?.jsonPrimitive?.contentOrNull)
 
         assertEquals(0, backend["plugins"]!!.jsonArray.size, "port row has no plugins: $backend")
         assertNull(backend["actions"], "actions[] was dropped from BackendInfo: $backend")
@@ -297,13 +293,11 @@ class BackendCommandJsonRenderTest {
     @Test
     fun `port row omits about-fields that came back as null from api-about`() {
         val row = BackendRow.FromPort(portIde(productFullName = null, edition = null, baselineVersion = null))
-        val backend = render(listOf(row))["backends"]!!.jsonArray.single().jsonObject
-        val detail = backend["portDetail"]!!.jsonObject
+        val detail = render(listOf(row))["backends"]!!.jsonArray.single().jsonObject["portDetail"]!!.jsonObject
+        assertNull(detail["productFullName"], "absent fields must NOT serialise as null: $detail")
         assertNull(detail["edition"], "absent fields must NOT serialise as null: $detail")
         assertNull(detail["baselineVersion"], "absent fields must NOT serialise as null: $detail")
-        // With productFullName missing, displayName falls back to the short productName (#90: the
-        // product name lives only in displayName).
-        assertEquals("IDEA", backend["displayName"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("IDEA", detail["productName"]?.jsonPrimitive?.contentOrNull)
     }
 
     // -------------------------- managed variant ----------------------------
@@ -319,17 +313,13 @@ class BackendCommandJsonRenderTest {
         assertEquals(false, backend["routable"]?.jsonPrimitive?.boolean)
         // Managed rows carry no plugin info (no marker yet) — plugins[] must be empty, not absent-by-luck.
         assertEquals(0, backend["plugins"]!!.jsonArray.size)
-        // #90: the canonical fields live at the top level — pid/build/displayName are not repeated
-        // inside managedDetail.
-        assertEquals(44L, backend["pid"]?.jsonPrimitive?.long)
-        assertEquals("IC-252.1", backend["build"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("idea-community 2025.2.6.2", backend["displayName"]?.jsonPrimitive?.contentOrNull)
         val detail = backend["managedDetail"]!!.jsonObject
-        assertEquals(setOf("managedId", "state", "installPath", "cachePath"), detail.keys)
         assertEquals("idea-community-2025.2.6.2", detail["managedId"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("2025.2.6.2", detail["version"]?.jsonPrimitive?.contentOrNull)
         assertEquals("running", detail["state"]?.jsonPrimitive?.contentOrNull)
         assertEquals("/managed/idea-community-2025.2.6.2", detail["installPath"]?.jsonPrimitive?.contentOrNull)
         assertEquals("/caches/idea-community-2025.2.6.2", detail["cachePath"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(44L, detail["runningPid"]?.jsonPrimitive?.long)
     }
 
     // ---------------------------- mixed list -------------------------------

@@ -362,6 +362,7 @@ in its current state.
     {
       "id": "IntelliJ_IDEA_2025.3.3-AbC4Df01",
       "originalName": "IntelliJ IDEA 2025.3.3",
+      "locator": "build IU-261.23567.138, pid 24017",
       "source": "marker",
       "managed": false,
       "reachable": true,
@@ -377,6 +378,7 @@ in its current state.
     {
       "id": "IntelliJ_IDEA_Ultimate-9F8E7D02",
       "originalName": "IntelliJ IDEA Ultimate",
+      "locator": "build 261.24374.151, port 63342",
       "source": "port",
       "managed": false,
       "reachable": true,
@@ -387,6 +389,7 @@ in its current state.
     {
       "id": "idea-community_2025.3.3-1z8KqM03",
       "originalName": "idea-community 2025.3.3",
+      "locator": "managed, installed",
       "source": "managed",
       "managed": true,
       "reachable": false,
@@ -416,7 +419,7 @@ in its current state.
 |---|---|
 | `id` | Exposed backend name. Primary key for devrig backend JSON and CLI commands. The same backend identity is exposed as `backends[].backend_name` in `steroid_list_projects` (both the devrig and the in-IDE MCP surfaces self-describe). |
 | `originalName` | Raw label from the source (marker/port/managed). Display only. |
-| `locator` | **Removed from the JSON in #90** (payload de-dup) — it only repeated build/pid/port/managed state. The human-readable "how do I reach this" hint survives as CLI text rendering only (`markerLocator` / `backendLocatorLabel`). |
+| `locator` | Human-readable "how do I reach this" hint. Never parsed. |
 | `source` | `"marker"` / `"port"` / `"managed"`. |
 | `managed` | `true` if this backend is devrig-managed. |
 | `plugins[]` | Relevant installed plugins, each `{id, name, version, kind}`; `kind` is `"mcp-steroid"` for the MCP Steroid plugin (`"other"` otherwise; room reserved for `"intellij-native-mcp"`). Empty on port/managed rows. A managed backend that is running with the plugin writes a marker and surfaces as `source = marker, managed = true` — it does **not** surface as `source = managed`. The `managed` source is reserved for managed backends that are installed but not running (no marker yet). |

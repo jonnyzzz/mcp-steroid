@@ -19,12 +19,6 @@
     <p>Learn how to install, configure, and use MCP Steroid with your AI Agents.</p>
 </div>
 
-{{ with .Content }}
-<div class="page-content docs-intro">
-    {{ . }}
-</div>
-{{ end }}
-
 {{ $docs := site.GetPage "section" "docs" }}
 {{ $groups := slice "Getting Started" "Vision" "Reference" "Examples" }}
 

@@ -121,34 +121,30 @@ To pick a value:
    - `backend_name` — the value you pass as `backend_name`, an opaque id
      like `"iu-9fk2a0xQ"`.
    - `displayName` — human label, e.g. `"IntelliJ IDEA 2026.1"` (NOT
-     unique across two same-product IDEs — disambiguate via the `pid`,
-     `port`, or `build` fields).
+     unique across two same-product IDEs).
+   - `locator` — disambiguator when two IDEs share a `displayName`
+     (e.g. `"build IU-261.x, pid 1234"`).
    - `routable` — `true` only for IDEs you can actually open into.
    - `plugins[]` — the IDE's relevant plugins, each `{ id, name, version,
      kind }`. A `kind: "mcp-steroid"` entry means the MCP Steroid plugin
      is installed (required for a backend to be routable; check `routable`
      for the final answer — an unreachable IDE keeps the plugin entry but
      is not routable).
+   - `openProjects[]` — `{ project_name, name, path, backend_name }` for
+     every project already open in that backend.
    - `managed` — `true` if this is the devrig-managed sandbox.
-
-   A backend's open projects are NOT embedded in its entry: the flat
-   `projects[]` of the same response carries every open project as
-   `{ project_name, name, path, backend_name }` — filter it by
-   `backend_name` for the per-backend view.
 2. **Prefer the backend that already has the same project — or another
    git worktree of the same repository — open.** Worktrees of one repo
    share build/index/VCS context; opening them in the same IDE keeps that
-   context warm and avoids a redundant second indexing. Match the path
-   you are about to open against `projects[].path` and take the matching
-   entry's `backend_name`. **Longest-path rule:** among all candidate
-   `projects[].path` values that are a prefix of (or equal to) the target
-   path, pick the LONGEST matching path; prefixes count only at path-segment boundaries (/repo/foo is not a candidate for /repo/foobar) — a nested worktree checkout
-   (e.g. `<repo>/.claude/worktrees/<name>`) must resolve to the worktree
-   project, not the parent checkout. If no prefix candidate matches, a
-   backend holding a sibling worktree of the same repository (same repo
-   root / shared `.git`) is still the best pick. Otherwise prefer a
+   context warm and avoids a redundant second indexing. Inspect
+   `backends[].openProjects[].path`: if a backend already holds a sibling
+   worktree of the repo you are about to open (same repo root / shared
+   `.git`), choose that backend's `backend_name`. Otherwise prefer a
    `managed` backend, else any listed backend.
 3. Pass the chosen `backend_name` to `steroid_open_project`.
+
+Each `projects[]` entry also carries `project_name`, the raw folder
+`name`, `path`, and a `backend_name` naming its owning backend.
 
 **Only routable backends are valid — but `backends[]` lists ALL
 backends.** The list includes marker IDEs (even with zero open

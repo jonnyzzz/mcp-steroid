@@ -32,8 +32,6 @@ class DevrigCommandFuzzTest {
                 "backend",
                 "project",
                 "install",
-                "prompt",
-                "ide/apply-patch",
                 "claude",
                 "codex",
                 "gemini",

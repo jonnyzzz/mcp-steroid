@@ -58,6 +58,7 @@ class ListProjectsToolSpecSchemaTest {
             backendName = "iu-9fk2a0xQ",
             source = "marker",
             displayName = "IntelliJ IDEA 2026.1",
+            locator = "build IU-261.x, pid 1234",
             routable = true,
             reachable = true,
             plugins = listOf(
@@ -83,6 +84,7 @@ class ListProjectsToolSpecSchemaTest {
             backendName = "iu-port",
             source = "port",
             displayName = "IntelliJ IDEA",
+            locator = "port 63342",
             routable = false,
             reachable = true,
         )

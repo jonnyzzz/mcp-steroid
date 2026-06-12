@@ -1,7 +1,7 @@
 ---
-title: "Getting Started"
-description: "Start with the devrig CLI: register MCP Steroid with your AI Agent, bridge it to every running IDE, and download and start a managed IntelliJ backend"
-weight: 10
+title: "Devrig CLI"
+description: "A standalone CLI that registers MCP Steroid with your AI Agent, bridges it to a running IDE, and can download and start a managed IntelliJ backend"
+weight: 15
 group: "Getting Started"
 ---
 
@@ -45,28 +45,7 @@ point at a Java 25 home.
 
 ## Install
 
-One command on macOS and Linux:
-
-```bash
-curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh
-```
-
-On Windows (PowerShell):
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex"
-```
-
-The installer downloads the latest devrig release, verifies its SHA-256
-against the GitHub release digest, unpacks it under `~/.mcp-steroid/`, and
-links the launcher at `~/.mcp-steroid/bin/devrig`. Re-running it is safe —
-it converges on the latest release.
-
-**Manual alternative:** download the `devrig-*.zip` from the
-[latest GitHub release](https://github.com/jonnyzzz/mcp-steroid/releases/latest),
-unpack it, and put the `devrig` launcher on your `PATH`.
-
-Then register devrig as the `mcp-steroid` stdio MCP server in your coding agent:
+Register devrig as the `mcp-steroid` stdio MCP server in your coding agent:
 
 ```bash
 devrig install claude
@@ -92,14 +71,10 @@ running, it discovers IDEs and bridges the agent's MCP Steroid calls to them.
 > The legacy spelling `devrig mpc` is still accepted as a hidden alias, so
 > older agent registrations keep working. Use `devrig mcp` for new setups.
 
-### `devrig install claude|codex|gemini [--check]`
+### `devrig install claude|codex|gemini`
 
 Registers this devrig binary as the `mcp-steroid` stdio MCP server in the
-selected agent. With `--check` it becomes a read-only dry-run: it reports the
-current registration, the changes install *would* apply (or "already canonical —
-no changes"), and how many running IDE backends with the MCP Steroid plugin are
-reachable — exiting `1` when a plain `devrig install` would change anything. Use
-it to diagnose a "Failed to connect" registration in one command.
+selected agent.
 
 ### `devrig backend [--json]`
 
@@ -111,30 +86,6 @@ the default is human-readable text.
 
 Lists open projects across all discovered backends. `--json` emits a single
 machine-readable object on stdout; the default is human-readable text.
-
-### `devrig prompt [<uri-or-path>]`
-
-Browses the `mcp-steroid://` prompt resources — the recipe corpus agents fetch via
-`steroid_fetch_resource` — without wiring an agent or a running IDE. With no
-argument it prints the root index: the server instructions, the skill index
-article, and a catalog of every resource URI (the root index *is* the list).
-With an argument (`devrig prompt ide/apply-patch`, a full `mcp-steroid://` URI,
-or a unique bare name) it prints that resource to stdout, so `devrig prompt … |
-less` works. When a running IDE is discovered, IDE-conditional content is
-rendered for that IDE; otherwise everything is shown with its IDE gate annotated
-inline. Unknown paths exit non-zero and suggest nearby resources.
-
-### `devrig exec-code --project <project_name> --file <script.kt> [--task-id <id>] [--reason <text>] [--modal <mode>] [--timeout <sec>]`
-
-Runs the `steroid_execute_code` tool against a running IDE from the command line,
-with the Kotlin snippet read from `--file` — same parameters and defaults as the
-MCP tool, no agent session required. `<project_name>` is the name `devrig
-project` lists. Progress streams to stderr while the script runs; the result
-prints to stdout, so it works in shell scripts and CI smoke checks, and a
-`devrig exec-code --project <name> --file repro.kt` line in a bug report is
-copy-pasteable. Exits
-non-zero when the script fails, with a distinct exit code when no IDE or project
-is reachable.
 
 ### `devrig backend download [<id>] [--version <v>] [--json]`
 
@@ -211,6 +162,6 @@ devrig backend stop idea-community
 
 ## Next Steps
 
-- [Manual plugin installation](/docs/getting-started/) — install the MCP Steroid plugin into an IDE you already run
+- [Getting Started](/docs/getting-started/) — install the MCP Steroid plugin and connect your AI Agent
 - [Connect your AI Agents](/docs/settings-connection-info/) — server URL and ready-to-paste CLI commands
 - [GitHub Issues](https://github.com/jonnyzzz/mcp-steroid/issues) — report bugs or request features

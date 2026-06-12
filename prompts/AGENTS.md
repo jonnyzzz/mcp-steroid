@@ -86,8 +86,7 @@ Short description           ← line 3: plain text, ≤200 chars, no # prefix
 - Line 2: must be blank
 - Description (line 3): non-empty, ≤200 chars, no `#` prefix
 - Line 4: must be blank
-- No bare Kotlin/Java code outside ` ```kotlin``` ` or bare ` ``` ` fences (no other language tags —
-  `testNoNonKotlinFences` rejects every annotated fence except ` ```kotlin `)
+- No bare Kotlin/Java code outside ` ```kotlin``` ` or ` ```text``` ` fences
 
 ### Skill Files
 
@@ -127,10 +126,7 @@ Code inside ` ```kotlin``` ` fences is:
 - Served to MCP clients as executable examples
 
 If code doesn't compile (pseudo-code, undefined vars, plugin-specific APIs not on classpath),
-use a bare ` ``` ` fence (no language tag) instead — bare blocks are treated as plain markdown and
-not compiled. Do NOT use ` ```text``` ` or any other language tag:
-`MarkdownArticleContractTest.testNoNonKotlinFences` rejects every annotated fence except
-` ```kotlin ` (with optional `[FILTER]` annotations).
+use ` ```text``` ` fences instead — text blocks are treated as plain markdown and not compiled.
 
 ## IDE-Conditional Content
 
@@ -214,7 +210,7 @@ If an IDE distribution is not available, the corresponding test skips gracefully
 
 1. Create `prompts/src/main/prompts/{folder}/{name}.md` following the article format
 2. Add ` ```kotlin``` ` blocks for executable examples
-3. Use bare ` ``` ` fences (no language tag) for non-compilable code — ` ```text` ` is rejected by `testNoNonKotlinFences`
+3. Use ` ```text``` ` for non-compilable code
 4. Use `###_IF_IDE[...]_###` for IDE-specific sections
 5. Run `./gradlew :prompt-generator:test` to verify parsing
 6. Run `./gradlew :prompts:compileKotlin` to verify generated code compiles

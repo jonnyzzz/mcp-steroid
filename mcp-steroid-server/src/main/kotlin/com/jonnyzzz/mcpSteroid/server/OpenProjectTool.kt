@@ -61,18 +61,14 @@ class OpenProjectToolSpec(
         InputSchemaElement.param("backend_name")
             .description(
                 "REQUIRED. The backend to open the project in, identified by its `backend_name` from " +
-                    "steroid_list_projects (the `backend_name` of each `projects[]` entry, and of each " +
-                    "`backends[]` entry) — an opaque id like \"iu-9fk2a0xQ\". First call " +
-                    "steroid_list_projects and inspect `backends[]` (displayName, routable, managed); " +
-                    "only `routable: true` entries are valid here. PREFER the backend that already has " +
-                    "the same project — or another git worktree of the same repository — open: match " +
-                    "your target path against the flat `projects[]` (each entry carries `path` + " +
-                    "`backend_name`). Among all candidate `projects[].path` values that are a prefix of " +
-                    "(or equal to) the target path, pick the LONGEST matching path; prefixes count only at path-segment boundaries (/repo/foo is not a candidate for /repo/foobar) — a nested worktree " +
-                    "checkout (e.g. <repo>/.claude/worktrees/<name>) must resolve to the worktree " +
-                    "project, not the parent checkout. Worktrees share build/index/VCS context, so " +
-                    "reusing that IDE avoids a redundant second indexing. Otherwise prefer a `managed` " +
-                    "backend, else any listed backend."
+                    "steroid_list_projects (the `backend_name` of each project, and of each `backends[]` " +
+                    "entry) — an opaque id like \"iu-9fk2a0xQ\". First call steroid_list_projects and inspect " +
+                    "`backends[]` (displayName, locator, routable, openProjects); only `routable: true` " +
+                    "entries are valid here. PREFER the backend that already has the same " +
+                    "project — or another git worktree of the same repository — open (match " +
+                    "backends[].openProjects[].path / shared repo root): worktrees share build/index/VCS " +
+                    "context, so reusing that IDE avoids a redundant second indexing. Otherwise prefer a " +
+                    "`managed` backend, else any listed backend."
             )
             .string()
             .required()
@@ -141,12 +137,9 @@ Dialog Handling:
 This connection can route to more than one running IDE. Call steroid_list_projects first: `backends[]`
 lists ALL backends (including non-routable ones); pass a `routable: true` entry's `backend_name` to
 open the project in that specific IDE. PREFER the backend that already has the same project — or another git worktree of the
-same repository — open: match your target path against the flat `projects[]` (each entry carries
-`path` + its owning `backend_name`). Among all candidate `projects[].path` values that are a prefix
-of (or equal to) the target path, pick the LONGEST matching path; prefixes count only at path-segment boundaries (/repo/foo is not a candidate for /repo/foobar) — a nested worktree checkout (e.g.
-<repo>/.claude/worktrees/<name>) must resolve to the worktree project, not the parent checkout.
-Worktrees share build/index/VCS context, so reusing that IDE keeps the context warm and avoids a
-redundant second indexing. Otherwise prefer a `managed` backend, else any listed backend.
+same repository — open (match backends[].openProjects[].path / a shared repo root): worktrees share
+build/index/VCS context, so reusing that IDE keeps the context warm and avoids a redundant second
+indexing. Otherwise prefer a `managed` backend, else any listed backend.
 
 Managing backends from the agent:
 To list/provision/run backends, call the devrig CLI (the same devrig you run as your MCP server):

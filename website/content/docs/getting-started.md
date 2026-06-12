@@ -1,13 +1,9 @@
 ---
-title: "Manual plugin installation"
-description: "Install the MCP Steroid plugin into an IDE you already run — custom plugin repository, JetBrains Marketplace, or manual ZIP"
-weight: 15
+title: "Getting Started"
+description: "Install and set up MCP Steroid with your AI Agent"
+weight: 10
 group: "Getting Started"
 ---
-
-> **Prefer the devrig CLI.** The recommended path is [Getting Started with devrig](/docs/devrig/) —
-> it registers MCP Steroid with your agent and can provision an IDE for you.
-> Use this page when you want to install the plugin into an IDE you already run yourself.
 
 ## What is MCP Steroid?
 
@@ -18,31 +14,16 @@ that only see text, MCP Steroid lets agents SEE your IDE: dialogs, toolbars, deb
 
 ## Installation
 
+MCP Steroid is distributed as an IntelliJ plugin. Currently, in early access - [message Eugene Petrenko on LinkedIn](https://linkedin.com/in/jonnyzzz) to get access.
+
 ### Requirements
 
 - IntelliJ IDEA 2025.3+ (or any IntelliJ-based IDE: Rider, Android Studio, GoLand, WebStorm, PyCharm, etc.)
 - An MCP-compatible AI Agent (Claude Code, Codex, Gemini, or any MCP client)
 
-### Custom Plugin Repository (Recommended)
+### Install the Plugin
 
-Add the MCP Steroid plugin repository so the IDE installs the plugin and notifies you about updates:
-
-1. In IntelliJ, go to **Settings > Plugins > Gear icon > Manage Plugin Repositories...**
-2. Add `https://mcp-steroid.jonnyzzz.com/updatePlugins.xml`
-3. Back in **Plugins > Marketplace**, search for **MCP Steroid** and install it
-4. Restart IntelliJ
-
-### JetBrains Marketplace
-
-MCP Steroid is also published on the
-[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30019-mcp-steroid).
-Search for **MCP Steroid** in **Settings > Plugins > Marketplace** and install it.
-Note that Marketplace review can lag a few days behind the latest release;
-the custom plugin repository above always serves the newest build.
-
-### Manual ZIP Install
-
-1. Download the plugin ZIP (`mcp-steroid-*.zip`) from the [latest GitHub release](https://github.com/jonnyzzz/mcp-steroid/releases/latest) — see also the [releases page](/releases/)
+1. Download the plugin ZIP file (provided via LinkedIn)
 2. In IntelliJ, go to **Settings > Plugins > Gear icon > Install Plugin from Disk**
 3. Select the downloaded ZIP file
 4. Restart IntelliJ

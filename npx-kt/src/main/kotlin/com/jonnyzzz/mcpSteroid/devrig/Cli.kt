@@ -10,10 +10,7 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.optional
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
-import com.github.ajalt.clikt.parameters.options.required
-import com.github.ajalt.clikt.parameters.types.int
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
-import com.jonnyzzz.mcpSteroid.server.ModalMode
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
@@ -65,36 +62,6 @@ sealed interface DevrigCommand {
 
     data class DevrigCommandInstall(
         val agent: AiAgentCli,
-        /** `--check`: read-only dry-run — report drift and IDE reachability, change nothing. */
-        val check: Boolean = false,
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
-    data class DevrigCommandPrompt(
-        /**
-         * Resource to print: a full `mcp-steroid://` URI, a scheme-less `folder/stem` path, or a bare
-         * stem when unambiguous. `null` renders the root prompts — the entry-point catalog every agent
-         * sees (issue #99: the root index IS the list, there is no separate `list` subcommand).
-         */
-        val uri: String? = null,
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
-    /**
-     * `exec-code`: run a `steroid_execute_code` call from the CLI with the Kotlin snippet read from
-     * [file] (issue #100). Semantics are EXACTLY the MCP tool's — same parameters, same defaults —
-     * so `null` here means "use the tool's default" ([taskId] → `cli-<file-stem>`, [reason] →
-     * [EXEC_CODE_DEFAULT_REASON], [timeout] → the schema default, [modal] → [ModalMode.DEFAULT]).
-     */
-    data class DevrigCommandExecCode(
-        val project: String,
-        val file: String,
-        val taskId: String? = null,
-        val reason: String? = null,
-        val modal: ModalMode? = null,
-        val timeout: Int? = null,
         override val debug: Boolean = false,
         override val json: Boolean = false,
     ) : DevrigCommand
@@ -202,8 +169,6 @@ private class DevrigRootCommand(
             backend,
             ProjectCommand(selected, this),
             InstallCommand(selected, this),
-            PromptCommand(selected, this),
-            ExecCodeCommand(selected, this),
             HelpCommand(selected, this),
             VersionCommand(selected, this),
         )
@@ -246,63 +211,12 @@ private class InstallCommand(
     parent: DevrigCliktCommand,
 ) : DevrigCliktCommand("install", selected, parent) {
     private val agent by argument("agent")
-    private val check by option(
-        "--check",
-        help = "dry-run: report the registration state and the changes install would apply, without applying anything; exits 1 on drift",
-    ).flag()
 
     override fun run() {
         val options = options()
         val target = AiAgentCli.parse(agent)
             ?: throw UsageError("agent must be one of: claude, codex, gemini")
-        select(DevrigCommand.DevrigCommandInstall(target, check = check, debug = options.debug, json = options.json))
-    }
-}
-
-private class PromptCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("prompt", selected, parent) {
-    private val uri by argument("uri").optional()
-
-    override fun run() {
-        val options = options()
-        select(DevrigCommand.DevrigCommandPrompt(uri = uri, debug = options.debug, json = options.json))
-    }
-}
-
-private class ExecCodeCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("exec-code", selected, parent) {
-    private val project by option("--project", help = "project_name to run against (as listed by 'devrig project')").required()
-    private val file by option("--file", help = "Kotlin script file with the suspend method body to execute").required()
-    private val taskId by option("--task-id", help = "task identifier grouping related calls in audit logs (default: cli-<file-stem>)")
-    private val reason by option("--reason", help = "full task description recorded with the execution")
-    private val modal by option(
-        "--modal",
-        help = "IDE preparation + modal-dialog policy: ${ModalMode.entries.joinToString("|") { it.wire }} (default: ${ModalMode.DEFAULT.wire})",
-    )
-    private val timeout by option("--timeout", help = "timeout in seconds for the script body (default: the tool's default)").int()
-
-    override fun run() {
-        val options = options()
-        val modalMode = modal?.let { raw ->
-            ModalMode.entries.firstOrNull { it.wire == raw }
-                ?: throw UsageError("modal must be one of: ${ModalMode.entries.joinToString(", ") { it.wire }}")
-        }
-        select(
-            DevrigCommand.DevrigCommandExecCode(
-                project = project,
-                file = file,
-                taskId = taskId,
-                reason = reason,
-                modal = modalMode,
-                timeout = timeout,
-                debug = options.debug,
-                json = options.json,
-            )
-        )
+        select(DevrigCommand.DevrigCommandInstall(target, debug = options.debug, json = options.json))
     }
 }
 
@@ -413,8 +327,6 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandBackendProvision -> runBackendProvisionCommand(command)
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
             is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
-            is DevrigCommand.DevrigCommandPrompt -> runPromptCommand(command)
-            is DevrigCommand.DevrigCommandExecCode -> runExecCodeCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

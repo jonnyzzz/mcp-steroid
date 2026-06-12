@@ -1,11 +1,5 @@
 # TODO
 
-- [ ] **runInspectionsDirectly follow-ups (#69 ask 1, deferred)**: a `PsiFile`-accepting overload
-  (and any richer per-file batch surface) is a `McpScriptContext` surface growth — gated by
-  PHILOSOPHY Tenet 3 / the 3-reviewer consensus, same as the explicit-`Project` overload (#94).
-  The 2026-06 hardening shipped per-tool crash isolation (#93) + per-file PSI-invalid tolerance and
-  the additive `InspectionRunResult.failedTools` section without touching the argument list.
-
 - [x] Fix `steroid_open_project` to trust a project path before opening it and cover the no-modal path with an integration test.
 - [x] Agent-driven backend management: evaluated new MCP tool vs CLI passthrough vs hybrid (judge panel). **Decision: no new MCP tool** — agents manage backends via the existing `devrig backend …` CLI (fails the PHILOSOPHY 3-gate for a new tool; the CLI already does it). Shipped `mcp-steroid://open-project/managing-backends` recipe + aligned `open_project` to prefer a running devrig-managed backend (`DevrigProjectRoutingService.openProjectTargetIde()`).
 - [ ] Backend management follow-ups (deferred, surfaced during the design):
@@ -31,31 +25,3 @@
 - [ ] **list_windows graceful degradation**: devrig's `steroid_list_windows` is all-or-nothing — one
   IDE failing its `/windows` fetch errors the whole call (`coroutineScope` + `error(...)`), unlike
   `list_projects` which degrades per-backend. Return partial windows + a per-backend error marker.
-
-- [ ] **`install --check` vs the literal Tenet-3 reading (review follow-up to #86)**: `--check` itself
-  is read-only, but `runsTool()` in `npx-kt/.../Main.kt` returns true for `DevrigCommandInstall`, so the
-  shared CLI startup still fires the PostHog beacon (`beacon.captureStarted`) and the background update
-  check — and the beacon may write `~/.mcp-steroid/.devrig-user-id` on first run (`DevrigBeacon.distinctId`).
-  This is common to every devrig tool command, not specific to --check. If a strictly side-effect-free
-  `--check` ever matters (e.g. for CI probes), make `runsTool()` return `!check` for install — decide
-  deliberately, since it also silences the update notice for that invocation (2026-06-12).
-
-- [ ] install.ps1 Windows smoke test: the devrig bootstrap installer (#97) was verified end-to-end on macOS (sh) and parse/behavior-checked under pwsh in Docker, but has never executed on real Windows PowerShell 5.1 — run it on a Windows box before promoting the PowerShell one-liner beyond the docs page (2026-06-12).
-- [ ] **inspect-and-fix recipe idiom follow-up (#81 review minor)**: the main recipe runs
-  `InspectionEngine.inspectEx` under plain `readAction { }` while the cross-project section uses
-  `smartReadAction` — unify on `smartReadAction` (kotlin-fence change → re-run the scoped
-  `InspectAndFixKtBlocksCompilationTest`).
-- [ ] **Hardcoded-URI lint gap (#81 review minor)**: `NoHardcodedMcpSteroidUriUsageTest` scans only
-  ij-plugin/prompts/prompt-generator src/main — `mcp-steroid-server/src/main` is not covered and
-  already carries a pre-existing `mcp-steroid://prompt/skill` literal in `FetchResourceToolHandler`'s
-  param description. Extend the lint to that module and replace the literal.
-- [ ] **ContentPart.kt `enterElseIf` bug (found by #98-t2 review, pre-existing)**: `ConditionalState.enterElseIf`
-  overwrites `frame.previousFilters` with only the latest branch filter, so a 3+-branch chain
-  `IF[A]/ELSE_IF[B]/ELSE_IF[C]` computes the third branch as `not(B).and(C)` instead of
-  `not(A).and(not(B)).and(C)`. No current article uses 3+ branches, but the corpus now leans harder
-  on conditionals — fix with a unit test before anyone writes one.
-- [ ] **#98 residual corpus-escape vectors (by design, documented)**: SHORTHAND_LIST_PATTERN only matches the
-  current list shape, and the availability audit is non-transitive (an article referenced only from a
-  skill/-root article's body escapes). Extend if a future gating bug slips through.
-- [ ] **DataGrip (DB) caveat**: test-run/debug articles are now fetchable in DB where they are meaningless
-  (graceful error at runtime); add a one-line DB caveat if dogfooding surfaces confusion.

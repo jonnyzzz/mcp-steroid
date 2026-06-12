@@ -66,10 +66,6 @@ data class ProjectInfo(
  * One shared backend-info schema (R3.4) backing both the MCP `steroid_list_projects` `backends[]` and the
  * devrig CLI `backend/project --json` `backends[]`. MCP/CLI-surface only — never crosses the
  * devrig<->IDE wire.
- *
- * De-duplicated on purpose (#90): each fact appears exactly once — [displayName] is the ONE human
- * label, [build] the ONE build string, [pid]/[port] the ONE process/port reference. The per-backend
- * project list was dropped too: join the response's flat `projects[]` on `backend_name` instead.
  */
 @Serializable
 data class BackendInfo(
@@ -82,11 +78,8 @@ data class BackendInfo(
     val type: String = "intellij",
     /** "marker" | "port" | "managed". */
     val source: String,
-    /**
-     * The ONE human label, e.g. "IntelliJ IDEA 2026.1" (NOT unique across two same-product IDEs —
-     * disambiguate via [pid]/[port]/[build]).
-     */
     val displayName: String,
+    val locator: String,
     /** True when open_project-routable (a marker IDE with a live bridge). */
     val routable: Boolean,
     /** True when discovery-reachable. */
@@ -102,7 +95,6 @@ data class BackendInfo(
     val pid: Long? = null,
     val port: Int? = null,
     val ideProductCode: String? = null,
-    /** The ONE build string (e.g. "IU-261.18467.21"); never repeated in the detail blocks. */
     val build: String? = null,
     /**
      * Plugins observed on this backend (marker rows only today). An MCP Steroid marker contributes one
@@ -116,6 +108,7 @@ data class BackendInfo(
     val portDetail: PortBackendDetail? = null,
     /** Managed-only extras. */
     val managedDetail: ManagedBackendDetail? = null,
+    val openProjects: List<ListedProject> = emptyList(),
 )
 
 /**
@@ -174,9 +167,8 @@ fun markerDisplayName(ide: IdeInfo): String {
 }
 
 /**
- * Shared marker locator for HUMAN-readable CLI text — `"build <build>, pid <pid>"`, with the `build `
- * segment omitted when [build] is null or blank. devrig appends its own `", managed"` suffix where
- * applicable. Not part of the [BackendInfo] JSON schema (#90: `build`/`pid` are the canonical fields).
+ * Shared marker locator — `"build <build>, pid <pid>"`, with the `build ` segment omitted when [build] is
+ * null or blank. devrig appends its own `", managed"` suffix where applicable.
  */
 fun markerLocator(build: String?, pid: Long): String = buildString {
     build?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -188,22 +180,28 @@ fun markerLocator(build: String?, pid: Long): String = buildString {
 /**
  * The ONE marker-row -> [BackendInfo] assembler, shared by the in-IDE `steroid_list_projects`
  * self-describe and devrig's `backendInfoForRow(FromMarker)`. Produces `source="marker"`,
- * `type="intellij"`, with the build-derived product code and the shared [markerDisplayName] formatter.
+ * `type="intellij"`, with the build-derived product code and the shared display/locator formatters.
+ *
+ * [locator] is overridable so devrig can pass its `backendLocatorLabel(row)` (which appends a
+ * `", managed"` suffix for managed marker rows); the default is the plain [markerLocator].
  */
 fun markerBackendInfo(
     backendName: String,
     pid: Long,
     ide: IdeInfo,
     plugins: List<BackendPlugin>,
+    openProjects: List<ListedProject>,
     managed: Boolean = false,
     routable: Boolean = true,
     reachable: Boolean = true,
     error: String? = null,
+    locator: String = markerLocator(ide.build, pid),
 ): BackendInfo = BackendInfo(
     backendName = backendName,
     type = "intellij",
     source = "marker",
     displayName = markerDisplayName(ide),
+    locator = locator,
     routable = routable,
     reachable = reachable,
     managed = managed,
@@ -212,31 +210,30 @@ fun markerBackendInfo(
     build = ide.build,
     plugins = plugins,
     error = error,
+    openProjects = openProjects,
 )
 
-/**
- * Port-only identity extras. The product name lives in [BackendInfo.displayName] and the build string
- * in [BackendInfo.build] — only the facts unique to the port probe stay here (#90).
- */
 @Serializable
 data class PortBackendDetail(
     val baseUrl: String? = null,
+    val productName: String? = null,
+    val productFullName: String? = null,
     val edition: String? = null,
     val baselineVersion: Int? = null,
+    val buildNumber: String? = null,
 )
 
-/**
- * Managed-only extras. The product/version label lives in [BackendInfo.displayName], the build string
- * in [BackendInfo.build], the product code in [BackendInfo.ideProductCode], and the running pid in
- * [BackendInfo.pid] — only the facts unique to the managed install stay here (#90). [managedId] is the
- * id accepted by `devrig backend start/stop/provision`.
- */
 @Serializable
 data class ManagedBackendDetail(
     val managedId: String,
+    val productKey: String,
+    val productCode: String,
+    val version: String,
+    val buildNumber: String? = null,
     val state: String,
     val installPath: String,
     val cachePath: String,
+    val runningPid: Long? = null,
 )
 
 @Serializable

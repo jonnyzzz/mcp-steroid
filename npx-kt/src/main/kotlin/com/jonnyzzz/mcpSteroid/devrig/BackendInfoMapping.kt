@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.server.BackendInfo
+import com.jonnyzzz.mcpSteroid.server.ListedProject
 import com.jonnyzzz.mcpSteroid.server.ManagedBackendDetail
 import com.jonnyzzz.mcpSteroid.server.PortBackendDetail
 import com.jonnyzzz.mcpSteroid.server.backendNameFor
@@ -34,16 +35,17 @@ fun backendNameForRow(row: BackendRow): String = when (row) {
 /**
  * R3.4 — maps a discovery [BackendRow] to the single shared [BackendInfo] schema. The ONE representation
  * backing both the MCP `steroid_list_projects` `backends[]` and the devrig CLI `backend/project --json`
- * `backends[]`. De-duplicated per #90: each fact serializes exactly once (no `openProjects` — join the
- * flat `projects[]` on `backend_name`; no `locator` — `build`/`pid`/`port` are the canonical fields).
+ * `backends[]`. No field of the historical hand-built `backendEntryJson` is dropped (see R3.4 inventory).
  *
  * @param backendName precomputed (and de-duped) id for this row — passed in so the caller controls
  *   keep-first de-duplication; defaults to [backendNameForRow].
+ * @param openProjects the projects owned by this backend, already mapped to [ListedProject].
  * @param managed whether this row is a devrig-managed backend (prefer it).
  */
 fun backendInfoForRow(
     row: BackendRow,
     backendName: String = backendNameForRow(row),
+    openProjects: List<ListedProject> = emptyList(),
     managed: Boolean = row.managed,
 ): BackendInfo = when (row) {
     is BackendRow.FromMarker -> {
@@ -54,10 +56,12 @@ fun backendInfoForRow(
             pid = ide.pid,
             ide = ide.marker.ide,
             plugins = mcpSteroidPlugins(ide.marker.plugin),
+            openProjects = openProjects,
             managed = managed,
             routable = reachable,
             reachable = reachable,
             error = if (!reachable) (row.errorMessage ?: "unreachable") else null,
+            locator = backendLocatorLabel(row),
         )
     }
     is BackendRow.FromPort -> {
@@ -66,6 +70,7 @@ fun backendInfoForRow(
             backendName = backendName,
             source = "port",
             displayName = portBackendDisplayName(ide),
+            locator = portBackendLocatorLabel(ide),
             routable = false,
             reachable = true,
             managed = managed,
@@ -74,9 +79,13 @@ fun backendInfoForRow(
             build = ide.buildNumber,
             portDetail = PortBackendDetail(
                 baseUrl = ide.baseUrl,
+                productName = ide.productName,
+                productFullName = ide.productFullName,
                 edition = ide.edition,
                 baselineVersion = ide.baselineVersion,
+                buildNumber = ide.buildNumber,
             ),
+            openProjects = openProjects,
         )
     }
     is BackendRow.FromManaged -> {
@@ -85,6 +94,7 @@ fun backendInfoForRow(
             backendName = backendName,
             source = "managed",
             displayName = backendDisplayName(row),
+            locator = backendLocatorLabel(row),
             routable = false,
             reachable = info.state == ManagedBackendState.RUNNING,
             managed = true,
@@ -93,10 +103,16 @@ fun backendInfoForRow(
             build = info.buildNumber,
             managedDetail = ManagedBackendDetail(
                 managedId = info.id,
+                productKey = info.productKey,
+                productCode = info.productCode,
+                version = info.version,
+                buildNumber = info.buildNumber,
                 state = info.state.name.lowercase(),
                 installPath = info.installPath.toString(),
                 cachePath = info.cachePath.toString(),
+                runningPid = info.runningPid,
             ),
+            openProjects = openProjects,
         )
     }
 }

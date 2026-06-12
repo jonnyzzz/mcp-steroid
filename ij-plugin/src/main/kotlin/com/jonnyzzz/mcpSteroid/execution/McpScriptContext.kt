@@ -6,6 +6,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
+import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.psi.search.GlobalSearchScope
 import kotlinx.serialization.json.JsonElement
 import kotlin.time.Duration
@@ -269,17 +270,9 @@ interface McpScriptContext {
      *
      * Use this method when you need accurate inspection results in automated/headless scenarios.
      *
-     * Crash isolation: a single inspection tool throwing (e.g. on compiler-plugin-generated PSI)
-     * does NOT abort the sweep. The failed tool is recorded in [InspectionRunResult.failedTools]
-     * (tool id + exception message) and findings from all other tools are returned. Likewise, a
-     * PsiInvalidElementAccessException for the file is reported via `failedTools` instead of being
-     * thrown, so inspecting files in a loop never loses the healthy files' results.
-     *
      * @param file The virtual file to inspect
      * @param includeInfoSeverity Whether to include INFO-level problems (default: false)
-     * @return [InspectionRunResult] — a Map of inspection tool ID to the list of ProblemDescriptors
-     *   found (use it exactly like the Map it is), plus the additive `failedTools` list of tools
-     *   that crashed during the sweep
+     * @return Map of inspection tool ID to a list of ProblemDescriptors found
      *
      * ```kotlin
      * val file = findProjectFile("src/Main.kt") ?: error("File not found")
@@ -290,9 +283,6 @@ interface McpScriptContext {
      *         println("[$toolId] ${problem.descriptionTemplate}")
      *     }
      * }
-     * problems.failedTools.forEach { failed ->
-     *     println("tool crashed (findings of other tools preserved): ${failed.toolId}: ${failed.error}")
-     * }
      * ```
      *
      * @see getHighlightsWhenReady for daemon-based highlights (requires window focus)
@@ -300,7 +290,7 @@ interface McpScriptContext {
     suspend fun runInspectionsDirectly(
         file: VirtualFile,
         includeInfoSeverity: Boolean = false
-    ): InspectionRunResult
+    ): Map<String, List<ProblemDescriptor>>
 
     // ============================================================
     // Modal Dialog Control
@@ -439,16 +429,6 @@ interface McpScriptContext {
      * Find a VirtualFile by an absolute path.
      * Returns null if the file doesn't exist.
      *
-     * This is a plain VFS-snapshot lookup with NO refresh. A file created on
-     * disk by an external process AFTER the project opened (git checkout, CLI
-     * writes, build output) is not in the snapshot yet, so this returns null
-     * for it even though `java.io.File(path).exists()` is true. For such files
-     * call `LocalFileSystem.getInstance().refreshAndFindFileByPath(path)` at
-     * the TOP LEVEL of the script first — NEVER inside `readAction { }`: an
-     * off-EDT VFS refresh inside a read action deadlocks. Full recipe: the
-     * `skill/coding-with-intellij-vfs` article
-     * (`CodingWithIntelliJVfsPromptArticle().uri`).
-     *
      * ```kotlin
      * val vf = findFile("/path/to/file.kt")
      * if (vf != null) {
@@ -473,15 +453,6 @@ interface McpScriptContext {
     /**
      * Find a VirtualFile relative to the project base path.
      * Returns null if the file doesn't exist.
-     *
-     * Like [findFile], this is a plain VFS-snapshot lookup with NO refresh —
-     * it returns null for files created by an external process (git checkout,
-     * CLI writes) after the project opened. For those, call
-     * `LocalFileSystem.getInstance().refreshAndFindFileByPath(path)` at the
-     * TOP LEVEL of the script first, NEVER inside `readAction { }` (an off-EDT
-     * refresh inside a read action deadlocks). Full recipe: the
-     * `skill/coding-with-intellij-vfs` article
-     * (`CodingWithIntelliJVfsPromptArticle().uri`).
      *
      * ```kotlin
      * val vf = findProjectFile("src/main/kotlin/MyClass.kt")

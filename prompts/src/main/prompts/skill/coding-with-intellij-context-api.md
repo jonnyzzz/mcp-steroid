@@ -210,8 +210,6 @@ println("file=$vf, psi=$psi, projFile=$projFile, projPsi=$projPsi")
 //   readAction { /* now operate on `psi` here */ }  // wrap only the PSI/VFS reads, not the resolver call
 ```
 
-> **⚠️ Snapshot-only lookup**: `findFile` / `findProjectFile` do NOT refresh the VFS — a file created by an external process (git checkout, CLI writes) after the project opened resolves to `null`. Call `LocalFileSystem.getInstance().refreshAndFindFileByPath(path)` at the top level of the script first (never inside `readAction { }` — a refresh there deadlocks), then retry. Full recipe: `mcp-steroid://skill/coding-with-intellij-vfs`.
-
 > **⚠️ `findProjectFile()` pitfall for resource files**: This function requires the **full relative path** from the project root (e.g., `"src/main/resources/application.properties"`). Calling it with just a filename (`findProjectFile("application.properties")`) **always returns null** — causing NPE on `!!`. For files under `src/main/resources/`, use `FilenameIndex.getVirtualFilesByName()` which searches by filename without requiring the full path:
 ```kotlin
 import com.intellij.psi.search.FilenameIndex
@@ -256,8 +254,6 @@ if (buildFile != null) {
     // mcp-steroid://ide/find-duplicates (DuplicatedCode across the project).
 }
 ```
-
-> **A crashing inspection tool no longer aborts the sweep.** `runInspectionsDirectly` returns an additive result: it still behaves exactly like the `Map<inspectionShortName, List<ProblemDescriptor>>` shown above, and additionally exposes `result.failedTools` — the tools that crashed during the sweep (tool id + error message). Findings from the healthy tools survive a crashing tool, so check `failedTools` when a sweep looks suspiciously sparse.
 
 > **`ProblemDescriptor` results carry a live PSI reference, not a snapshot.** Accessing `.text`, `.textRange`, `psiElement.containingFile`, etc. on a returned descriptor *outside a `readAction { }` / `smartReadAction { }`* throws `ReadAccessException`. Consume the descriptors inside the same read action, or re-enter one in your post-processing loop.
 

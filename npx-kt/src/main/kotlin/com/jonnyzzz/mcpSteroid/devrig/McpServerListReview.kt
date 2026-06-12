@@ -41,16 +41,9 @@ fun McpServerRef.devrigMatchReason(): String = when {
 
 /**
  * Parse the output of `<agent> mcp list` into the registered servers. codex emits a JSON array
- * (`--json`); claude and gemini emit line-oriented listings:
- *
- *  - claude: `name: <command> - ✓ Connected`
- *  - gemini: `✓ name (from extension): <command> (stdio) - Connected` — a leading status glyph,
- *    an optional `(from <extension>)` source annotation on the name, and a trailing
- *    `(stdio)` / `(http)` / `(sse)` transport suffix on the command
- *    (gemini-cli `packages/cli/src/commands/mcp/list.ts`).
- *
- * Parsing is best-effort: a format we can't read yields an empty list (the caller falls back to
- * reconciling the known devrig names), and a malformed codex JSON payload is logged rather than thrown.
+ * (`--json`); claude and gemini emit a line-oriented `name: <command> - <status>` listing. Parsing is
+ * best-effort: a format we can't read yields an empty list (the caller falls back to reconciling the
+ * known devrig names), and a malformed codex JSON payload is logged rather than thrown.
  */
 fun parseMcpServerList(agent: AiAgentCli, output: String): List<McpServerRef> = when (agent) {
     AiAgentCli.CODEX -> parseCodexJsonServerList(output)
@@ -76,36 +69,20 @@ private fun parseCodexJsonServerList(output: String): List<McpServerRef> {
     }
 }
 
-/** ANSI SGR color sequences (gemini renders its status glyph through chalk). */
-private val ANSI_SGR = Regex("\u001B\\[[;\\d]*m")
-
-/** gemini's per-line connection-status indicator: `✓ Connected`, `…`, `⛔`, `○`, `✗`. */
-private val LEADING_STATUS_GLYPH = Regex("^[✓✗…⛔○]\\s+")
-
-/** gemini's extension-source annotation on the server name: `name (from <extension>)`. */
-private val FROM_EXTENSION_SUFFIX = Regex("\\s*\\(from [^)]*\\)$")
-
-/** gemini's transport suffix on the command: ` (stdio)` / ` (http)` / ` (sse)`. */
-private val TRANSPORT_SUFFIX = Regex("\\s*\\((stdio|http|sse)\\)$")
-
 private fun parseLineServerList(output: String): List<McpServerRef> =
     output.lineSequence()
-        .map { ANSI_SGR.replace(it, "").trim() }
-        // gemini prefixes each server with a colored status glyph; strip it before splitting on the name.
-        .map { LEADING_STATUS_GLYPH.replace(it, "") }
-        // Each server is `name: <command>…`. Skip the "Checking MCP server health…" banner,
+        .map { it.trim() }
+        // Each server is `name: <command> - <status>`. Skip the "Checking MCP server health…" banner,
         // blank lines, and anything without a `name:` prefix.
         .filter { it.isNotEmpty() && it.contains(": ") && !it.startsWith("Checking") }
         .mapNotNull { line ->
-            val name = FROM_EXTENSION_SUFFIX.replace(line.substringBefore(": ").trim(), "")
+            val name = line.substringBefore(": ").trim()
             // A real server name is a single token; a stray sentence with ": " in it is not.
             if (name.isEmpty() || name.any { it.isWhitespace() }) return@mapNotNull null
             var rest = line.substringAfter(": ")
-            // Drop the trailing " - ✓ Connected" / " - ✗ Failed to connect" / " - Connected" health suffix.
+            // Drop the trailing " - ✓ Connected" / " - ✗ Failed to connect" health suffix.
             val statusSep = rest.lastIndexOf(" - ")
             if (statusSep >= 0) rest = rest.substring(0, statusSep)
-            // Drop gemini's transport suffix so the command compares equal to what install registered.
-            rest = TRANSPORT_SUFFIX.replace(rest.trim(), "")
             McpServerRef(name, rest.trim())
         }
         .toList()

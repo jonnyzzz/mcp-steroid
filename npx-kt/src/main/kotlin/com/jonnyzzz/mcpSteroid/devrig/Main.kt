@@ -141,20 +141,14 @@ private fun DevrigCommand.runsTool(): Boolean = when (this) {
     is DevrigCommand.DevrigCommandBackendStop,
     is DevrigCommand.DevrigCommandBackendProvision,
     is DevrigCommand.DevrigCommandProject,
-    is DevrigCommand.DevrigCommandInstall,
-    is DevrigCommand.DevrigCommandPrompt,
-    is DevrigCommand.DevrigCommandExecCode -> true
+    is DevrigCommand.DevrigCommandInstall -> true
     is DevrigCommand.DevrigCommandHelp,
     is DevrigCommand.DevrigCommandVersion,
     is DevrigCommand.DevrigCommandParseError -> false
 }
 
-// `prompt` and `exec-code` never print the headliner: their stdout IS the payload (the rendered
-// article / the tool result), meant for `| less`, redirection, or script consumption — no banner
-// may precede it.
 private fun DevrigCommand.printsHeadliner(): Boolean =
-    runsTool() && this !is DevrigCommand.MCP && this !is DevrigCommand.DevrigCommandPrompt &&
-        this !is DevrigCommand.DevrigCommandExecCode && !json
+    runsTool() && this !is DevrigCommand.MCP && !json
 
 suspend fun DevrigServices.mainImplMcp(
     onServerReady: (McpServerCore) -> Unit = {},

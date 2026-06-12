@@ -49,22 +49,6 @@ class DevrigCommandTest {
     }
 
     @Test
-    fun `install --check selects the read-only dry-run`() {
-        val check = assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "claude", "--check"))
-        assertEquals(AiAgentCli.CLAUDE, check.agent)
-        assertTrue(check.check)
-
-        // Without the flag install stays the mutating upsert.
-        assertFalse(assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "claude")).check)
-
-        // The flag composes with the generic switches at any position.
-        val composed = assertIs<DevrigCommand.DevrigCommandInstall>(command("--debug", "install", "codex", "--check"))
-        assertEquals(AiAgentCli.CODEX, composed.agent)
-        assertTrue(composed.check)
-        assertTrue(composed.debug)
-    }
-
-    @Test
     fun `mcp is the canonical spelling and mpc stays a working hidden alias`() {
         // Both spellings select the same MCP command (issue #85). `mcp` is the advertised,
         // visible primary; `mpc` is the legacy mis-spelling kept alive — registered hidden — so

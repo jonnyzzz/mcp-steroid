@@ -24,37 +24,6 @@ class McpServerListReviewTest {
     }
 
     @Test
-    fun `parses gemini line format — status glyph, transport suffix, extension annotation`() {
-        // Real gemini-cli format (packages/cli/src/commands/mcp/list.ts):
-        // `${statusIndicator} ${name}(from ext)?: ${command} ${args} (stdio) - ${statusText}`
-        val output = """
-            Configured MCP servers:
-
-            ✓ mcp-steroid: /usr/bin/env JAVA_HOME=/opt/jdk /opt/devrig/bin/devrig mcp (stdio) - Connected
-            ✗ playwright: npx @playwright/mcp@latest (stdio) - Disconnected
-            ○ docs (from docs-extension): https://example.com/mcp (http) - Disabled
-        """.trimIndent()
-
-        val servers = parseMcpServerList(AiAgentCli.GEMINI, output)
-        assertEquals(listOf("mcp-steroid", "playwright", "docs"), servers.map { it.name })
-        // The glyph, the ` (stdio)` transport suffix, and the status text are all stripped, so the
-        // command compares EQUAL to what `devrig install gemini` registered (the --check predicate).
-        assertEquals("/usr/bin/env JAVA_HOME=/opt/jdk /opt/devrig/bin/devrig mcp", servers[0].commandLine)
-        assertEquals("npx @playwright/mcp@latest", servers[1].commandLine)
-        assertEquals("https://example.com/mcp", servers[2].commandLine)
-    }
-
-    @Test
-    fun `parses gemini lines even when chalk emits ANSI color codes around the glyph`() {
-        val esc = "\u001B"
-        val output = "$esc[32m✓$esc[39m mcp-steroid: /opt/devrig/bin/devrig mcp (stdio) - Connected"
-
-        val servers = parseMcpServerList(AiAgentCli.GEMINI, output)
-        assertEquals(listOf("mcp-steroid"), servers.map { it.name })
-        assertEquals("/opt/devrig/bin/devrig mcp", servers.single().commandLine)
-    }
-
-    @Test
     fun `parses codex json list`() {
         val json = """
             [
