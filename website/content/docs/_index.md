@@ -6,6 +6,9 @@ description: "Learn how to install, configure, and use MCP Steroid"
 **Start with `devrig`** — a standalone CLI that gives your AI Agent a whole JetBrains IDE. One `devrig` process registers MCP Steroid with your agent, bridges it to **every IntelliJ-family IDE running on your machine at once**, and can download and start a managed IDE backend on demand — no manual MCP configuration, even on a headless box.
 
 ```bash
+# 0. Install devrig (one command; requires Java 25)
+curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh
+
 # 1. Register devrig with your agent (once)
 devrig install claude
 
@@ -19,7 +22,7 @@ devrig backend start idea-community
 devrig backend
 ```
 
-Get the `devrig-*.zip` from the [latest release](https://github.com/jonnyzzz/mcp-steroid/releases/latest) (requires Java 25), then follow [Getting Started](/docs/devrig/). Prefer installing the plugin into an IDE you already run? See [Manual plugin installation](/docs/getting-started/).
+Prefer a manual install? Get the `devrig-*.zip` from the [latest release](https://github.com/jonnyzzz/mcp-steroid/releases/latest) (requires Java 25), then follow [Getting Started](/docs/devrig/). Prefer installing the plugin into an IDE you already run? See [Manual plugin installation](/docs/getting-started/).
 
 With the bridge in place, your agents run tests, analyze code, drive real refactorings, and orchestrate complex development workflows through the IDE — instead of guessing from plain files.
 

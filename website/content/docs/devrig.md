@@ -45,7 +45,24 @@ point at a Java 25 home.
 
 ## Install
 
-Download the `devrig-*.zip` from the
+One command on macOS and Linux:
+
+```bash
+curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh
+```
+
+On Windows (PowerShell):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex"
+```
+
+The installer downloads the latest devrig release, verifies its SHA-256
+against the GitHub release digest, unpacks it under `~/.mcp-steroid/`, and
+links the launcher at `~/.mcp-steroid/bin/devrig`. Re-running it is safe —
+it converges on the latest release.
+
+**Manual alternative:** download the `devrig-*.zip` from the
 [latest GitHub release](https://github.com/jonnyzzz/mcp-steroid/releases/latest),
 unpack it, and put the `devrig` launcher on your `PATH`.
 
