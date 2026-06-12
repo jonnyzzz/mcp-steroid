@@ -43,3 +43,13 @@
   ij-plugin/prompts/prompt-generator src/main — `mcp-steroid-server/src/main` is not covered and
   already carries a pre-existing `mcp-steroid://prompt/skill` literal in `FetchResourceToolHandler`'s
   param description. Extend the lint to that module and replace the literal.
+- [ ] **ContentPart.kt `enterElseIf` bug (found by #98-t2 review, pre-existing)**: `ConditionalState.enterElseIf`
+  overwrites `frame.previousFilters` with only the latest branch filter, so a 3+-branch chain
+  `IF[A]/ELSE_IF[B]/ELSE_IF[C]` computes the third branch as `not(B).and(C)` instead of
+  `not(A).and(not(B)).and(C)`. No current article uses 3+ branches, but the corpus now leans harder
+  on conditionals — fix with a unit test before anyone writes one.
+- [ ] **#98 residual corpus-escape vectors (by design, documented)**: SHORTHAND_LIST_PATTERN only matches the
+  current list shape, and the availability audit is non-transitive (an article referenced only from a
+  skill/-root article's body escapes). Extend if a future gating bug slips through.
+- [ ] **DataGrip (DB) caveat**: test-run/debug articles are now fetchable in DB where they are meaningless
+  (graceful error at runtime); add a one-line DB caveat if dogfooding surfaces confusion.
