@@ -17,6 +17,9 @@ import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.DebuggerSkillPromptArtic
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.SkillPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.TestSkillPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJPromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.ArticleBase
+import com.jonnyzzz.mcpSteroid.prompts.IdeFilter
+import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.thisLogger
 
 /**
@@ -28,6 +31,11 @@ import com.jonnyzzz.mcpSteroid.thisLogger
  * because [project_name] is needed to render IDE-conditional content correctly.
  */
 class FetchResourceToolHandler(
+    private val articles: () -> Sequence<ArticleBase> = {
+        ResourcesIndex().roots.values
+            .asSequence()
+            .flatMap { it.articles.values.asSequence() }
+    },
     private val handler: () -> PromptsContextHandler,
 ) : McpToolBase() {
 
@@ -66,15 +74,47 @@ class FetchResourceToolHandler(
         log.info("steroid_fetch_resource: $uri")
 
         val promptsContext = handler().buildPromptsContext(projectName)
-        val article = ResourcesIndex().roots.values
-            .asSequence()
-            .flatMap { it.articles.values.asSequence() }
-            .firstOrNull { it.uri == uri && it.filter.matches(promptsContext) }
-            ?: return ToolCallResult(
-                content = listOf(ContentItem.Text(text = "ERROR: Resource not found: $uri")),
+        val byUri = articles().filter { it.uri == uri }.toList()
+        val article = byUri.firstOrNull { it.filter.matches(promptsContext) }
+        if (article == null) {
+            val message = if (byUri.isEmpty()) {
+                "ERROR: Resource not found: $uri"
+            } else {
+                // The URI is real but every matching article is filtered out for this IDE —
+                // say so explicitly instead of the generic not-found, or agents conclude the
+                // URI is wrong and burn round-trips guessing (GitHub issue #81).
+                val codes = availableProductCodes(byUri, promptsContext)
+                val availableFor = if (codes.isEmpty()) "another IDE product or version" else codes.joinToString(", ")
+                "ERROR: Resource $uri exists but is not available in ${promptsContext.productCode} " +
+                        "(available for: $availableFor); see ${SkillPromptArticle().uri} for alternatives"
+            }
+            return ToolCallResult(
+                content = listOf(ContentItem.Text(text = message)),
                 isError = true
             )
+        }
 
         return ToolCallResult(content = listOf(ContentItem.Text(text = article.readPayload(promptsContext))))
     }
+}
+
+/**
+ * Product codes (at the caller's baseline version) for which at least one of [articles]
+ * would match. Candidates are collected structurally from the articles' [IdeFilter] trees,
+ * then verified with [IdeFilter.matches] so negated/composed filters stay correct. An empty
+ * result means the availability cannot be named (e.g. a pure NOT/version-gated filter).
+ */
+internal fun availableProductCodes(articles: List<ArticleBase>, context: PromptsContext): List<String> {
+    val mentioned = articles.flatMapTo(sortedSetOf()) { collectMentionedProductCodes(it.filter) }
+    return mentioned.filter { code ->
+        articles.any { it.filter.matches(PromptsContext(code, context.baselineVersion)) }
+    }
+}
+
+private fun collectMentionedProductCodes(filter: IdeFilter): Set<String> = when (filter) {
+    IdeFilter.All -> emptySet()
+    is IdeFilter.Ide -> filter.productCodes
+    is IdeFilter.Not -> collectMentionedProductCodes(filter.inner)
+    is IdeFilter.And -> filter.operands.flatMapTo(mutableSetOf()) { collectMentionedProductCodes(it) }
+    is IdeFilter.Or -> filter.operands.flatMapTo(mutableSetOf()) { collectMentionedProductCodes(it) }
 }
