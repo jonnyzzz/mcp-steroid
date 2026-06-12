@@ -199,7 +199,7 @@ To pick a value:
    against `projects[].path` and take the matching entry's
    `backend_name`. **Longest-path rule:** among all candidate
    `projects[].path` values that are a prefix of (or equal to) the
-   target path, pick the LONGEST matching path — a nested worktree
+   target path, pick the LONGEST matching path; prefixes count only at path-segment boundaries (/repo/foo is not a candidate for /repo/foobar) — a nested worktree
    checkout (e.g. `<repo>/.claude/worktrees/<name>`) must resolve to the
    worktree project, not the parent checkout. If no prefix candidate
    matches, a backend holding a sibling worktree of the same repository

@@ -68,7 +68,7 @@ class OpenProjectToolSpec(
                     "the same project — or another git worktree of the same repository — open: match " +
                     "your target path against the flat `projects[]` (each entry carries `path` + " +
                     "`backend_name`). Among all candidate `projects[].path` values that are a prefix of " +
-                    "(or equal to) the target path, pick the LONGEST matching path — a nested worktree " +
+                    "(or equal to) the target path, pick the LONGEST matching path; prefixes count only at path-segment boundaries (/repo/foo is not a candidate for /repo/foobar) — a nested worktree " +
                     "checkout (e.g. <repo>/.claude/worktrees/<name>) must resolve to the worktree " +
                     "project, not the parent checkout. Worktrees share build/index/VCS context, so " +
                     "reusing that IDE avoids a redundant second indexing. Otherwise prefer a `managed` " +
@@ -143,7 +143,7 @@ lists ALL backends (including non-routable ones); pass a `routable: true` entry'
 open the project in that specific IDE. PREFER the backend that already has the same project — or another git worktree of the
 same repository — open: match your target path against the flat `projects[]` (each entry carries
 `path` + its owning `backend_name`). Among all candidate `projects[].path` values that are a prefix
-of (or equal to) the target path, pick the LONGEST matching path — a nested worktree checkout (e.g.
+of (or equal to) the target path, pick the LONGEST matching path; prefixes count only at path-segment boundaries (/repo/foo is not a candidate for /repo/foobar) — a nested worktree checkout (e.g.
 <repo>/.claude/worktrees/<name>) must resolve to the worktree project, not the parent checkout.
 Worktrees share build/index/VCS context, so reusing that IDE keeps the context warm and avoids a
 redundant second indexing. Otherwise prefer a `managed` backend, else any listed backend.
