@@ -130,6 +130,8 @@ A correctly-wrapped call produces the right result on the first try. An incorrec
 
 `LocalFileSystem.getInstance().findFileByPath(path)` itself is safe outside `readAction { }` — it just resolves the `VirtualFile`. The wrap is required as soon as you start reading the file's *structure* (children, document, PSI) or accessing the PSI of any other model.
 
+`findFile` / `findProjectFile` (and `LocalFileSystem.findFileByPath`) are plain VFS-snapshot lookups — no refresh, so a file created by an external process (git checkout, CLI writes) after project open resolves to `null`. For those, call `LocalFileSystem.getInstance().refreshAndFindFileByPath(path)` at the top level of the script first — never inside `readAction { }` (a refresh inside a read action deadlocks). Full recipe: `mcp-steroid://skill/coding-with-intellij-vfs`.
+
 **Inside `steroid_execute_code` always go through the IntelliJ API.** The following are NOT correct shortcuts — they bypass the IDE's VFS, leave subsequent semantic queries (PSI, indexes, inspections) seeing stale content, and are explicitly out of scope for this tool:
 
 - `java.io.File("…").walk()` / `listFiles()` / `exists()` — use `FilenameIndex.*` (or `LocalFileSystem.findFileByPath` + `vf.children` inside `readAction { }`).

@@ -439,6 +439,16 @@ interface McpScriptContext {
      * Find a VirtualFile by an absolute path.
      * Returns null if the file doesn't exist.
      *
+     * This is a plain VFS-snapshot lookup with NO refresh. A file created on
+     * disk by an external process AFTER the project opened (git checkout, CLI
+     * writes, build output) is not in the snapshot yet, so this returns null
+     * for it even though `java.io.File(path).exists()` is true. For such files
+     * call `LocalFileSystem.getInstance().refreshAndFindFileByPath(path)` at
+     * the TOP LEVEL of the script first — NEVER inside `readAction { }`: an
+     * off-EDT VFS refresh inside a read action deadlocks. Full recipe: the
+     * `skill/coding-with-intellij-vfs` article
+     * (`CodingWithIntelliJVfsPromptArticle().uri`).
+     *
      * ```kotlin
      * val vf = findFile("/path/to/file.kt")
      * if (vf != null) {
@@ -463,6 +473,15 @@ interface McpScriptContext {
     /**
      * Find a VirtualFile relative to the project base path.
      * Returns null if the file doesn't exist.
+     *
+     * Like [findFile], this is a plain VFS-snapshot lookup with NO refresh —
+     * it returns null for files created by an external process (git checkout,
+     * CLI writes) after the project opened. For those, call
+     * `LocalFileSystem.getInstance().refreshAndFindFileByPath(path)` at the
+     * TOP LEVEL of the script first, NEVER inside `readAction { }` (an off-EDT
+     * refresh inside a read action deadlocks). Full recipe: the
+     * `skill/coding-with-intellij-vfs` article
+     * (`CodingWithIntelliJVfsPromptArticle().uri`).
      *
      * ```kotlin
      * val vf = findProjectFile("src/main/kotlin/MyClass.kt")

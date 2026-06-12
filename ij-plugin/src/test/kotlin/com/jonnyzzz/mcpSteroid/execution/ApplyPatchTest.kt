@@ -7,6 +7,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.TestResultBuilder
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJVfsPromptArticle
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import kotlinx.serialization.json.buildJsonObject
 import java.nio.file.Files
@@ -626,6 +627,8 @@ class ApplyPatchTest : BasePlatformTestCase() {
         assertTrue("Error names hunk index: ${err!!.message}", err.message!!.contains("Hunk #0"))
         assertTrue("Error preserves 'file not found' substring: ${err.message}",
             err.message!!.contains("file not found"))
+        assertTrue("Refresh-then-find recovery hint present under dryRun too: ${err.message}",
+            err.message!!.contains("refreshAndFindFileByPath"))
     }
 
     fun testDryRunSurfacesAnchorMismatchSameAsLive(): Unit = timeoutRunBlocking(30.seconds) {
@@ -803,6 +806,21 @@ class ApplyPatchTest : BasePlatformTestCase() {
         assertTrue(
             "Basename is surfaced for grep: $msg",
             msg.contains("DoesNotExist_Unique_XYZ.java"),
+        )
+        // Issue #95: externally created files are invisible to the plain VFS
+        // snapshot lookup; the message must teach refresh-then-find at the top
+        // level of the script (never inside readAction — that deadlocks).
+        assertTrue(
+            "Refresh-then-find recovery hint present: $msg",
+            msg.contains("LocalFileSystem.getInstance().refreshAndFindFileByPath"),
+        )
+        assertTrue(
+            "Hint warns against refreshing inside readAction: $msg",
+            msg.contains("never inside readAction"),
+        )
+        assertTrue(
+            "Hint references the VFS recipe article URI: $msg",
+            msg.contains(CodingWithIntelliJVfsPromptArticle().uri),
         )
     }
 

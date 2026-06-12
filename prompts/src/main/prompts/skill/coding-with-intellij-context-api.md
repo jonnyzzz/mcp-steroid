@@ -210,6 +210,8 @@ println("file=$vf, psi=$psi, projFile=$projFile, projPsi=$projPsi")
 //   readAction { /* now operate on `psi` here */ }  // wrap only the PSI/VFS reads, not the resolver call
 ```
 
+> **⚠️ Snapshot-only lookup**: `findFile` / `findProjectFile` do NOT refresh the VFS — a file created by an external process (git checkout, CLI writes) after the project opened resolves to `null`. Call `LocalFileSystem.getInstance().refreshAndFindFileByPath(path)` at the top level of the script first (never inside `readAction { }` — a refresh there deadlocks), then retry. Full recipe: `mcp-steroid://skill/coding-with-intellij-vfs`.
+
 > **⚠️ `findProjectFile()` pitfall for resource files**: This function requires the **full relative path** from the project root (e.g., `"src/main/resources/application.properties"`). Calling it with just a filename (`findProjectFile("application.properties")`) **always returns null** — causing NPE on `!!`. For files under `src/main/resources/`, use `FilenameIndex.getVirtualFilesByName()` which searches by filename without requiring the full path:
 ```kotlin
 import com.intellij.psi.search.FilenameIndex
