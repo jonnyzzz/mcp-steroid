@@ -96,8 +96,12 @@ then check the debugger for breakpoint hits.
 
 Open the test file, position the caret on the test method or class, and fire the context action.
 The action title dynamically shows the test name: **"Run 'myTestMethod'"** / **"Debug 'myTestMethod'"**.
+`RunClass` and `DebugClass` are platform-level context-run actions (registered for the run/debug
+executors), so the same recipe works in IDEA, PyCharm, GoLand, WebStorm, CLion, and RubyMine —
+adjust the file path and the caret search string to your language's test syntax
+(e.g. `"def test_"` for Python, `"func Test"` for Go).
 
-```kotlin[IU]
+```kotlin
 import com.intellij.ide.DataManager
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUiKind
@@ -108,7 +112,7 @@ import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.vfs.LocalFileSystem
 
 val testFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(
-    project.basePath + "/src/test/kotlin/com/example/MyTest.kt"
+    project.basePath + "/src/test/kotlin/com/example/MyTest.kt" // TODO: your test file
 ) ?: error("Test file not found")
 val editors = withContext(Dispatchers.EDT) {
     FileEditorManager.getInstance(project).openFile(testFile, true)
@@ -116,7 +120,8 @@ val editors = withContext(Dispatchers.EDT) {
 val editor = editors.filterIsInstance<TextEditor>().firstOrNull()?.editor
     ?: error("No text editor")
 
-// Prefer method offset over class offset — reduces ambiguous "Choose configuration" dialog
+// Prefer method offset over class offset — reduces ambiguous "Choose configuration" dialog.
+// TODO: adapt the search strings to your language ("def test_..." in Python, "func Test..." in Go).
 val text = editor.document.text
 val offset = text.indexOf("fun myTestMethod").takeIf { it >= 0 } ?: text.indexOf("class MyTest")
 withContext(Dispatchers.EDT) { editor.caretModel.moveToOffset(offset) }
@@ -134,10 +139,13 @@ println("Test started")
 ```
 
 See `mcp-steroid://test/run-test-at-caret` for full pattern with run/debug variants.
+###_END_IF_###
 
+###_IF_IDE[IU]_###
 ## Run a Specific JUnit Test Class (fallback API)
 
-Use when the context action shows a dialog or a specific programmatic configuration is needed:
+IDEA only — `JUnitConfiguration` lives in the Java plugin. Use when the context action shows
+a dialog or a specific programmatic configuration is needed:
 
 ```kotlin[IU]
 import com.intellij.execution.junit.JUnitConfiguration

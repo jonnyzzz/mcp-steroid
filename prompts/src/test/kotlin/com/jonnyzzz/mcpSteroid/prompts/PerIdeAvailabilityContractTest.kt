@@ -56,12 +56,6 @@ class PerIdeAvailabilityContractTest {
             // debugger workflow is platform-generic — restructure with per-IDE branches like
             // test/demo-debug-test instead of gating the whole article.
             "ide/demo-debug-test" to "TODO(#98) accidentally gated: Java-flavored demo, generic debugger flow",
-            // TODO(#98): article-level [IU] gate plus all-[IU] fences on a platform-generic
-            // inspection API (the inspect-and-fix pattern fixed in #81) — restructure.
-            "ide/find-duplicates" to "TODO(#98) accidentally gated: duplicate-analysis recipe uses Java-example fences only",
-            // TODO(#98): the IF_IDE[RD]/ELSE split leaves only [RD] and [IU] fences, so the
-            // generic test-runner guidance vanishes for PY/GO/WS/CL/RM/DB — add generic fences.
-            "prompt/test-skill" to "TODO(#98) accidentally gated: RD/IU-only fences hide generic test-runner guidance",
         )
 
         /** Same pattern as the generated `ResourceUriValidationTest`. */
