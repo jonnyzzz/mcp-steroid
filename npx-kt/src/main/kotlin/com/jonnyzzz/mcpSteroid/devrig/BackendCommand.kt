@@ -633,7 +633,7 @@ private fun backendActionSuffix(row: BackendRow): String = when (row) {
  * scripted consumption (`devrig backend --json | jq …`):
  *  - **No banner** — stdout is one JSON document, nothing else.
  *  - **Top-level object** with `tool`, `backends`, and flat `projects`.
- *  - **`backend_name`** is the R3.3 uniform id (`<productCodeLower>-<hash8>`),
+ *  - **`backend_name`** is the ONE uniform id (`<PRODUCTCODE>-<hash8>`),
  *    computed the same way for every source so devrig can round-trip it.
  *  - **Pretty-printed**: humans can read without `jq -P`, scripts don't care.
  *
@@ -664,7 +664,7 @@ fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
 }
 
 /**
- * Pairs every row with its R3.3 `backend_name`, de-duplicating by keep-first + WARN. Shared by
+ * Pairs every row with its uniform `backend_name`, de-duplicating by keep-first + WARN. Shared by
  * `backend/project --json` and the MCP handlers' `backends[]` (via `collectBackendInfos`).
  */
 fun backendRowsWithStableIds(rows: List<BackendRow>): List<Pair<String, BackendRow>> {

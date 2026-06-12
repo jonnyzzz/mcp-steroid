@@ -3,35 +3,29 @@ package com.jonnyzzz.mcpSteroid.server
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class BackendNameTest {
     @Test
-    fun `base62Sha256 is deterministic`() {
-        assertEquals(base62Sha256("pid:1234"), base62Sha256("pid:1234"))
+    fun `hash8 is deterministic`() {
+        assertEquals(hash8("pid:1234"), hash8("pid:1234"))
     }
 
     @Test
-    fun `base62Sha256 differs for different inputs`() {
-        assertNotEquals(base62Sha256("pid:1234"), base62Sha256("pid:1235"))
-        assertNotEquals(base62Sha256("pid:1234"), base62Sha256("port:1234"))
+    fun `hash8 differs for different inputs`() {
+        assertNotEquals(hash8("pid:1234"), hash8("pid:1235"))
+        assertNotEquals(hash8("pid:1234"), hash8("port:1234"))
     }
 
     @Test
-    fun `base62Sha256 is alphanumeric and at least 8 chars`() {
-        val hash = base62Sha256("managed:some-managed-id")
-        assertTrue(hash.length >= 8, "expected length>=8 but was ${hash.length}: $hash")
+    fun `hash8 is exactly 8 alphanumeric chars`() {
+        val hash = hash8("managed:some-managed-id")
+        assertEquals(8, hash.length, hash)
         assertTrue(hash.all { it.isLetterOrDigit() }, "expected alphanumeric but was: $hash")
         // base62 alphabet excludes URL-unsafe '-'/'_'.
         assertTrue(hash.none { it == '-' || it == '_' }, "must not contain '-'/'_': $hash")
-    }
-
-    @Test
-    fun `take(8) yields a stable short handle`() {
-        val full = base62Sha256("pid:42")
-        assertEquals(full.take(8), base62Sha256("pid:42").take(8))
-        assertEquals(8, full.take(8).length)
     }
 
     @Test
@@ -40,5 +34,40 @@ class BackendNameTest {
         val hash = base62FixedWidth(byteArrayOf(1), 8)
         assertEquals(8, hash.length)
         assertTrue(hash.all { it.isLetterOrDigit() }, hash)
+    }
+
+    @Test
+    fun `productCodeFromBuild extracts the verbatim capital build prefix`() {
+        assertEquals("IU", productCodeFromBuild("IU-261.25134.95"))
+        assertEquals("IC", productCodeFromBuild("IC-261.1"))
+        assertEquals("GO", productCodeFromBuild("GO-261.1"))
+        assertEquals("PC", productCodeFromBuild("PC-261.1"))
+        assertNull(productCodeFromBuild(null))
+        assertNull(productCodeFromBuild(""))
+        // Lowercase prefixes are not IDE product codes.
+        assertNull(productCodeFromBuild("iu-261.1"))
+        // A bare build number ("253.x" from a port /api/about) has no prefix.
+        assertNull(productCodeFromBuild("253.21581.142"))
+    }
+
+    @Test
+    fun `backend_name keeps the product code capitals verbatim`() {
+        val name = backendNameFor(productCode = productCodeFromBuild("IU-261.25134.95"), sourceKey = "pid:42")
+        assertEquals("IU-${hash8("pid:42")}", name)
+        assertTrue(name.startsWith("IU-"), "product segment must stay capital, was: $name")
+    }
+
+    @Test
+    fun `backend_name falls back to IDE when no product code is known`() {
+        assertEquals("IDE-${hash8("pid:42")}", backendNameFor(productCode = null, sourceKey = "pid:42"))
+        assertEquals("IDE-${hash8("pid:42")}", backendNameFor(productCode = "", sourceKey = "pid:42"))
+    }
+
+    @Test
+    fun `backendNameForMarker delegates to the one formula`() {
+        assertEquals(
+            backendNameFor(productCode = "IU", sourceKey = "pid:24017"),
+            backendNameForMarker(pid = 24017L, build = "IU-261.23567.138"),
+        )
     }
 }

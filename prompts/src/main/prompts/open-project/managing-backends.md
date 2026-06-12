@@ -119,7 +119,7 @@ To pick a value:
 
 1. Call `steroid_list_projects` and read `backends[]`. Each entry has:
    - `backend_name` — the value you pass as `backend_name`, an opaque id
-     like `"iu-9fk2a0xQ"`.
+     like `"IU-9fk2a0xQ"`.
    - `displayName` — human label, e.g. `"IntelliJ IDEA 2026.1"` (NOT
      unique across two same-product IDEs — disambiguate via the `pid`,
      `port`, or `build` fields).

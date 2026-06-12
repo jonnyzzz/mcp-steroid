@@ -25,7 +25,7 @@ Module: `intellij.platform.builtInServer` /
   - `port: Int` — the chosen port (auto-picks the first free port at startup
     starting from a default, typically **63342**). devrig probes the same
     default range during port discovery; see
-    [`docs/devrig-naming.md`](devrig-naming.md) § "IDE (backend)
+    [`docs/devrig-naming.md`](devrig-naming.md) § "Backend
     naming" for how a port-discovered IDE is hashed into an exposed
     backend id.
   - `address: InetAddress` — usually the loopback address.

@@ -22,8 +22,8 @@ rather than mirroring their contents into per-folder guides):
 
 - [`PHILOSOPHY.md`](PHILOSOPHY.md) — the four design tenets.
 - [`devrig-naming.md`](devrig-naming.md) — devrig CLI + stdio MCP
-  project/backend naming contract (slug rule, `bootHash`,
-  `archiveSha256`, `actions[].argv`, on-demand routing).
+  project/backend naming contract (the ONE `<PRODUCTCODE>-<hash8>`
+  backend_name scheme, pid-salted project names, on-demand routing).
 - [`devrig-scanning-research.md`](devrig-scanning-research.md) —
   decision record for on-demand `rebuildSnapshot()` vs background
   scanners (option A).

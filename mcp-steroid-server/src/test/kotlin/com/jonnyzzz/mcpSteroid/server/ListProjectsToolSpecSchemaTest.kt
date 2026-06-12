@@ -34,7 +34,7 @@ class ListProjectsToolSpecSchemaTest {
     fun `response serializes no top-level ide-plugin-pid header`() {
         // #89: devrig's own identity lives in the MCP server info; attribution is per-entry via backend_name.
         val response = ListProjectsResponse(
-            projects = listOf(ListedProject(projectName = "n", name = "n", path = "/p", backendName = "iu-1")),
+            projects = listOf(ListedProject(projectName = "n", name = "n", path = "/p", backendName = "IU-1")),
         )
         val json = McpJson.encodeToString(ListProjectsResponse.serializer(), response)
         assertTrue(!json.contains("\"ide\""), json)
@@ -44,10 +44,10 @@ class ListProjectsToolSpecSchemaTest {
 
     @Test
     fun `ListedProject round-trips snake_case keys`() {
-        val listed = ListedProject(projectName = "proj-9fk2a0xQ", name = "proj", path = "/p", backendName = "iu-9fk2a0xQ")
+        val listed = ListedProject(projectName = "proj-9fk2a0xQ", name = "proj", path = "/p", backendName = "IU-9fk2a0xQ")
         val json = McpJson.encodeToString(ListedProject.serializer(), listed)
         assertTrue(json.contains("\"project_name\":\"proj-9fk2a0xQ\""), json)
-        assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), json)
+        assertTrue(json.contains("\"backend_name\":\"IU-9fk2a0xQ\""), json)
         val decoded = McpJson.decodeFromString(ListedProject.serializer(), json)
         assertEquals(listed, decoded)
     }
@@ -55,7 +55,7 @@ class ListProjectsToolSpecSchemaTest {
     @Test
     fun `BackendInfo round-trips with renamed fields`() {
         val backend = BackendInfo(
-            backendName = "iu-9fk2a0xQ",
+            backendName = "IU-9fk2a0xQ",
             source = "marker",
             displayName = "IntelliJ IDEA 2026.1",
             routable = true,
@@ -68,7 +68,7 @@ class ListProjectsToolSpecSchemaTest {
             portDetail = PortBackendDetail(baseUrl = "http://localhost:63342"),
         )
         val json = McpJson.encodeToString(BackendInfo.serializer(), backend)
-        assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), json)
+        assertTrue(json.contains("\"backend_name\":\"IU-9fk2a0xQ\""), json)
         assertTrue(json.contains("\"kind\":\"mcp-steroid\""), json)
         assertTrue(json.contains("\"portDetail\""), json)
         val decoded = McpJson.decodeFromString(BackendInfo.serializer(), json)
@@ -80,7 +80,7 @@ class ListProjectsToolSpecSchemaTest {
     @Test
     fun `BackendInfo without an mcp-steroid plugin reports hasMcpSteroid false`() {
         val backend = BackendInfo(
-            backendName = "iu-port",
+            backendName = "IU-port",
             source = "port",
             displayName = "IntelliJ IDEA",
             routable = false,

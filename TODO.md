@@ -24,10 +24,11 @@
   `debugger/debug-attach-remote-jvm.md` (5 ```text fences at lines 10/26/66/101/123). The contract
   bans non-kotlin fences; rewrite those blocks as prose/inline code or ```kotlin. Until fixed, every
   prompts contract run reports this one failure (sessions treat it as "green if sole failure" — debt).
-- [ ] **devrig-naming.md id-scheme drift**: the naming-contract doc still specifies the old
-  slug/bootHash exposed ids (`IntelliJ_IDEA_2025.3.3-AbC4Df01`) while the implementation has moved to
-  `productCode-hash8` backend_names (`iu-9fk2a0xQ`) and pid-salted project names. The plugins[] section
-  was fixed (2026-06-10); the id-scheme sections need their own reconciliation pass.
+- [x] **devrig-naming.md id-scheme drift**: reconciled (2026-06-12) — the doc now specifies the single
+  implemented scheme: backend_name = `<PRODUCTCODE>-<hash8>` (verbatim capital build prefix, e.g.
+  `IU-9fk2a0xQ`; managed rows use the catalog productCode) and pid-salted project names
+  (`<name>-<hash8(canonicalHome\0pid)>`). The old slug/bootHash exposed-id sections were removed; one
+  shared `hash8` helper (sha256 → base62, 8 chars) backs both backend and project ids.
 - [ ] **list_windows graceful degradation**: devrig's `steroid_list_windows` is all-or-nothing — one
   IDE failing its `/windows` fetch errors the whole call (`coroutineScope` + `error(...)`), unlike
   `list_projects` which degrades per-backend. Return partial windows + a per-backend error marker.

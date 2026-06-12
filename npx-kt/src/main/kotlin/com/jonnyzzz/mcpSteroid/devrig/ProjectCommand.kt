@@ -88,11 +88,11 @@ fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
  * {
  *   "tool": { "name": "devrig", "version": "..." },
  *   "backends": [
- *     { "backend_name": "iu-9fk2a0xQ", "type": "intellij", "source": "marker", "routable": true, ... }
+ *     { "backend_name": "IU-9fk2a0xQ", "type": "intellij", "source": "marker", "routable": true, ... }
  *   ],
  *   "projects": [
  *     { "project_name": "myproject-1z8KqM03", "name": "myproject",
- *       "path": "/Users/me/myproject", "backend_name": "iu-9fk2a0xQ" }
+ *       "path": "/Users/me/myproject", "backend_name": "IU-9fk2a0xQ" }
  *   ]
  * }
  * ```

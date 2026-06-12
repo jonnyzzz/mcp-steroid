@@ -9,11 +9,10 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
-import com.jonnyzzz.mcpSteroid.server.base62FixedWidth
+import com.jonnyzzz.mcpSteroid.server.hash8
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.time.Instant
 
 class DevrigProjectRoutingService(
@@ -103,7 +102,7 @@ class DevrigProjectRoutingService(
 
     /**
      * The agent-facing backend id for a discovered IDE — the value an agent passes as `backend_name`
-     * to steroid_open_project. Computed by the R3.3 uniform hash scheme (`<productCodeLower>-<hash8>`,
+     * to steroid_open_project. Computed by the ONE uniform naming scheme (`<PRODUCTCODE>-<hash8>`,
      * hash over `"pid:<pid>"`), the same value surfaced by `steroid_list_projects` / `devrig backend
      * --json`, so the id surfaced there is the one accepted here.
      */
@@ -224,17 +223,13 @@ class DevrigProjectRoutingService(
             }
         }
 
-        fun projectHash(realProjectHome: Path, idePid: Long): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            digest.update(realProjectHome.toString().encodeToByteArray())
-            digest.update(0.toByte())
-            digest.update(idePid.toString().encodeToByteArray())
-            // base62 (alphanumeric) over the full salted digest, fixed 8 chars. Unlike URL-safe
-            // Base64 the alphabet has no '-'/'_', so the suffix can never contain or end with '-';
-            // the whole 256-bit digest feeds the result, nothing is truncated before hashing. The
-            // (home, pid) salting stays local; only the base62 rendering is shared (base62FixedWidth).
-            return base62FixedWidth(digest.digest(), 8)
-        }
+        // The same hash8 helper (sha256 -> base62, 8 chars) backs backend names (backendNameFor) and
+        // project names — one hash function for every devrig-exposed id. base62 (alphanumeric) has no
+        // '-'/'_', so the suffix can never contain or end with '-'. idePid is intentionally part of
+        // the input for debuggability: an operator reading the JSON can correlate two rows of the same
+        // project via their pids without parsing the opaque suffix.
+        fun projectHash(realProjectHome: Path, idePid: Long): String =
+            hash8("$realProjectHome\u0000$idePid")
     }
 }
 

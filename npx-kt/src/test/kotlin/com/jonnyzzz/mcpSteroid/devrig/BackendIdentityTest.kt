@@ -7,26 +7,31 @@ import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
+import com.jonnyzzz.mcpSteroid.server.backendNameFor
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
-import com.jonnyzzz.mcpSteroid.server.base62Sha256
+import com.jonnyzzz.mcpSteroid.server.hash8
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 
-/** R3.3: one uniform `backend_name` scheme `<productCodeLower>-<hash8>` for every source. */
+/** ONE uniform `backend_name` scheme `<PRODUCTCODE>-<hash8>` for every source — marker, port, managed. */
 class BackendIdentityTest {
     @Test
-    fun `backend_name uses the lowercased product code and an 8-char base62 hash of the source key`() {
+    fun `backend_name uses the verbatim capital product code and an 8-char base62 hash of the source key`() {
         val marker = backendNameForRow(BackendRow.FromMarker(markerIde(pid = 4242L), emptyList()))
         val port = backendNameForRow(BackendRow.FromPort(portIde(port = 65432)))
         val managed = backendNameForRow(BackendRow.FromManaged(managedInfo(id = "idea-community-2025.2.6.2")))
 
-        // Product code prefix is lowercased; build is IC-… everywhere here.
-        assertTrue(marker.startsWith("ic-"), marker)
-        assertTrue(port.startsWith("ic-"), port)
-        assertTrue(managed.startsWith("ic-"), managed)
+        // (a) The product code is the verbatim build prefix, capitals included — never lowercased.
+        // Build is IC-… everywhere here; the managed row's catalog productCode carries the same "IC".
+        assertTrue(marker.startsWith("IC-"), marker)
+        assertTrue(port.startsWith("IC-"), port)
+        assertTrue(managed.startsWith("IC-"), managed)
+        for (name in listOf(marker, port, managed)) {
+            assertNotEquals("ic", name.substringBefore('-'), "product segment must not be lowercased: $name")
+        }
 
         // hash8 is exactly 8 base62 (alphanumeric) chars.
         for (name in listOf(marker, port, managed)) {
@@ -36,9 +41,43 @@ class BackendIdentityTest {
         }
 
         // Deterministic and round-trippable: recomputing from the same source key gives the same id.
-        assertEquals("ic-" + base62Sha256("pid:4242").take(8), marker)
-        assertEquals("ic-" + base62Sha256("port:65432").take(8), port)
-        assertEquals("ic-" + base62Sha256("managed:idea-community-2025.2.6.2").take(8), managed)
+        assertEquals("IC-" + hash8("pid:4242"), marker)
+        assertEquals("IC-" + hash8("port:65432"), port)
+        assertEquals("IC-" + hash8("managed:idea-community-2025.2.6.2"), managed)
+    }
+
+    @Test
+    fun `marker, port, and managed rows all flow through the single backendNameFor formula`() {
+        // (b) No divergent per-source path: each row kind recomputes to the ONE shared formula.
+        assertEquals(
+            backendNameFor(productCode = "IC", sourceKey = "pid:4242"),
+            backendNameForRow(BackendRow.FromMarker(markerIde(pid = 4242L), emptyList())),
+        )
+        assertEquals(
+            backendNameFor(productCode = "IC", sourceKey = "port:65432"),
+            backendNameForRow(BackendRow.FromPort(portIde(port = 65432))),
+        )
+        assertEquals(
+            backendNameFor(productCode = "IC", sourceKey = "managed:idea-community-2025.2.6.2"),
+            backendNameForRow(BackendRow.FromManaged(managedInfo(id = "idea-community-2025.2.6.2"))),
+        )
+    }
+
+    @Test
+    fun `hash inputs are stable across rescans for the same IDE`() {
+        // (c) A rescan builds FRESH row objects for the same underlying IDE identity (same pid /
+        // port / managedId) — the recomputed backend_name must not change.
+        val markerScan1 = backendNameForRow(BackendRow.FromMarker(markerIde(pid = 4242L), emptyList()))
+        val markerScan2 = backendNameForRow(BackendRow.FromMarker(markerIde(pid = 4242L), emptyList()))
+        assertEquals(markerScan1, markerScan2)
+
+        val portScan1 = backendNameForRow(BackendRow.FromPort(portIde(port = 65432)))
+        val portScan2 = backendNameForRow(BackendRow.FromPort(portIde(port = 65432)))
+        assertEquals(portScan1, portScan2)
+
+        val managedScan1 = backendNameForRow(BackendRow.FromManaged(managedInfo(id = "idea-community-2025.2.6.2")))
+        val managedScan2 = backendNameForRow(BackendRow.FromManaged(managedInfo(id = "idea-community-2025.2.6.2")))
+        assertEquals(managedScan1, managedScan2)
     }
 
     @Test
@@ -48,15 +87,15 @@ class BackendIdentityTest {
         val b = backendNameForMarker(pid = 2L, build = "IU-261.1")
         assertEquals(a, aAgain)
         assertNotEquals(a, b)
-        assertTrue(a.startsWith("iu-"))
+        assertTrue(a.startsWith("IU-"), a)
     }
 
     @Test
-    fun `missing product code falls back to the ide- prefix`() {
-        assertTrue(backendNameForMarker(pid = 7L, build = null).startsWith("ide-"))
-        assertTrue(backendNameForMarker(pid = 7L, build = "").startsWith("ide-"))
+    fun `missing product code falls back to the IDE- prefix`() {
+        assertTrue(backendNameForMarker(pid = 7L, build = null).startsWith("IDE-"))
+        assertTrue(backendNameForMarker(pid = 7L, build = "").startsWith("IDE-"))
         // A build with no product-code prefix (port /api/about can return "253.x") also falls back.
-        assertTrue(backendNameForPort(port = 63342, build = "253.21581.142").startsWith("ide-"))
+        assertTrue(backendNameForPort(port = 63342, build = "253.21581.142").startsWith("IDE-"))
     }
 
     private fun markerIde(pid: Long): DiscoveredIde {

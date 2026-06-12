@@ -10,25 +10,29 @@ import com.jonnyzzz.mcpSteroid.server.markerBackendInfo
 import com.jonnyzzz.mcpSteroid.server.mcpSteroidPlugins
 import com.jonnyzzz.mcpSteroid.server.productCodeFromBuild
 
-// R3.3 — the shared backend_name formula (backendNameFor + backendNameForMarker) lives in
-// mcp-steroid-server (com.jonnyzzz.mcpSteroid.server.BackendName) so the in-IDE plugin and devrig
-// recompute the same id for the same input. The port/managed variants below are devrig-only sources.
+// The ONE backend_name formula (backendNameFor + backendNameForMarker) lives in mcp-steroid-server
+// (com.jonnyzzz.mcpSteroid.server.BackendName) so the in-IDE plugin and devrig recompute the same id
+// for the same input. The port/managed key builders below are devrig-only sources; all three row
+// kinds terminate in the same backendNameFor call.
 
-/** Port-discovered backend_name: keyed by the scanned port. */
+/** Port-discovered backend_name: keyed by the scanned port; product code from the reported build. */
 fun backendNameForPort(port: Int, build: String?): String =
-    backendNameFor(sourceKey = "port:$port", build = build)
+    backendNameFor(productCode = productCodeFromBuild(build), sourceKey = "port:$port")
 
-/** Managed-backend backend_name: keyed by the managed id (works before the backend is running). */
-fun backendNameForManaged(managedId: String, build: String?): String =
-    backendNameFor(sourceKey = "managed:$managedId", build = build)
+/**
+ * Managed-backend backend_name: keyed by the managed id (works before the backend is running — the
+ * managed id is the stable install identifier). Managed buildNumbers may come without the product
+ * prefix ("261.x"), but the catalog's [productCode] IS the build prefix (`product-info.json`
+ * productCode), so it is passed verbatim and yields the same value the build prefix would.
+ */
+fun backendNameForManaged(managedId: String, productCode: String?): String =
+    backendNameFor(productCode = productCode, sourceKey = "managed:$managedId")
 
-/** The R3.3 backend_name for any discovery row. */
+/** The backend_name for any discovery row — every kind flows through the one [backendNameFor]. */
 fun backendNameForRow(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> backendNameForMarker(row.ide.pid, row.ide.marker.ide.build)
     is BackendRow.FromPort -> backendNameForPort(row.ide.port, row.ide.buildNumber)
-    // Managed buildNumbers come without the product prefix ("261.x"); re-attach the known productCode
-    // so the backend_name carries the product hint ("pc-...") instead of the "ide-" fallback.
-    is BackendRow.FromManaged -> backendNameForManaged(row.info.id, "${row.info.productCode}-${row.info.buildNumber ?: ""}")
+    is BackendRow.FromManaged -> backendNameForManaged(row.info.id, row.info.productCode)
 }
 
 /**

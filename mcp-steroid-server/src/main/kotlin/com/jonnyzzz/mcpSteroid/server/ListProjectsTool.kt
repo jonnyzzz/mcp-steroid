@@ -73,7 +73,7 @@ data class ProjectInfo(
  */
 @Serializable
 data class BackendInfo(
-    /** R3.3 uniform opaque id, e.g. "iu-9fk2a0xQ". == backend_name passed to steroid_open_project. */
+    /** The ONE uniform opaque id `<PRODUCTCODE>-<hash8>`, e.g. "IU-9fk2a0xQ". == backend_name passed to steroid_open_project. */
     @SerialName("backend_name") val backendName: String,
     /**
      * Backend family. Today only `"intellij"`; documented as open so more backend types (other editors,

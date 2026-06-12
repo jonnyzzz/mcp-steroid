@@ -20,7 +20,7 @@ The IDE has indexed everything. It knows the code better than any file search. *
 > the **devrig stdio MCP server** (`devrig mcp`), the `project_name`
 > values returned by `steroid_list_projects` follow the
 > [`docs/devrig-naming.md`](../devrig-naming.md) spec — they include a
-> hash suffix (`<slug(name)>-<hash8>`) and are routed through an
+> hash suffix (`<name>-<hash8>`) and are routed through an
 > on-demand snapshot per call. The in-IDE MCP Steroid endpoint exposes
 > the raw IntelliJ `Project.name` instead; pick one transport and
 > stick to its naming.
@@ -182,7 +182,7 @@ To pick a value:
 
 1. Call `steroid_list_projects` and read `backends[]`. Each entry carries
    `backend_name` (the value to pass as `backend_name`, an opaque id like
-   `"iu-9fk2a0xQ"`), `displayName` (human label, not unique across
+   `"IU-9fk2a0xQ"`), `displayName` (human label, not unique across
    same-product IDEs — disambiguate via `pid`/`port`/`build`), `routable`
    (true only for IDEs you can actually open into), `plugins[]` (the
    IDE's relevant plugins, each `{ id, name, version, kind }`; a

@@ -45,7 +45,7 @@ class DevrigOpenProjectBackendRoutingTest {
         val routing = routingWith(pids = listOf(7L))
         val ide = routing.newestIdeOrNull()!!
         assertEquals(backendNameForMarker(7L, build), routing.backendNameForIde(ide))
-        assertTrue(routing.backendNameForIde(ide).startsWith("iu-"))
+        assertTrue(routing.backendNameForIde(ide).startsWith("IU-"))
     }
 
     @Test

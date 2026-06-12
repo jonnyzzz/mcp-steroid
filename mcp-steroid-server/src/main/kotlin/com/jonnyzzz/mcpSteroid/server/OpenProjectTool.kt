@@ -62,7 +62,7 @@ class OpenProjectToolSpec(
             .description(
                 "REQUIRED. The backend to open the project in, identified by its `backend_name` from " +
                     "steroid_list_projects (the `backend_name` of each `projects[]` entry, and of each " +
-                    "`backends[]` entry) — an opaque id like \"iu-9fk2a0xQ\". First call " +
+                    "`backends[]` entry) — an opaque id like \"IU-9fk2a0xQ\". First call " +
                     "steroid_list_projects and inspect `backends[]` (displayName, routable, managed); " +
                     "only `routable: true` entries are valid here. PREFER the backend that already has " +
                     "the same project — or another git worktree of the same repository — open: match " +
