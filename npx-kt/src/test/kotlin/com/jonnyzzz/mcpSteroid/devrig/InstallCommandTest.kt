@@ -205,6 +205,22 @@ class InstallCommandTest {
     }
 
     @Test
+    fun `install and --check share one removal plan (installRemovalNames)`() {
+        // No detections, readable list → still clears the canonical name defensively.
+        assertEquals(setOf("mcp-steroid"), installRemovalNames(emptyList(), listReadable = true))
+        // Unreadable list → falls back to BOTH known devrig names.
+        assertEquals(setOf("mcp-steroid", "devrig"), installRemovalNames(emptyList(), listReadable = false))
+        // Detected entries come first (list order), canonical appended once.
+        assertEquals(
+            listOf("old-steroid", "devrig", "mcp-steroid"),
+            installRemovalNames(
+                listOf(McpServerRef("old-steroid", "/x/devrig mpc"), McpServerRef("devrig", "/old/devrig mcp")),
+                listReadable = true,
+            ).toList(),
+        )
+    }
+
+    @Test
     fun `check with no existing entry reports the add it would apply and exits 1`() {
         val result = runInstallCheck(
             AiAgentCli.CLAUDE,
@@ -213,6 +229,9 @@ class InstallCommandTest {
 
         assertEquals(1, result.exitCode)
         assertContains(result.stdout, "no existing devrig / 'mcp-steroid' registration found")
+        // install ALWAYS issues a defensive `mcp remove mcp-steroid` before the add; the dry-run
+        // must print the same plan (annotated, since the name was not detected in the list).
+        assertContains(result.stdout, "remove 'mcp-steroid', if present")
         assertContains(result.stdout, "add 'mcp-steroid' → /usr/bin/env JAVA_HOME=/opt/jdk-21 /opt/devrig/bin/devrig mcp")
         assertContains(result.stdout, "Drift detected")
         assertContains(result.stdout, "devrig install claude")
@@ -265,7 +284,72 @@ class InstallCommandTest {
 
         assertEquals(1, result.exitCode)
         assertContains(result.stdout, "could not read")
+        // The diagnostic quotes the exact invocation that failed, so the user can reproduce it.
+        assertContains(result.stdout, "'claude mcp list' exited with code 2")
+        // Same fallback plan install executes on an unreadable list: clear both known devrig names.
+        assertContains(result.stdout, "remove 'mcp-steroid', if present")
+        assertContains(result.stdout, "remove 'devrig', if present")
         assertContains(result.stdout, "Drift detected")
+        result.assertReadOnly()
+    }
+
+    @Test
+    fun `check unreadable-list diagnostic quotes codex's real list invocation including --json`() {
+        val result = runInstallCheck(
+            AiAgentCli.CODEX,
+            RecordingRunner(listResult = AiAgentCliResult(exitCode = 3, output = "boom\n")),
+        )
+
+        assertEquals(1, result.exitCode)
+        assertContains(result.stdout, "'codex mcp list --json' exited with code 3")
+        result.assertReadOnly()
+    }
+
+    @Test
+    fun `check judges the exact registration install produces as canonical, per agent's real list format`() {
+        val command = "/usr/bin/env JAVA_HOME=/opt/jdk-21 /opt/devrig/bin/devrig mcp"
+        // Each fixture renders the entry `devrig install <agent>` registers in that agent CLI's REAL
+        // `mcp list` output format — the round-trip that guarantees install → --check converges to 0.
+        val claudeList = "mcp-steroid: $command - ✓ Connected"
+        // gemini-cli list.ts: `${statusIndicator} ${serverInfo} - ${statusText}` with an ` (stdio)` suffix.
+        val geminiList = "Configured MCP servers:\n\n✓ mcp-steroid: $command (stdio) - Connected"
+        val codexList = """
+            [
+              {"name":"mcp-steroid","transport":{"type":"stdio","command":"/usr/bin/env",
+                "args":["JAVA_HOME=/opt/jdk-21","/opt/devrig/bin/devrig","mcp"]}}
+            ]
+        """.trimIndent()
+
+        for ((agent, list) in mapOf(
+            AiAgentCli.CLAUDE to claudeList,
+            AiAgentCli.GEMINI to geminiList,
+            AiAgentCli.CODEX to codexList,
+        )) {
+            val result = runInstallCheck(agent, RecordingRunner(listResult = AiAgentCliResult(0, list)))
+            assertEquals(0, result.exitCode, "$agent must judge its own install canonical; got:\n${result.stdout}")
+            assertContains(result.stdout, "No drift")
+            result.assertReadOnly()
+        }
+    }
+
+    @Test
+    fun `check detects a stale gemini registration despite the status glyph and stdio suffix`() {
+        val geminiList = """
+            Configured MCP servers:
+
+            ✓ playwright: npx @playwright/mcp@latest (stdio) - Connected
+            ✗ mcp-steroid: /usr/bin/env JAVA_HOME=/old-jdk /old/devrig mpc (stdio) - Disconnected
+        """.trimIndent()
+        val result = runInstallCheck(
+            AiAgentCli.GEMINI,
+            RecordingRunner(listResult = AiAgentCliResult(0, geminiList)),
+        )
+
+        assertEquals(1, result.exitCode)
+        assertContains(result.stdout, "'mcp-steroid' (matched by name + config): /usr/bin/env JAVA_HOME=/old-jdk /old/devrig mpc")
+        assertContains(result.stdout, "remove 'mcp-steroid'")
+        assertContains(result.stdout, "Drift detected")
+        assertFalse(result.stdout.contains("remove 'playwright'"), result.stdout)
         result.assertReadOnly()
     }
 
@@ -274,11 +358,12 @@ class InstallCommandTest {
         val result = runInstallCheck(
             AiAgentCli.CLAUDE,
             RecordingRunner(listResult = AiAgentCliResult(0, "")),
-            reachability = IdeReachabilityReport(reachable = 1, discovered = 2),
+            ideReachability = { IdeReachabilityReport(reachable = 1, discovered = 2) },
         )
 
         assertContains(result.stdout, "IDE backends with the MCP Steroid plugin")
         assertContains(result.stdout, "1 of 2 discovered backend(s) reachable")
+        result.assertReadOnly()
     }
 
     @Test
@@ -286,17 +371,37 @@ class InstallCommandTest {
         val result = runInstallCheck(
             AiAgentCli.CLAUDE,
             RecordingRunner(listResult = AiAgentCliResult(0, "")),
-            reachability = IdeReachabilityReport(reachable = 0, discovered = 0),
+            ideReachability = { IdeReachabilityReport(reachable = 0, discovered = 0) },
         )
 
         assertContains(result.stdout, "none discovered")
         assertContains(result.stdout, "devrig backend")
+        result.assertReadOnly()
+    }
+
+    @Test
+    fun `check survives a failing IDE reachability probe — reported, but the verdict stays drift-only`() {
+        val canonicalList = "mcp-steroid: /usr/bin/env JAVA_HOME=/opt/jdk-21 /opt/devrig/bin/devrig mcp - ✓ Connected"
+        val result = runInstallCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, canonicalList)),
+            ideReachability = { throw IllegalStateException("marker scan exploded") },
+        )
+
+        // The probe failure is reported on both streams…
+        assertContains(result.stderr, "IDE discovery failed")
+        assertContains(result.stderr, "marker scan exploded")
+        assertContains(result.stdout, "discovery failed")
+        // …but the exit code is governed ONLY by registration drift: canonical entry → 0.
+        assertEquals(0, result.exitCode, result.stdout)
+        assertContains(result.stdout, "No drift")
+        result.assertReadOnly()
     }
 
     private fun runInstallCheck(
         agent: AiAgentCli,
         runner: RecordingRunner,
-        reachability: IdeReachabilityReport = IdeReachabilityReport(reachable = 1, discovered = 1),
+        ideReachability: () -> IdeReachabilityReport = { IdeReachabilityReport(reachable = 1, discovered = 1) },
     ): CheckRunResult {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
@@ -307,7 +412,7 @@ class InstallCommandTest {
             out = PrintStream(stdout, true, Charsets.UTF_8),
             err = PrintStream(stderr, true, Charsets.UTF_8),
             runner = runner,
-            ideReachability = { reachability },
+            ideReachability = ideReachability,
         )
         return CheckRunResult(
             exitCode = exitCode,

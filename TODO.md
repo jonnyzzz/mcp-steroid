@@ -59,4 +59,5 @@
   skill/-root article's body escapes). Extend if a future gating bug slips through.
 - [ ] **DataGrip (DB) caveat**: test-run/debug articles are now fetchable in DB where they are meaningless
   (graceful error at runtime); add a one-line DB caveat if dogfooding surfaces confusion.
+>>>>>>> 8b325061 (install --check review fixes: gemini list format, shared removal plan, probe-failure coverage (#86))
 - [ ] install.ps1 Windows smoke test: the devrig bootstrap installer (#97) was verified end-to-end on macOS (sh) and parse/behavior-checked under pwsh in Docker, but has never executed on real Windows PowerShell 5.1 — run it on a Windows box before promoting the PowerShell one-liner beyond the docs page (2026-06-12).

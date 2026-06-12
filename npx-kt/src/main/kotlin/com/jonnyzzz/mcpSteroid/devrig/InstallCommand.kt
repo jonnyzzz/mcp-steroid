@@ -22,9 +22,20 @@ fun DevrigServices.runInstallCommand(
     command: DevrigCommand.DevrigCommandInstall,
     runner: AiAgentCliRunner = ProcessAiAgentCliRunner(),
 ): Int {
-    val launcher = resolveDevrigLauncher()
     val javaHome = Path.of(System.getProperty("java.home"))
     return if (command.check) {
+        // A missing launcher IS drift for the diagnosis use case --check targets: whatever the agent
+        // has registered cannot work. Report it as such instead of dying with "Unexpected error".
+        val launcher = try {
+            resolveDevrigLauncher()
+        } catch (e: IllegalStateException) {
+            mcpStdout.println("Drift detected — ${e.message}.")
+            mcpStdout.println(
+                "No '$DEVRIG_MCP_SERVER_NAME' registration can launch without the devrig binary; " +
+                    "reinstall devrig, then run 'devrig install ${command.agent.binary}'.",
+            )
+            return INSTALL_CHECK_DRIFT_EXIT_CODE
+        }
         runInstallCheckCommand(
             command = command,
             launcher = launcher,
@@ -37,7 +48,7 @@ fun DevrigServices.runInstallCommand(
     } else {
         runInstallCommand(
             command = command,
-            launcher = launcher,
+            launcher = resolveDevrigLauncher(),
             javaHome = javaHome,
             out = mcpStdout,
             err = System.err,
@@ -78,8 +89,10 @@ fun DevrigServices.collectIdeReachability(): IdeReachabilityReport {
  * server list cannot be read, since the state cannot be verified.
  *
  * Stateless by design (Tenet 3): the only agent CLI invocation is the read-only `mcp list`, the IDE
- * probe reads markers/ports on demand, and nothing is written anywhere — two concurrent `--check`
- * runs are trivially safe.
+ * probe reads markers/ports on demand, and the check itself writes nothing — two concurrent `--check`
+ * runs are trivially safe. (The shared devrig CLI startup — PostHog beacon, background update check —
+ * still runs for `install --check` as for every tool command; see `runsTool()` in Main.kt and the
+ * Tenet-3 note in TODO.md.)
  */
 fun runInstallCheckCommand(
     command: DevrigCommand.DevrigCommandInstall,
@@ -101,7 +114,8 @@ fun runInstallCheckCommand(
     out.println()
 
     // The SAME review step install performs — and the only agent CLI call --check makes.
-    val listResult = runner.run(mcpListInvocation(agent))
+    val listInvocation = mcpListInvocation(agent)
+    val listResult = runner.run(listInvocation)
     val listReadable = listResult.exitCode == 0
     val listed = if (listReadable) parseMcpServerList(agent, listResult.output) else emptyList()
     val detected = listed.filter { it.isDevrigOwned() }
@@ -111,7 +125,8 @@ fun runInstallCheckCommand(
         !listReadable ->
             out.println(
                 "  could not read ${agent.displayName}'s MCP server list " +
-                    "('${agent.binary} mcp list' exited with code ${listResult.exitCode}).",
+                    "('${listInvocation.binary} ${listInvocation.args.joinToString(" ")}' " +
+                    "exited with code ${listResult.exitCode}).",
             )
         detected.isEmpty() ->
             out.println("  no existing devrig / '$DEVRIG_MCP_SERVER_NAME' registration found.")
@@ -131,12 +146,11 @@ fun runInstallCheckCommand(
     if (canonical) {
         out.println("  already canonical — no changes.")
     } else {
-        detected.forEach { out.println("  - remove '${it.name}'") }
-        if (!listReadable) {
-            out.println(
-                "  - remove the known devrig names " +
-                    "(${DEVRIG_SERVER_NAMES.joinToString(" / ") { "'$it'" }}), if present",
-            )
+        // The EXACT removal set install would issue (shared via installRemovalNames) — names install
+        // clears defensively even when not detected are annotated "if present".
+        val detectedNames = detected.map { it.name }.toSet()
+        for (name in installRemovalNames(detected, listReadable)) {
+            out.println("  - remove '$name'" + if (name in detectedNames) "" else ", if present")
         }
         out.println("  - add '$DEVRIG_MCP_SERVER_NAME' → $renderedCommand")
     }
@@ -152,6 +166,21 @@ fun runInstallCheckCommand(
         out.println("Drift detected — run 'devrig install ${agent.binary}' to repair.")
         INSTALL_CHECK_DRIFT_EXIT_CODE
     }
+}
+
+/**
+ * The single source of truth for the names `devrig install` clears before re-adding the canonical
+ * entry — shared by install (which executes the removals) and `--check` (which prints them), so the
+ * dry-run can never drift from what install actually does: every detected devrig-owned entry, the
+ * canonical name (always, so the re-add is clean even if the listing missed it), plus the legacy
+ * name when the agent's list could not be read.
+ */
+internal fun installRemovalNames(detected: List<McpServerRef>, listReadable: Boolean): Set<String> {
+    val names = LinkedHashSet<String>()
+    detected.forEach { names += it.name }
+    names += DEVRIG_MCP_SERVER_NAME
+    if (!listReadable) names += DEVRIG_LEGACY_SERVER_NAME
+    return names
 }
 
 private fun reportIdeReachability(out: PrintStream, err: PrintStream, probe: () -> IdeReachabilityReport) {
@@ -234,12 +263,8 @@ fun runInstallCommand(
         }
     }
 
-    // Build the set of names to clear: every detected devrig entry, the canonical name (always, so the
-    // re-add is clean even if the listing missed it), plus the legacy name when we couldn't read the list.
-    val namesToRemove = LinkedHashSet<String>()
-    detected.forEach { namesToRemove += it.name }
-    namesToRemove += DEVRIG_MCP_SERVER_NAME
-    if (listResult.exitCode != 0) namesToRemove += DEVRIG_LEGACY_SERVER_NAME
+    // The shared install plan: --check prints exactly this same set (see installRemovalNames).
+    val namesToRemove = installRemovalNames(detected, listReadable = listResult.exitCode == 0)
 
     // Step 2 — clear them all. Each removal is best-effort: a non-zero exit means "not present", which is
     // expected and not fatal. Underlying agent messages go to stderr; stdout reports confirmed removals.
