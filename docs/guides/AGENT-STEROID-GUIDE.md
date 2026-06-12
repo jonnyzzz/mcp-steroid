@@ -183,22 +183,28 @@ To pick a value:
 1. Call `steroid_list_projects` and read `backends[]`. Each entry carries
    `backend_name` (the value to pass as `backend_name`, an opaque id like
    `"iu-9fk2a0xQ"`), `displayName` (human label, not unique across
-   same-product IDEs), `locator` (disambiguator, e.g.
-   `"build IU-261.x, pid 1234"`), `routable` (true only for IDEs you can
-   actually open into), `plugins[]` (the IDE's relevant plugins, each
-   `{ id, name, version, kind }`; a `kind: "mcp-steroid"` entry means the
-   MCP Steroid plugin is installed), `openProjects[]` (`{ project_name, name,
-   path, backend_name }` for each project open in that backend), and
-   `managed` (true for the devrig-managed sandbox). Each `projects[]`
-   entry carries `project_name`, the raw folder `name`, `path`, and a
-   `backend_name` naming its owning backend.
+   same-product IDEs — disambiguate via `pid`/`port`/`build`), `routable`
+   (true only for IDEs you can actually open into), `plugins[]` (the
+   IDE's relevant plugins, each `{ id, name, version, kind }`; a
+   `kind: "mcp-steroid"` entry means the MCP Steroid plugin is
+   installed), and `managed` (true for the devrig-managed sandbox).
+   A backend's open projects are not embedded in its entry — the flat
+   `projects[]` of the same response carries every open project as
+   `{ project_name, name, path, backend_name }`; filter on `backend_name`
+   for the per-backend view.
 2. **Prefer the backend that already has the same project — or another
    git worktree of the same repository — open.** Worktrees of one repo
    share build/index/VCS context, so reusing that IDE keeps it warm and
-   avoids a redundant second indexing. Match
-   `backends[].openProjects[].path` against the repo you are opening
-   (same repo root / shared `.git`); if none matches, prefer a `managed`
-   backend, else any listed backend.
+   avoids a redundant second indexing. Match the path you are opening
+   against `projects[].path` and take the matching entry's
+   `backend_name`. **Longest-path rule:** among all candidate
+   `projects[].path` values that are a prefix of (or equal to) the
+   target path, pick the LONGEST matching path — a nested worktree
+   checkout (e.g. `<repo>/.claude/worktrees/<name>`) must resolve to the
+   worktree project, not the parent checkout. If no prefix candidate
+   matches, a backend holding a sibling worktree of the same repository
+   (same repo root / shared `.git`) is still the best pick. Otherwise
+   prefer a `managed` backend, else any listed backend.
 3. Pass the chosen `backend_name` to `steroid_open_project`.
 
 Rules:
