@@ -33,8 +33,9 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
         try {
             val texts = collectTexts(configurable.createComponent())
 
+            // Pin the constant's value (the website serves this exact command), then assert presence.
+            assertEquals("curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh", McpSteroidConfigurable.DEVRIG_INSTALL_COMMAND)
             assertContainsText(texts, McpSteroidConfigurable.DEVRIG_INSTALL_COMMAND)
-            assertContainsText(texts, "curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh")
             assertContainsText(texts, "devrig install claude")
             assertContainsText(texts, "devrig install codex")
             assertContainsText(texts, "devrig install gemini")

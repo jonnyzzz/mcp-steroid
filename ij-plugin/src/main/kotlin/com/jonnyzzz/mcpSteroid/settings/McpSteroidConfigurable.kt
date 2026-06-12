@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.settings
 
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.ui.DialogPanel
@@ -40,9 +41,12 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
     override fun createPanel(): DialogPanel {
         // Cheap reads only: port comes from an AtomicReference inside the app service.
-        val server = SteroidsMcpServer.getInstance()
-        val port = server.port
-        val info = if (port > 0) McpConnectionInfo.build(server.mcpUrl) else null
+        // getServiceIfCreated makes the panel structurally incapable of triggering service
+        // construction on the EDT — in production the server service is created at IDE startup,
+        // so a null here renders the same "Not running" state as a port that never bound.
+        val server = ApplicationManager.getApplication().getServiceIfCreated(SteroidsMcpServer::class.java)
+        val port = server?.port ?: 0
+        val info = if (server != null && port > 0) McpConnectionInfo.build(server.mcpUrl) else null
 
         return panel {
             row {
@@ -94,7 +98,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     }
                     row {
                         comment(
-                            "The server normally starts at IDE startup. Check the IDE log (Help | Show Log) " +
+                            "The server normally starts at IDE startup. Check the IDE log (Help | Show Log in Finder/Explorer) " +
                                 "for bind errors, or adjust the registry keys listed below."
                         )
                     }
