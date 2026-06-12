@@ -124,6 +124,17 @@ less` works. When a running IDE is discovered, IDE-conditional content is
 rendered for that IDE; otherwise everything is shown with its IDE gate annotated
 inline. Unknown paths exit non-zero and suggest nearby resources.
 
+### `devrig exec-code --project <project_name> --file <script.kt> [--task-id <id>] [--reason <text>] [--modal <mode>] [--timeout <sec>]`
+
+Runs the `steroid_execute_code` tool against a running IDE from the command line,
+with the Kotlin snippet read from `--file` — same parameters and defaults as the
+MCP tool, no agent session required. `<project_name>` is the name `devrig
+project` lists. Progress streams to stderr while the script runs; the result
+prints to stdout, so it works in shell scripts and CI smoke checks, and a
+`devrig exec-code --file repro.kt` line in a bug report is copy-pasteable. Exits
+non-zero when the script fails, with a distinct exit code when no IDE or project
+is reachable.
+
 ### `devrig backend download [<id>] [--version <v>] [--json]`
 
 With no `id`, lists the IDEs available for download. With an `id`, downloads and

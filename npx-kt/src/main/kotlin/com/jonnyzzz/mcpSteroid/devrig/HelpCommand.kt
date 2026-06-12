@@ -44,6 +44,20 @@ fun printHelp(out: PrintStream) : Int {
                                          when one is discovered; otherwise shows all
                                          content with IDE gates annotated.
 
+          devrig exec-code --project <project_name> --file <script.kt>
+                          [--task-id <id>] [--reason <text>]
+                          [--modal smart_non_modal|non_modal|unleashed]
+                          [--timeout <sec>]
+                                         run the steroid_execute_code tool against a
+                                         running IDE with the Kotlin snippet read
+                                         from --file. Same parameters and defaults
+                                         as the MCP tool; <project_name> as listed
+                                         by 'devrig project'. Progress streams to
+                                         stderr, the result prints to stdout; exits
+                                         non-zero when the script fails (and with a
+                                         distinct code when no IDE/project is
+                                         reachable).
+
           devrig backend download [<id>] [--version <v>] [--json]
                                          no id → list IDEs available for download.
                                          With id, download and install a managed
