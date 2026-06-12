@@ -141,14 +141,17 @@ private fun DevrigCommand.runsTool(): Boolean = when (this) {
     is DevrigCommand.DevrigCommandBackendStop,
     is DevrigCommand.DevrigCommandBackendProvision,
     is DevrigCommand.DevrigCommandProject,
-    is DevrigCommand.DevrigCommandInstall -> true
+    is DevrigCommand.DevrigCommandInstall,
+    is DevrigCommand.DevrigCommandPrompt -> true
     is DevrigCommand.DevrigCommandHelp,
     is DevrigCommand.DevrigCommandVersion,
     is DevrigCommand.DevrigCommandParseError -> false
 }
 
+// `prompt` never prints the headliner: its stdout IS the rendered article, meant for
+// `devrig prompt … | less` or redirection into a file, so no banner may precede it.
 private fun DevrigCommand.printsHeadliner(): Boolean =
-    runsTool() && this !is DevrigCommand.MCP && !json
+    runsTool() && this !is DevrigCommand.MCP && this !is DevrigCommand.DevrigCommandPrompt && !json
 
 suspend fun DevrigServices.mainImplMcp(
     onServerReady: (McpServerCore) -> Unit = {},

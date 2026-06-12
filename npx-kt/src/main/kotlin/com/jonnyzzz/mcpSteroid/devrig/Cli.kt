@@ -68,6 +68,17 @@ sealed interface DevrigCommand {
         override val json: Boolean = false,
     ) : DevrigCommand
 
+    data class DevrigCommandPrompt(
+        /**
+         * Resource to print: a full `mcp-steroid://` URI, a scheme-less `folder/stem` path, or a bare
+         * stem when unambiguous. `null` renders the root prompts — the entry-point catalog every agent
+         * sees (issue #99: the root index IS the list, there is no separate `list` subcommand).
+         */
+        val uri: String? = null,
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
     data class DevrigCommandHelp(
         override val debug: Boolean = false,
         override val json: Boolean = false,
@@ -171,6 +182,7 @@ private class DevrigRootCommand(
             backend,
             ProjectCommand(selected, this),
             InstallCommand(selected, this),
+            PromptCommand(selected, this),
             HelpCommand(selected, this),
             VersionCommand(selected, this),
         )
@@ -223,6 +235,18 @@ private class InstallCommand(
         val target = AiAgentCli.parse(agent)
             ?: throw UsageError("agent must be one of: claude, codex, gemini")
         select(DevrigCommand.DevrigCommandInstall(target, check = check, debug = options.debug, json = options.json))
+    }
+}
+
+private class PromptCommand(
+    selected: SelectedDevrigCommand,
+    parent: DevrigCliktCommand,
+) : DevrigCliktCommand("prompt", selected, parent) {
+    private val uri by argument("uri").optional()
+
+    override fun run() {
+        val options = options()
+        select(DevrigCommand.DevrigCommandPrompt(uri = uri, debug = options.debug, json = options.json))
     }
 }
 
@@ -333,6 +357,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandBackendProvision -> runBackendProvisionCommand(command)
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
             is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
+            is DevrigCommand.DevrigCommandPrompt -> runPromptCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

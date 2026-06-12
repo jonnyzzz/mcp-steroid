@@ -34,6 +34,16 @@ fun printHelp(out: PrintStream) : Int {
                                          MCP Steroid plugin are reachable; exits 1
                                          when install would change anything.
 
+          devrig prompt [<uri-or-path>]  no argument → print the root mcp-steroid://
+                                         prompt index (server instructions, the skill
+                                         index article, and a catalog of every
+                                         resource URI). With an argument (full URI,
+                                         'ide/apply-patch', or a unique bare name),
+                                         print that resource to stdout. Uses a running
+                                         IDE's product/version for conditional content
+                                         when one is discovered; otherwise shows all
+                                         content with IDE gates annotated.
+
           devrig backend download [<id>] [--version <v>] [--json]
                                          no id → list IDEs available for download.
                                          With id, download and install a managed

@@ -112,6 +112,18 @@ the default is human-readable text.
 Lists open projects across all discovered backends. `--json` emits a single
 machine-readable object on stdout; the default is human-readable text.
 
+### `devrig prompt [<uri-or-path>]`
+
+Browses the `mcp-steroid://` prompt resources — the recipe corpus agents fetch via
+`steroid_fetch_resource` — without wiring an agent or a running IDE. With no
+argument it prints the root index: the server instructions, the skill index
+article, and a catalog of every resource URI (the root index *is* the list).
+With an argument (`devrig prompt ide/apply-patch`, a full `mcp-steroid://` URI,
+or a unique bare name) it prints that resource to stdout, so `devrig prompt … |
+less` works. When a running IDE is discovered, IDE-conditional content is
+rendered for that IDE; otherwise everything is shown with its IDE gate annotated
+inline. Unknown paths exit non-zero and suggest nearby resources.
+
 ### `devrig backend download [<id>] [--version <v>] [--json]`
 
 With no `id`, lists the IDEs available for download. With an `id`, downloads and
