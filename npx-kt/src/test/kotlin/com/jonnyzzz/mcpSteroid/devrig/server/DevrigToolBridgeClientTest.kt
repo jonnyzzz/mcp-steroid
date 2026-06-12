@@ -606,16 +606,17 @@ class DevrigToolBridgeClientTest {
         assertEquals(setOf("alpha", "beta"), response.projects.map { it.name }.toSet())
         assertTrue(response.projects.all { it.projectName.isNotBlank() })
         for (backend in response.backends) {
-            assertTrue(backend.locator.isNotBlank(), "locator must disambiguate: $backend")
             assertEquals("IU", backend.ideProductCode)
+            assertTrue(!backend.build.isNullOrBlank(), "build must disambiguate: $backend")
+            assertTrue(backend.pid != null, "pid must disambiguate: $backend")
             assertEquals(true, backend.routable)
             assertTrue(backend.hasMcpSteroid())
-            // openProjects matches exactly the routes for that backend (paths included for worktree matching).
-            val expectedPaths = response.projects
+            // #90: backends embed no project list — the flat projects[] joins on backend_name
+            // (paths included there for worktree matching).
+            val ownedPaths = response.projects
                 .filter { it.backendName == backend.backendName }
                 .map { it.path }
-                .toSet()
-            assertEquals(expectedPaths, backend.openProjects.map { it.path }.toSet())
+            assertEquals(1, ownedPaths.size, "each marker backend owns exactly its route's project: $backend")
         }
         // The managed pid (43) is flagged so the agent can prefer it.
         assertEquals(true, response.backends.single { it.backendName == name43 }.managed)

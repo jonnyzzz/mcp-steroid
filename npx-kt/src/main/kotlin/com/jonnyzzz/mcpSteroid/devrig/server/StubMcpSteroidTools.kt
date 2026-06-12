@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
-import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.devrig.collectBackendInfos
 import com.jonnyzzz.mcpSteroid.server.ListedProject
@@ -79,14 +78,10 @@ class DevrigListProjectsToolHandler(
         }
         // backends[] = ALL inventory rows (markers + port-discovered + managed) through the ONE
         // BackendRow -> BackendInfo mapping shared with the CLI, so the MCP `backends[]` and
-        // `devrig backend --json` never diverge. Marker rows own their routes' projects; port/managed
-        // rows surface with routable=false and no openProjects so the agent sees the full picture.
-        val backends = inventory.collectBackendInfos { backendName, row ->
-            when (row) {
-                is BackendRow.FromMarker -> listedProjects.filter { it.backendName == backendName }
-                is BackendRow.FromPort, is BackendRow.FromManaged -> emptyList()
-            }
-        }
+        // `devrig backend --json` never diverge. Port/managed rows surface with routable=false so the
+        // agent sees the full picture. Each backend's owned projects are NOT embedded (#90) — the flat
+        // projects[] above joins on backend_name.
+        val backends = inventory.collectBackendInfos()
         return ListProjectsResponse(
             projects = listedProjects,
             backends = backends,

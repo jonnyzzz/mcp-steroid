@@ -13,6 +13,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -98,10 +99,12 @@ class BackendListTest {
         assertEquals("intellij", backend["type"]!!.jsonPrimitive.content)
         assertEquals("managed", backend["source"]!!.jsonPrimitive.content)
         assertEquals(true, backend["managed"]!!.jsonPrimitive.boolean)
-        // R3.4: managed-only fields live under managedDetail, not flattened on the backend.
+        // #90: pid and the product/version label are canonical at the top level (pid/displayName);
+        // managedDetail keeps only the facts unique to the managed install.
+        assertEquals(44L, backend["pid"]!!.jsonPrimitive.long)
+        assertEquals("idea-community 2025.3.3", backend["displayName"]!!.jsonPrimitive.content)
         val detail = backend["managedDetail"]!!.jsonObject
         assertEquals("idea-community-2025.3.3", detail["managedId"]!!.jsonPrimitive.content)
-        assertEquals("2025.3.3", detail["version"]!!.jsonPrimitive.content)
         assertEquals("/managed/idea-community-2025.3.3", detail["installPath"]!!.jsonPrimitive.contentOrNull)
         assertEquals("/caches/idea-community-2025.3.3", detail["cachePath"]!!.jsonPrimitive.contentOrNull)
     }

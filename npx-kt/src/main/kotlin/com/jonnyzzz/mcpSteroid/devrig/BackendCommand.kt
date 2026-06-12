@@ -646,14 +646,12 @@ fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
     // so absent optional fields (error/port/portDetail/...) are omitted rather than serialised as null —
     // matching the old hand-built backendEntryJson and keeping `jq` consumers simple.
     val json = Json { prettyPrint = true; encodeDefaults = true; explicitNulls = false }
-    // Build each backend's owned projects first so they can be embedded AND flattened identically.
-    val projectsByRow: Map<BackendRow, List<ListedProject>> = rowsWithIds.associate { (backendName, row) ->
-        row to listedProjectsForRow(backendName, row)
-    }
+    // Each project serializes exactly once (#90): in the flat `projects[]`, joined to its backend
+    // via `backend_name` — backends carry no embedded project list.
     val backends = rowsWithIds.map { (backendName, row) ->
-        backendInfoForRow(row, backendName = backendName, openProjects = projectsByRow.getValue(row))
+        backendInfoForRow(row, backendName = backendName)
     }
-    val projects = rowsWithIds.flatMap { (_, row) -> projectsByRow.getValue(row) }
+    val projects = rowsWithIds.flatMap { (backendName, row) -> listedProjectsForRow(backendName, row) }
     val payload = buildJsonObject {
         put("tool", buildJsonObject {
             put("name", "devrig")

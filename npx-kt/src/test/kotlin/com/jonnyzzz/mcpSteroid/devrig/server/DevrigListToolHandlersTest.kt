@@ -99,20 +99,19 @@ class DevrigListToolHandlersTest {
         val markerBackend = response.backends.single { it.backendName == markerName }
         assertEquals(true, markerBackend.routable)
         assertEquals("marker", markerBackend.source)
-        assertEquals(response.projects.map { it.path }.toSet(), markerBackend.openProjects.map { it.path }.toSet())
 
         val portBackend = response.backends.single { it.backendName == portName }
         assertEquals(false, portBackend.routable)
         assertEquals("port", portBackend.source)
-        assertTrue(portBackend.openProjects.isEmpty(), "port rows own no projects: $portBackend")
 
         val managedBackend = response.backends.single { it.backendName == managedName }
         assertEquals(false, managedBackend.routable)
         assertEquals("managed", managedBackend.source)
-        assertTrue(managedBackend.openProjects.isEmpty(), "managed rows own no projects: $managedBackend")
 
         // projects[] stays marker-routed only — the extra inventory rows never leak phantom projects.
+        // (#90: the flat projects[] is the ONE project list; backends[] embed none — join on backend_name.)
         assertEquals(listOf(markerName), response.projects.map { it.backendName })
+        assertEquals(listOf(projectHome.toString()), response.projects.map { it.path })
     }
 
     @Test
@@ -140,7 +139,6 @@ class DevrigListToolHandlersTest {
         assertEquals(null, backend.pid)
         val detail = backend.managedDetail ?: error("managed row must carry managedDetail: $backend")
         assertEquals("unreachable", detail.state)
-        assertEquals(null, detail.runningPid)
     }
 
     @Test

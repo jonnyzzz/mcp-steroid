@@ -36,7 +36,7 @@ class SelfBackendDescription(
     val backendName: String,
     /** Open projects, each with `project_name == name` and `backend_name == `[backendName]. */
     val projects: List<ListedProject>,
-    /** The single self [BackendInfo] (`source=marker`, `routable=true`, `openProjects=`[projects]). */
+    /** The single self [BackendInfo] (`source=marker`, `routable=true`; no inline project list — #90). */
     val backend: BackendInfo,
 )
 
@@ -65,7 +65,6 @@ suspend fun describeSelfBackend(): SelfBackendDescription {
         pid = pid,
         ide = ide,
         plugins = mcpSteroidPlugins(plugin),
-        openProjects = listedProjects,
     )
 
     return SelfBackendDescription(

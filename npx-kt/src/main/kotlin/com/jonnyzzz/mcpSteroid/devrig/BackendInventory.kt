@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.devrig
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IntelliJPortDiscovery
 import com.jonnyzzz.mcpSteroid.server.BackendInfo
-import com.jonnyzzz.mcpSteroid.server.ListedProject
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.async
@@ -109,16 +108,10 @@ fun monitorBackendInventory(services: DevrigServices): BackendInventory = Backen
 /**
  * Maps the whole inventory to the shared MCP/CLI `backends[]` schema: stable de-duplicated
  * `backend_name`s (keep-first + WARN, same as `backend --json`) and one [BackendInfo] per row via
- * [backendInfoForRow]. [openProjectsFor] lets `steroid_list_projects` attach each marker backend's
- * owned projects; the default leaves `openProjects` empty (port/managed rows never own projects).
+ * [backendInfoForRow]. Backends carry no inline project list (#90) — each surface's flat `projects[]`
+ * joins on `backend_name`.
  */
-suspend fun BackendInventory.collectBackendInfos(
-    openProjectsFor: (backendName: String, row: BackendRow) -> List<ListedProject> = { _, _ -> emptyList() },
-): List<BackendInfo> =
+suspend fun BackendInventory.collectBackendInfos(): List<BackendInfo> =
     backendRowsWithStableIds(collectRows()).map { (backendName, row) ->
-        backendInfoForRow(
-            row = row,
-            backendName = backendName,
-            openProjects = openProjectsFor(backendName, row),
-        )
+        backendInfoForRow(row = row, backendName = backendName)
     }
