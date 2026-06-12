@@ -125,7 +125,8 @@ val vf1 = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(java.nio.fil
 val vf2 = LocalFileSystem.getInstance().refreshAndFindFileByPath("/abs/path/new-file.kt")
 val vf3 = com.intellij.openapi.vfs.VirtualFileManager.getInstance()
     .refreshAndFindFileByNioPath(java.nio.file.Path.of("/abs/path/new-file.kt"))
-// All three return null only if the file truly does not exist on disk.
+// All three return null only if the file does not exist on disk (or is VFS-ignored
+// via FileTypeManager ignored-name patterns).
 ```
 
 **THREADING CONSTRAINT — never call these inside a read action when off-EDT.** The refresh
