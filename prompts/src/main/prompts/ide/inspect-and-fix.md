@@ -109,8 +109,9 @@ println("Applied quick fix: $fixName")
 # IDEA: instantiating a Java inspection class directly
 
 In IntelliJ IDEA the Java-plugin inspection classes are on the script classpath, so a
-specific tool can also be instantiated directly — useful when it is disabled in the
-profile and the short-name lookup returns nothing:
+specific tool can also be instantiated directly — useful when it is not registered in the
+profile at all (plugin missing, or the short-name is unknown; the profile lookup returns every
+registered tool regardless of its enabled state):
 
 ```kotlin[IU]
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
@@ -123,10 +124,13 @@ println("Wrapper ready: ${wrapper.shortName} (${wrapper.displayName})")
 ###_ELSE_###
 # Language-plugin inspection classes
 
-This IDE's language inspections (Python, C#, C++, Go, JavaScript, ...) live inside
+This IDE's language inspections (Python, C++, Go, JavaScript, ...) live inside
 language plugins — do not import them by class name in scripts. The profile lookup in the
 recipe above resolves the plugin's tool at runtime from its short-name; enumerate the
-candidates via `mcp-steroid://ide/inspection-summary`.
+candidates via `mcp-steroid://ide/inspection-summary`. Rider caveat: ReSharper-backed C#
+analyses run out-of-process and are NOT `LocalInspectionTool` instances — they cannot be
+driven through `InspectionEngine`; only IDE-frontend inspections (spellchecker, web, ...)
+resolve this way in Rider.
 ###_END_IF_###
 
 # Inspect a file in ANOTHER open project
