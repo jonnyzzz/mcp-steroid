@@ -62,6 +62,8 @@ sealed interface DevrigCommand {
 
     data class DevrigCommandInstall(
         val agent: AiAgentCli,
+        /** `--check`: read-only dry-run — report drift and IDE reachability, change nothing. */
+        val check: Boolean = false,
         override val debug: Boolean = false,
         override val json: Boolean = false,
     ) : DevrigCommand
@@ -211,12 +213,16 @@ private class InstallCommand(
     parent: DevrigCliktCommand,
 ) : DevrigCliktCommand("install", selected, parent) {
     private val agent by argument("agent")
+    private val check by option(
+        "--check",
+        help = "dry-run: report the registration state and the changes install would apply, without applying anything; exits 1 on drift",
+    ).flag()
 
     override fun run() {
         val options = options()
         val target = AiAgentCli.parse(agent)
             ?: throw UsageError("agent must be one of: claude, codex, gemini")
-        select(DevrigCommand.DevrigCommandInstall(target, debug = options.debug, json = options.json))
+        select(DevrigCommand.DevrigCommandInstall(target, check = check, debug = options.debug, json = options.json))
     }
 }
 

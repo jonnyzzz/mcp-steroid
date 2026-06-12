@@ -204,6 +204,139 @@ class InstallCommandTest {
         assertTrue(result.stderr.contains("fail", ignoreCase = true), result.stderr)
     }
 
+    @Test
+    fun `check with no existing entry reports the add it would apply and exits 1`() {
+        val result = runInstallCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, "Checking MCP server health…\n\n")),
+        )
+
+        assertEquals(1, result.exitCode)
+        assertContains(result.stdout, "no existing devrig / 'mcp-steroid' registration found")
+        assertContains(result.stdout, "add 'mcp-steroid' → /usr/bin/env JAVA_HOME=/opt/jdk-21 /opt/devrig/bin/devrig mcp")
+        assertContains(result.stdout, "Drift detected")
+        assertContains(result.stdout, "devrig install claude")
+        result.assertReadOnly()
+    }
+
+    @Test
+    fun `check with the canonical entry already present reports no drift and exits 0`() {
+        val canonicalList = """
+            playwright: npx @playwright/mcp@latest - ✓ Connected
+            mcp-steroid: /usr/bin/env JAVA_HOME=/opt/jdk-21 /opt/devrig/bin/devrig mcp - ✓ Connected
+        """.trimIndent()
+        val result = runInstallCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, canonicalList)),
+        )
+
+        assertEquals(0, result.exitCode)
+        assertContains(result.stdout, "'mcp-steroid' (matched by name + config)")
+        assertContains(result.stdout, "already canonical — no changes")
+        assertContains(result.stdout, "No drift")
+        result.assertReadOnly()
+    }
+
+    @Test
+    fun `check with stale and duplicate entries reports removals plus the add and exits 1`() {
+        // claudeListWithBothNames carries a stale 'mcp-steroid' (old JAVA_HOME + mpc subcommand)
+        // AND a duplicate legacy 'devrig' entry — install would consolidate both into one.
+        val result = runInstallCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, claudeListWithBothNames)),
+        )
+
+        assertEquals(1, result.exitCode)
+        assertContains(result.stdout, "'mcp-steroid' (matched by name + config): /usr/bin/env JAVA_HOME=/opt/jdk /opt/devrig/bin/devrig mpc")
+        assertContains(result.stdout, "'devrig' (matched by name + config): /usr/bin/env /old/devrig mcp")
+        assertContains(result.stdout, "remove 'mcp-steroid'")
+        assertContains(result.stdout, "remove 'devrig'")
+        assertContains(result.stdout, "add 'mcp-steroid' → /usr/bin/env JAVA_HOME=/opt/jdk-21 /opt/devrig/bin/devrig mcp")
+        assertFalse(result.stdout.contains("remove 'playwright'"), result.stdout)
+        result.assertReadOnly()
+    }
+
+    @Test
+    fun `check that cannot read the server list reports drift and exits 1`() {
+        val result = runInstallCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(exitCode = 2, output = "boom: cannot list\n")),
+        )
+
+        assertEquals(1, result.exitCode)
+        assertContains(result.stdout, "could not read")
+        assertContains(result.stdout, "Drift detected")
+        result.assertReadOnly()
+    }
+
+    @Test
+    fun `check reports how many IDE backends with the plugin are reachable`() {
+        val result = runInstallCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, "")),
+            reachability = IdeReachabilityReport(reachable = 1, discovered = 2),
+        )
+
+        assertContains(result.stdout, "IDE backends with the MCP Steroid plugin")
+        assertContains(result.stdout, "1 of 2 discovered backend(s) reachable")
+    }
+
+    @Test
+    fun `check reports when no IDE backend with the plugin is discovered`() {
+        val result = runInstallCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, "")),
+            reachability = IdeReachabilityReport(reachable = 0, discovered = 0),
+        )
+
+        assertContains(result.stdout, "none discovered")
+        assertContains(result.stdout, "devrig backend")
+    }
+
+    private fun runInstallCheck(
+        agent: AiAgentCli,
+        runner: RecordingRunner,
+        reachability: IdeReachabilityReport = IdeReachabilityReport(reachable = 1, discovered = 1),
+    ): CheckRunResult {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val exitCode = runInstallCheckCommand(
+            command = DevrigCommand.DevrigCommandInstall(agent, check = true),
+            launcher = launcher,
+            javaHome = javaHome,
+            out = PrintStream(stdout, true, Charsets.UTF_8),
+            err = PrintStream(stderr, true, Charsets.UTF_8),
+            runner = runner,
+            ideReachability = { reachability },
+        )
+        return CheckRunResult(
+            exitCode = exitCode,
+            invocations = runner.invocations,
+            removedNames = runner.removed,
+            stdout = stdout.toString(Charsets.UTF_8),
+            stderr = stderr.toString(Charsets.UTF_8),
+        )
+    }
+
+    private data class CheckRunResult(
+        val exitCode: Int,
+        val invocations: List<AiAgentCliInvocation>,
+        val removedNames: List<String>,
+        val stdout: String,
+        val stderr: String,
+    ) {
+        /** --check must never execute a mutating agent CLI call: only the read-only `mcp list`. */
+        fun assertReadOnly() {
+            assertEquals(1, invocations.size, "only the read-only list call is allowed; got: $invocations")
+            assertTrue(invocations.single().args.contains("list"), invocations.toString())
+            assertTrue(
+                invocations.none { it.args.contains("add") || it.args.contains("remove") },
+                "no mcp add/remove may execute in --check mode; got: $invocations",
+            )
+            assertTrue(removedNames.isEmpty(), "nothing may be removed in --check mode; got: $removedNames")
+        }
+    }
+
     private fun runInstall(agent: AiAgentCli, runner: RecordingRunner): InstallRunResult {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
