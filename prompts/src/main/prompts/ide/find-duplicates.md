@@ -1,20 +1,28 @@
 IDE: Find Duplicate Code
-[IU]
-Run the bundled `DuplicatedCode` inspection across the project and walk each clone cluster (main + duplicates) with typed access — no reflection, no `setAccessible(true)`.
+
+Find duplicate code clusters: PSI body comparison (Kotlin/Java) or the bundled `DuplicatedCode` inspection (IDEA, PyCharm Pro, WebStorm, RubyMine) — typed access, no reflection.
 
 # TL;DR for agents
 
+###_IF_IDE[IU]_###
 If the task is "find / refactor / scan for duplicate code" on a Kotlin/Java project: **scroll to "Primary recipe — PSI body comparison" below, copy the kotlin block into one `steroid_execute_code` call, done.** Output is `CLUSTERS_FOUND: <n>` plus a `path:startLine-endLine` line per fragment. For Python / JavaScript / Groovy / Ruby, the Cross-check (`DuplicatedCode` inspection) is the right tool instead. The rest of this article is reference material — read it only if the Primary recipe returns unexpected results or the user asks for near-duplicate / parameterized clone detection.
+###_ELSE_IF_IDE[PY,WS,RM]_###
+This IDE bundles the `DuplicatedCode` inspection (duplicates-detector module): **scroll to "Cross-check recipe — warm-index inspection" below and copy that kotlin block into one `steroid_execute_code` call.** Output is `CLUSTERS_FOUND: <n>` plus a `path:startLine-endLine` line per fragment. Caveat: the inspection queries the project-wide `HashFragmentIndex`, which is empty in fresh sessions / CI — a `CLUSTERS_FOUND: 0` right after IDE start means "index cold", not "no duplicates"; wait for indexing to finish (smart mode) and re-run before concluding.
+###_ELSE_###
+This IDE bundles neither the Kotlin/Java PSI the Primary recipe walks nor the `DuplicatedCode` duplicates-detector module, so the ready-made kotlin recipes in this article are omitted here. The *approach* still transfers: walk this IDE's PSI for body-bearing declarations, normalize each body's text (strip whitespace), and group identical bodies — use the extension probe below to see which file types the project has, and `PsiTreeUtil.collectElementsOfType` with this IDE's declaration PSI class. Rider caveat: C# analysis runs out-of-process in ReSharper — C# PSI is not reachable from `steroid_execute_code`; only IDE-frontend languages can be walked this way.
+###_END_IF_###
 
 # When to use this
 
-Whenever an agent is asked to "find and refactor duplicate code", "extract a common helper for repeated logic", or "scan for clones". The `DuplicatedCode` inspection is the right tool: it is bundled in IntelliJ IDEA Ultimate, runs on Java, Kotlin, Python, Groovy, JavaScript, Ruby, and other supported languages via the same `DuplicateProblemDescriptor` payload, and the descriptor exposes a public `getTextClone()` getter so a script can enumerate every clone cluster typed.
+Whenever an agent is asked to "find and refactor duplicate code", "extract a common helper for repeated logic", or "scan for clones". The `DuplicatedCode` inspection is the right tool where it ships — IntelliJ IDEA Ultimate, PyCharm Pro, WebStorm, RubyMine: it runs on Java, Kotlin, Python, Groovy, JavaScript, Ruby, and other supported languages via the same `DuplicateProblemDescriptor` payload, and the descriptor exposes a public `getTextClone()` getter so a script can enumerate every clone cluster typed.
 
 **Pick println vs printJson before you start.** The base recipe ends with `println` for human-readable cluster reports. If you're an agent piping the result into a follow-up step (count check, file-hit assertion, summary generation), jump straight to the **Structured output (printJson)** section below — same dedup, machine-readable shape, no second exec_code pass to reshape verbose output.
 
+###_IF_IDE[IU]_###
 **Agent fast path.** **For Kotlin / Java, run the Primary recipe (PSI body comparison) below FIRST. Do NOT start with the warm-index Cross-check inspection path — it can legitimately return zero in fresh sessions.** The Primary recipe is the very next code block below; copy that. It works in fresh sessions, CI, test environments, AND fully-indexed projects — no warm-index prerequisite, no second pass to verify. The "Cross-check recipe — warm-index inspection" further down the article is OPTIONAL — only when the user explicitly wants near-duplicate / parameterized-clone detection AND the project's `HashFragmentIndex` is known to be warm. `CLUSTERS_FOUND: 0` from the cross-check path alone is ambiguous — it is NOT evidence that no duplicates exist until the Primary recipe has also run.
 
 **Primary recipe language coverage**: Kotlin (`KtNamedFunction`) + Java (`PsiMethod`) only. For Python / JavaScript / Groovy / Ruby projects, the warm-index Cross-check recipe is the right tool — the Primary recipe will return 0 clusters even if there are obvious duplicates.
+###_END_IF_###
 
 **Clusters can be intra-file or cross-file.** Two methods inside one class with the same body are reported the same way as a method in file A duplicating a method in file B. **And the inspection emits the same logical cluster N times** (once per fragment-as-`main`), so a 2-fragment pair surfaces twice — the Cross-check recipe deduplicates by hashing the unordered set of `(path:startLine-endLine)` ranges. Skip the dedup and your `CLUSTERS_FOUND` count is roughly N× too large.
 
@@ -30,6 +38,7 @@ Whenever an agent is asked to "find and refactor duplicate code", "extract a com
 
 > **Before submitting the recipe, ensure `steroid_execute_code` is callable in your session.** If your client lazy-loads MCP tool schemas (e.g. Claude Code's deferred tools), call `ToolSearch` (or the equivalent schema-load step for your client) for `mcp__mcp-steroid__steroid_execute_code` first. Without the schema loaded the call will fail with `InputValidationError` and you will lose a turn.
 
+###_IF_IDE[IU]_###
 # Primary recipe — PSI body comparison (no index needed)
 
 **This is the recipe the "Agent fast path" callout points to.** Collect Kotlin / Java functions, **extract just the body block** (NOT the full declaration — the most common duplicate pattern is copy-paste-rename where names differ but bodies are identical), normalize (strip whitespace + line endings), and group identical bodies. Covers intra-file clones (two methods in one class with the same body) AND cross-file clones; works in fresh sessions, CI, test environments, AND fully-indexed projects with no warm-index prerequisite.
@@ -135,10 +144,12 @@ val payload: Map<String, Any> = mapOf(
 )
 printJson(payload)
 ```
+###_END_IF_###
 
+###_IF_IDE[IU,PY,RM,WS]_###
 # Why direct typed access works (no reflection needed) — for the Cross-check recipe
 
-`steroid_execute_code` compiles your Kotlin against every loaded plugin's classloader files (`ScriptClassLoaderFactory.ideClasspath()` flattens `descriptor.pluginClassLoader.files` for every loaded plugin and its content modules). In IDEA Ultimate the duplicates-detector module (`intellij.platform.duplicatesDetector.jar`) is bundled, so `com.jetbrains.clones.DuplicateProblemDescriptor`, `com.jetbrains.clones.structures.TextClone`, and `com.jetbrains.clones.structures.TextFragment` are all on the script classpath. **Import them directly and cast.** Do **not** look the class up via `JavaPsiFacade` — that queries the *user project's* classpath, where the plugin classes never live, and a `null` result there is a known false negative that has historically led agents into reflection.
+`steroid_execute_code` compiles your Kotlin against every loaded plugin's classloader files (`ScriptClassLoaderFactory.ideClasspath()` flattens `descriptor.pluginClassLoader.files` for every loaded plugin and its content modules). IDEA Ultimate, PyCharm Pro, WebStorm, and RubyMine bundle the duplicates-detector module, so `com.jetbrains.clones.DuplicateProblemDescriptor`, `com.jetbrains.clones.structures.TextClone`, and `com.jetbrains.clones.structures.TextFragment` are all on the script classpath. **Import them directly and cast.** Do **not** look the class up via `JavaPsiFacade` — that queries the *user project's* classpath, where the plugin classes never live, and a `null` result there is a known false negative that has historically led agents into reflection.
 
 # Cross-check recipe — warm-index inspection (broader clone types)
 
@@ -148,7 +159,7 @@ Use the inspection-based recipe only when the user explicitly wants near-duplica
 
 Submit this as a single `steroid_execute_code` call. Adjust `targetExtensions` to whatever your project uses. Everything else is fully self-contained.
 
-```kotlin[IU]
+```kotlin[IU,PY,RM,WS]
 import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
@@ -239,7 +250,7 @@ clusters.forEachIndexed { i, c ->
 
 For pipelines or follow-up code that needs to consume the result programmatically, swap the trailing `println` block for a single `printJson` call. Stable shape: `clusterCount`, `clusters[].occurrences`, `clusters[].fragments[].{path, startLine, endLine}`. Same dedup logic as the Cross-check recipe — only the final emission changes.
 
-```kotlin[IU]
+```kotlin[IU,PY,RM,WS]
 // Drop into the Cross-check recipe — replaces the trailing println loop. The local
 // data classes here mirror the ones in the Cross-check recipe; **delete the data
 // class and `val clusters` stubs below when merging** — they exist only so this
@@ -270,7 +281,7 @@ showing the user *what* is duplicated. When the task is "summarize the
 duplication for a human", read the snippet from the `Document` while you still
 hold the read action:
 
-```kotlin[IU]
+```kotlin[IU,PY,RM,WS]
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.jetbrains.clones.structures.TextFragment
 
@@ -292,14 +303,16 @@ When the user is asking *what* is duplicated (not just *where*), include the
 snippet of each cluster's `main` fragment in your reply so they can judge
 relevance without opening every file. For pure counting / triage tasks the
 file:line markers from the Cross-check recipe are enough — skip the snippet helper.
+###_END_IF_###
 
 # Discovering which file types exist in the project
 
 The default `targetExtensions = listOf("java", "kt", "py")` is a sensible
 starting point. For an unfamiliar project, ask the IDE which extensions are
-actually present before running the recipe at scale:
+actually present before running a project-wide scan (this probe is pure
+platform API and works in every JetBrains IDE):
 
-```kotlin[IU]
+```kotlin
 import com.intellij.psi.search.GlobalSearchScope
 
 val byExtCount = readAction {
@@ -317,12 +330,13 @@ val present = listOf("java", "kt", "kts", "py", "groovy", "js", "ts", "rb")
 println(present.filterValues { it > 0 })
 ```
 
-Use the non-empty extensions to populate `targetExtensions` so the inspection
-loop visits files the project actually has. For an autonomous run where you
-want a single round-trip, inline the probe into the Cross-check recipe — replace
-the hard-coded `targetExtensions` with the result of the probe, then continue with
-the inspection loop unchanged.
+Use the non-empty extensions to populate `targetExtensions` so the scan
+visits files the project actually has. For an autonomous run where you
+want a single round-trip, inline the probe into the recipe you run — replace
+the hard-coded `targetExtensions` with the result of the probe, then continue
+unchanged.
 
+###_IF_IDE[IU,PY,RM,WS]_###
 # How the Cross-check recipe works
 
 - `DuplicateInspection` is a `LocalInspectionTool` (`shortName = "DuplicatedCode"`, registered with `runForWholeFile="true"`). Per-file `checkFile` looks up a `DuplicateScopeExtension` for the file's language, queries the project-wide `HashFragmentIndex`, and emits a `DuplicateProblemDescriptor` for each clone where the inspected file holds the cluster's `main` fragment.
@@ -350,9 +364,9 @@ If `DuplicateScopeExtension.findDuplicateScope(fileType)` returns `null` for the
 
 # When the Cross-check returns zero clusters
 
-If the Cross-check recipe reports `CLUSTERS_FOUND: 0` on a project you know contains duplicates (or on the standard `DemoDuplicates.kt` fixture with two byte-identical method bodies), the cross-check ran but the inspection emitted no `DuplicateProblemDescriptor`s. **The Primary recipe (PSI body comparison) above is the answer — if you haven't run it yet, go back and run it; don't pivot to grep / Bash.** The most common root cause is an empty `HashFragmentIndex`; the per-file `checkFile` query returns no clones because no clones have been indexed yet.
+If the Cross-check recipe reports `CLUSTERS_FOUND: 0` on a project you know contains duplicates (or on the standard `DemoDuplicates.kt` fixture with two byte-identical method bodies), the cross-check ran but the inspection emitted no `DuplicateProblemDescriptor`s. The most common root cause is an empty `HashFragmentIndex`; the per-file `checkFile` query returns no clones because no clones have been indexed yet. **On Kotlin/Java (IDEA) the Primary recipe (PSI body comparison) above is the answer — if you haven't run it yet, go back and run it; don't pivot to grep / Bash.** On Python / JavaScript / Ruby, wait for indexing to finish (smart mode), re-run the cross-check, and only then report a verdict — a cold-index zero is not evidence.
 
-Skip the index probe — the safer signal is **the Cross-check recipe itself returning `CLUSTERS_FOUND: 0`**. If you saw zero, the index is either empty or the inspection path doesn't apply; either way the Primary recipe above is the answer. (Earlier guidance suggested probing `FileBasedIndex.getAllKeys(HashFragmentIndex.NAME, ...)` but the `HashFragmentIndex` package path is internal-only and changes across IDE versions — the class is not resolvable from the script classpath.)
+Skip the index probe — the safer signal is **the Cross-check recipe itself returning `CLUSTERS_FOUND: 0`**. If you saw zero, the index is either empty or the inspection path doesn't apply; handle it as in the previous paragraph. (Earlier guidance suggested probing `FileBasedIndex.getAllKeys(HashFragmentIndex.NAME, ...)` but the `HashFragmentIndex` package path is internal-only and changes across IDE versions — the class is not resolvable from the script classpath.)
 
 # When the Cross-check direct import does not compile
 
@@ -364,6 +378,7 @@ The Cross-check recipe's typed imports work in **IDEA Ultimate, PyCharm Pro, Rub
 4. **Do not switch to reflection.** Private-field renames silently break next IDE release. The public `getTextClone()` getter is the answer.
 
 > **Reflection is for exploration, not for the recipe you ship.** If you reached for `Class.getDeclaredField("myTextClone")` + `setAccessible(true)` to extract the clone pair, stop — that path is brittle (private-field renames in the next IDE release silently break the script) and unnecessary. The public `getTextClone()` getter and the typed `import` above are the right answer. See the reflection-policy note in `mcp-steroid://skill/coding-with-intellij`.
+###_END_IF_###
 
 # See also
 
