@@ -61,3 +61,9 @@
   (graceful error at runtime); add a one-line DB caveat if dogfooding surfaces confusion.
 >>>>>>> 8b325061 (install --check review fixes: gemini list format, shared removal plan, probe-failure coverage (#86))
 - [ ] install.ps1 Windows smoke test: the devrig bootstrap installer (#97) was verified end-to-end on macOS (sh) and parse/behavior-checked under pwsh in Docker, but has never executed on real Windows PowerShell 5.1 — run it on a Windows box before promoting the PowerShell one-liner beyond the docs page (2026-06-12).
+- [ ] **Pre-existing inspection findings** (surfaced 2026-06-12 by an in-IDE `runInspectionsDirectly`
+  sweep of files touched by the 0101 branch — none introduced by the branch):
+  `McpScriptContextImpl.kt:95/98` PrivatePropertyName (`SYNC_DOCUMENTS_TIMEOUT`/`WAIT_FOR_SMART_MODE_TIMEOUT`
+  as `val` instead of const-style), `McpScriptContextImpl.kt:621` UnstableApiUsage
+  (`writeAction` is @ApiStatus.Experimental — find the stable entry point),
+  `McpScriptContext.kt:10` unused import, `ApplyPatch.kt:214` RedundantSamConstructor.

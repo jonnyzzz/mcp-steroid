@@ -144,7 +144,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             }
 
             row {
-                browserLink("Report issues, Join Slack & Community", FEEDBACK_URL)
+                browserLink("Report issues, join Slack and community", FEEDBACK_URL)
             }.topGap(TopGap.SMALL)
         }
     }
