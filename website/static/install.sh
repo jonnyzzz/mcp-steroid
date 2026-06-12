@@ -3,14 +3,17 @@
 #
 # Usage:  curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh
 #
-# Downloads the latest devrig release of jonnyzzz/mcp-steroid, verifies its
-# SHA-256 against the GitHub release asset digest, unpacks it verbatim under
-# the ~/.mcp-steroid/ layout from docs/devrig-deployment-spec.md, and links
-# the launcher into ~/.mcp-steroid/bin/devrig.
+# Downloads the latest devrig release of jonnyzzz/mcp-steroid (verified
+# against the GitHub release asset digest) PLUS a matching Amazon Corretto 25
+# JDK (verified against Corretto's published SHA-256), unpacks both verbatim
+# under the ~/.mcp-steroid/ layout from docs/devrig-deployment-spec.md, and
+# writes a launcher wrapper into ~/.mcp-steroid/bin/devrig that exports
+# JAVA_HOME from the bundled JDK — no preinstalled Java is required.
 #
 # Layout (spec v7, "Filesystem layout"):
-#   ~/.mcp-steroid/bin/devrig                       <- launcher entry point (symlink in this minimal v1)
+#   ~/.mcp-steroid/bin/devrig                       <- launcher wrapper (sets JAVA_HOME, execs the launcher)
 #   ~/.mcp-steroid/binaries/devrig-<os>-<cpu>-<sha>/ <- unpacked release zip, verbatim (no strip)
+#   ~/.mcp-steroid/binaries/jdk-<os>-<cpu>-<sha>/    <- unpacked Corretto 25 JDK, verbatim
 #
 # Discipline:
 #   - POSIX sh only, set -eu.
@@ -31,6 +34,35 @@ BINARIES_DIR="$STEROID_HOME/binaries"
 
 log() { printf '%s\n' "[mcp-steroid] $*" >&2; }
 fail() { log "ERROR: $*"; exit 1; }
+
+# promote_tree <staging-dir> <target-dir>
+# Atomically promotes an unpacked staging tree into its content-addressed
+# target directory; tolerates a concurrent install winning the race.
+#
+# POSIX mv has two success modes here:
+#   - target absent: rename(2), atomic — we won the race. The target only
+#     ever appears fully populated (that is why we do NOT pre-claim it with
+#     the spec's mkdir-lock: an empty claimed dir would be visible to
+#     concurrent installs as "already installed").
+#   - target already a directory (another install finished first): mv does
+#     NOT fail — it moves the staging dir INSIDE the winner's tree. Detect
+#     that nested path and remove the duplicate; the winner's tree is
+#     complete because it too only appeared via atomic rename.
+promote_tree() {
+  if mv "$1" "$2" 2>/dev/null; then
+    promoted_nested="$2/${1##*/}"
+    if [ -d "$promoted_nested" ]; then
+      log "another install finished first; using the existing tree"
+      rm -rf "$promoted_nested"
+    fi
+  elif [ -d "$2" ]; then
+    # Some mv implementations fail instead of nesting — same outcome.
+    log "another install finished first; using the existing tree"
+    rm -rf "$1"
+  else
+    fail "could not move unpacked tree into place: $2"
+  fi
+}
 
 main() {
 
@@ -183,28 +215,7 @@ if [ -z "$target" ] || [ ! -d "$target" ]; then
     rm -rf "$tmp_dir"
     mkdir -p "$tmp_dir"
     unzip -q "$tmp_zip" -d "$tmp_dir"
-    # POSIX mv has two success modes here:
-    #   - $target absent: rename(2), atomic — we won the race. The target
-    #     only ever appears fully populated (that is why we do NOT pre-claim
-    #     it with the spec's mkdir-lock: an empty claimed dir would be
-    #     visible to concurrent installs as "already installed").
-    #   - $target already a directory (another install finished first): mv
-    #     does NOT fail — it moves $tmp_dir INSIDE the winner's tree.
-    #     Detect that nested path and remove the duplicate; the winner's
-    #     tree is complete because it too only appeared via atomic rename.
-    if mv "$tmp_dir" "$target" 2>/dev/null; then
-      nested="$target/${tmp_dir##*/}"
-      if [ -d "$nested" ]; then
-        log "another install finished first; using the existing tree"
-        rm -rf "$nested"
-      fi
-    elif [ -d "$target" ]; then
-      # Some mv implementations fail instead of nesting — same outcome.
-      log "another install finished first; using the existing tree"
-      rm -rf "$tmp_dir"
-    else
-      fail "could not move unpacked tree into place: ${target}"
-    fi
+    promote_tree "$tmp_dir" "$target"
   fi
   rm -f "$tmp_zip"
 fi
@@ -222,43 +233,112 @@ done
 [ -n "$launcher" ] || fail "launcher bin/devrig not found inside ${target}"
 chmod +x "$launcher"
 
-# ─── link into bin/ (spec entry point; wrapper script replaces this in v7) ──
-# MIGRATION NOTE for the future phase-1 wrapper installer: bin/devrig is a
-# SYMLINK pointing INTO the content-addressed tree under binaries/. When the
-# wrapper later "writes its own bytes to ~/.mcp-steroid/bin/devrig" (spec v7
-# install step 4), it must rm the path (or mv a temp file over it) first —
-# any write-through (cat >, cp, Set-Content) follows the symlink and clobbers
-# the cached launcher inside the trusted binaries/ tree instead of replacing
-# the link.
-ln -sfn "$launcher" "$BIN_DIR/devrig"
-log "launcher: $BIN_DIR/devrig -> $launcher"
+# ─── bundled JDK (Amazon Corretto 25; devrig requires Java 25) ──────────────
+# devrig must run without a preinstalled Java. Resolve the matching Amazon
+# Corretto 25 JDK from the official "latest" permalink, verify it against
+# Corretto's published SHA-256, and unpack it verbatim into the spec layout
+# binaries/jdk-<os>-<cpu>-<sha>/. The wrapper written below exports JAVA_HOME
+# from this tree on every launch; DEVRIG_JAVA_HOME (honored by the launcher
+# itself) still overrides the bundled JDK.
+JDK_MAJOR=25
+case "$os" in
+  darwin) jdk_os=macos ;;
+  linux)  jdk_os=linux ;;
+  *) fail "no Corretto ${JDK_MAJOR} platform mapping for OS '${os}'" ;;
+esac
+case "$cpu" in
+  arm64)  jdk_cpu=aarch64 ;;
+  x86_64) jdk_cpu=x64 ;;
+  *) fail "no Corretto ${JDK_MAJOR} platform mapping for CPU '${cpu}'" ;;
+esac
+jdk_asset="amazon-corretto-${JDK_MAJOR}-${jdk_cpu}-${jdk_os}-jdk.tar.gz"
+jdk_dl="https://corretto.aws/downloads"
 
-# ─── Java 25 check (devrig does not bundle a JVM) ───────────────────────────
-java_bin=""
-if [ -n "${DEVRIG_JAVA_HOME:-}" ] && [ -x "${DEVRIG_JAVA_HOME}/bin/java" ]; then
-  java_bin="${DEVRIG_JAVA_HOME}/bin/java"
-elif [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/java" ]; then
-  java_bin="${JAVA_HOME}/bin/java"
-elif command -v java >/dev/null 2>&1; then
-  java_bin="java"
-fi
-if [ -z "$java_bin" ]; then
-  log "WARNING: no Java found. devrig requires Java 25 — install a JDK 25"
-  log "         (e.g. Amazon Corretto 25) or set DEVRIG_JAVA_HOME / JAVA_HOME."
+# The checksum is fetched first (a few bytes): it both verifies the download
+# and content-addresses the install dir, so an already-installed JDK is
+# detected without re-downloading the ~200 MB archive.
+log "resolving Amazon Corretto ${JDK_MAJOR} for ${jdk_os}-${jdk_cpu}..."
+jdk_sha_file="$BINARIES_DIR/.tmp.$$.jdk.sha256"
+trap 'rm -rf "$release_json" "$jdk_sha_file"' EXIT
+fetch "${jdk_dl}/latest_sha256/${jdk_asset}" "$jdk_sha_file" \
+  || fail "cannot fetch the Corretto checksum: ${jdk_dl}/latest_sha256/${jdk_asset}"
+jdk_sha=$(tr -d '[:space:]' < "$jdk_sha_file" | tr 'A-F' 'a-f')
+rm -f "$jdk_sha_file"
+[ "${#jdk_sha}" -eq 64 ] || fail "unexpected Corretto checksum '${jdk_sha}' for ${jdk_asset}"
+case "$jdk_sha" in
+  *[!0-9a-f]*) fail "unexpected Corretto checksum '${jdk_sha}' for ${jdk_asset}" ;;
+esac
+
+jdk_target="$BINARIES_DIR/jdk-${os}-${cpu}-${jdk_sha}"
+if [ -d "$jdk_target" ]; then
+  log "JDK already installed: ${jdk_target##*/} (skipping download)"
 else
-  java_major=$("$java_bin" -version 2>&1 | awk -F'"' '/version/ { split($2, v, "."); print v[1]; exit }')
-  case "$java_major" in
-    ''|*[!0-9]*)
-      log "WARNING: could not determine the Java version of '$java_bin'; devrig requires Java 25" ;;
-    *)
-      if [ "$java_major" -lt 25 ]; then
-        log "WARNING: found Java ${java_major}, but devrig requires Java 25."
-        log "         Install a JDK 25 or point DEVRIG_JAVA_HOME at one."
-      else
-        log "Java ${java_major} found: OK"
-      fi ;;
-  esac
+  command -v tar >/dev/null 2>&1 || fail "tar not found — install it and re-run"
+  [ -n "$sha_verify_tool" ] \
+    || fail "neither shasum nor sha256sum found — cannot verify the JDK download; install one and re-run"
+
+  jdk_tmp_tar="$BINARIES_DIR/.tmp.$$.jdk.tar.gz"
+  jdk_tmp_dir="$BINARIES_DIR/.tmp.$$.jdk.unpack"
+  trap 'rm -rf "$release_json" "$jdk_sha_file" "$jdk_tmp_tar" "$jdk_tmp_dir"' EXIT
+
+  log "downloading ${jdk_asset} (~200 MB)..."
+  fetch "${jdk_dl}/latest/${jdk_asset}" "$jdk_tmp_tar" || fail "download failed: ${jdk_dl}/latest/${jdk_asset}"
+
+  actual_jdk_sha=$($sha_verify_tool "$jdk_tmp_tar" | awk '{ print $1 }')
+  [ "$actual_jdk_sha" = "$jdk_sha" ] \
+    || fail "SHA-256 mismatch for ${jdk_asset}: expected ${jdk_sha}, got ${actual_jdk_sha}"
+  log "SHA-256 verified: ${jdk_sha}"
+
+  log "unpacking verbatim into ${jdk_target##*/}..."
+  rm -rf "$jdk_tmp_dir"
+  mkdir -p "$jdk_tmp_dir"
+  tar -xzf "$jdk_tmp_tar" -C "$jdk_tmp_dir"
+  promote_tree "$jdk_tmp_dir" "$jdk_target"
+  rm -f "$jdk_tmp_tar"
 fi
+
+# Locate JAVA_HOME inside the verbatim tree. macOS Corretto unpacks to
+# amazon-corretto-<N>.jdk/Contents/Home; Linux to a single top-level
+# amazon-corretto-<version>-linux-<cpu>/ directory.
+jdk_home=""
+for jdk_candidate in "$jdk_target"/*/Contents/Home "$jdk_target"/* "$jdk_target"; do
+  if [ -x "$jdk_candidate/bin/java" ]; then
+    jdk_home="$jdk_candidate"
+    break
+  fi
+done
+[ -n "$jdk_home" ] || fail "bin/java not found inside ${jdk_target}"
+
+# ─── write the launcher wrapper into bin/ (spec entry point) ────────────────
+# The wrapper embeds both paths RELATIVE to $HOME and exports JAVA_HOME from
+# the bundled JDK before exec-ing the real launcher, so the user needs no
+# preinstalled Java. It writes nothing to stdout — stdout belongs to the MCP
+# stdio channel when an agent runs `devrig mcp` through it.
+launcher_rel=${launcher#"$HOME"/}
+jdk_home_rel=${jdk_home#"$HOME"/}
+case "$launcher_rel" in /*) fail "launcher '$launcher' is not under HOME '$HOME'" ;; esac
+case "$jdk_home_rel" in /*) fail "JDK home '$jdk_home' is not under HOME '$HOME'" ;; esac
+
+tmp_wrapper="$BIN_DIR/.tmp.$$.devrig"
+cat > "$tmp_wrapper" <<EOF
+#!/bin/sh
+# devrig launcher wrapper — written by install.sh; re-run the installer to refresh.
+# Exports JAVA_HOME from the bundled Corretto JDK so no preinstalled Java is
+# needed; DEVRIG_JAVA_HOME (read by the launcher itself) still overrides it.
+# Writes nothing to stdout — stdout is the MCP stdio channel.
+if [ -z "\${DEVRIG_JAVA_HOME:-}" ] && [ -x "\$HOME/${jdk_home_rel}/bin/java" ]; then
+  JAVA_HOME="\$HOME/${jdk_home_rel}"
+  export JAVA_HOME
+fi
+exec "\$HOME/${launcher_rel}" "\$@"
+EOF
+chmod +x "$tmp_wrapper"
+# mv (rename) replaces bin/devrig atomically — and replaces a pre-existing v1
+# SYMLINK itself rather than following it into the trusted binaries/ tree (a
+# write-through like `cat >` would clobber the cached launcher there).
+mv -f "$tmp_wrapper" "$BIN_DIR/devrig"
+log "launcher: $BIN_DIR/devrig -> \$HOME/${launcher_rel}"
+log "JAVA_HOME (bundled): \$HOME/${jdk_home_rel}"
 
 # ─── PATH hint ───────────────────────────────────────────────────────────────
 case ":${PATH}:" in
