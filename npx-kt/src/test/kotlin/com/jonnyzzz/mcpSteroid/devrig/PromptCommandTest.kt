@@ -1,17 +1,18 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.prompts.IdeFilter
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.ApplyPatchPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.TypeHierarchyPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.SkillPromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.test.RunTestAtCaretPromptArticle
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -110,12 +111,27 @@ class PromptCommandTest {
     }
 
     @Test
+    fun `folder-qualified lookup is case-insensitive`() {
+        // Every published URI is lowercase ASCII; 'devrig prompt IDE/apply-patch' must resolve
+        // instead of exiting 64 with zero candidates (exact path match and the folder near-miss
+        // filter used to be case-sensitive while bare stems already fell back case-insensitively).
+        val article = ApplyPatchPromptArticle()
+        val path = article.uri.substringAfter("://")
+        val upperFolder = path.substringBefore('/').uppercase() + "/" + path.substringAfter('/')
+
+        val run = runPrompt(upperFolder)
+
+        assertEquals(0, run.exitCode, "expected '$upperFolder' to resolve; stderr:\n${run.stderr}")
+        assertContains(run.stdout, article.title.readPrompt())
+    }
+
+    @Test
     fun `ambiguous bare stem errors and lists every match`() {
         // Several folders publish an `overview` article (ide/, debugger/, lsp/, vcs/, …),
         // so the bare stem must refuse to guess and list the competing URIs instead.
         val run = runPrompt("overview")
 
-        assertNotEquals(0, run.exitCode)
+        assertEquals(PROMPT_NOT_FOUND_EXIT_CODE, run.exitCode)
         assertContains(run.stderr, "Ambiguous")
         val listedUris = Regex("""\S+://\S+""").findAll(run.stderr).count()
         assertTrue(listedUris >= 2, "ambiguity report must list the competing URIs; got:\n${run.stderr}")
@@ -172,6 +188,41 @@ class PromptCommandTest {
 
         assertContains(catalog, ApplyPatchPromptArticle().uri)
         assertContains(catalog, "${TypeHierarchyPromptArticle().uri} [gated: IU]")
+    }
+
+    // ----------------------------- gate labels ------------------------------
+
+    @Test
+    fun `gate labels join product sets with slash and parenthesize nested composites`() {
+        val iuRd = IdeFilter.Ide(setOf("IU", "RD"))
+        val rd = IdeFilter.Ide(setOf("RD"))
+
+        // '/' between product codes — ', ' would collide with the ' and '/' or ' chain separators.
+        assertEquals("IU/RD", iuRd.gateLabel())
+        assertEquals("RD, version >= 254", IdeFilter.Ide(setOf("RD"), minVersion = 254).gateLabel())
+
+        // Nested composite operands are parenthesized so the chain stays precedence-unambiguous.
+        assertEquals("IU/RD and (RD or not (RD))", iuRd.and(rd.or(rd.not())).gateLabel())
+
+        // Same-operator nesting is associative — inlined without parentheses; distinct() still
+        // collapses the common generated shape And(Ide(IU), Or(Ide(IU))) into a single "IU".
+        val iu = IdeFilter.Ide(setOf("IU"))
+        assertEquals("IU/RD and RD", iuRd.and(IdeFilter.And(listOf(rd, rd))).gateLabel())
+        assertEquals("IU", iu.and(IdeFilter.Or(listOf(iu))).gateLabel())
+    }
+
+    @Test
+    fun `catalog renders composite gates readably`() {
+        // run-test-at-caret carries the article gate IU/RD AND'ed with the union of its kt-block
+        // gates (a Rider branch and a not-Rider/IU branch). The flat ', '-joined label used to be
+        // unreadable: [gated: IU, RD and IU, RD and RD or IU, RD and not (RD) and IU].
+        val catalog = renderResourceCatalog()
+
+        assertContains(
+            catalog,
+            "${RunTestAtCaretPromptArticle().uri} " +
+                "[gated: IU/RD and ((IU/RD and RD) or (IU/RD and not (RD) and IU))]",
+        )
     }
 
     // ------------------------------- help -----------------------------------
