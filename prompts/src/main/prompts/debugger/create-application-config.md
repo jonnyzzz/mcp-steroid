@@ -1,48 +1,54 @@
 Create Application Run Configuration
 
-Create a new Application run configuration for a main class.
+Create a run configuration programmatically: enumerate the registered configuration types and factories (platform API), then create one from a chosen factory. Includes an IDEA Application example.
 
-###_IF_IDE[RD]_###
-In Rider, use native test runner actions instead of ApplicationConfiguration (which is JVM-specific).
+## Enumerate configuration types and create from a factory (every IDE)
 
-**Run .NET tests from editor context:**
-```kotlin
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.TextEditor
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.openapi.actionSystem.ActionManager
-import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.ActionUiKind
-import com.intellij.openapi.actionSystem.ex.ActionUtil
-import com.intellij.ide.DataManager
+Run configuration types are registered on the platform `com.intellij.configurationType`
+extension point. Enumerate them to discover what kinds of configurations the current IDE
+supports (each IDE ships its own set — Application/JUnit in IDEA, Python in PyCharm,
+Go in GoLand, npm in WebStorm, ...), then create and register a configuration from a
+chosen factory:
 
-// Open test file, position caret, fire action
-val basePath = project.basePath ?: error("No basePath")
-val testFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath + "/Path/To/Tests.cs")
-    ?: error("Test file not found")
-val editors = withContext(Dispatchers.EDT) { FileEditorManager.getInstance(project).openFile(testFile, true) }
-val editor = (editors.filterIsInstance<TextEditor>().firstOrNull() ?: error("No editor")).editor
-val offset = editor.document.text.indexOf("class MyTestFixture")
-withContext(Dispatchers.EDT) { editor.caretModel.moveToOffset(offset) }
-
-// RiderUnitTestRunContextAction = run, RiderUnitTestDebugContextAction = debug
-val action = ActionManager.getInstance().getAction("RiderUnitTestRunContextAction") ?: error("Not found")
-withContext(Dispatchers.EDT) {
-    val ctx = DataManager.getInstance().getDataContext(editor.contentComponent)
-    val event = AnActionEvent.createEvent(ctx, action.templatePresentation.clone(), "EditorPopup", ActionUiKind.NONE, null)
-    ActionUtil.performAction(action, event)
-}
-println("Tests started")
-```
-
-To list existing run configurations:
 ```kotlin
 import com.intellij.execution.RunManager
+import com.intellij.execution.configurations.ConfigurationType
+
+// 1. Discover the configuration types this IDE offers
+val types = ConfigurationType.CONFIGURATION_TYPE_EP.extensionList
+for (type in types) {
+    val factories = type.configurationFactories.joinToString { it.name }
+    println("${type.id} (${type.displayName}) factories: $factories")
+}
+
+// 2. Create a configuration from a chosen factory
+val typeId = "TODO"       // TODO: pick a type id printed above
+val configName = "MyApp"  // TODO: configuration name
+
+val chosenType = types.firstOrNull { it.id == typeId }
+    ?: error("Configuration type not found: '$typeId'. Candidates: ${types.map { it.id }}")
+val factory = chosenType.configurationFactories.firstOrNull()
+    ?: error("Type '$typeId' has no configuration factories")
+
 val runManager = RunManager.getInstance(project)
-runManager.allSettings.forEach { println(it.name + " (" + it.type.displayName + ")") }
+if (runManager.findConfigurationByName(configName) != null) {
+    println("Run configuration already exists: $configName")
+    return
+}
+
+val settings = runManager.createConfiguration(configName, factory)
+// Type-specific setup goes here: cast settings.configuration to the factory's
+// configuration class and set its properties (main class, script path,
+// working directory, environment, ...).
+runManager.addConfiguration(settings)
+runManager.selectedConfiguration = settings
+println("Created run configuration: $configName (${chosenType.displayName})")
 ```
-###_ELSE_###
-Create a new Application run configuration for a Kotlin/Java main class.
+
+###_IF_IDE[IU]_###
+## IDEA: Application configuration for a Kotlin/Java main class
+
+`ApplicationConfiguration` is the JVM main-class configuration from the Java plugin:
 
 ```kotlin[IU]
 import com.intellij.execution.RunManager
@@ -82,6 +88,12 @@ runManager.selectedConfiguration = settings
 
 println("Created run configuration:", configName, "main:", mainClassName)
 ```
+###_ELSE_IF_IDE[RD]_###
+## Rider note
+
+`ApplicationConfiguration` is JVM-specific and does not exist in Rider. To run or debug
+.NET tests, use Rider's native context actions (`RiderUnitTestRunContextAction` /
+`RiderUnitTestDebugContextAction`) — see [Run Test at Caret](mcp-steroid://test/run-test-at-caret).
 ###_END_IF_###
 
 # See also
@@ -89,6 +101,9 @@ println("Created run configuration:", configName, "main:", mainClassName)
 Related debugger operations:
 - [Debug Run Configuration](mcp-steroid://debugger/debug-run-configuration) - Start existing config in debug mode
 - [Set Line Breakpoint](mcp-steroid://debugger/set-line-breakpoint) - Set breakpoint before debugging
+
+Related test operations:
+- [Run Test at Caret](mcp-steroid://test/run-test-at-caret) - Run/debug a test via context action (every IDE)
 
 Overview resources:
 - [Debugger Skill Guide](mcp-steroid://prompt/debugger-skill) - Essential debugger knowledge
