@@ -201,7 +201,7 @@ class PerIdeAvailabilityContractTest {
         for ((path, justification) in EXPECTED_UNAVAILABLE) {
             val article = candidates[path]
             if (article == null) {
-                stale.add("$path: not in the audited corpus (skill/ root + skill-index/info references) — remove the entry")
+                stale.add("$path: not in the audited corpus (skill/ root + every prompt/ root guide and the URIs/shorthand ids they reference) — remove the entry")
                 continue
             }
             if (unavailableCodes(article).isEmpty()) {
