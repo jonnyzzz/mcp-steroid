@@ -1,5 +1,5 @@
 Test: Run Test at Caret (Context Action)
-[IU,RD]
+
 Run or debug a test by opening its file, positioning the caret on a test method or class, and firing the context action — the action title shows the test name dynamically.
 
 When the caret is on a test method, the IDE shows context actions **"Run 'testMethodName'"** and **"Debug 'testMethodName'"** — in the gutter icon, the right-click menu, and via keyboard shortcuts. This is the IDE-agnostic way to run a specific test without creating a named run configuration.
@@ -54,7 +54,12 @@ Results appear in Rider's Unit Test tool window, not in `RunContentManager`/`SMT
 
 ###_ELSE_###
 
-```kotlin[IU]
+`RunClass` and `DebugClass` are platform-level context-run actions (registered per executor by
+the platform's executor registry), so the same recipe works in IDEA, PyCharm, GoLand, WebStorm,
+CLion, and RubyMine — adjust the file path and the caret search strings to your language's test
+syntax (e.g. `"def test_"` for Python, `"func Test"` for Go).
+
+```kotlin
 import com.intellij.ide.DataManager
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUiKind
@@ -75,6 +80,7 @@ val editor = editors.filterIsInstance<TextEditor>().firstOrNull()?.editor
     ?: error("No text editor")
 
 // 2. Position caret on the test method (preferred for specificity) or class
+// TODO: adapt the search strings to your language ("def test_..." in Python, "func Test..." in Go).
 val text = editor.document.text
 val offset = text.indexOf("fun myTestMethod").takeIf { it >= 0 }
     ?: text.indexOf("class MyTest")
@@ -95,13 +101,16 @@ withContext(Dispatchers.EDT) {
 println("Test started — check RunContentManager for progress and results")
 ```
 
-**Key IntelliJ test context actions:**
+**Key test context actions:**
 - `RunClass` — appears as **"Run 'TestName'"** in editor gutter and right-click context menu
   - Default keyboard shortcut: **Ctrl+Shift+F10** (shown in gutter icon tooltip)
 - `DebugClass` — appears as **"Debug 'TestName'"** — breakpoints will be hit
 
 > **Tip:** Position the caret on the specific test method name rather than the class to avoid an
-> ambiguous "Choose run configuration" dialog. If the dialog appears, use `JUnitConfiguration`
+> ambiguous "Choose run configuration" dialog.
+
+###_IF_IDE[IU]_###
+> **IDEA fallback:** If the "Choose run configuration" dialog appears, use `JUnitConfiguration`
 > directly — see [Run Tests](mcp-steroid://test/run-tests).
 
 > **Pitfall: `.gradle.kts` files.** Gradle Kotlin scripts paint a Run gutter on PSI patterns
@@ -110,6 +119,7 @@ println("Test started — check RunContentManager for progress and results")
 > `RunContextAction` hides itself and the gutter popup renders as **"Nothing here"** (the
 > `Utils.EMPTY_MENU_FILLER` placeholder). Launch Gradle tasks programmatically via
 > [Execute Code: Gradle Patterns](mcp-steroid://skill/execute-code-gradle) instead.
+###_END_IF_###
 
 Results are accessible via `RunContentManager.getInstance(project)` after execution.
 

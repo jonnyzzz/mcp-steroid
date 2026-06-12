@@ -50,6 +50,7 @@ For debugging .NET code in Rider:
 5. Step through code using `mcp-steroid://debugger/step-over` (only if needed — skip if the bug is visible from evaluation at the breakpoint)
 ###_ELSE_###
 
+###_IF_IDE[IU]_###
 ## Primary path — `JUnitConfiguration` (deterministic)
 
 For Java / Kotlin tests in IntelliJ, build a `JUnitConfiguration`
@@ -156,20 +157,33 @@ println("Started debug session: ${settings.name} (module=${module.name})")
 println("Next: wait for breakpoint hit via `mcp-steroid://debugger/wait-for-suspend`")
 ```
 
-## Alternative — `DebugContextAction` (faster but caret-sensitive)
+## Alternative — `DebugClass` context action (faster but caret-sensitive)
 
 If your caret can be placed unambiguously on a test class or method
-identifier, firing the platform's `DebugClass` / `DebugContextAction`
-saves a few lines of setup. **It has one important failure mode**:
-when the caret is on a `fun` / `class` keyword (not the identifier
-itself), or in an ambiguous spot, the action silently shows a
-"nothing here" popup instead of starting a session — the dialog killer
-dismisses the popup and **no `XDebugSession` is registered**.
-`mcp-steroid://debugger/wait-for-suspend` will then time out with
-`currentSession=null`. Do not retry the same context action; switch to
-the `JUnitConfiguration` recipe above.
+identifier, firing the platform's `DebugClass` context action saves a few
+lines of setup.
+###_ELSE_###
+## Primary path — `DebugClass` context action
 
-```kotlin[IU]
+`JUnitConfiguration` lives in the Java plugin and exists only in IntelliJ IDEA.
+In this IDE, lead with the platform `DebugClass` context action: open the test
+file, position the caret on the test class or method identifier, and fire the
+action. Adapt the file path and the caret search strings to your language's
+test syntax (e.g. `"def test_"` for Python, `"func Test"` for Go).
+###_END_IF_###
+
+**One important failure mode**: when the caret is on a keyword (`fun` /
+`class` / `def`) instead of the identifier itself, or in an ambiguous spot,
+the action silently shows a "nothing here" popup instead of starting a
+session — the dialog killer dismisses the popup and **no `XDebugSession` is
+registered**. `mcp-steroid://debugger/wait-for-suspend` will then time out
+with `currentSession=null`. Do not blindly retry; move the caret precisely
+onto the test identifier first.
+###_IF_IDE[IU]_###
+If it still no-ops, switch to the `JUnitConfiguration` recipe above.
+###_END_IF_###
+
+```kotlin
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -192,6 +206,7 @@ val text = editor.document.text
 // IMPORTANT: caret must be on the NAME identifier, not on the keyword before it.
 // Caret on `fun` / `class` triggers a silent "nothing here" popup; the dialog
 // killer dismisses it and no session starts.
+// TODO: adapt the search strings to your language ("def test_..." in Python, "func Test..." in Go).
 val caretOffset = run {
     val funIdx = text.indexOf("fun myTestMethod")
     if (funIdx >= 0) funIdx + "fun ".length
@@ -211,13 +226,17 @@ withContext(Dispatchers.EDT) {
 println("Debug context action fired — verify XDebuggerManager.currentSession is non-null before waiting for suspend")
 ```
 
-For debugging Java/Kotlin tests in IntelliJ:
+Full debug-a-test workflow:
 1. Set breakpoints using `mcp-steroid://debugger/add-breakpoint` (idempotent, uses `writeIntentReadAction` for the Kotlin platform's threading contract).
+###_IF_IDE[IU]_###
 2. Launch the debug session via the **`JUnitConfiguration` recipe above** — this is the deterministic path. Use the context-action recipe only when caret targeting is trivially unambiguous and a silent no-op is acceptable.
-3. Wait for breakpoint hit using `mcp-steroid://debugger/wait-for-suspend` — it explicitly distinguishes "no session started" (recover via the JUnit recipe) from "session never paused" (recover via breakpoint diagnosis).
+###_ELSE_###
+2. Launch the debug session via the **`DebugClass` context action above** — verify `XDebuggerManager.getInstance(project).currentSession` is non-null before waiting for a suspend.
+###_END_IF_###
+3. Wait for breakpoint hit using `mcp-steroid://debugger/wait-for-suspend` — it explicitly distinguishes "no session started" (recover by fixing the launch) from "session never paused" (recover via breakpoint diagnosis).
 4. Evaluate variables using `mcp-steroid://debugger/evaluate-expression` — review its "Kotlin / K2 evaluation caveats" section before evaluating receiver/property access.
 5. Step through code using `mcp-steroid://debugger/step-over` (only if needed — skip if the bug is visible from evaluation at the breakpoint).
-6. After verification, remove temporary breakpoints (`mcp-steroid://debugger/remove-breakpoint`) and delete the run configuration via `RunManager.getInstance(project).removeConfiguration(settings)`.
+6. After verification, remove temporary breakpoints (`mcp-steroid://debugger/remove-breakpoint`) and delete any temporary run configuration via `RunManager.getInstance(project).removeConfiguration(settings)`.
 ###_END_IF_###
 
 # See also
