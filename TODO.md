@@ -25,3 +25,21 @@
 - [ ] **list_windows graceful degradation**: devrig's `steroid_list_windows` is all-or-nothing — one
   IDE failing its `/windows` fetch errors the whole call (`coroutineScope` + `error(...)`), unlike
   `list_projects` which degrades per-backend. Return partial windows + a per-backend error marker.
+
+- [ ] **`install --check` vs the literal Tenet-3 reading (review follow-up to #86)**: `--check` itself
+  is read-only, but `runsTool()` in `npx-kt/.../Main.kt` returns true for `DevrigCommandInstall`, so the
+  shared CLI startup still fires the PostHog beacon (`beacon.captureStarted`) and the background update
+  check — and the beacon may write `~/.mcp-steroid/.devrig-user-id` on first run (`DevrigBeacon.distinctId`).
+  This is common to every devrig tool command, not specific to --check. If a strictly side-effect-free
+  `--check` ever matters (e.g. for CI probes), make `runsTool()` return `!check` for install — decide
+  deliberately, since it also silences the update notice for that invocation (2026-06-12).
+
+- [ ] install.ps1 Windows smoke test: the devrig bootstrap installer (#97) was verified end-to-end on macOS (sh) and parse/behavior-checked under pwsh in Docker, but has never executed on real Windows PowerShell 5.1 — run it on a Windows box before promoting the PowerShell one-liner beyond the docs page (2026-06-12).
+- [ ] **inspect-and-fix recipe idiom follow-up (#81 review minor)**: the main recipe runs
+  `InspectionEngine.inspectEx` under plain `readAction { }` while the cross-project section uses
+  `smartReadAction` — unify on `smartReadAction` (kotlin-fence change → re-run the scoped
+  `InspectAndFixKtBlocksCompilationTest`).
+- [ ] **Hardcoded-URI lint gap (#81 review minor)**: `NoHardcodedMcpSteroidUriUsageTest` scans only
+  ij-plugin/prompts/prompt-generator src/main — `mcp-steroid-server/src/main` is not covered and
+  already carries a pre-existing `mcp-steroid://prompt/skill` literal in `FetchResourceToolHandler`'s
+  param description. Extend the lint to that module and replace the literal.
