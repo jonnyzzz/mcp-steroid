@@ -96,6 +96,13 @@
         <notificationGroup id="jonnyzzz.mcp.steroid.updates"
                            displayType="BALLOON"/>
 
+        <!-- Settings | Tools | MCP Steroid — devrig: informational page promoting the devrig CLI
+             setup, showing the MCP server status, and keeping the legacy HTTP connection info. -->
+        <applicationConfigurable parentId="tools"
+                                 id="com.jonnyzzz.mcp-steroid.settings"
+                                 displayName="MCP Steroid — devrig"
+                                 instance="com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable"/>
+
         <!-- Registry keys for configuration -->
         <registryKey key="mcp.steroid.dialog.killer.enabled" defaultValue="true"
             description="Automatically close modal dialogs before code execution"/>
