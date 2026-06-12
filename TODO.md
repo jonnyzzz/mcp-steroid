@@ -25,3 +25,5 @@
 - [ ] **list_windows graceful degradation**: devrig's `steroid_list_windows` is all-or-nothing — one
   IDE failing its `/windows` fetch errors the whole call (`coroutineScope` + `error(...)`), unlike
   `list_projects` which degrades per-backend. Return partial windows + a per-backend error marker.
+
+- [ ] install.ps1 Windows smoke test: the devrig bootstrap installer (#97) was verified end-to-end on macOS (sh) and parse/behavior-checked under pwsh in Docker, but has never executed on real Windows PowerShell 5.1 — run it on a Windows box before promoting the PowerShell one-liner beyond the docs page (2026-06-12).
