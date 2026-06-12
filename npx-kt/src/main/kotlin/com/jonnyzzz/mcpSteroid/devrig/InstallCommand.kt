@@ -15,17 +15,165 @@ import kotlin.io.path.isRegularFile
 private const val DEVRIG_MCP_SERVER_NAME = "mcp-steroid"
 private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
 
+/** Exit code of `devrig install <agent> --check` when install would change anything. */
+const val INSTALL_CHECK_DRIFT_EXIT_CODE = 1
+
 fun DevrigServices.runInstallCommand(
     command: DevrigCommand.DevrigCommandInstall,
     runner: AiAgentCliRunner = ProcessAiAgentCliRunner(),
-): Int = runInstallCommand(
-    command = command,
-    launcher = resolveDevrigLauncher(),
-    javaHome = Path.of(System.getProperty("java.home")),
-    out = mcpStdout,
-    err = System.err,
-    runner = runner,
-)
+): Int {
+    val launcher = resolveDevrigLauncher()
+    val javaHome = Path.of(System.getProperty("java.home"))
+    return if (command.check) {
+        runInstallCheckCommand(
+            command = command,
+            launcher = launcher,
+            javaHome = javaHome,
+            out = mcpStdout,
+            err = System.err,
+            runner = runner,
+            ideReachability = { collectIdeReachability() },
+        )
+    } else {
+        runInstallCommand(
+            command = command,
+            launcher = launcher,
+            javaHome = javaHome,
+            out = mcpStdout,
+            err = System.err,
+            runner = runner,
+        )
+    }
+}
+
+/**
+ * How many marker-discovered IDE backends (IDEs running the MCP Steroid plugin) answered the
+ * read-only snapshot probe. Computed on demand from the same markers + snapshot scan that
+ * `devrig backend` performs — nothing is cached or persisted (Tenet 3).
+ */
+data class IdeReachabilityReport(val reachable: Int, val discovered: Int)
+
+/**
+ * One-shot, read-only IDE reachability snapshot for `install --check`: reuses the shared
+ * [BackendInventory] discovery (`collectBackendRows`) and counts the marker rows — IDEs that wrote a
+ * `~/.mcp-steroid/markers` marker, i.e. have the MCP Steroid plugin — that answered the snapshot fetch.
+ */
+fun DevrigServices.collectIdeReachability(): IdeReachabilityReport {
+    val markerRows = collectBackendRows().filterIsInstance<BackendRow.FromMarker>()
+    return IdeReachabilityReport(
+        reachable = markerRows.count { it.projects != null },
+        discovered = markerRows.size,
+    )
+}
+
+/**
+ * Read-only mode of [runInstallCommand] (issue #86): performs the SAME discovery — list the agent's MCP
+ * servers, classify devrig-owned entries, compute the canonical target invocation — but applies nothing.
+ * `install` is the doctor; `--check` is its dry-run. It prints the current registration state, the diff
+ * install WOULD apply, and an IDE-reachability summary so a "Failed to connect" report gets a
+ * one-command diagnosis.
+ *
+ * Returns 0 when the registration is already canonical (re-running install would change nothing) and
+ * [INSTALL_CHECK_DRIFT_EXIT_CODE] when install would change anything — including when the agent's
+ * server list cannot be read, since the state cannot be verified.
+ *
+ * Stateless by design (Tenet 3): the only agent CLI invocation is the read-only `mcp list`, the IDE
+ * probe reads markers/ports on demand, and nothing is written anywhere — two concurrent `--check`
+ * runs are trivially safe.
+ */
+fun runInstallCheckCommand(
+    command: DevrigCommand.DevrigCommandInstall,
+    launcher: Path,
+    javaHome: Path,
+    out: PrintStream,
+    err: PrintStream,
+    runner: AiAgentCliRunner,
+    ideReachability: () -> IdeReachabilityReport,
+): Int {
+    val agent = command.agent
+    val mcpCommand = selfMcpCommand(launcher, javaHome)
+    val renderedCommand = "${mcpCommand.command} ${mcpCommand.args.joinToString(" ")}"
+
+    out.println(
+        "Checking the '$DEVRIG_MCP_SERVER_NAME' MCP registration for ${agent.displayName} " +
+            "(read-only — nothing is changed).",
+    )
+    out.println()
+
+    // The SAME review step install performs — and the only agent CLI call --check makes.
+    val listResult = runner.run(mcpListInvocation(agent))
+    val listReadable = listResult.exitCode == 0
+    val listed = if (listReadable) parseMcpServerList(agent, listResult.output) else emptyList()
+    val detected = listed.filter { it.isDevrigOwned() }
+
+    out.println("Current registration state:")
+    when {
+        !listReadable ->
+            out.println(
+                "  could not read ${agent.displayName}'s MCP server list " +
+                    "('${agent.binary} mcp list' exited with code ${listResult.exitCode}).",
+            )
+        detected.isEmpty() ->
+            out.println("  no existing devrig / '$DEVRIG_MCP_SERVER_NAME' registration found.")
+        else -> detected.forEach { entry ->
+            out.println("  - '${entry.name}' (matched by ${entry.devrigMatchReason()}): ${entry.commandLine}")
+        }
+    }
+    out.println()
+
+    // Canonical = exactly one devrig-owned entry, under the canonical name, launching the exact
+    // command install would register. Anything else — stale subcommand/launcher, duplicates, a
+    // custom name, no entry, or an unreadable list — is drift.
+    val canonical = listReadable && detected.singleOrNull()
+        ?.let { it.name == DEVRIG_MCP_SERVER_NAME && it.commandLine == renderedCommand } == true
+
+    out.println("What 'devrig install ${agent.binary}' would change:")
+    if (canonical) {
+        out.println("  already canonical — no changes.")
+    } else {
+        detected.forEach { out.println("  - remove '${it.name}'") }
+        if (!listReadable) {
+            out.println(
+                "  - remove the known devrig names " +
+                    "(${DEVRIG_SERVER_NAMES.joinToString(" / ") { "'$it'" }}), if present",
+            )
+        }
+        out.println("  - add '$DEVRIG_MCP_SERVER_NAME' → $renderedCommand")
+    }
+    out.println()
+
+    reportIdeReachability(out, err, ideReachability)
+    out.println()
+
+    return if (canonical) {
+        out.println("No drift — '$DEVRIG_MCP_SERVER_NAME' is registered canonically for ${agent.displayName}.")
+        0
+    } else {
+        out.println("Drift detected — run 'devrig install ${agent.binary}' to repair.")
+        INSTALL_CHECK_DRIFT_EXIT_CODE
+    }
+}
+
+private fun reportIdeReachability(out: PrintStream, err: PrintStream, probe: () -> IdeReachabilityReport) {
+    val report = try {
+        probe()
+    } catch (e: Exception) {
+        err.println("devrig install --check: IDE discovery failed: ${e.message ?: e::class.simpleName}")
+        null
+    }
+    out.println("IDE backends with the MCP Steroid plugin (read-only discovery, same scan as 'devrig backend'):")
+    when {
+        report == null ->
+            out.println("  discovery failed — see the error above; run 'devrig backend' for details.")
+        report.discovered == 0 ->
+            out.println(
+                "  none discovered — no running IDE has the MCP Steroid plugin. " +
+                    "Start one (or run 'devrig backend' for the full picture).",
+            )
+        else ->
+            out.println("  ${report.reachable} of ${report.discovered} discovered backend(s) reachable.")
+    }
+}
 
 /**
  * Registers devrig as the `mcp-steroid` stdio MCP server in [command]'s agent, narrating each step so

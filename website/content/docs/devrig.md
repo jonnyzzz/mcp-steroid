@@ -92,10 +92,14 @@ running, it discovers IDEs and bridges the agent's MCP Steroid calls to them.
 > The legacy spelling `devrig mpc` is still accepted as a hidden alias, so
 > older agent registrations keep working. Use `devrig mcp` for new setups.
 
-### `devrig install claude|codex|gemini`
+### `devrig install claude|codex|gemini [--check]`
 
 Registers this devrig binary as the `mcp-steroid` stdio MCP server in the
-selected agent.
+selected agent. With `--check` it becomes a read-only dry-run: it reports the
+current registration, the changes install *would* apply (or "already canonical —
+no changes"), and how many running IDE backends with the MCP Steroid plugin are
+reachable — exiting `1` when a plain `devrig install` would change anything. Use
+it to diagnose a "Failed to connect" registration in one command.
 
 ### `devrig backend [--json]`
 
