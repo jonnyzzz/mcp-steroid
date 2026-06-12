@@ -1,6 +1,6 @@
 Coding with IntelliJ: Document, Editor & VFS Operations
 
-Document and editor manipulation, VFS read/write, file creation, LocalFileSystem, VfsUtil, findProjectFile pitfall, and batch file reads.
+Document and editor manipulation, VFS read/write, file creation, LocalFileSystem, VfsUtil, refresh-then-find for external files, findProjectFile pitfall, and batch file reads.
 
 ## Document and Editor Operations
 
@@ -107,6 +107,37 @@ if (vf != null) {
     VfsUtil.markDirtyAndRefresh(false, false, false, vf)
 }
 ```
+
+### Find a File Created by an External Process — refresh-then-find
+
+When a file was created OUTSIDE the IDE after the project opened — `git checkout` of a new
+branch, a CLI/Bash write, another process generating sources — a plain VFS lookup
+(`findFileByPath`, or the script context's `findProjectFile` / `findFile`) returns `null`
+because the snapshot has not seen the file yet. The canonical idiom is the one-call
+**refresh-then-find** utilities; the platform KDoc describes them as "useful when the file
+was created externally, and you need to find a VirtualFile corresponding to it", and the
+platform's own test framework relies on them (`VfsTestUtil`,
+`HeavyPlatformTestCase.synchronizeTempDirVfs`):
+
+```
+// One call: refresh the VFS for that path, then return the (now visible) VirtualFile.
+val vf1 = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(java.nio.file.Path.of("/abs/path/new-file.kt"))
+val vf2 = LocalFileSystem.getInstance().refreshAndFindFileByPath("/abs/path/new-file.kt")
+val vf3 = com.intellij.openapi.vfs.VirtualFileManager.getInstance()
+    .refreshAndFindFileByNioPath(java.nio.file.Path.of("/abs/path/new-file.kt"))
+// All three return null only if the file truly does not exist on disk.
+```
+
+**THREADING CONSTRAINT — never call these inside a read action when off-EDT.** The refresh
+blocks until the resulting VFS events are fired on the EDT inside a write action; a write
+action cannot start while your read action is held, so the call **deadlocks**. In
+`steroid_execute_code` scripts, invoke refresh-then-find at the top level of the script
+(outside `readAction { }` / `smartReadAction { }`), then do the PSI/document work in a
+separate read action afterwards.
+
+Note: the script context's `findProjectFile()` / `findFile()` do a **plain lookup without
+refresh** — for externally created files they return `null` until you have run one of the
+refresh-then-find calls above (or a directory refresh like the post-Bash recipe below).
 
 ### List Directory Contents
 ```kotlin
