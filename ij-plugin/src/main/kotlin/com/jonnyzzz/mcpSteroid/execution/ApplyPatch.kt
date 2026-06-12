@@ -14,6 +14,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJVfsPromptArticle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -255,13 +256,21 @@ internal suspend fun executeApplyPatch(
 
 /**
  * Build a structured "file not found" message including up to 5 candidate paths
- * from the project index by basename. Runs inside the caller's read action.
- * Diagnostics must never themselves throw — any unexpected error falls back
- * to the plain message.
+ * from the project index by basename, plus a refresh-then-find recovery hint
+ * for files created by an external process (the VFS snapshot does not see them
+ * until refreshed — and refreshing here, inside the pre-flight read action,
+ * would deadlock, so the agent must do it at the top level of its own script).
+ * Runs inside the caller's read action. Diagnostics must never themselves
+ * throw — any unexpected error falls back to the plain message.
  */
 private fun fileNotFoundMessage(project: Project, index: Int, filePath: String): String {
     val plain = "Hunk #$index: file not found: $filePath"
-    val basename = filePath.substringAfterLast('/').ifEmpty { return plain }
+    val refreshHint = "If the file exists on disk but was created by an external process " +
+        "(git checkout, CLI writes), the VFS snapshot has not seen it yet: run " +
+        "LocalFileSystem.getInstance().refreshAndFindFileByPath(path) at the top level of the " +
+        "script (never inside readAction { }) and retry. " +
+        "Recipe: ${CodingWithIntelliJVfsPromptArticle().uri}"
+    val basename = filePath.substringAfterLast('/').ifEmpty { return "$plain\n$refreshHint" }
     val candidates = try {
         FilenameIndex.getVirtualFilesByName(basename, GlobalSearchScope.projectScope(project))
             .asSequence()
@@ -272,7 +281,7 @@ private fun fileNotFoundMessage(project: Project, index: Int, filePath: String):
     } catch (e: ProcessCanceledException) {
         throw e
     } catch (e: RuntimeException) {
-        return plain
+        return "$plain\n$refreshHint"
     }
     return buildString {
         append(plain)
@@ -286,6 +295,7 @@ private fun fileNotFoundMessage(project: Project, index: Int, filePath: String):
             append("':")
             candidates.forEach { append("\n  ").append(it) }
         }
+        append('\n').append(refreshHint)
     }
 }
 
