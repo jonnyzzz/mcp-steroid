@@ -2,14 +2,18 @@
 #
 # Usage:  powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex"
 #
-# Downloads the latest devrig release of jonnyzzz/mcp-steroid, verifies its
-# SHA-256 against the GitHub release asset digest, unpacks it verbatim under
-# the %USERPROFILE%\.mcp-steroid\ layout from docs/devrig-deployment-spec.md,
-# and writes launcher shims into %USERPROFILE%\.mcp-steroid\bin.
+# Downloads the latest devrig release of jonnyzzz/mcp-steroid (verified
+# against the GitHub release asset digest) PLUS a matching Amazon Corretto 25
+# JDK (verified against Corretto's published SHA-256), unpacks both verbatim
+# under the %USERPROFILE%\.mcp-steroid\ layout from
+# docs/devrig-deployment-spec.md, and writes launcher shims into
+# %USERPROFILE%\.mcp-steroid\bin that set JAVA_HOME from the bundled JDK —
+# no preinstalled Java is required.
 #
 # Layout (spec v7, "Filesystem layout"):
-#   ~\.mcp-steroid\bin\devrig.ps1 + devrig.cmd        <- launcher shims (minimal v1)
+#   ~\.mcp-steroid\bin\devrig.ps1 + devrig.cmd        <- launcher shims (set JAVA_HOME, forward args)
 #   ~\.mcp-steroid\binaries\devrig-windows-<cpu>-<sha>\ <- unpacked release zip, verbatim
+#   ~\.mcp-steroid\binaries\jdk-windows-<cpu>-<sha>\    <- unpacked Corretto 25 JDK, verbatim
 #
 # Discipline:
 #   - Targets Windows PowerShell 5.1 AND pwsh 7+.
@@ -48,6 +52,55 @@ function Fail([string]$Message) {
     # `exit` would kill an interactive session. The documented one-liner
     # (child powershell -Command) still exits non-zero on a thrown error.
     throw "[mcp-steroid] ERROR: $Message"
+}
+
+# Atomically promote an unpacked staging tree into its content-addressed
+# target directory; tolerate a concurrent install winning the race.
+#
+# Move-Item has two success modes here:
+#   - $Target absent: atomic rename — we won the race. The target only ever
+#     appears fully populated.
+#   - $Target already a directory (another install finished first):
+#     Move-Item does NOT throw — it nests $TmpDir INSIDE the winner's tree.
+#     Detect the nested path and remove the duplicate; the winner's tree is
+#     complete because it too only appeared via atomic rename.
+function Move-TreeIntoPlace([string]$TmpDir, [string]$Target) {
+    try {
+        Move-Item -Path $TmpDir -Destination $Target
+        $nested = Join-Path $Target (Split-Path $TmpDir -Leaf)
+        if (Test-Path $nested -PathType Container) {
+            Write-Log 'another install finished first; using the existing tree'
+            Remove-Item -Recurse -Force $nested
+        }
+    } catch {
+        if (Test-Path $Target -PathType Container) {
+            Write-Log 'another install finished first; using the existing tree'
+            Remove-Item -Recurse -Force $TmpDir
+        } else {
+            throw
+        }
+    }
+}
+
+# Compute a path RELATIVE to %USERPROFILE% for embedding into the ASCII
+# shims, failing loudly when that is not possible. Embedding relative paths
+# keeps the shim text pure ASCII even when the Windows username contains
+# non-ASCII characters (Cyrillic/CJK/accented names are common) — an
+# absolute path under `Set-Content -Encoding ascii` would silently turn
+# those characters into '?', producing shims that point at a nonexistent
+# path. Everything below the profile dir (.mcp-steroid\binaries\...-<sha>\…)
+# is ASCII by construction; the guard fails loudly if that ever changes.
+function Get-ProfileRelativePath([string]$Path, [string]$What) {
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $profileRoot = $env:USERPROFILE.TrimEnd($sep)
+    if (-not $Path.StartsWith("$profileRoot$sep", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Fail "$What '$Path' is not under USERPROFILE '$profileRoot'"
+    }
+    $rel = $Path.Substring($profileRoot.Length).TrimStart($sep)
+    if ($rel -match '[^\x20-\x7E]' -or $rel.Contains("'") -or $rel.Contains('"')) {
+        Fail "$What relative path is not plain ASCII: '$rel' — cannot write a safe shim"
+    }
+    return $rel
 }
 
 $Repo = 'jonnyzzz/mcp-steroid'
@@ -143,29 +196,7 @@ if (-not $target -or -not (Test-Path $target -PathType Container)) {
             Write-Log "unpacking verbatim into $(Split-Path $target -Leaf)..."
             if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
             Expand-Archive -Path $tmpZip -DestinationPath $tmpDir
-            # Move-Item has two success modes here:
-            #   - $target absent: atomic rename — we won the race. The target
-            #     only ever appears fully populated.
-            #   - $target already a directory (another install finished
-            #     first): Move-Item does NOT throw — it nests $tmpDir INSIDE
-            #     the winner's tree. Detect the nested path and remove the
-            #     duplicate; the winner's tree is complete because it too
-            #     only appeared via atomic rename.
-            try {
-                Move-Item -Path $tmpDir -Destination $target
-                $nested = Join-Path $target (Split-Path $tmpDir -Leaf)
-                if (Test-Path $nested -PathType Container) {
-                    Write-Log 'another install finished first; using the existing tree'
-                    Remove-Item -Recurse -Force $nested
-                }
-            } catch {
-                if (Test-Path $target -PathType Container) {
-                    Write-Log 'another install finished first; using the existing tree'
-                    Remove-Item -Recurse -Force $tmpDir
-                } else {
-                    throw
-                }
-            }
+            Move-TreeIntoPlace -TmpDir $tmpDir -Target $target
         }
     } finally {
         if (Test-Path $tmpZip) { Remove-Item -Force $tmpZip }
@@ -176,34 +207,94 @@ if (-not $target -or -not (Test-Path $target -PathType Container)) {
 # ─── locate the launcher inside the verbatim tree ────────────────────────────
 # The zip contains a single top-level devrig-<version>\ directory with the
 # launcher at bin\devrig.bat (the spec manifest's binSubpath for Windows).
+# Nested Join-Path keeps the lookup separator-neutral so the Docker test
+# harness can drive this script under pwsh on Linux.
 $launcher = Get-ChildItem -Path $target -Directory |
-    ForEach-Object { Join-Path $_.FullName 'bin\devrig.bat' } |
+    ForEach-Object { Join-Path (Join-Path $_.FullName 'bin') 'devrig.bat' } |
     Where-Object { Test-Path $_ -PathType Leaf } |
     Select-Object -First 1
 if (-not $launcher) { Fail "launcher bin\devrig.bat not found inside $target" }
 
+# ─── bundled JDK (Amazon Corretto 25; devrig requires Java 25) ───────────────
+# devrig must run without a preinstalled Java. Resolve the matching Amazon
+# Corretto 25 JDK from the official "latest" permalink, verify it against
+# Corretto's published SHA-256, and unpack it verbatim into the spec layout
+# binaries\jdk-windows-<cpu>-<sha>\. The shims written below set JAVA_HOME
+# from this tree on every launch; DEVRIG_JAVA_HOME (honored by the launcher
+# itself) still overrides the bundled JDK.
+$JdkMajor = 25
+$jdkCpu = switch ($cpu) {
+    'x86_64' { 'x64' }
+    'arm64'  {
+        # Corretto publishes no windows-arm64 JDK; Windows 11 on ARM runs
+        # the x64 build through its built-in emulation layer.
+        Write-Log "no native windows-arm64 Corretto $JdkMajor build exists — using x64 (emulated)"
+        'x64'
+    }
+    default { Fail "no Corretto $JdkMajor platform mapping for CPU '$cpu'" }
+}
+$jdkAsset = "amazon-corretto-$JdkMajor-$jdkCpu-windows-jdk.zip"
+
+# The checksum is fetched first (a few bytes): it both verifies the download
+# and content-addresses the install dir, so an already-installed JDK is
+# detected without re-downloading the ~200 MB archive.
+Write-Log "resolving Amazon Corretto $JdkMajor for windows-$jdkCpu..."
+try {
+    $jdkSha = (Invoke-RestMethod -Uri "https://corretto.aws/downloads/latest_sha256/$jdkAsset" `
+        -Headers @{ 'User-Agent' = 'mcp-steroid-install' }).ToString().Trim().ToLowerInvariant()
+} catch {
+    Fail "cannot fetch the Corretto checksum for ${jdkAsset}: $_"
+}
+if ($jdkSha -notmatch '^[0-9a-f]{64}$') { Fail "unexpected Corretto checksum '$jdkSha' for $jdkAsset" }
+
+$jdkTarget = Join-Path $BinariesDir "jdk-windows-$cpu-$jdkSha"
+if (Test-Path $jdkTarget -PathType Container) {
+    Write-Log "JDK already installed: $(Split-Path $jdkTarget -Leaf) (skipping download)"
+} else {
+    $jdkTmpZip = Join-Path $BinariesDir ".tmp.$PID.jdk.zip"
+    $jdkTmpDir = Join-Path $BinariesDir ".tmp.$PID.jdk.unpack"
+    try {
+        Write-Log "downloading $jdkAsset (~200 MB)..."
+        Invoke-WebRequest -Uri "https://corretto.aws/downloads/latest/$jdkAsset" -OutFile $jdkTmpZip `
+            -Headers @{ 'User-Agent' = 'mcp-steroid-install' }
+
+        $actualJdkSha = (Get-FileHash -Path $jdkTmpZip -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualJdkSha -ne $jdkSha) {
+            Fail "SHA-256 mismatch for ${jdkAsset}: expected $jdkSha, got $actualJdkSha"
+        }
+        Write-Log "SHA-256 verified: $jdkSha"
+
+        Write-Log "unpacking verbatim into $(Split-Path $jdkTarget -Leaf)..."
+        if (Test-Path $jdkTmpDir) { Remove-Item -Recurse -Force $jdkTmpDir }
+        Expand-Archive -Path $jdkTmpZip -DestinationPath $jdkTmpDir
+        Move-TreeIntoPlace -TmpDir $jdkTmpDir -Target $jdkTarget
+    } finally {
+        if (Test-Path $jdkTmpZip) { Remove-Item -Force $jdkTmpZip }
+        if (Test-Path $jdkTmpDir) { Remove-Item -Recurse -Force $jdkTmpDir }
+    }
+}
+
+# Locate JAVA_HOME inside the verbatim tree (the zip carries one top-level
+# jdk<version>\ directory). Checked via nested Join-Path so the lookup also
+# works when the test harness runs this script under pwsh on Linux.
+$jdkHome = @($jdkTarget) + @(Get-ChildItem -Path $jdkTarget -Directory | ForEach-Object { $_.FullName }) |
+    Where-Object { Test-Path (Join-Path (Join-Path $_ 'bin') 'java.exe') -PathType Leaf } |
+    Select-Object -First 1
+if (-not $jdkHome) { Fail "bin\java.exe not found inside $jdkTarget" }
+
 # ─── write launcher shims into bin\ (spec wrapper replaces these in v7) ──────
 # Shims forward args verbatim and write nothing to stdout themselves, so the
 # MCP stdio channel stays clean when an agent runs `devrig mcp` through them.
-#
-# The launcher path is embedded RELATIVE to %USERPROFILE% so the shim text
-# stays pure ASCII even when the Windows username contains non-ASCII
-# characters (Cyrillic/CJK/accented names are common) — an absolute path
-# under `Set-Content -Encoding ascii` would silently turn those characters
-# into '?', producing shims that point at a nonexistent path. Everything
-# below the profile dir (.mcp-steroid\binaries\devrig-...-<sha>\...) is
-# ASCII by construction; the guard fails loudly if that ever changes.
-$profileRoot = $env:USERPROFILE.TrimEnd('\')
-if (-not $launcher.StartsWith($profileRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
-    Fail "launcher '$launcher' is not under USERPROFILE '$profileRoot'"
-}
-$launcherRel = $launcher.Substring($profileRoot.Length).TrimStart('\')
-if ($launcherRel -match '[^\x20-\x7E]' -or $launcherRel.Contains("'") -or $launcherRel.Contains('"')) {
-    Fail "launcher relative path is not plain ASCII: '$launcherRel' — cannot write a safe shim"
-}
+# Both shims set JAVA_HOME from the bundled JDK (unless DEVRIG_JAVA_HOME is
+# set — the launcher itself prefers that) so no preinstalled Java is needed.
+# Paths are embedded RELATIVE to %USERPROFILE%; see Get-ProfileRelativePath
+# for the ASCII rationale.
+$launcherRel = Get-ProfileRelativePath -Path $launcher -What 'launcher'
+$jdkHomeRel = Get-ProfileRelativePath -Path $jdkHome -What 'JDK home'
 
 $ps1Shim = Join-Path $BinDir 'devrig.ps1'
 @(
+    "if (-not `$env:DEVRIG_JAVA_HOME) { `$env:JAVA_HOME = Join-Path `$env:USERPROFILE '$jdkHomeRel' }"
     "& (Join-Path `$env:USERPROFILE '$launcherRel') @args"
     'exit $LASTEXITCODE'
 ) | Set-Content -Path $ps1Shim -Encoding ascii
@@ -211,50 +302,11 @@ $ps1Shim = Join-Path $BinDir 'devrig.ps1'
 $cmdShim = Join-Path $BinDir 'devrig.cmd'
 @(
     '@echo off'
+    "if `"%DEVRIG_JAVA_HOME%`"==`"`" set `"JAVA_HOME=%USERPROFILE%\$jdkHomeRel`""
     "call `"%USERPROFILE%\$launcherRel`" %*"
 ) | Set-Content -Path $cmdShim -Encoding ascii
 Write-Log "launcher: $cmdShim -> %USERPROFILE%\$launcherRel"
-
-# ─── Java 25 check (devrig does not bundle a JVM) ────────────────────────────
-$javaBin = $null
-if ($env:DEVRIG_JAVA_HOME -and (Test-Path (Join-Path $env:DEVRIG_JAVA_HOME 'bin\java.exe'))) {
-    $javaBin = Join-Path $env:DEVRIG_JAVA_HOME 'bin\java.exe'
-} elseif ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
-    $javaBin = Join-Path $env:JAVA_HOME 'bin\java.exe'
-} elseif (Get-Command java -ErrorAction SilentlyContinue) {
-    $javaBin = 'java'
-}
-if (-not $javaBin) {
-    Write-Log 'WARNING: no Java found. devrig requires Java 25 — install a JDK 25'
-    Write-Log '         (e.g. Amazon Corretto 25) or set DEVRIG_JAVA_HOME / JAVA_HOME.'
-} else {
-    # `java -version` writes everything to STDERR. In Windows PowerShell 5.1
-    # a `2>&1` redirect of native stderr under $ErrorActionPreference='Stop'
-    # turns the first stderr line into a terminating NativeCommandError —
-    # the installer would die here for users who DO have Java. Relax EAP
-    # around the probe and stringify the ErrorRecord-wrapped lines.
-    $versionLine = ''
-    $prevEap = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        $versionLine = (& $javaBin -version 2>&1 | ForEach-Object { "$_" } | Select-Object -First 1)
-    } catch {
-        Write-Log "WARNING: failed to run '$javaBin -version': $_"
-    } finally {
-        $ErrorActionPreference = $prevEap
-    }
-    if ($versionLine -match '"(\d+)') {
-        $javaMajor = [int]$Matches[1]
-        if ($javaMajor -lt 25) {
-            Write-Log "WARNING: found Java $javaMajor, but devrig requires Java 25."
-            Write-Log '         Install a JDK 25 or point DEVRIG_JAVA_HOME at one.'
-        } else {
-            Write-Log "Java $javaMajor found: OK"
-        }
-    } else {
-        Write-Log "WARNING: could not determine the Java version of '$javaBin'; devrig requires Java 25"
-    }
-}
+Write-Log "JAVA_HOME (bundled): %USERPROFILE%\$jdkHomeRel"
 
 # ─── PATH hint ────────────────────────────────────────────────────────────────
 $onPath = ($env:Path -split ';') | Where-Object { $_.TrimEnd('\') -eq $BinDir }
