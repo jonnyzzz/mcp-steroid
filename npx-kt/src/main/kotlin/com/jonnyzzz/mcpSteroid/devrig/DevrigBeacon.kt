@@ -72,6 +72,7 @@ class DevrigBeacon(
             is DevrigCommand.DevrigCommandProject -> "project"
             is DevrigCommand.DevrigCommandInstall -> "install"
             is DevrigCommand.DevrigCommandPrompt -> "prompt"
+            is DevrigCommand.DevrigCommandExecCode -> "exec-code"
             is DevrigCommand.DevrigCommandHelp -> null
             is DevrigCommand.DevrigCommandVersion -> null
             is DevrigCommand.DevrigCommandParseError -> null
