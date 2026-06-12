@@ -1,5 +1,11 @@
 # TODO
 
+- [ ] **runInspectionsDirectly follow-ups (#69 ask 1, deferred)**: a `PsiFile`-accepting overload
+  (and any richer per-file batch surface) is a `McpScriptContext` surface growth — gated by
+  PHILOSOPHY Tenet 3 / the 3-reviewer consensus, same as the explicit-`Project` overload (#94).
+  The 2026-06 hardening shipped per-tool crash isolation (#93) + per-file PSI-invalid tolerance and
+  the additive `InspectionRunResult.failedTools` section without touching the argument list.
+
 - [x] Fix `steroid_open_project` to trust a project path before opening it and cover the no-modal path with an integration test.
 - [x] Agent-driven backend management: evaluated new MCP tool vs CLI passthrough vs hybrid (judge panel). **Decision: no new MCP tool** — agents manage backends via the existing `devrig backend …` CLI (fails the PHILOSOPHY 3-gate for a new tool; the CLI already does it). Shipped `mcp-steroid://open-project/managing-backends` recipe + aligned `open_project` to prefer a running devrig-managed backend (`DevrigProjectRoutingService.openProjectTargetIde()`).
 - [ ] Backend management follow-ups (deferred, surfaced during the design):

@@ -10,7 +10,9 @@ import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
+import com.intellij.psi.PsiInvalidElementAccessException
 import com.intellij.psi.PsiManager
 import com.intellij.util.PairProcessor
 import com.intellij.codeInsight.daemon.HighlightDisplayKey
@@ -54,6 +56,7 @@ import java.io.File
 import java.nio.file.FileSystems
 import java.nio.file.Path
 import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.time.Duration
@@ -448,7 +451,7 @@ class McpScriptContextImpl(
     override suspend fun runInspectionsDirectly(
         file: VirtualFile,
         includeInfoSeverity: Boolean
-    ): Map<String, List<ProblemDescriptor>> {
+    ): InspectionRunResult {
         checkDisposed()
         log.info("[$executionId] Running inspections directly on ${file.name}...")
         resultBuilder.logProgress("Running inspections on ${file.name}...")
@@ -456,7 +459,11 @@ class McpScriptContextImpl(
         // Wait for smart mode first
         waitForSmartMode()
 
-        return readAction {
+        // Per-tool crash isolation (issue #93): first failure of each tool, keyed by short name.
+        val toolFailures = ConcurrentHashMap<String, Throwable>()
+        val recordFailure: (String, Throwable) -> Unit = { toolId, error -> toolFailures.putIfAbsent(toolId, error) }
+
+        val problems: Map<String, List<ProblemDescriptor>> = readAction {
             val psiFile = PsiManager.getInstance(project).findFile(file)
             if (psiFile == null) {
                 log.warn("[$executionId] Could not find PSI file for ${file.name}")
@@ -492,25 +499,70 @@ class McpScriptContextImpl(
                 return@readAction emptyMap()
             }
 
-            log.info("[$executionId] Running ${toolWrappers.size} inspections on ${file.name}")
+            // Issue #93: InspectionEngine only guards buildVisitor() — a visit-time exception from
+            // ONE tool (e.g. kotlinx-serialization plugin-generated PSI under K2) aborts the whole
+            // inspectEx call and loses every other tool's findings. Wrapping each tool in a
+            // crash-isolating delegate keeps the sweep a single engine pass while a crashing tool
+            // is recorded and skipped. The delegate preserves the original short name, so
+            // LocalInspectionToolWrapper(tool) re-attaches the ORIGINAL inspection EP (language
+            // applicability, IDs) and the result keys are unchanged.
+            val isolatedWrappers = toolWrappers.mapNotNull { wrapper ->
+                try {
+                    LocalInspectionToolWrapper(CrashIsolatingLocalInspectionTool(wrapper.tool, recordFailure))
+                } catch (e: ProcessCanceledException) {
+                    throw e
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // wrapper.tool lazily instantiates the tool from its EP — isolate that too.
+                    recordFailure(wrapper.shortName, e)
+                    null
+                }
+            }
 
-            // Run inspections directly - bypasses daemon focus check
-            val results = InspectionEngine.inspectEx(
-                toolWrappers,
-                psiFile,
-                psiFile.textRange,
-                psiFile.textRange,
-                false,  // isOnTheFly = false (batch mode)
-                false,  // inspectInjectedPsi
-                true,   // ignoreSuppressedElements
-                EmptyProgressIndicator(),
-                PairProcessor.alwaysTrue()
-            )
+            log.info("[$executionId] Running ${isolatedWrappers.size} inspections on ${file.name}")
 
-            // Convert to map of tool ID -> problems
-            results.mapKeys { (wrapper, _) -> wrapper.shortName }
-                .filterValues { it.isNotEmpty() }
+            try {
+                // Run inspections directly - bypasses daemon focus check
+                val results = InspectionEngine.inspectEx(
+                    isolatedWrappers,
+                    psiFile,
+                    psiFile.textRange,
+                    psiFile.textRange,
+                    false,  // isOnTheFly = false (batch mode)
+                    false,  // inspectInjectedPsi
+                    true,   // ignoreSuppressedElements
+                    EmptyProgressIndicator(),
+                    PairProcessor.alwaysTrue()
+                )
+
+                // Convert to map of tool ID -> problems
+                results.mapKeys { (wrapper, _) -> wrapper.shortName }
+                    .filterValues { it.isNotEmpty() }
+            } catch (e: PsiInvalidElementAccessException) {
+                // Issue #69: a file whose PSI went invalid must not throw out of the helper —
+                // scripts inspecting files in a loop keep the healthy files' results.
+                recordFailure(InspectionRunResult.SWEEP_FAILURE_ID, e)
+                emptyMap()
+            }
         }
+
+        if (toolFailures.isNotEmpty()) {
+            for ((toolId, error) in toolFailures) {
+                log.error("[$executionId] inspection '$toolId' crashed while inspecting ${file.name} — findings from other tools are preserved", error)
+            }
+            resultBuilder.logMessage(
+                "WARNING: ${toolFailures.size} inspection tool(s) crashed on ${file.name} " +
+                    "(findings from the remaining tools are preserved): " +
+                    toolFailures.keys.sorted().joinToString(", ") +
+                    ". Details are in the result's failedTools property."
+            )
+        }
+
+        val failedTools = toolFailures.entries
+            .map { (toolId, error) -> FailedInspection(toolId = toolId, error = "${error.javaClass.name}: ${error.message}") }
+            .sortedBy { it.toolId }
+        return InspectionRunResult(problems, failedTools)
     }
 
     // ============================================================

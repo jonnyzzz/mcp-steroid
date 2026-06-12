@@ -6,7 +6,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
-import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.psi.search.GlobalSearchScope
 import kotlinx.serialization.json.JsonElement
 import kotlin.time.Duration
@@ -270,9 +269,17 @@ interface McpScriptContext {
      *
      * Use this method when you need accurate inspection results in automated/headless scenarios.
      *
+     * Crash isolation: a single inspection tool throwing (e.g. on compiler-plugin-generated PSI)
+     * does NOT abort the sweep. The failed tool is recorded in [InspectionRunResult.failedTools]
+     * (tool id + exception message) and findings from all other tools are returned. Likewise, a
+     * PsiInvalidElementAccessException for the file is reported via `failedTools` instead of being
+     * thrown, so inspecting files in a loop never loses the healthy files' results.
+     *
      * @param file The virtual file to inspect
      * @param includeInfoSeverity Whether to include INFO-level problems (default: false)
-     * @return Map of inspection tool ID to a list of ProblemDescriptors found
+     * @return [InspectionRunResult] — a Map of inspection tool ID to the list of ProblemDescriptors
+     *   found (use it exactly like the Map it is), plus the additive `failedTools` list of tools
+     *   that crashed during the sweep
      *
      * ```kotlin
      * val file = findProjectFile("src/Main.kt") ?: error("File not found")
@@ -283,6 +290,9 @@ interface McpScriptContext {
      *         println("[$toolId] ${problem.descriptionTemplate}")
      *     }
      * }
+     * problems.failedTools.forEach { failed ->
+     *     println("tool crashed (findings of other tools preserved): ${failed.toolId}: ${failed.error}")
+     * }
      * ```
      *
      * @see getHighlightsWhenReady for daemon-based highlights (requires window focus)
@@ -290,7 +300,7 @@ interface McpScriptContext {
     suspend fun runInspectionsDirectly(
         file: VirtualFile,
         includeInfoSeverity: Boolean = false
-    ): Map<String, List<ProblemDescriptor>>
+    ): InspectionRunResult
 
     // ============================================================
     // Modal Dialog Control
