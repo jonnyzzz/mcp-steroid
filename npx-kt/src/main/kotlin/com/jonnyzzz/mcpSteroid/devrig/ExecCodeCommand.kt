@@ -10,6 +10,7 @@ import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
+import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolSpec
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import java.io.IOException
@@ -17,6 +18,7 @@ import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
@@ -28,18 +30,12 @@ const val EXEC_CODE_FILE_ERROR_EXIT_CODE = 66
 
 /**
  * Exit code (sysexits `EX_UNAVAILABLE`) when no IDE/project is reachable to route the script to:
- * no discovered IDE backends, an unknown `--project` name, or an ambiguous raw project name.
+ * no discovered IDE backends, an unknown `--project` name, an ambiguous raw project name, or the
+ * routed IDE dying between the routing snapshot and the tool call (connect/IO failure).
  * Distinct from [EXEC_CODE_TOOL_ERROR_EXIT_CODE] so scripts can tell "the script failed" apart
  * from "there was nothing to run it on".
  */
 const val EXEC_CODE_NO_PROJECT_EXIT_CODE = 69
-
-/**
- * The `steroid_execute_code` schema default for `timeout` — MUST stay equal to
- * `ExecuteCodeToolSpec.defaultTimeoutSeconds` so an unset `--timeout` sends the exact value the
- * MCP layer would have filled in, keeping the bridge call byte-compatible with the MCP path.
- */
-const val EXEC_CODE_DEFAULT_TIMEOUT_SECONDS = 600
 
 /** Default `reason` recorded when `--reason` is not passed. */
 const val EXEC_CODE_DEFAULT_REASON = "devrig exec-code CLI"
@@ -55,11 +51,16 @@ const val EXEC_CODE_DEFAULT_REASON = "devrig exec-code CLI"
  * text content goes to **stdout** (so `devrig exec-code … > result.txt` works); exit codes are
  * documented on the constants above.
  */
-fun DevrigServices.runExecCodeCommand(command: DevrigCommand.DevrigCommandExecCode): Int {
-    val routing = oneShotProjectRouting()
-    val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(routing, mcpHttpClient), beacon)
-    return runExecCodeCommand(command, routing, handler, out = mcpStdout, err = System.err)
-}
+fun DevrigServices.runExecCodeCommand(command: DevrigCommand.DevrigCommandExecCode): Int =
+    runExecCodeCommand(
+        command = command,
+        // Lazy on purpose: the --file read (cheap, fails fast) must happen BEFORE the routing
+        // snapshot (marker scan + up to 8 s per IDE), so a typo'd path costs no discovery latency.
+        routing = { oneShotProjectRouting() },
+        handler = { routing -> DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(routing, mcpHttpClient), beacon) },
+        out = mcpStdout,
+        err = System.err,
+    )
 
 /**
  * One-shot, read-only routing snapshot for the CLI path: the same marker scan + per-IDE
@@ -99,11 +100,15 @@ internal fun DevrigServices.oneShotProjectRouting(): DevrigProjectRoutingService
 /**
  * Core of `devrig exec-code`, separated from [DevrigServices] for direct unit testing
  * (same pattern as `runPromptCommand` / `runInstallCheckCommand`).
+ *
+ * [routing] and [handler] are factories, not instances: the routing snapshot is expensive
+ * (marker scan + per-IDE fetch), so it is only taken AFTER the `--file` script has been read —
+ * an unreadable file exits with [EXEC_CODE_FILE_ERROR_EXIT_CODE] without touching discovery.
  */
 fun runExecCodeCommand(
     command: DevrigCommand.DevrigCommandExecCode,
-    routing: DevrigProjectRoutingService,
-    handler: ExecuteCodeToolHandler,
+    routing: () -> DevrigProjectRoutingService,
+    handler: (DevrigProjectRoutingService) -> ExecuteCodeToolHandler,
     out: PrintStream,
     err: PrintStream,
 ): Int {
@@ -115,7 +120,8 @@ fun runExecCodeCommand(
         return EXEC_CODE_FILE_ERROR_EXIT_CODE
     }
 
-    val route = when (val resolution = resolveExecCodeProject(command.project, routing)) {
+    val routingService = routing()
+    val route = when (val resolution = resolveExecCodeProject(command.project, routingService)) {
         is ExecCodeProjectResolution.Found -> resolution.route
         is ExecCodeProjectResolution.NoBackends -> {
             err.println(
@@ -144,19 +150,29 @@ fun runExecCodeCommand(
         taskId = command.taskId ?: defaultExecCodeTaskId(scriptPath),
         code = code,
         reason = command.reason ?: EXEC_CODE_DEFAULT_REASON,
-        timeout = command.timeout ?: EXEC_CODE_DEFAULT_TIMEOUT_SECONDS,
+        timeout = command.timeout ?: ExecuteCodeToolSpec.DEFAULT_TIMEOUT_SECONDS,
         modal = command.modal ?: ModalMode.DEFAULT,
     )
 
-    val result = runBlocking(Dispatchers.IO) {
-        handler.executeCode(
-            projectName = route.exposedProjectName,
-            execCodeParams = params,
-            callProgress = object : McpProgressReporter {
-                // NDJSON progress lines stream to stderr as they arrive; stdout stays the result.
-                override fun report(message: String) = err.println(message)
-            },
-        )
+    val result = try {
+        runBlocking(Dispatchers.IO) {
+            handler(routingService).executeCode(
+                projectName = route.exposedProjectName,
+                execCodeParams = params,
+                callProgress = object : McpProgressReporter {
+                    // NDJSON progress lines stream to stderr as they arrive; stdout stays the result.
+                    override fun report(message: String) = err.println(message)
+                },
+            )
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: IOException) {
+        // The routed IDE died between the routing snapshot and the tool call (connection refused,
+        // reset, mid-stream abort). Same "nothing to run it on" contract as an unknown project —
+        // a clean message, not a stack trace.
+        err.println("devrig exec-code: IDE became unreachable: ${e.message ?: e::class.simpleName}")
+        return EXEC_CODE_NO_PROJECT_EXIT_CODE
     }
 
     for (item in result.content) {

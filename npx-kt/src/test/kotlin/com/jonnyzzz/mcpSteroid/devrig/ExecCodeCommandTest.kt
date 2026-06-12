@@ -265,10 +265,15 @@ class ExecCodeCommandTest {
         val routing = routingService(stateWithProject(tempDir, pid = 42, name = "my-app"))
         val missing = tempDir.resolve("does-not-exist.kt")
 
+        var routingAttempted = false
         val run = runExec(
             DevrigCommand.DevrigCommandExecCode(project = "my-app", file = missing.toString()),
             routing,
             tempDir,
+            routingProvider = {
+                routingAttempted = true
+                routing
+            },
         )
 
         assertEquals(EXEC_CODE_FILE_ERROR_EXIT_CODE, run.exitCode)
@@ -276,6 +281,29 @@ class ExecCodeCommandTest {
         assertContains(run.stderr, missing.toString())
         assertEquals("", run.stdout, "stdout must stay clean on errors")
         assertNull(receivedBody, "no bridge call may be made when the script cannot be read")
+        assertFalse(routingAttempted, "the routing snapshot must not be taken when the script cannot be read")
+    }
+
+    @Test
+    fun `IDE dying after the routing snapshot exits with the no-project code and a clean message`(
+        @TempDir tempDir: Path,
+    ) {
+        val script = Files.writeString(tempDir.resolve("script.kt"), "println(1)")
+        val routing = routingService(stateWithProject(tempDir, pid = 42, name = "my-app"))
+
+        // The routing snapshot saw the IDE alive; the IDE dies before the tool call connects.
+        server.stop(0L, 0L)
+
+        val run = runExec(
+            DevrigCommand.DevrigCommandExecCode(project = "my-app", file = script.toString()),
+            routing,
+            tempDir,
+        )
+
+        assertEquals(EXEC_CODE_NO_PROJECT_EXIT_CODE, run.exitCode)
+        assertContains(run.stderr, "IDE became unreachable")
+        assertEquals("", run.stdout, "stdout must stay clean on errors")
+        assertFalse(run.stderr.contains("\tat "), "a dead IDE must print a clean message, not a stack trace")
     }
 
     @Test
@@ -408,18 +436,20 @@ class ExecCodeCommandTest {
         command: DevrigCommand.DevrigCommandExecCode,
         routing: DevrigProjectRoutingService,
         tempDir: Path,
+        routingProvider: () -> DevrigProjectRoutingService = { routing },
     ): Run {
-        // The REAL MCP-path handler — :npx-kt:test sets devrig.beacon.disabled=true, so the beacon is inert.
-        val handler = DevrigExecuteCodeToolHandler(
-            DevrigToolBridgeClient(routing, httpClient),
-            DevrigBeacon(HomePaths(tempDir.resolve("beacon-home")), CloseableStackHost()),
-        )
         val outBuf = ByteArrayOutputStream()
         val errBuf = ByteArrayOutputStream()
         val exitCode = runExecCodeCommand(
             command = command,
-            routing = routing,
-            handler = handler,
+            routing = routingProvider,
+            // The REAL MCP-path handler — :npx-kt:test sets devrig.beacon.disabled=true, so the beacon is inert.
+            handler = { service ->
+                DevrigExecuteCodeToolHandler(
+                    DevrigToolBridgeClient(service, httpClient),
+                    DevrigBeacon(HomePaths(tempDir.resolve("beacon-home")), CloseableStackHost()),
+                )
+            },
             out = PrintStream(outBuf, true, Charsets.UTF_8),
             err = PrintStream(errBuf, true, Charsets.UTF_8),
         )

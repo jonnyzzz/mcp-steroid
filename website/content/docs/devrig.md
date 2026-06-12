@@ -131,7 +131,8 @@ with the Kotlin snippet read from `--file` — same parameters and defaults as t
 MCP tool, no agent session required. `<project_name>` is the name `devrig
 project` lists. Progress streams to stderr while the script runs; the result
 prints to stdout, so it works in shell scripts and CI smoke checks, and a
-`devrig exec-code --file repro.kt` line in a bug report is copy-pasteable. Exits
+`devrig exec-code --project <name> --file repro.kt` line in a bug report is
+copy-pasteable. Exits
 non-zero when the script fails, with a distinct exit code when no IDE or project
 is reachable.
 

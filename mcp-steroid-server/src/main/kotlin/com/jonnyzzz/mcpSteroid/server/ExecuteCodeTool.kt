@@ -76,6 +76,15 @@ data class ExecCodeParams(
  * Handler for the steroid_execute_code MCP tool.
  */
 class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBase() {
+    companion object {
+        /**
+         * Schema default for `timeout` (seconds). Shared with `devrig exec-code` (the same way
+         * [ModalMode.DEFAULT] is) so an unset CLI `--timeout` always sends the exact value the
+         * MCP schema would have filled in — a single source of truth that cannot silently diverge.
+         */
+        const val DEFAULT_TIMEOUT_SECONDS = 600
+    }
+
     override val name = "steroid_execute_code"
     override val description get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
 
@@ -91,11 +100,10 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
 
     val reason = CommonToolParams.reason().registerToSchema()
 
-    private val defaultTimeoutSeconds = 600
     val timeout = InputSchemaElement.param("timeout")
-        .description("Timeout in seconds for your script BODY (default: $defaultTimeoutSeconds, configurable via mcp.steroid.execution.timeout registry key). The smart_non_modal pre-flight commit and smart-mode waits have their own internal deadlock-safety bounds and are not governed by this value.")
+        .description("Timeout in seconds for your script BODY (default: $DEFAULT_TIMEOUT_SECONDS, configurable via mcp.steroid.execution.timeout registry key). The smart_non_modal pre-flight commit and smart-mode waits have their own internal deadlock-safety bounds and are not governed by this value.")
         .int()
-        .withDefaultValue(defaultTimeoutSeconds)
+        .withDefaultValue(DEFAULT_TIMEOUT_SECONDS)
         .registerToSchema()
 
     val modal = InputSchemaElement.param("modal")
