@@ -166,10 +166,11 @@ sealed interface PromptResourceResolution {
 }
 
 /**
- * Resolves user input to an article. Accepted spellings, tried in order:
- *  1. the full URI exactly as the index publishes it (`mcp-steroid://ide/apply-patch`);
- *  2. the scheme-less path (`ide/apply-patch`);
- *  3. a bare stem (`apply-patch`) when it is unambiguous across all folders.
+ * Resolves user input to an article. Every published URI is lowercase ASCII, so the input is
+ * lowercased once and all matching is case-insensitive. Accepted spellings, tried in order:
+ *  1. the full URI as the index publishes it (`mcp-steroid://` + `<folder>/<stem>`);
+ *  2. the scheme-less path (`<folder>/<stem>`);
+ *  3. a bare stem (`<stem>`) when it is unambiguous across all folders.
  *
  * All matching is driven by `article.uri` from the generated index — no URI literals are
  * constructed here (the `NoHardcodedMcpSteroidUriUsageTest` rule, followed in devrig too).
@@ -179,7 +180,7 @@ fun resolvePromptResource(arg: String, index: PromptRootBase = ResourcesIndex())
         .flatMap { it.articles.values }
         .distinctBy { it.uri }
         .sortedBy { it.uri }
-    val requested = arg.trim().trimEnd('/')
+    val requested = arg.trim().trimEnd('/').lowercase()
 
     articles.firstOrNull { it.uri == requested }?.let { return PromptResourceResolution.Found(it) }
     articles.firstOrNull { it.uriPath() == requested }?.let { return PromptResourceResolution.Found(it) }
@@ -271,20 +272,55 @@ fun renderResourceCatalog(index: PromptRootBase = ResourcesIndex()): String = bu
 internal fun IdeFilter.gateLabel(): String? = when (this) {
     IdeFilter.All -> null
     is IdeFilter.Ide -> buildString {
-        append(if (productCodes.isEmpty()) "any IDE" else productCodes.sorted().joinToString(", "))
+        // Product codes join with '/' — ', ' would collide with the ' and '/' or ' chain
+        // separators of composite labels and make multi-product gates unreadable.
+        append(if (productCodes.isEmpty()) "any IDE" else productCodes.sorted().joinToString("/"))
         minVersion?.let { append(", version >= $it") }
         maxVersion?.let { append(", version <= $it") }
     }
     is IdeFilter.Not -> "not (${inner.gateLabel() ?: "all IDEs"})"
-    // `distinct()` collapses the common generated shape And(Ide(IU), Or(Ide(IU))) into a single
-    // "IU" instead of the noisy "IU and IU".
-    is IdeFilter.And -> operands.mapNotNull { it.gateLabel() }
-        .distinct()
-        .takeIf { it.isNotEmpty() }
-        ?.joinToString(" and ")
+    is IdeFilter.And -> andChainTerms().takeIf { it.isNotEmpty() }?.joinToString(" and ")
+    is IdeFilter.Or -> orChainTerms()?.takeIf { it.isNotEmpty() }?.joinToString(" or ")
+}
+
+/**
+ * Distinct rendered terms of an `and`-chain. Nested [IdeFilter.And] operands are inlined
+ * (conjunction is associative — no parentheses needed); a nested multi-term [IdeFilter.Or] is
+ * parenthesized so mixed chains stay precedence-unambiguous. `distinct()` collapses the common
+ * generated shape And(Ide(IU), Or(Ide(IU))) into a single "IU" instead of the noisy "IU and IU".
+ */
+private fun IdeFilter.andChainTerms(): List<String> = when (this) {
+    is IdeFilter.And -> operands.flatMap { it.andChainTerms() }.distinct()
     is IdeFilter.Or -> {
-        // An Or with an ungated operand matches everything — no annotation needed.
-        if (operands.any { it.gateLabel() == null }) null
-        else operands.mapNotNull { it.gateLabel() }.distinct().joinToString(" or ")
+        val terms = orChainTerms()
+        when {
+            // An Or matching everything constrains nothing inside the conjunction — drop it.
+            terms == null || terms.isEmpty() -> emptyList()
+            terms.size == 1 -> terms
+            else -> listOf("(${terms.joinToString(" or ")})")
+        }
     }
+    else -> listOfNotNull(gateLabel())
+}
+
+/**
+ * Distinct rendered terms of an `or`-chain, or `null` when the chain matches everything (it has an
+ * ungated operand) and needs no annotation. Nested [IdeFilter.Or] operands are inlined; a nested
+ * multi-term [IdeFilter.And] is parenthesized.
+ */
+private fun IdeFilter.orChainTerms(): List<String>? = when (this) {
+    is IdeFilter.Or -> {
+        val terms = ArrayList<String>()
+        for (operand in operands) terms += operand.orChainTerms() ?: return null
+        terms.distinct()
+    }
+    is IdeFilter.And -> {
+        val terms = andChainTerms()
+        when {
+            terms.isEmpty() -> null // matches everything — the whole Or matches everything too
+            terms.size == 1 -> terms
+            else -> listOf("(${terms.joinToString(" and ")})")
+        }
+    }
+    else -> gateLabel()?.let { listOf(it) } // null (ungated operand) makes the whole Or ungated
 }
