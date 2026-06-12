@@ -255,6 +255,8 @@ if (buildFile != null) {
 }
 ```
 
+> **A crashing inspection tool no longer aborts the sweep.** `runInspectionsDirectly` returns an additive result: it still behaves exactly like the `Map<inspectionShortName, List<ProblemDescriptor>>` shown above, and additionally exposes `result.failedTools` — the tools that crashed during the sweep (tool id + error message). Findings from the healthy tools survive a crashing tool, so check `failedTools` when a sweep looks suspiciously sparse.
+
 > **`ProblemDescriptor` results carry a live PSI reference, not a snapshot.** Accessing `.text`, `.textRange`, `psiElement.containingFile`, etc. on a returned descriptor *outside a `readAction { }` / `smartReadAction { }`* throws `ReadAccessException`. Consume the descriptors inside the same read action, or re-enter one in your post-processing loop.
 
 ### Daemon Analysis & Highlights
