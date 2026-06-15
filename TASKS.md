@@ -3849,3 +3849,84 @@ modal poisoning EDT, smartReadAction output duplication, write-lock invisibility
   `fb7ab68f..bef9a015` (TeamCity builds stale until then); devrig local redeploy to serve the
   newest schema (actions[]/ide-field drops landed after the deployed `ddf8027a` build);
   managed-backend/test-dir cleanup (see MEMORY.md 2026-06-11 environment handoff).
+
+---
+
+# Epic — version.json-driven self-contained installer (2026-06-15)
+
+Branch: `installer/version-json-driven`. Orchestrated via `/workflows` with sub-agents and 3×
+`run-agent.sh` quorum-review iterations at each design/implementation gate. This section is the
+durable log for the epic.
+
+## Goal
+
+A fully self-contained install tool whose ONLY input is `version.json` (+ other published website
+resources). Every URL — including the JDK (Amazon Corretto 25) — comes from `version.json`. The
+install **script is generated** from `version.json` so the script stays dumb (data baked in);
+complexity lives in the generator, not the shell.
+
+## Hard requirements (from the request)
+
+1. Single source of truth = `version.json`. All URLs (plugin, devrig, JDK/Corretto 25, …) published
+   there + metadata (sha, archive type, unpack layout) so unpack logic is trivial.
+2. Script is generated (not hand-written): inlines/consumes version.json (+ resources). Complexity → generator.
+3. Daily correctness GH Action: re-generate/re-resolve; open a PR when a change is needed (e.g. newer
+   Corretto 25.x). Does NOT change how the website is generated — only install-script inputs change,
+   which triggers the website resources build.
+4. No binaries in the repo. Install scripts generated only as part of (a) website build and (b)
+   integration-test process. NOT committed.
+5. 5 platforms: macOS arm64; Linux arm64; Linux x64; Windows arm64; Windows x64. On Linux the script
+   is PowerShell (macOS → shell; Linux + Windows → PowerShell). [CONFIRM]
+6. Install layout under `~/.mcp-steroid/`: each file under a version-named folder incl. 12-char sha;
+   no cleanup (only add); `~/.mcp-steroid/bin/` holds scripts; an update rewrites only those scripts;
+   devrig ensures the bin entry exists, creating one pointing at its own location if missing.
+7. Continue the integration tests (the `website/install-tests/` docker harness was scaffolded but
+   never run) so the generated scripts are proven on supported platforms.
+
+## Source material (review + cherry-pick)
+
+`0101-installer-docker` carries the installer lineage (partly on `0101`):
+- c615ac7a website: one-command devrig bootstrap installers (install.sh / install.ps1)
+- 0c3a9259 website: harden devrig bootstrap installers per review findings
+- 32750ec0 TODO: install.ps1 Windows PS5.1 smoke-test follow-up (#97)
+- 0135699e / 0dbcec8a devrig install --check (#86)
+- 067044b1 WIP: installer JDK auto-download — interrupted, NOT verified (0101-installer-docker only):
+  install.sh Corretto auto-download (unverified); install.ps1 incomplete; website/install-tests/
+  docker harness scaffolding (never run).
+
+Current `main`: `website/static/install.{sh,ps1}` are committed; `version.json` is not a static file
+(produced by website build; consumed by UpdateChecker.kt / DevrigUpdateChecker.kt / BackendVersionSkew.kt).
+
+## Open design questions (resolve before implementation)
+
+- Q1 Script/OS split: macOS → install.sh (sh/bash); Linux + Windows → install.ps1 (pwsh)? Confirm Linux
+  uses PowerShell (requires pwsh), not bash.
+- Q2 version.json delivery: generated script fetches version.json at runtime, or data inlined at
+  generation time (offline-capable)? Request implies inlined.
+- Q3 Daily PR target: with scripts uncommitted, the daily PR edits the source data feeding version.json
+  (Corretto coordinates). Where does that source live; what does the PR edit?
+- Q4 Generator home: which module owns the generator? Must run in BOTH website build and integration tests.
+- Q5 Corretto resolution: authoritative Corretto 25 endpoint for the 5 archives + checksums; daily-job
+  discovery of a new patch.
+
+## Plan (phases)
+
+- [ ] P1 Discovery (workflow fan-out): version.json producer+schema; website/Hugo build & GH Pages deploy;
+  current install.{sh,ps1} + WIP diff; install-tests harness; devrig install/locate/JDK logic;
+  integration-test install coverage; Corretto 25 distribution API.
+- [ ] P2 Design + quorum: version.json schema additions (Corretto per-platform url/sha/archive/unpack);
+  generator design; script templates (sh + ps1); daily GH action; devrig bin self-registration;
+  repo de-binary-fication. → 3× run-agent.sh quorum.
+- [ ] P3 Implement: schema + Corretto data; generator; generated scripts; GH action; devrig changes;
+  remove committed scripts.
+- [ ] P4 Integration tests: finish + run docker install tests (sh + pwsh) for the 5 platforms.
+- [ ] P5 Verify + quorum: build/tests green; 3× run-agent.sh review; PR.
+
+## Decisions log
+
+(filled as decisions are made)
+
+## Progress log
+
+- 2026-06-15: Reviewed branches; `0101-installer-docker` identified as installer source. Branch +
+  this epic section created. Next: P1 discovery workflow.
