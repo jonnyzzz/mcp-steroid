@@ -154,10 +154,39 @@ EOF
   mv -f "$tmp_wrapper" "$BIN_DIR/devrig"
   log "launcher: $BIN_DIR/devrig -> \$HOME/${launcher_rel} (DEVRIG_JAVA_HOME=\$HOME/${jdk_home_rel})"
 
+  # ── make devrig reachable on PATH ──
+  # If $BIN_DIR is already on PATH, done. Otherwise symlink the launcher into the first
+  # WRITABLE PATH directory that lives under $HOME — we never edit shell profiles and never
+  # touch system dirs. The symlink always targets the installation path ($BIN_DIR/devrig), and
+  # we never clobber a 'devrig' that is not already our own symlink.
+  linked=
   case ":${PATH}:" in
-    *":$BIN_DIR:"*) log "$BIN_DIR is already on your PATH" ;;
-    *) log ""; log "Add $BIN_DIR to your PATH:"; log "    export PATH=\"\$HOME/.mcp-steroid/bin:\$PATH\""; log "" ;;
+    *":$BIN_DIR:"*) log "$BIN_DIR is on your PATH"; linked=1 ;;
   esac
+  if [ -z "$linked" ]; then
+    oldifs=$IFS; IFS=:
+    for d in $PATH; do
+      [ -n "$d" ] || continue
+      case "$d" in "$HOME"/*) ;; *) continue ;; esac          # only directories under your home
+      [ -d "$d" ] && [ -w "$d" ] || continue
+      existing="$d/devrig"
+      if [ -e "$existing" ] || [ -L "$existing" ]; then
+        cur=$(readlink "$existing" 2>/dev/null || echo "")
+        [ "$cur" = "$BIN_DIR/devrig" ] || continue            # foreign devrig — do not clobber
+      fi
+      if ln -sf "$BIN_DIR/devrig" "$existing" 2>/dev/null; then
+        log "linked $existing -> $BIN_DIR/devrig"
+        linked=1; break
+      fi
+    done
+    IFS=$oldifs
+  fi
+  if [ -z "$linked" ]; then
+    log ""
+    log "devrig is at $BIN_DIR/devrig but not on your PATH. Add it:"
+    log "    export PATH=\"\$HOME/.mcp-steroid/bin:\$PATH\""
+    log ""
+  fi
 
   # ── finalize: let devrig register itself with the available agents ──
   # The wrapper sets DEVRIG_JAVA_HOME, so this runs under the bundled JDK. Opt out via

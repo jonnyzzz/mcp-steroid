@@ -116,6 +116,35 @@ $cmd = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%
 Set-Content -Path (Join-Path $BinDir 'devrig.cmd') -Value $cmd -NoNewline:$false
 Write-Log "launcher: $BinDir\devrig.ps1 -> $launcherRel (DEVRIG_JAVA_HOME=$jdkHomeRel)"
 
+# ── make devrig reachable on PATH ──
+# If $BinDir is on PATH, done. Otherwise symlink devrig.cmd into the first writable PATH dir
+# under the user profile — never edit the registry/System PATH, never touch dirs outside the
+# user home. The symlink targets the installation path and we never clobber a foreign devrig.
+# (Symlink creation needs Developer Mode / admin; on failure we fall back to a PATH hint.)
+$pathDirs = @($env:Path -split ';' | Where-Object { $_ })
+if ($pathDirs -contains $BinDir) {
+  Write-Log "$BinDir is on your PATH"
+} else {
+  $linked = $false
+  $cmdTarget = Join-Path $BinDir 'devrig.cmd'
+  foreach ($d in $pathDirs) {
+    if (-not $d.StartsWith($InstallRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
+    if (-not (Test-Path -LiteralPath $d -PathType Container)) { continue }
+    $linkPath = Join-Path $d 'devrig.cmd'
+    $existing = Get-Item -LiteralPath $linkPath -ErrorAction SilentlyContinue
+    if ($existing -and ($existing.LinkType -ne 'SymbolicLink' -or $existing.Target -ne $cmdTarget)) { continue }
+    try {
+      New-Item -ItemType SymbolicLink -Path $linkPath -Target $cmdTarget -Force -ErrorAction Stop | Out-Null
+      Write-Log "linked $linkPath -> $cmdTarget"; $linked = $true; break
+    } catch { continue }
+  }
+  if (-not $linked) {
+    Write-Log ""
+    Write-Log "devrig is at $cmdTarget but not on your PATH. Add $BinDir to your PATH."
+    Write-Log ""
+  }
+}
+
 # ── finalize: let devrig register itself with the available agents (opt out: DEVRIG_NO_AUTO_INSTALL) ──
 if ($env:DEVRIG_NO_AUTO_INSTALL) {
   Write-Log "DEVRIG_NO_AUTO_INSTALL set — skipping 'devrig install'. Register agents later: $BinDir\devrig.ps1 install"
