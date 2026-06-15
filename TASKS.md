@@ -3930,3 +3930,71 @@ Current `main`: `website/static/install.{sh,ps1}` are committed; `version.json` 
 
 - 2026-06-15: Reviewed branches; `0101-installer-docker` identified as installer source. Branch +
   this epic section created. Next: P1 discovery workflow.
+
+## P1 Discovery — findings (2026-06-15)
+
+Full agent output: workflow `installer-discovery` (wf_da2a62c0-1b1).
+
+**version.json today**: produced by `website/Makefile:49`
+(`echo '{"version-base":"$(VERSION)"}' > static/version.json`), published at
+`https://mcp-steroid.jonnyzzz.com/version.json`. Consumers: `UpdateChecker.kt`,
+`DevrigUpdateChecker.kt` (both `ignoreUnknownKeys=true` → additive-safe), `BackendVersionSkew.kt`.
+Website is **not** a Gradle module (standalone Makefile + Hugo Docker `hugomods/hugo:exts-0.142.0`,
+output → `mcp-steroid-public/`, deployed by `.github/workflows/github-pages.yml` on push to
+`main` paths `website/**`,`VERSION` / release / dispatch). npx-kt already has a
+`generateVersionJson` task (`npx-kt/build.gradle.kts:428-475`) emitting SHA-512 + URL entries.
+
+**Locked spec**: `docs/devrig-deployment-spec.md` v7 — `~/.mcp-steroid/{bin,binaries}`,
+content-addressed `binaries/<artifact>-<os>-<cpu>-<sha>/`, verbatim unpack, per-platform manifest
+(devrig + Corretto JDK: url/sha/format/binSubpath/javaHomeSubpath), install bootstrap, agent
+wizard, auto-GC, dev-mode. Uses **version.properties** (chosen for runtime shell parsing). Our
+generated-script model supersedes that → **v8: keep version.json + generate scripts with data baked
+in** (no runtime manifest parse needed by the install script).
+
+**WIP installer (`0101-installer-docker`)**: `install.sh` (364 ln, complete) + `install.ps1`
+(330 ln) already do devrig + Corretto 25 download, SHA-256 verify, content-addressed unpack to
+`binaries/`, write `bin/` launchers. BUT they fetch the GitHub *latest* release API live (NOT
+version.json-driven) and hardcode Corretto URLs. `website/install-tests/` has docker drivers
+(`test-install-sh.sh` complete; `test-install-ps1.sh` present but `test-install-ps1.ps1` MISSING;
+never run). No Kotlin harness / CI wiring.
+
+**devrig self-location**: `HomePaths.kt` (hardcoded `~/.mcp-steroid`), `DevrigRoot.kt` (walks
+classLoader codeSource for `lib/`+`ij-plugin.zip`), `InstallCommand.kt` (uses `DevrigRoot.path` /
+`ProcessHandle.current().info().command()` for launcher path) — gives devrig its own location to
+self-register a `bin/` entry.
+
+**Amazon Corretto 25** (verified live 2026-06-15, latest = `25.0.3.9.1`):
+- Download: `https://corretto.aws/downloads/latest/amazon-corretto-25-<arch>-<os>-jdk.<ext>` (302 →
+  `/downloads/resources/<version>/<file>`). SHA-256: `https://corretto.aws/downloads/latest_sha256/<name>`
+  (bare 64-hex text). Version discovery: GitHub API `repos/corretto/corretto-25/releases/latest`
+  `tag_name`, or parse the 302 Location.
+- Archive type + javaHomeSubpath per platform:
+  - macOS aarch64 → tar.gz, `amazon-corretto-25.jdk/Contents/Home` (stable, unversioned top dir)
+  - Linux aarch64 → tar.gz, `amazon-corretto-25.0.3.9.1-linux-aarch64/`
+  - Linux x64 → tar.gz, `amazon-corretto-25.0.3.9.1-linux-x64/`
+  - Windows x64 → zip, `jdk25.0.3_9/`
+  - **Windows aarch64 → DOES NOT EXIST (404).** Corretto 25 ships no Windows/arm64 build.
+- Each artifact also has `.sig` + master `.pub` (GPG) if signature verification is wanted.
+
+**Integration tests**: `:test-integration` Docker infra (`IntelliJContainer`, `configureIntegrationTest()`,
+`ide-base` Dockerfile bundles Temurin 8/11/17/21/24/25); installer tests would be simpler images
+(`ubuntu:24.04` for sh, `mcr.microsoft.com/dotnet/sdk` for pwsh). No existing install/bootstrap test
+runs; would plug into `ciIntegrationTests`.
+
+## Decisions log (proposed v8 — to confirm + quorum)
+
+- D1: Manifest = **version.json** (extend the existing file, additive). Supersedes v7's
+  version.properties (the generated-script model removes the runtime-parse rationale).
+- D2: Install scripts are **generated** from version.json by a Kotlin generator; data baked in;
+  emitted by (a) the website build and (b) integration tests. NOT committed (remove the static ones).
+- D3: 12-char sha in the content-addressed folder name (`<artifact>-<os>-<cpu>-<version>-<sha12>`);
+  no cleanup (only add); under `~/.mcp-steroid/binaries/` (or directly under `~/.mcp-steroid/`).
+- D4: `~/.mcp-steroid/bin/` holds launcher scripts; updates rewrite only these; devrig ensures the
+  `bin/` entry exists and (re)creates it pointing at its own downloaded location.
+- D5: Daily GH Action re-resolves Corretto 25 (GitHub API tag + per-arch latest_sha256); if changed,
+  PRs the Corretto coordinates (a checked-in source the Makefile/generator reads) → triggers
+  github-pages build → regenerates version.json + scripts.
+- D6 [NEEDS USER]: Windows arm64 has no Corretto 25 → emulate via x64 Corretto (WIP already does
+  this; Windows-on-ARM runs x64) vs drop the platform.
+- D7 [NEEDS USER]: Script language split — macOS=POSIX sh; Linux+Windows=PowerShell (Linux requires
+  `pwsh`)? vs Linux=sh too.
