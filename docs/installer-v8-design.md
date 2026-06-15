@@ -652,3 +652,41 @@ HOLD. Directionally sound; the following resolutions are adopted and are binding
   (install.sh + version.json) + TLS to each JDK vendor; version.json is **unsigned** in v8;
   integrity = full sha256 verification of every downloaded artifact against the baked value. A
   signed manifest is deferred together with `devrig upgrade` (R-11). (R1#7.)
+
+---
+
+## 13. v8.2 — version.json scope: drop the installer block (supersedes §2 + R-3)
+
+**Decision (after re-evaluating whether a published manifest is needed):** the *published*
+`version.json` does **NOT** gain an `installer{}` block. It stays exactly as today —
+`{"version-base": "<VERSION>"}`, produced by `website/Makefile:49`, consumed only for `version-base`
+by `UpdateChecker.kt` and `DevrigUpdateChecker.kt`. No installer data is published.
+
+Rationale:
+- Generated scripts bake every URL+sha (D2) and never read a manifest at runtime.
+- devrig does not re-resolve/download at runtime (install script owns downloads; the `bin/` launcher
+  just sets `JAVA_HOME` to the already-unpacked JDK). No runtime consumer needs the block.
+- `devrig upgrade` — the only feature that would read a published manifest — is out of scope (R-11).
+
+**What replaces "version.json as the URL source":** the committed coordinate file(s)
+(`website/installer/jdk-coordinates.json` + `website/installer/devrig-coordinates.json`) are the
+single human-/job-edited declarative source of all URLs+shas; `generateInstaller` consumes them and
+renders the **self-contained scripts**, which ARE the published installation artifact. (§2's
+annotated `installer{}` example and R-3's "version.json is the script-generation source of truth"
+are superseded: the *coordinate files* are the source; the *script* is the published carrier.)
+
+**Vendor-update / removal / new-release risk (explicitly):**
+- New devrig release → release task updates `devrig-coordinates.json` + `VERSION` → site rebuild
+  regenerates scripts. New JDK patch → daily action updates `jdk-coordinates.json` → PR → rebuild.
+  Old `binaries/` kept (no cleanup, R-1).
+- Vendor removes an old JDK (404): the curl-fresh published script always points at the current,
+  daily-verified JDK (fresh installs OK); already-installed users keep the content-addressed JDK
+  locally (unaffected); only a stale locally-saved script 404s (→ document "use the curl one-liner,
+  don't cache install.sh"). The daily byte-verify job (R-9) fails the PR on removal/sha-drift, so we
+  react within a day.
+- An `installer{}` block would be **equally stale** unless the script read it live (contradicting
+  D2), so it adds no protection. Mitigations live in the pipeline, not a published manifest.
+
+Net effect on the plan: `version.json` is untouched (zero risk to the existing update-check); §2's
+schema work is dropped; the generator reads coordinate files (not version.json). Everything else in
+the design and the R-1..R-15 resolutions stands.

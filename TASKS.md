@@ -4072,3 +4072,15 @@ recorded as §12 of docs/installer-v8-design.md and are BINDING for implementati
 - R-15 document install-time trust model (TLS + sha256; version.json unsigned in v8).
 
 P2 COMPLETE. Next: P3 implementation, starting with cherry-pick base from 0101-installer-docker.
+
+## Decision (2026-06-15): drop the installer block from published version.json (v8.2)
+
+User re-evaluation: since the generated script bakes all data, a published manifest is redundant.
+Confirmed by analysis — no runtime consumer needs an installer block (scripts bake data; devrig
+doesn't re-resolve; the two update-checkers read only version-base; devrig upgrade is out of scope
+R-11). DECISION: version.json stays minimal/unchanged ({version-base}); the committed coordinate
+files (jdk-coordinates.json + devrig-coordinates.json) are the single URL source; the self-contained
+generated scripts are the published artifact. Supersedes §2 schema + R-3. Vendor-update/removal risk
+handled by daily regen + daily byte-verify (R-9) + curl-fresh + content-addressed local cache; a
+published manifest would be equally stale (mitigations are pipeline-side, not manifest-side).
+Recorded as §13 of docs/installer-v8-design.md.
