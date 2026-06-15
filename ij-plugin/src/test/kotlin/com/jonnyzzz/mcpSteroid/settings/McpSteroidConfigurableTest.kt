@@ -46,6 +46,9 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 joined.contains("install.sh") || joined.contains("devrig install "),
             )
 
+            // The legacy HTTP examples must carry a "not recommended" warning steering users to devrig.
+            assertContainsText(texts, "Not recommended")
+
             // Legacy HTTP section must reference the registry keys so pre-devrig
             // HTTP-based setups can still find their port/host configuration.
             assertContainsText(texts, "mcp.steroid.server.port")
@@ -67,8 +70,9 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
 
     private fun collectTexts(component: Component, out: MutableList<String> = mutableListOf()): List<String> {
         when (component) {
-            is JTextComponent -> out.add(component.text)
-            is JLabel -> out.add(component.text)
+            // Icon-only labels (e.g. the warning sign) have null text — skip them.
+            is JTextComponent -> component.text?.let { out.add(it) }
+            is JLabel -> component.text?.let { out.add(it) }
         }
         if (component is Container) {
             for (child in component.components) {

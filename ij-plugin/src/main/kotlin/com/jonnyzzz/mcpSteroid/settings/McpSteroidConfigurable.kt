@@ -105,11 +105,20 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
             group("Legacy HTTP Configuration") {
                 row {
+                    icon(AllIcons.General.Warning)
                     text(
-                        "Direct streamable-HTTP connection to this single IDE instance — the pre-devrig setup. " +
-                            "Prefer devrig above: it survives IDE restarts, port changes, and routes to every IDE."
+                        "<b>Not recommended.</b> These manual HTTP commands point at <b>this</b> IDE on " +
+                            "<b>this</b> port — they break when port 6315 is busy, the IDE restarts, or you open " +
+                            "another IDE. Use devrig instead: it connects to every running IDE automatically and " +
+                            "keeps working across restarts and port changes."
                     )
                 }
+                row {
+                    browserLink("Set up devrig instead", DEVRIG_DOCS_URL)
+                }.topGap(TopGap.NONE)
+                row {
+                    text("If you still want a direct streamable-HTTP connection to this single IDE instance:")
+                }.topGap(TopGap.SMALL)
                 if (info != null) {
                     for ((name, command) in info.commands) {
                         row("$name:") {
