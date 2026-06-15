@@ -58,6 +58,10 @@ dependencies {
     // fake IDE marker + the devrig↔IDE bridge wire format. The fake bridge itself uses the JDK's built-in
     // com.sun.net.httpserver.HttpServer (no ktor dependency needed).
     testImplementation(project(":mcp-steroid-server"))
+    // InstallerBootstrapTest (P4) calls the generator's main() directly so the baked devrig
+    // binSubpath = devrig-<version>/bin/devrig matches the fixture top dir — no nested ./gradlew.
+    // Pure data-merge module, no IntelliJ deps.
+    testImplementation(project(":installer-gen"))
 }
 
 kotlin {
