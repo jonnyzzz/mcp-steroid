@@ -4196,3 +4196,23 @@ Mode/admin; falls back to hint). Verified: sh -n OK; both blocks present.
   POSIX lane; ADD an Alpine lane (alpine:latest, musl/busybox sh + busybox unzip/tar/readlink/awk +
   ca-certificates) to prove install.sh portability on a minimal OS. So POSIX lanes = ubuntu:24.04 +
   alpine; Windows lane = mcr.microsoft.com/powershell (pwsh-on-Linux).
+
+## P4 core lane GREEN — InstallerBootstrapTest (2026-06-15)
+
+InstallerBootstrapTest.kt (Kotlin over test-helper, NO shell drivers) is GREEN (3m23s, re-confirmed
+UP-TO-DATE). Builds fake devrig zip + fake JDK tar.gz fixtures (computes sha256), serves them over
+REAL HTTP from an nginx:alpine side-car (bridge IP), writes temp coordinate files, calls the
+:installer-gen generator main() in-process (--version 0.0.0-test), runs the generated install.sh in
+ubuntu:24.04 (HOME with a space). Asserts (a)-(g): exit 0 + content-addressed binaries dirs;
+JDK downloaded+unpacked (bin/java); bin/devrig wrapper exports DEVRIG_JAVA_HOME + execs devrig;
+PATH symlink in $HOME/.local/bin resolves + `command -v devrig`; default run auto-calls `devrig
+install`; DEVRIG_NO_AUTO_INSTALL skips it; idempotent re-run. No generator/template bug surfaced.
+Added testImplementation(project(":installer-gen")). Committed.
+
+REMAINING (then 3x quorum, iterate until accepted):
+- Alpine lane (musl/busybox; apk add bash curl unzip tar) — parameterize the lane, same assertions.
+- pwsh-on-Linux lane (mcr.microsoft.com/powershell) for install.ps1 incl. windows-arm64/Azul —
+  needs windows fixtures (devrig.bat recorder + JDK zip).
+- Resolver tools: A jdk-coordinates (download→GPG/sha256 verify→unpack→assert bin/java for all 5 OS),
+  B devrig-coordinates (from release / installDist).
+- D: devrig BinLauncher.kt self-registration + HomePaths.binDir; Makefile wiring; daily action yml.
