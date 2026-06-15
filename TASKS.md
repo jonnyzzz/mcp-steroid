@@ -4186,3 +4186,13 @@ pre-existing 'devrig' that isn't already our own symlink is never clobbered; fal
 hint if no suitable dir. install.sh: ln -sf into a $HOME/* writable PATH dir. install.ps1:
 New-Item SymbolicLink devrig.cmd into a $env:USERPROFILE-rooted writable PATH dir (needs Dev
 Mode/admin; falls back to hint). Verified: sh -n OK; both blocks present.
+
+## Requirement (2026-06-15): always-symlink + test on small OS
+
+- Dropped the "$BIN_DIR on PATH" precheck: install.sh + install.ps1 now ALWAYS symlink the launcher
+  into a writable user-home PATH dir (never self-link $BIN_DIR; never clobber a foreign devrig; no
+  profile/registry edits; fallback hint). DONE in templates (sh -n OK).
+- P4 test additions (TODO): assert the symlink works (devrig invocable via the linked name) on every
+  POSIX lane; ADD an Alpine lane (alpine:latest, musl/busybox sh + busybox unzip/tar/readlink/awk +
+  ca-certificates) to prove install.sh portability on a minimal OS. So POSIX lanes = ubuntu:24.04 +
+  alpine; Windows lane = mcr.microsoft.com/powershell (pwsh-on-Linux).
