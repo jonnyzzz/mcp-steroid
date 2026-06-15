@@ -3998,3 +3998,20 @@ runs; would plug into `ciIntegrationTests`.
   this; Windows-on-ARM runs x64) vs drop the platform.
 - D7 [NEEDS USER]: Script language split — macOS=POSIX sh; Linux+Windows=PowerShell (Linux requires
   `pwsh`)? vs Linux=sh too.
+
+## User decisions (2026-06-15)
+
+- D6 RESOLVED: Windows-arm64 uses a DIFFERENT vendor's JDK 25 arm64 build (Corretto for the other 4
+  platforms). → research vendor (Azul Zulu / Microsoft / Liberica): URL + sha + archive layout +
+  version discovery. version.json `windows-arm64.jdk` points at that vendor; daily job tracks it too.
+- D7 RESOLVED: script split = macOS + Linux → POSIX `install.sh`; Windows → `install.ps1`.
+  ("On Linux it's only PowerShell" was a misstatement.) No pwsh dependency on Linux. Two scripts.
+
+Platform → script + JDK matrix:
+| platform        | install script | JDK source            |
+|-----------------|----------------|-----------------------|
+| macos-arm64     | install.sh     | Corretto 25 (tar.gz)  |
+| linux-arm64     | install.sh     | Corretto 25 (tar.gz)  |
+| linux-x64       | install.sh     | Corretto 25 (tar.gz)  |
+| windows-x64     | install.ps1    | Corretto 25 (zip)     |
+| windows-arm64   | install.ps1    | <2nd vendor> 25 arm64 |
