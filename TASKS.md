@@ -4084,3 +4084,22 @@ generated scripts are the published artifact. Supersedes §2 schema + R-3. Vendo
 handled by daily regen + daily byte-verify (R-9) + curl-fresh + content-addressed local cache; a
 published manifest would be equally stale (mitigations are pipeline-side, not manifest-side).
 Recorded as §13 of docs/installer-v8-design.md.
+
+## P3 (start) — cherry-pick + spec cleanup (2026-06-15)
+
+- Cherry-picked the installer base from 0101-installer-docker onto installer/version-json-driven,
+  each stamped `Co-Authored-By: Claude Fable 5` (the AGENTS.md exception — all 0101 commits were
+  Fable-authored): website install scripts (c615ac7a), hardening (0c3a9259), WIP JDK auto-download +
+  install-tests harness (067044b1). Resolved c615ac7a's website/content/docs conflict by keeping
+  main's docs (the new design re-documents the flow); SKIPPED 32750ec0 (a TODO note, not material).
+  These bring website/static/install.{sh,ps1} + website/install-tests/ as TEMPLATE SOURCE material —
+  they will be moved into the :installer-gen module as templates and the committed copies deleted
+  (de-binary-fication) so the repo stays junk-free.
+- Spec cleanup launched (background agent): rewrite docs/installer-v8-design.md as ONE clean current
+  spec — fix the unbalanced/leaked fences (stray junk near line 592), fold the §12 quorum
+  resolutions + §13 v8.2 into the body, drop the v7-history framing. Keep the spec; remove past detail.
+- Confirmed (user): generator = its own Kotlin module; keep the JSON coordinate model as the
+  generator input; avoid repo junk from the changes.
+
+Next: build :installer-gen (JSON model + script templates from the cherry-picked scripts +
+generateInstaller task), wire into website Makefile + :test-integration, de-binary-fy, then P4 tests.
