@@ -51,36 +51,34 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         return panel {
             row {
                 text(
-                    "AI agents (Claude, Codex, Gemini, …) drive this IDE through the Model Context Protocol: " +
-                        "MCP Steroid runs an MCP server inside the IDE, and agents call its tools to execute " +
-                        "Kotlin against the full IntelliJ Platform API."
+                    "<b>AI Agents work inside your IDE — not just over your files.</b> Claude, Codex, Gemini, " +
+                        "and any MCP-compatible agent connect to MCP Steroid and drive the full IntelliJ " +
+                        "Platform: they run Kotlin against the live IDE, navigate the PSI, run inspections, " +
+                        "refactorings, the debugger and tests — and even <i>see</i> the IDE through screenshots. " +
+                        "Your agent gets the whole IntelliJ, not just the text."
                 )
             }
 
-            group("Devrig CLI (Recommended)") {
+            group("Devrig — the recommended way to connect") {
                 row {
                     text(
-                        "Devrig registers MCP Steroid with your coding agent and bridges it to every running " +
-                            "IDE at once — no manual MCP configuration. Install it with one command:"
+                        "<b>Devrig</b> is one small command-line bridge between your AI Agent and your IDEs. " +
+                            "Point your agent at it once and it reaches <b>every</b> IntelliJ-family IDE you " +
+                            "have open — across projects — and routes each call to the right one. It keeps " +
+                            "working when the IDE restarts or the port changes, and it can even download and " +
+                            "start an IDE on demand for headless and CI runs."
                     )
                 }
-                row("Install:") {
-                    cell(copyableTextField(DEVRIG_INSTALL_COMMAND)).align(AlignX.FILL)
+                row {
+                    text(
+                        "The direct HTTP server below also works, but it is tied to <b>this</b> IDE on " +
+                            "<b>this</b> port — it moves when 6315 is busy or the IDE restarts, and every agent " +
+                            "must be wired up by hand. Devrig handles all of that for you, so it is the way we " +
+                            "recommend connecting."
+                    )
                 }
                 row {
-                    comment("Then register devrig as the <code>mcp-steroid</code> MCP server in your agent:")
-                }
-                row("Claude:") {
-                    cell(copyableTextField("devrig install claude")).align(AlignX.FILL)
-                }
-                row("Codex:") {
-                    cell(copyableTextField("devrig install codex")).align(AlignX.FILL)
-                }
-                row("Gemini:") {
-                    cell(copyableTextField("devrig install gemini")).align(AlignX.FILL)
-                }
-                row {
-                    browserLink("Devrig documentation", DOCS_URL)
+                    browserLink("Read the Devrig documentation to get started", DEVRIG_DOCS_URL)
                 }.topGap(TopGap.SMALL)
             }
 
@@ -179,9 +177,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         /** Must match the displayName attribute of the applicationConfigurable EP in plugin.xml. */
         const val DISPLAY_NAME = "MCP Steroid — devrig"
 
-        const val DEVRIG_INSTALL_COMMAND = "curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh"
-
-        const val DOCS_URL = "https://mcp-steroid.jonnyzzz.com/docs/"
+        const val DEVRIG_DOCS_URL = "https://mcp-steroid.jonnyzzz.com/docs/devrig/"
 
         const val FEEDBACK_URL = "https://mcp-steroid.jonnyzzz.com"
     }

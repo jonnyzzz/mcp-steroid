@@ -28,17 +28,23 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
         configurable.disposeUIResources()
     }
 
-    fun `test panel promotes devrig install and agent registration commands`() {
+    fun `test panel promotes devrig and points to its documentation only`() {
         val configurable = McpSteroidConfigurable()
         try {
             val texts = collectTexts(configurable.createComponent())
+            val joined = texts.joinToString("\n")
 
-            // Pin the constant's value (the website serves this exact command), then assert presence.
-            assertEquals("curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh", McpSteroidConfigurable.DEVRIG_INSTALL_COMMAND)
-            assertContainsText(texts, McpSteroidConfigurable.DEVRIG_INSTALL_COMMAND)
-            assertContainsText(texts, "devrig install claude")
-            assertContainsText(texts, "devrig install codex")
-            assertContainsText(texts, "devrig install gemini")
+            // The intro leads with the "AI Agents" framing and promotes devrig as the recommended path.
+            assertContainsText(texts, "AI Agents")
+            assertContainsText(texts, "Devrig")
+
+            // devrig install is not shipped yet: the panel must NOT advertise any install command,
+            // only point to the documentation.
+            assertEquals("https://mcp-steroid.jonnyzzz.com/docs/devrig/", McpSteroidConfigurable.DEVRIG_DOCS_URL)
+            assertFalse(
+                "Panel must not advertise the unimplemented devrig install; found:\n$joined",
+                joined.contains("install.sh") || joined.contains("devrig install "),
+            )
 
             // Legacy HTTP section must reference the registry keys so pre-devrig
             // HTTP-based setups can still find their port/host configuration.

@@ -9,7 +9,7 @@ group: "Reference"
 
 ## Overview
 
-MCP Steroid includes a built-in **Settings panel** — **Tools → MCP Steroid — devrig** (reinstated in 0.101) — that promotes the recommended [devrig CLI setup](/docs/devrig/) (one-command install plus `devrig install claude|codex|gemini`), shows the live MCP server status (port and URL), and keeps the legacy direct-HTTP connection details: ready-to-paste CLI commands for Claude, Codex, and Gemini, and a full JSON config block you can drop directly into your MCP client's config file.
+MCP Steroid includes a built-in **Settings panel** — **Tools → MCP Steroid — devrig** (reinstated in 0.101) — that explains how your **AI Agents** drive the IDE, promotes the recommended [devrig CLI](/docs/devrig/) (the one bridge that reaches every running IDE and survives restarts and port changes — see the docs to get started), shows the live MCP server status (port and URL), and keeps the legacy direct-HTTP connection details: ready-to-paste CLI commands for Claude, Codex, and Gemini, and a full JSON config block you can drop directly into your MCP client's config file.
 
 Starting from **0.89.0**, the MCP server starts as soon as IntelliJ starts — before any project opens. The Settings page reflects this: the connection URL is always there, whether or not you have a project open.
 
