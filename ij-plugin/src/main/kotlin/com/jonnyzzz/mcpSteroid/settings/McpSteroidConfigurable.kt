@@ -47,6 +47,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         val server = ApplicationManager.getApplication().getServiceIfCreated(SteroidsMcpServer::class.java)
         val port = server?.port ?: 0
         val info = if (server != null && port > 0) McpConnectionInfo.build(server.mcpUrl) else null
+        // Prose references only the actual bound port ($port), so every message matches the Status
+        // block. No hard-coded default here — 6315 lives solely in the registry config.
 
         return panel {
             row {
@@ -58,29 +60,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                         "Your agent gets the whole IntelliJ, not just the text."
                 )
             }
-
-            group("Devrig — the recommended way to connect") {
-                row {
-                    text(
-                        "<b>Devrig</b> is one small command-line bridge between your AI Agent and your IDEs. " +
-                            "Point your agent at it once and it reaches <b>every</b> IntelliJ-family IDE you " +
-                            "have open — across projects — and routes each call to the right one. It keeps " +
-                            "working when the IDE restarts or the port changes, and it can even download and " +
-                            "start an IDE on demand for headless and CI runs."
-                    )
-                }
-                row {
-                    text(
-                        "The direct HTTP server below also works, but it is tied to <b>this</b> IDE on " +
-                            "<b>this</b> port — it moves when 6315 is busy or the IDE restarts, and every agent " +
-                            "must be wired up by hand. Devrig handles all of that for you, so it is the way we " +
-                            "recommend connecting."
-                    )
-                }
-                row {
-                    browserLink("Read the Devrig documentation to get started", DEVRIG_DOCS_URL)
-                }.topGap(TopGap.SMALL)
-            }
+            row {
+                browserLink("Report issues, Join Slack & Community", FEEDBACK_URL)
+            }.topGap(TopGap.SMALL)
 
             group("Status") {
                 if (info != null) {
@@ -103,14 +85,37 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 }
             }
 
+            group("Devrig — the recommended way to connect") {
+                row {
+                    text(
+                        "<b>Devrig</b> is one small command-line bridge between your AI Agent and your IDEs. " +
+                            "Point your agent at it once and it reaches <b>every</b> IntelliJ-family IDE you " +
+                            "have open — across projects — and routes each call to the right one. It keeps " +
+                            "working when the IDE restarts or the port changes, and it can even download and " +
+                            "start an IDE on demand for headless and CI runs."
+                    )
+                }
+                row {
+                    text(
+                        "The direct HTTP server below also works, but it is tied to <b>this</b> IDE on port " +
+                            "<b>$port</b> — that can change when the IDE restarts or the port is taken, and every " +
+                            "agent must be wired up by hand. Devrig handles all of that for you, so it is the way " +
+                            "we recommend connecting."
+                    )
+                }
+                row {
+                    browserLink("Read the Devrig documentation to get started", DEVRIG_DOCS_URL)
+                }.topGap(TopGap.SMALL)
+            }
+
             group("Legacy HTTP Configuration") {
                 row {
                     icon(AllIcons.General.Warning)
                     text(
-                        "<b>Not recommended.</b> These manual HTTP commands point at <b>this</b> IDE on " +
-                            "<b>this</b> port — they break when port 6315 is busy, the IDE restarts, or you open " +
-                            "another IDE. Use devrig instead: it connects to every running IDE automatically and " +
-                            "keeps working across restarts and port changes."
+                        "<b>Not recommended.</b> These manual HTTP commands point at <b>this</b> IDE on port " +
+                            "<b>$port</b> — they stop working when the IDE restarts or that port is reassigned, " +
+                            "and every agent must be set up by hand. Use devrig instead: it reaches every running " +
+                            "IDE automatically and keeps working across restarts and port changes."
                     )
                 }
                 row {
@@ -128,9 +133,11 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     group("JSON Config") {
                         val json = info.jsonConfig.trim()
                         row {
+                            // Size the area to the content so the whole block is visible without
+                            // an inner scrollbar.
                             val textArea = JBTextArea(json).apply {
                                 isEditable = false
-                                rows = 6
+                                rows = json.lines().size.coerceAtLeast(3)
                             }
                             cell(JBScrollPane(textArea)).align(Align.FILL)
                         }.topGap(TopGap.NONE)
@@ -144,15 +151,11 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 row {
                     comment(
                         "Port and bind address are configurable via the IDE Registry: " +
-                            "<code>mcp.steroid.server.port</code> (default 6315, 0 = auto-assign) and " +
-                            "<code>mcp.steroid.server.host</code> (default 127.0.0.1)."
+                            "<code>mcp.steroid.server.port</code> (0 = auto-assign) and " +
+                            "<code>mcp.steroid.server.host</code>."
                     )
                 }
             }
-
-            row {
-                browserLink("Report issues, Join Slack & Community", FEEDBACK_URL)
-            }.topGap(TopGap.SMALL)
         }
     }
 
