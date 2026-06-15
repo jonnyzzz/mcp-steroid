@@ -4176,3 +4176,13 @@ REMAINING (then 3x run-agent.sh quorum, iterate until accepted):
   happened, sha verified, content-addressed dirs, wrapper sets DEVRIG_JAVA_HOME + execs devrig,
   `devrig install` was invoked (recorder), DEVRIG_NO_AUTO_INSTALL skips it, idempotent re-run.
 - D. devrig BinLauncher.kt self-registration + HomePaths.binDir; Makefile wiring; daily action.
+
+## Requirement (2026-06-15): PATH symlink — DONE (templates)
+
+If ~/.mcp-steroid/bin is not on PATH, the install script symlinks the launcher into the first
+WRITABLE PATH directory that lives UNDER the user's home — never editing shell profiles, never
+touching system dirs. The symlink always TARGETS the installation path ($BIN_DIR/devrig); a
+pre-existing 'devrig' that isn't already our own symlink is never clobbered; falls back to a PATH
+hint if no suitable dir. install.sh: ln -sf into a $HOME/* writable PATH dir. install.ps1:
+New-Item SymbolicLink devrig.cmd into a $env:USERPROFILE-rooted writable PATH dir (needs Dev
+Mode/admin; falls back to hint). Verified: sh -n OK; both blocks present.
