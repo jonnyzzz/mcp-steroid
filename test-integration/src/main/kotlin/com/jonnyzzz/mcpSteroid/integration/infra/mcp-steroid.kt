@@ -417,6 +417,58 @@ try {
         )
     }
 
+    /**
+     * Fetch a `mcp-steroid://` resource by URI via the `steroid_fetch_resource` tool.
+     *
+     * Like [mcpExecuteCode], this makes a direct MCP call (no AI agent), so a test can
+     * deterministically assert that an article resolves for the running IDE. The handler gates
+     * each article on `IdeFilter.matches(productCode)`, where `productCode` comes from the
+     * running IDE's `ApplicationInfo` — so fetching in a non-IDEA IDE is an end-to-end check
+     * that the article is genuinely un-gated for that product.
+     *
+     * @return [ProcessResult] with exitCode 0 + the article payload on success; exitCode 1 +
+     *         `ERROR: Resource not found: <uri>` when the article filter rejects the running IDE.
+     */
+    fun mcpFetchResource(
+        uri: String,
+        projectName: String = resolveProjectName(),
+        timeout: Int = 120,
+    ): ProcessResult {
+        val sessionId = mcpInitialize()
+
+        val toolCallRequest = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", 2)
+            putJsonObject("params") {
+                put("name", "steroid_fetch_resource")
+                putJsonObject("arguments") {
+                    put("project_name", projectName)
+                    put("uri", uri)
+                }
+            }
+            put("method", "tools/call")
+        }.toString()
+
+        val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeout.toLong() + 30)
+        val data = json.parseToJsonElement(run)
+
+        val messages = buildString {
+            data.jsonObject["result"]?.jsonObject["content"]?.jsonArray?.forEach {
+                it.jsonObject["text"]?.jsonPrimitive?.contentOrNull?.let { text ->
+                    appendLine(text)
+                }
+            }
+        }
+
+        val isError = data.jsonObject["result"]?.jsonObject["isError"]?.jsonPrimitive?.booleanOrNull ?: true
+
+        return ProcessResultValue(
+            exitCode = if (isError) 1 else 0,
+            stdout = messages,
+            stderr = "",
+        )
+    }
+
     private val mcpSessionIdHolder = AtomicReference<String?>(null)
     private fun mcpInitialize(): String {
         mcpSessionIdHolder.get()?.let {
