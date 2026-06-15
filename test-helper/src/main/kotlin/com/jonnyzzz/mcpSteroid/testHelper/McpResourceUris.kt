@@ -26,10 +26,10 @@ object McpResourceUris {
 
     /**
      * The prompt articles that were un-gated / made multi-IDE in the #81 (inspect-and-fix)
-     * and #98 (un-gate test-debugging entry points) prompt batch. Every one of these must
-     * resolve through `steroid_fetch_resource` in a non-IDEA IDE — the end-to-end proof that
-     * the article-level `IdeFilter` un-gating reaches the real plugin, not only the static
-     * assertion in `:prompts` `PerIdeAvailabilityContractTest`.
+     * and #98 (un-gate test-debugging entry points) prompt batch, plus the multi-IDE VFS
+     * skill. Every one of these must resolve through `steroid_fetch_resource` in a non-IDEA
+     * IDE — the end-to-end proof that the article-level `IdeFilter` un-gating reaches the real
+     * plugin, not only the static assertion in `:prompts` `PerIdeAvailabilityContractTest`.
      *
      * Sourced from the generated `*PromptArticle().uri` so the list cannot drift from the
      * articles' real URIs (and avoids hardcoded `mcp-steroid://` literals).
@@ -44,8 +44,18 @@ object McpResourceUris {
         RunTestAtCaretPromptArticle().uri,
         DebuggerDemoDebugTestPromptArticle().uri,
         CreateApplicationConfigPromptArticle().uri,
-        DebugAttachRemoteJvmPromptArticle().uri,
         CodingWithIntelliJVfsPromptArticle().uri,
+    )
+
+    /**
+     * Articles that are genuinely IDEA-only — their Kotlin uses the Java debugger plugin
+     * (`com.intellij.debugger.*`, `com.intellij.execution.remote.*`), so every fence is
+     * `kotlin[IU]` and the article resolves ONLY in IDEA. These MUST return "Resource not
+     * found" in a non-IDEA IDE — the negative counterpart to [multiIdePromptBatch] that proves
+     * the `[IU]` gating works at runtime (a bare-fenced article would wrongly resolve everywhere).
+     */
+    val ideaOnlyArticles: List<String> = listOf(
+        DebugAttachRemoteJvmPromptArticle().uri,
     )
 
     private fun buildUri(path: String): String = "$SCHEME$SCHEME_SEPARATOR$path"

@@ -51,7 +51,8 @@ class PromptArticlePerIdeFetchIntegrationTest {
             ),
         )
 
-        val failures = buildList {
+        // Positive: every un-gated / multi-IDE article MUST resolve in this non-IDEA IDE.
+        val notResolved = buildList {
             for (uri in McpResourceUris.multiIdePromptBatch) {
                 val result = session.mcpSteroid.mcpFetchResource(uri = uri)
                 val payload = result.stdout
@@ -64,10 +65,32 @@ class PromptArticlePerIdeFetchIntegrationTest {
             }
         }
 
-        check(failures.isEmpty()) {
-            "These multi-IDE prompt articles did not resolve through steroid_fetch_resource in " +
-                "${product.displayName} (${product.jetbrainsProductCode}) — the #81/#98 un-gating " +
-                "did not reach the running plugin:\n" + failures.joinToString("\n")
+        // Negative: every IDEA-only article (all fences kotlin[IU]) MUST NOT resolve here.
+        // A bare-fenced article would lose its IDE filter and wrongly resolve everywhere, so
+        // this is the runtime guard that the [IU] gating actually took effect.
+        val wronglyResolved = buildList {
+            for (uri in McpResourceUris.ideaOnlyArticles) {
+                val result = session.mcpSteroid.mcpFetchResource(uri = uri)
+                val payload = result.stdout
+                val rejected = result.exitCode != 0 || payload.contains("ERROR: Resource not found")
+                if (!rejected) {
+                    add("  $uri -> exit=${result.exitCode}, head='${payload.take(160).replace("\n", " ")}'")
+                }
+            }
+        }
+
+        check(notResolved.isEmpty() && wronglyResolved.isEmpty()) {
+            buildString {
+                appendLine("steroid_fetch_resource per-IDE gating wrong in ${product.displayName} (${product.jetbrainsProductCode}):")
+                if (notResolved.isNotEmpty()) {
+                    appendLine("- multi-IDE articles that did NOT resolve (the #81/#98 un-gating did not reach the plugin):")
+                    notResolved.forEach { appendLine(it) }
+                }
+                if (wronglyResolved.isNotEmpty()) {
+                    appendLine("- IDEA-only articles that WRONGLY resolved (the kotlin[IU] gating did not take effect):")
+                    wronglyResolved.forEach { appendLine(it) }
+                }
+            }
         }
     }
 }

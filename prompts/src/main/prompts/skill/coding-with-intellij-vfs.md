@@ -119,13 +119,11 @@ was created externally, and you need to find a VirtualFile corresponding to it",
 platform's own test framework relies on them (`VfsTestUtil`,
 `HeavyPlatformTestCase.synchronizeTempDirVfs`):
 
-```
+```kotlin
 // One call: refresh the VFS for that path, then return the (now visible) VirtualFile.
 val vf1 = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(java.nio.file.Path.of("/abs/path/new-file.kt"))
 val vf2 = LocalFileSystem.getInstance().refreshAndFindFileByPath("/abs/path/new-file.kt")
-val vf3 = com.intellij.openapi.vfs.VirtualFileManager.getInstance()
-    .refreshAndFindFileByNioPath(java.nio.file.Path.of("/abs/path/new-file.kt"))
-// All three return null only if the file does not exist on disk (or is VFS-ignored
+// Both return null only if the file does not exist on disk (or is VFS-ignored
 // via FileTypeManager ignored-name patterns).
 ```
 
