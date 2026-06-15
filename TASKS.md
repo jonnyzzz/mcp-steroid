@@ -4023,3 +4023,22 @@ Platform → script + JDK matrix:
   Linux-pwsh does not exercise true Windows filesystem semantics (backslash/registry/.exe); note
   that explicitly and keep those bits minimal/parameterized. (Windows-native verification stays a
   manual/host concern, as today.)
+
+## P2 Design — v8 draft (2026-06-15)
+
+Wrote `docs/installer-v8-design.md` (594 ln, 11 sections) via workflow `installer-v8-design`.
+Windows-arm64 JDK research result: **Azul Zulu 25** primary (`api.azul.com/metadata/v1` →
+download_url + sha256_hash; archive dir == filename basename; verified
+`zulu25.34.17-ca-jdk25.0.3-win_aarch64.zip` sha256
+`60b6b1faa1a93fea8e64b09f2b9ab136a86b02428f004f8378cfb04cd818a0d4`), **Microsoft Build of OpenJDK 25**
+fallback (`aka.ms/download-jdk/...` + `.sha256sum.txt`); Temurin has NO win-aarch64 25.
+
+Key design choices in the draft (for quorum scrutiny):
+- version.json additive `installer{}` block; existing consumers ignore it (ignoreUnknownKeys-safe).
+- **sha256** everywhere (v7 used sha512); all 3 vendors publish sha256; 12-char prefix → folder name.
+- Checked-in `website/installer/jdk-coordinates.json` = the only daily-job-edited input; daily job
+  copies vendor-published checksums (never re-hashes).
+- Generator merges devrig artifacts + jdk-coordinates + version → version.json; emits install.sh +
+  install.ps1 with coordinates baked in. Reuses npx-kt generateVersionJson logic.
+- windows-arm64 = real native Azul Zulu (deletes the WIP x64-emulation branch).
+- Next: 3× run-agent.sh quorum review of docs/installer-v8-design.md → fold feedback → finalize.
