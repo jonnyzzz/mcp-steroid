@@ -4015,3 +4015,11 @@ Platform → script + JDK matrix:
 | linux-x64       | install.sh     | Corretto 25 (tar.gz)  |
 | windows-x64     | install.ps1    | Corretto 25 (zip)     |
 | windows-arm64   | install.ps1    | <2nd vendor> 25 arm64 |
+
+- D8 (test strategy): integration tests run the GENERATED scripts in Docker —
+  `install.sh` in a POSIX Linux container (e.g. `ubuntu:24.04`, no host JDK, space-in-HOME),
+  and `install.ps1` in a **PowerShell-on-Linux container** (`mcr.microsoft.com/powershell` or
+  `dotnet/sdk`) running `pwsh`. This proves the ps1 LOGIC cross-platform inside Docker. Caveat:
+  Linux-pwsh does not exercise true Windows filesystem semantics (backslash/registry/.exe); note
+  that explicitly and keep those bits minimal/parameterized. (Windows-native verification stays a
+  manual/host concern, as today.)
