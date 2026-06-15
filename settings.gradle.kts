@@ -27,6 +27,7 @@ include(":prompts-api")
 include(":prompts")
 include(":intellij-downloader")
 include(":jdk-downloader")
+include(":installer-gen")
 include(":pgp-verifier")
 
 include(":ij-plugin")
