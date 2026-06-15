@@ -4116,3 +4116,27 @@ generateInstaller renders scripts pointing at the mock. Delete the cherry-picked
 website/install-tests/*.sh drivers. Updated §8 of docs/installer-v8-design.md accordingly. Lanes:
 install.sh in ubuntu:24.04; install.ps1 in mcr.microsoft.com/powershell (incl. windows-arm64/Azul).
 Rides ciIntegrationTests; maxParallelForks=1.
+
+## P3 core DONE — :installer-gen generator (2026-06-15)
+
+Built + verified the generator (the heart of P3):
+- :installer-gen Kotlin module (settings include, build.gradle.kts, application+JavaExec task).
+- InstallerGenerator.kt: kotlinx.serialization model (JdkCoordinates/DevrigCoordinates) + merge +
+  template renderer (POSIX case arms + PowerShell hashtable); validates 5 platforms + sha256.
+- templates/install.{sh,ps1}.tmpl: WIP mechanics + baked table (no live discovery).
+- website/installer/{jdk,devrig}-coordinates.json (real Corretto+Azul data; devrig placeholder).
+- generateInstaller task (pure data-merge; relative -P paths resolve from repo root).
+- De-binary: generated scripts gitignored under website/static/; removed committed WIP scripts +
+  shell test drivers (website/install-tests/*.sh). WIP commits keep Fable co-author in history.
+- VERIFIED: generateInstaller produces both scripts, all placeholders resolved, correct baked
+  tables (macos/linux Corretto + win-x64 Corretto + win-arm64 Azul); install.sh passes `sh -n`;
+  :installer-gen compiles (main+test).
+
+REMAINING before the 3x quorum:
+- devrig bin self-registration: BinLauncher.kt + HomePaths.binDir (npx-kt).
+- Makefile wiring (update-config shells out to generateInstaller -> website/static/).
+- Daily GH action installer-jdk-refresh.yml (resolve Corretto+Azul, byte-verify, PR jdk-coordinates).
+- P4: InstallerBootstrapTest.kt (Kotlin over test-helper) + mock-server side-car (nginx/ktor) +
+  fixtures (fake devrig zip + fake JDK archives w/ known sha256); ubuntu sh lane + powershell-on-linux
+  ps1 lane incl. windows-arm64/Azul; wire into ciIntegrationTests.
+- THEN: 3x run-agent.sh cross-model quorum on the implementation; iterate until accepted.
