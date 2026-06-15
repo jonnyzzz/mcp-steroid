@@ -4103,3 +4103,16 @@ Recorded as §13 of docs/installer-v8-design.md.
 
 Next: build :installer-gen (JSON model + script templates from the cherry-picked scripts +
 generateInstaller task), wire into website Makefile + :test-integration, de-binary-fy, then P4 tests.
+
+## Decision (2026-06-15): P4 tests = Kotlin-only + mock-server side-car
+
+User direction: move install tests from shell drivers to KOTLIN tests over test-helper's Docker
+toolkit (startDockerContainerAndDispose + startProcessInContainer/exec + bridge-IP helper; sibling
+containers reach each other on the default bridge — verified in test-helper/docker). Add tests that
+download the binaries from a MOCK web server (nginx side-car serving fixtures, or Ktor) over real
+HTTP — hermetic, but exercising the genuine fetch→sha256-verify→unpack→content-address→launcher path
+(better than file:// fixtures). Test coordinate files bake the mock URL + fixture sha256 →
+generateInstaller renders scripts pointing at the mock. Delete the cherry-picked
+website/install-tests/*.sh drivers. Updated §8 of docs/installer-v8-design.md accordingly. Lanes:
+install.sh in ubuntu:24.04; install.ps1 in mcr.microsoft.com/powershell (incl. windows-arm64/Azul).
+Rides ciIntegrationTests; maxParallelForks=1.

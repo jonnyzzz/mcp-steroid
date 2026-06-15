@@ -423,54 +423,61 @@ A weekly URL-liveness check should also HEAD all 5 JDK URLs + the devrig URL.
 
 ## 8. Integration tests
 
-### Module: `:test-integration`, harness `InstallerBootstrapTest.kt`
+### Kotlin-only, over the `test-helper` Docker toolkit
 
-Two Docker drivers, both running **generated** scripts. `:test-integration:test`
-declares `dependsOn(generateInstaller)` and consumes the task's output dir via a
-**system property** — it never re-invokes `./gradlew` (no nested Gradle). The
-output dir is mounted read-only into the container, proving the *generated*
-artifact, not a committed one.
+**No shell driver scripts.** `InstallerBootstrapTest.kt` (JUnit, in
+`:test-integration`) drives everything in Kotlin through `test-helper`'s Docker
+API — `startDockerContainerAndDispose`, `startProcessInContainer` (exec),
+`ContainerVolume`, and the bridge-IP helper (`docker-ports.kt`). Assertions are
+Kotlin (parse exec output / run follow-up `exec` checks), which is far easier to
+maintain and debug than parallel POSIX + PowerShell assertion scripts. The
+cherry-picked `website/install-tests/*.sh` drivers are **deleted**.
 
-| Driver | Image | Runs | Proves |
+`:test-integration:test` declares `dependsOn(generateInstaller)` and locates the
+generated scripts via a **system property** — it never re-invokes `./gradlew`
+(no nested Gradle). The generated dir is mounted read-only into the install
+container, proving the *generated* artifact, not a committed one.
+
+### Hermetic downloads via a mock web server (side-car)
+
+Tests download the binaries over **real HTTP from a mock-server side-car** — no
+real CDN, fully hermetic, yet exercising the genuine
+fetch → sha256-verify → unpack-verbatim → content-address → launcher path (not a
+`file://` shortcut).
+
+- **Fixtures** (test resources under `:test-integration`, KBs not ~400 MB): a
+  fake devrig dist zip whose `bin/devrig` just prints a marker, and a fake JDK
+  archive per format (`tar.gz` + `zip`) whose internal layout matches the real
+  `javaHomeSubpath` and contains a `bin/java` stub — each with a known sha256.
+- **Mock server**: an **nginx side-car** container serving the fixtures dir
+  (volume-mounted), or a small **Ktor** static file server — started on the
+  default bridge; the install container reaches it by the side-car's bridge IP.
+- **Test coordinate files** bake the **mock URL + fixture sha256**;
+  `generateInstaller` renders `install.sh`/`install.ps1` pointing at the mock.
+  So the same generator path is tested, end to end, against a server.
+
+### Coverage matrix (all driven from Kotlin)
+
+| Lane | Install image | Mock serves | Proves |
 |---|---|---|---|
-| `test-install-sh.sh` | `ubuntu:24.04` | `sh /gen/install.sh` | POSIX path on Linux, no host JDK, space-in-HOME, idempotent re-run, no `.tmp.*` leftovers, concurrent-install (two `install.sh` in parallel in one container) |
-| `test-install-ps1.ps1` | `mcr.microsoft.com/powershell:latest` | `pwsh /gen/install.ps1` | PowerShell logic (detection, hashtable lookup, `Get-FileHash` verify, atomic-rename, ASCII shim guard) cross-platform, including the **windows-arm64 / Azul** entry |
+| POSIX | `ubuntu:24.04` (no JDK, space-in-HOME) | linux-x64 / linux-arm64 / macos-arm64 fixtures | `install.sh`: detection, baked-table lookup, HTTP download + sha256 verify, verbatim unpack, content-addressed `devrig-…-<sha12>` / `jdk-…`, idempotent re-run, no `.tmp.*` leftovers, two-in-parallel concurrent install, launcher empty-stdout-before-exec |
+| PowerShell | `mcr.microsoft.com/powershell` (pwsh-on-Linux) | windows-x64 (Corretto) / windows-arm64 (Azul) fixtures | `install.ps1`: detection, hashtable lookup, `Invoke-WebRequest` download, `Get-FileHash` verify, `Expand-Archive` unpack, `USERPROFILE→HOME→GetFolderPath` home resolution, the **windows-arm64 / Azul** entry, idempotent re-run |
 
-The `test-install-sh.sh` driver's assertions match the folder shape
-`devrig-linux-<cpu>-<version>-<sha12>` / `jdk-linux-…`.
+pwsh-on-Linux exercises PowerShell *logic*, not Windows filesystem semantics
+(`.exe`/backslash/registry); those bits are parameterized so the Linux run
+substitutes `java`. True Windows-native verification stays a manual/host concern.
 
-**Kotlin harness** (`InstallerBootstrapTest`, JUnit, in `:test-integration`):
+### Wiring
 
-- The generated scripts are produced by the `generateInstaller` task dependency
-  and located via the system property.
-- Each test `docker run --rm -v <gen>:/gen:ro <image> <driver>`, captures
-  stdout, asserts the **success marker** is present.
-- **Success markers:** `INSTALL_SH_E2E_OK` and `INSTALL_PS1_E2E_OK` — the ps1
-  driver emits its marker after asserting: launcher present, `binaries/
-  devrig-windows-…` + `jdk-windows-…` trees, second run prints exactly two
-  "already installed", zero `.tmp.*` leftovers. A test asserts the generated
-  launcher writes empty stdout before exec.
-- **windows-arm64 (Azul) is exercised:** the pwsh-on-Linux driver runs the
-  `windows-arm64` entry (`DEVRIG_OS=windows DEVRIG_CPU=arm64`): download →
-  sha256-verify → `Expand-Archive` → resolve `javaHomeSubpath`. `.exe`/registry
-  semantics are excluded.
-- **pwsh-on-Linux runs Windows logic, not Windows semantics.** It cannot
-  exercise `.exe`/backslash/registry behavior; Windows-specific bits
-  (`devrig.cmd`, `java.exe` lookup) are parameterized so the Linux run
-  substitutes `java`. True Windows-native verification stays a manual/host
-  concern.
-
-### Hermetic per-PR CI
-
-Routine `ciIntegrationTests` uses `file://` fixtures (a tiny pinned fake-archive
-with a known sha256) — no CDN, no detection-and-skip. Real-CDN download+verify
-runs only in the daily/weekly job. The installer tests live inside
-`:test-integration:test` (after the existing strict-ordered chain
-`:test-helper:test` → `:ij-plugin:integrationTest` → `:test-integration:test`,
-gated by the same Docker `onlyIf`), so they ride the existing aggregator entry —
-no new aggregator task. They run **sequentially** (each spins a container; the
-"never run Docker tests in parallel" rule applies) — enforced with
-`maxParallelForks = 1` on the installer test tag.
+Installer tests live inside `:test-integration:test` (after the existing
+strict-ordered chain `:test-helper:test` → `:ij-plugin:integrationTest` →
+`:test-integration:test`, gated by the same Docker `onlyIf`), so they ride the
+existing `ciIntegrationTests` aggregator — no new task. They run **sequentially**
+(`maxParallelForks = 1`; the "never run Docker tests in parallel" rule). The
+mock side-car + install container are torn down per test via the
+`CloseableStack`/dispose pattern. Because downloads hit the in-network mock, the
+routine per-PR run is hermetic; a separate daily/weekly job byte-verifies the
+real vendor URLs.
 
 ---
 
