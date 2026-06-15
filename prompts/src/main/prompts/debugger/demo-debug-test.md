@@ -50,7 +50,7 @@ For debugging .NET code in Rider:
 5. Step through code using `mcp-steroid://debugger/step-over` (only if needed — skip if the bug is visible from evaluation at the breakpoint)
 ###_ELSE_###
 
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 ## Primary path — `JUnitConfiguration` (deterministic)
 
 For Java / Kotlin tests in IntelliJ, build a `JUnitConfiguration`
@@ -63,7 +63,7 @@ default; fall back to the context action only when caret targeting is
 trivially unambiguous AND you accept its "silent no-op on ambiguity"
 behavior described below.
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.execution.ProgramRunnerUtil
 import com.intellij.execution.RunManager
 import com.intellij.execution.executors.DefaultDebugExecutor
@@ -179,7 +179,7 @@ session — the dialog killer dismisses the popup and **no `XDebugSession` is
 registered**. `mcp-steroid://debugger/wait-for-suspend` will then time out
 with `currentSession=null`. Do not blindly retry; move the caret precisely
 onto the test identifier first.
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 If it still no-ops, switch to the `JUnitConfiguration` recipe above.
 ###_END_IF_###
 
@@ -228,7 +228,7 @@ println("Debug context action fired — verify XDebuggerManager.currentSession i
 
 Full debug-a-test workflow:
 1. Set breakpoints using `mcp-steroid://debugger/add-breakpoint` (idempotent, uses `writeIntentReadAction` for the Kotlin platform's threading contract).
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 2. Launch the debug session via the **`JUnitConfiguration` recipe above** — this is the deterministic path. Use the context-action recipe only when caret targeting is trivially unambiguous and a silent no-op is acceptable.
 ###_ELSE_###
 2. Launch the debug session via the **`DebugClass` context action above** — verify `XDebuggerManager.getInstance(project).currentSession` is non-null before waiting for a suspend.

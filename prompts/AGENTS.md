@@ -146,8 +146,13 @@ Annotate kotlin fences with product codes and/or version constraints:
  ```kotlin[;>=253]      ← all IDEs, version 253+
 ```
 
-Valid product codes: `IU` (IDEA), `RD` (Rider), `CL` (CLion), `GO` (GoLand),
-`PY` (PyCharm), `WS` (WebStorm), `RM` (RubyMine), `DB` (DataGrip).
+Product codes are matched **verbatim** against the running IDE's `ApplicationInfo` product code
+and are **not** validated against a fixed list — the JetBrains lineup evolves, so an unknown code is
+harmless (it just never matches). Common codes: `IU` (IDEA Ultimate), `IC` (IDEA Community),
+`AI` (Android Studio), `RD` (Rider), `CL` (CLion), `GO` (GoLand), `PY` (PyCharm), `WS` (WebStorm),
+`RM` (RubyMine), `DB` (DataGrip). **`IU`, `IC` and `AI` are distinct codes:** an IntelliJ-family
+Java/Kotlin/PSI/SSR/debugger recipe must list all three (`[IU,IC,AI]`) — `[IU]` alone reaches only
+IDEA Ultimate. Reserve `[IU]`-only for genuinely Ultimate-bound APIs (e.g. Spring).
 
 Annotated blocks generate per-IDE compilation tests only for matching IDEs.
 At runtime, annotated blocks are included only when the IDE matches.

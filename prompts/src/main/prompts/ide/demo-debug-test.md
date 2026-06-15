@@ -90,13 +90,13 @@ withContext(Dispatchers.EDT) {
 println("Debug context action fired — proceed to the poll/inspect step")
 ```
 
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 ## Step 1 (IDEA alternative) — deterministic `JUnitConfiguration` launch
 
 In IDEA, a programmatic `JUnitConfiguration` avoids caret ambiguity entirely — the target
 is the fully-qualified class you set:
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.execution.ExecutorRegistry
 import com.intellij.execution.ProgramRunnerUtil
 import com.intellij.execution.RunManager

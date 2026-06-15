@@ -141,13 +141,13 @@ println("Test started")
 See `mcp-steroid://test/run-test-at-caret` for full pattern with run/debug variants.
 ###_END_IF_###
 
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 ## Run a Specific JUnit Test Class (fallback API)
 
 IDEA only — `JUnitConfiguration` lives in the Java plugin. Use when the context action shows
 a dialog or a specific programmatic configuration is needed:
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.execution.junit.JUnitConfiguration
 import com.intellij.execution.junit.JUnitConfigurationType
 import com.intellij.execution.RunManager

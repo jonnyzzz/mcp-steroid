@@ -69,6 +69,17 @@ class PerIdeAvailabilityContractTest {
             "ide/extract-interface" to "Java-only ExtractInterfaceProcessor/MemberInfo (java-impl)",
             "ide/move-class" to "Java-only MoveClassesOrPackagesProcessor/PackageWrapper (java-impl)",
             "ide/generate-constructor" to "Java-only GenerateMembersUtil constructor generation (java-impl)",
+            // Structural Search recipe corpus: every executable fence binds to the Java/Kotlin SSR
+            // profiles via `JavaFileType.INSTANCE` / `KotlinFileType.INSTANCE` (the
+            // `com.intellij.structuralsearch.*` Java profile and the Kotlin K2 profile), which ship
+            // only in the IntelliJ-IDEA family among the supported product codes. The fences are gated
+            // `[AI,IC,IU]` and the articles resolve only there. TODO (see TODO.md "IntelliJ-family IDE
+            // coverage"): author PyCharm/GoLand/Rider SSR variants (or broaden the SSR-core enumeration
+            // fences, which are platform) and un-gate where the engine genuinely applies.
+            "skill/structural-search-api-recipe" to "SSR recipes bind to Java/Kotlin SSR profiles (JavaFileType/KotlinFileType) — IDEA-family (IU/IC/AI)",
+            "skill/structural-search-kotlin" to "Kotlin SSR recipes use KotlinFileType + the Kotlin K2 SSR profile — IDEA-family (IU/IC/AI)",
+            "skill/structural-search-syntax" to "Worked SSR examples bind to JavaFileType / the Java SSR profile — IDEA-family (IU/IC/AI)",
+            "skill/structural-search-coverage" to "SSR profile-enumeration recipes are exercised via the Java/Kotlin profiles — IDEA-family (IU/IC/AI)",
         )
 
         /** Same pattern as the generated `ResourceUriValidationTest`. */

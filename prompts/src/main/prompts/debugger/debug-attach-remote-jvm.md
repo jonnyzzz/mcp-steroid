@@ -23,7 +23,7 @@ Create a `RemoteConfiguration`, point it at `host:port`, and launch it under the
 executor. This reuses the exact code path the "Remote JVM Debug" run config uses, so it shows
 up in the Debug tool window and supports detach/re-attach.
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.execution.executors.DefaultDebugExecutor
 import com.intellij.execution.remote.RemoteConfiguration
 import com.intellij.execution.remote.RemoteConfigurationType
@@ -63,7 +63,7 @@ Notes:
 When you don't need the run-config plumbing, attach via `DebuggerManagerEx`. This is closer
 to the metal and returns the `DebuggerSession` (or `null` on failure) synchronously.
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.debugger.DefaultDebugEnvironment
 import com.intellij.debugger.DebuggerManagerEx
 import com.intellij.execution.configurations.RemoteConnection
@@ -99,7 +99,7 @@ println(if (session != null) "Attached to $host:$port" else "Attach FAILED (conn
 A null `DebuggerSession`, or zero `XDebugSession`s after a moment, means the connection was
 refused (wrong port, target not listening, firewall). Poll briefly:
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.xdebugger.XDebuggerManager
 
 var attached = false
@@ -121,7 +121,7 @@ if (!attached) println("No session — check the target is listening on the port
 Set breakpoints before or after attach. The IDE maps source lines to the classes loaded in
 the remote target over JDWP. Line numbers are 0-based.
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.xdebugger.XDebuggerUtil
 

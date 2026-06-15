@@ -82,7 +82,7 @@ Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filt
 
 A concrete recipe that ties together the apostrophe form, the `~` prefix, the expression template (no trailing `;`), and the typed-receiver shape:
 
-```
+```kotlin[AI,IC,IU]
 // Recommended: triple-quoted Kotlin string — write the SSR backslashes verbatim.
 val pattern = """'_opt:[exprtype( ~java\.util\.Optional<.*> )].get()"""
 //                ^^^^                                          ^^^^^^
@@ -183,7 +183,10 @@ Equivalently, set `MatchVariableConstraint.setPartOfSearchResults(true)` program
 
 The IDE ships a per-language gallery (Existing Templates in the dialog cog menu). Programmatic discovery is preferred over a curated list — the gallery grows IDE-version by IDE-version:
 
-```
+```kotlin[AI,IC,IU]
+import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.structuralsearch.StructuralSearchUtil
+
 val all = StructuralSearchUtil.getPredefinedTemplates()                      // all profiles, sorted, cached
 val javaProfile = StructuralSearchUtil.getProfileByFileType(JavaFileType.INSTANCE)!!
 val javaOnly  = javaProfile.predefinedTemplates                              // the Java set

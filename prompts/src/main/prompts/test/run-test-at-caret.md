@@ -109,7 +109,7 @@ println("Test started — check RunContentManager for progress and results")
 > **Tip:** Position the caret on the specific test method name rather than the class to avoid an
 > ambiguous "Choose run configuration" dialog.
 
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 > **IDEA fallback:** If the "Choose run configuration" dialog appears, use `JUnitConfiguration`
 > directly — see [Run Tests](mcp-steroid://test/run-tests).
 

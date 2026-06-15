@@ -5,7 +5,12 @@ package com.jonnyzzz.mcpSteroid.promptgen
  * Metadata parsed from a ` ```kotlin[...] ` fence annotation.
  *
  * Format: ` ```kotlin[product_codes;version_constraint] `
- * - Product codes: comma-separated — `IU`, `RD`, `CL`, `GO`, `PY`, `WS`, `RM`, `DB`
+ * - Product codes: comma-separated `ApplicationInfo` product codes, matched verbatim against the
+ *   running IDE (e.g. `IU`, `IC`, `AI`, `RD`, `CL`, `GO`, `PY`, `WS`, `RM`, `DB`). Any token is
+ *   accepted — the set of product codes evolves with the JetBrains lineup and is not validated here;
+ *   an unknown code simply never matches a running IDE. Note `IU`, `IC` and `AI` are distinct codes,
+ *   so an IntelliJ-family Java/Kotlin recipe must list all three (`[IU,IC,AI]`) to reach IDEA
+ *   Ultimate, IDEA Community and Android Studio.
  * - Version constraint: `>=253` or `<=261` (baseline version number)
  * - Semicolon separates products from version
  *
@@ -40,12 +45,14 @@ data class FenceMetadata(
     companion object {
         val DEFAULT = FenceMetadata(emptySet(), null, null)
 
-        private val VALID_PRODUCT_CODES = setOf("IU", "RD", "CL", "GO", "PY", "WS", "RM", "DB")
-
         /**
          * Parses the bracket content from a ` ```kotlin[...] ` annotation.
          *
-         * @param bracket the content inside `[...]`, e.g. "RD;>=253" or "IU,RD"
+         * Product codes are NOT validated against a fixed allow-list: the JetBrains product lineup
+         * changes, and a code only ever functions as a verbatim match against the running IDE's
+         * `ApplicationInfo` product code, so an unknown token is harmless (it simply matches nothing).
+         *
+         * @param bracket the content inside `[...]`, e.g. "RD;>=253" or "IU,IC,AI"
          */
         fun parse(bracket: String): FenceMetadata {
             val trimmed = bracket.trim()
@@ -56,13 +63,7 @@ data class FenceMetadata(
             val versionPart = if (semicolonParts.size > 1) semicolonParts[1].trim() else ""
 
             val productCodes = if (productPart.isNotEmpty()) {
-                productPart.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet().also { codes ->
-                    for (code in codes) {
-                        require(code in VALID_PRODUCT_CODES) {
-                            "Unknown product code '$code' in fence metadata. Valid codes: $VALID_PRODUCT_CODES"
-                        }
-                    }
-                }
+                productPart.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
             } else emptySet()
 
             var minVersion: Int? = null

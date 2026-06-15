@@ -88,7 +88,7 @@ var '_Inst = '_Expr
 
 For the full live list:
 
-```
+```kotlin[AI,IC,IU]
 import com.intellij.structuralsearch.StructuralSearchUtil
 import com.intellij.openapi.fileTypes.LanguageFileType
 val kotlinFileType: LanguageFileType = org.jetbrains.kotlin.idea.KotlinFileType.INSTANCE
@@ -131,7 +131,13 @@ Like the Java canonical recipe, the Kotlin example below sets `setRecursiveSearc
 
 ⚠️ **`'_E ->` matches explicit parameters only.** The lambda parameter `'_E ->` only matches `{ e -> … }`-style lambdas; it does NOT match `{ … }`-style lambdas using the implicit `it`. To match both shapes, write two patterns or replace `'_E -> '_HANDLER*` with just `'_HANDLER*` (and accept that the parameter is then unconstrained).
 
-```
+```kotlin[AI,IC,IU]
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.structuralsearch.MatchOptions
+import com.intellij.structuralsearch.Matcher
+import com.intellij.structuralsearch.plugin.util.CollectingMatchResultSink
+import org.jetbrains.kotlin.idea.KotlinFileType
+
 val opts = MatchOptions().apply {
     setFileType(KotlinFileType.INSTANCE)
     fillSearchCriteria("""

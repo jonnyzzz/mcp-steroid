@@ -62,7 +62,7 @@ matchOptions.dialect = ft.language   // resolves the profile via Language, not j
 
 ## Programmatic enumeration of all profiles
 
-```
+```kotlin[AI,IC,IU]
 import com.intellij.structuralsearch.StructuralSearchProfile
 StructuralSearchProfile.EP_NAME.extensionList.forEach { p ->
     val cls = p.javaClass
@@ -78,7 +78,7 @@ This is the single most useful diagnostic when an agent suspects a language prof
 
 For verification tasks that just need "how many profiles, is Java/Kotlin loaded":
 
-```
+```kotlin[AI,IC,IU]
 import com.intellij.structuralsearch.StructuralSearchProfile
 
 val profiles = StructuralSearchProfile.EP_NAME.extensionList

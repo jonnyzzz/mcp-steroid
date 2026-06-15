@@ -93,13 +93,13 @@ The interactive `Code | Optimize Imports` action runs `OptimizeImportsProcessor`
 (`com.intellij.codeInsight.actions`), which wraps the same extension point in background-progress
 machinery — in a script, driving the optimizers directly as above keeps the call synchronous.
 
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 # IDEA: Java-specific entry point
 
 In IntelliJ IDEA the Java optimizer can also be driven through `JavaCodeStyleManager` — the
 classic Java-plugin API, equivalent to the generic recipe for `.java` files:
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.psi.codeStyle.JavaCodeStyleManager
 
 val filePath = "/path/to/your/File.java" // TODO: Set your file path

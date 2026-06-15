@@ -22,8 +22,12 @@ When the search target is a known file or small set of files (debugging an SSR p
 
 The recipe below works **for every supported language**. Swap `JavaFileType.INSTANCE` → `KotlinFileType.INSTANCE` (or any other `LanguageFileType.INSTANCE`) and the matching apostrophe-form pattern; the rest is identical.
 
-```
+```kotlin[AI,IC,IU]
+import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.psi.search.LocalSearchScope
+import com.intellij.structuralsearch.MatchOptions
+import com.intellij.structuralsearch.Matcher
+import com.intellij.structuralsearch.plugin.util.CollectingMatchResultSink
 
 // Resolve the file BEFORE entering any readAction. findProjectPsiFile is a suspend fun.
 val psi = findProjectPsiFile("src/main/java/com/example/Foo.java")    // or .kt, .py-not-supported (no SSR), …
@@ -48,7 +52,7 @@ Same rules apply: validate first, do NOT wrap `findMatches` in an outer `readAct
 
 For a small audit where you only need a count, this is the smallest correct recipe:
 
-```
+```kotlin[AI,IC,IU]
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.application.readAction
 import com.intellij.psi.search.GlobalSearchScope
@@ -73,8 +77,12 @@ println("MATCHES: ${sink.matches.size}")                // emit a single marker 
 
 For "find all implementors of an interface inside one file" tasks:
 
-```
+```kotlin[AI,IC,IU]
+import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.psi.search.LocalSearchScope
+import com.intellij.structuralsearch.MatchOptions
+import com.intellij.structuralsearch.Matcher
+import com.intellij.structuralsearch.plugin.util.CollectingMatchResultSink
 
 val psi = findProjectPsiFile("src/main/java/com/example/SsrHierarchyDemo.java")
     ?: error("file not in project")
@@ -102,7 +110,7 @@ No `Replacer`, no per-match reporting, no command processor. Use this when the m
 
 This is the **default shape for real audits**: a profile/template enumeration plus one structural search in the same script (e.g. "is the Java profile loaded? if yes, count `Optional.get()` callsites"). Introspection doesn't need `Matcher.validate`; the matcher does. They coexist cleanly:
 
-```
+```kotlin[AI,IC,IU]
 // Imports — full set; mixed-mode adds the StructuralSearchProfile class to the minimal set.
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.application.readAction
@@ -154,7 +162,7 @@ Two distinct contracts in one script: introspection runs unconditionally and is 
 
 If your task is *not* a search/replace — e.g. "enumerate registered profiles", "list predefined templates for Java", "check whether the Kotlin profile is loaded" — you do NOT need `MatchOptions` / `Matcher` / `Replacer`. Use the EP and util APIs directly:
 
-```
+```kotlin[AI,IC,IU]
 import com.intellij.structuralsearch.StructuralSearchProfile
 import com.intellij.structuralsearch.StructuralSearchUtil
 import com.intellij.ide.highlighter.JavaFileType
@@ -170,7 +178,7 @@ require(javaProfile != null) { "Java SSR profile not loaded" }
 
 // 3. All shipped predefined templates, sorted by category/name
 val all = StructuralSearchUtil.getPredefinedTemplates()
-all.groupBy { it.category ?: "<none>" }.forEach { (cat, list) -> println("$cat: ${list.size}") }
+all.groupBy { it.category }.forEach { (cat, list) -> println("$cat: ${list.size}") }
 
 // 4. Predefined templates for one profile only
 javaProfile.predefinedTemplates.forEach { println("${it.category}/${it.name}") }
@@ -182,7 +190,7 @@ The rest of this article is for **search and replace** workloads.
 
 ## The recipe
 
-```
+```kotlin[AI,IC,IU]
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.application.writeAction
@@ -255,7 +263,7 @@ if (replaceOptions != null) {
         }
     }
     writeAction {
-        CommandProcessor.getInstance(project).executeCommand(project, {
+        CommandProcessor.getInstance().executeCommand(project, {
             infos.forEach { info ->
                 try { replacer.replace(info); replaced++ }
                 catch (e: Exception) { skipped++ }

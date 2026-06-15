@@ -81,14 +81,14 @@ Caveats:
 - Rider caveat: C# PSI lives in the out-of-process ReSharper backend and is not reachable from
   `steroid_execute_code`; this recipe covers IDE-frontend languages only.
 
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 # IDEA: method-aware variant for Java methods
 
 `MethodReferencesSearch` (Java plugin) is what IDEA's own Find Usages uses for methods: it
 understands Java method semantics — overriding hierarchy, constructors, property accessors.
 The third argument is `strictSignatureSearch` (`true` = this exact signature only):
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.psi.search.searches.MethodReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 

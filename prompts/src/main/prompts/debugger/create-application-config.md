@@ -45,12 +45,12 @@ runManager.selectedConfiguration = settings
 println("Created run configuration: $configName (${chosenType.displayName})")
 ```
 
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 ## IDEA: Application configuration for a Kotlin/Java main class
 
 `ApplicationConfiguration` is the JVM main-class configuration from the Java plugin:
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.execution.RunManager
 import com.intellij.execution.application.ApplicationConfiguration
 import com.intellij.execution.application.ApplicationConfigurationType

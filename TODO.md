@@ -53,3 +53,19 @@
   skill/-root article's body escapes). Extend if a future gating bug slips through.
 - [ ] **DataGrip (DB) caveat**: test-run/debug articles are now fetchable in DB where they are meaningless
   (graceful error at runtime); add a one-line DB caveat if dogfooding surfaces confusion.
+
+## IntelliJ-family IDE coverage (IU/IC/AI) — backlog
+
+- [ ] **Integration test lanes for IntelliJ Community (IC) and Android Studio (AI).** The `[IU,IC,AI]`
+  gating now claims IntelliJ-family Java/Kotlin/PSI/SSR/debugger recipes work in IDEA Ultimate, IDEA
+  Community, and Android Studio. We currently only prove the Ultimate side (KtBlock compiles against the
+  `idea` distribution; `PromptArticlePerIdeFetchIntegrationTest` covers the non-IU PyCharm/Rider/CLion
+  negative direction). Add Docker IDE lanes (or KtBlock distributions) for **IC** and **AI** so a positive
+  fetch + a representative `steroid_execute_code` recipe is proven on both. Needs an `IdeProduct.IntelliJCommunity`
+  (`IC`) and Android Studio (`AI`) image/distribution.
+- [ ] **API-difference audit near Spring etc.** Some Ultimate-bound APIs (Spring, `JUnitConfiguration`'s
+  framework integrations, etc.) genuinely differ or are absent in IC/AI. The IC/AI lanes above will surface
+  these — keep `[IU]`-only on the genuinely Ultimate-bound fences and split the recipe where the API differs.
+- [ ] **Corpus-wide `[IU]` → `[IU,IC,AI]` sweep.** This PR converted only its own articles. Audit the rest of
+  `prompts/src/main/prompts/**` for `[IU]` fences/sections whose APIs are actually in IC/AI and widen them
+  (leaving genuinely Ultimate-bound ones, e.g. `skill/coding-with-intellij-spring.md`, as `[IU]`).

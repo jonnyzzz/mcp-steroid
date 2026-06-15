@@ -105,7 +105,7 @@ writeAction {
 println("Applied quick fix: $fixName")
 ```
 
-###_IF_IDE[IU]_###
+###_IF_IDE[AI,IC,IU]_###
 # IDEA: instantiating a Java inspection class directly
 
 In IntelliJ IDEA the Java-plugin inspection classes are on the script classpath, so a
@@ -113,7 +113,7 @@ specific tool can also be instantiated directly — useful when it is not regist
 profile at all (plugin missing, or the short-name is unknown; the profile lookup returns every
 registered tool regardless of its enabled state):
 
-```kotlin[IU]
+```kotlin[AI,IC,IU]
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.codeInspection.redundantCast.RedundantCastInspection
 

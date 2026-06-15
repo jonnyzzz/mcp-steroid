@@ -66,10 +66,12 @@ class FenceMetadataTest {
     }
 
     @Test
-    fun `unknown product code throws`() {
-        assertThrows<IllegalArgumentException> {
-            FenceMetadata.parse("XX")
-        }
+    fun `arbitrary product code is accepted verbatim`() {
+        // Product codes are NOT validated against a fixed list — the JetBrains lineup evolves and a
+        // code only ever matches the running IDE's ApplicationInfo product code. An unknown token is
+        // kept verbatim (it simply never matches a running IDE).
+        assertEquals(setOf("XX"), FenceMetadata.parse("XX").productCodes)
+        assertEquals(setOf("IU", "IC", "AI"), FenceMetadata.parse("IU,IC,AI").productCodes)
     }
 
     @Test
@@ -129,8 +131,8 @@ class FenceMetadataTest {
     }
 
     @Test
-    fun `all valid product codes accepted`() {
-        for (code in listOf("IU", "RD", "CL", "GO", "PY", "WS", "RM", "DB")) {
+    fun `product codes accepted verbatim including IntelliJ-family and future codes`() {
+        for (code in listOf("IU", "IC", "AI", "RD", "CL", "GO", "PY", "WS", "RM", "DB", "QA")) {
             val meta = FenceMetadata.parse(code)
             assertEquals(setOf(code), meta.productCodes)
         }
