@@ -4042,3 +4042,33 @@ Key design choices in the draft (for quorum scrutiny):
   install.ps1 with coordinates baked in. Reuses npx-kt generateVersionJson logic.
 - windows-arm64 = real native Azul Zulu (deletes the WIP x64-emulation branch).
 - Next: 3× run-agent.sh quorum review of docs/installer-v8-design.md → fold feedback → finalize.
+
+## P2 Quorum — 3× run-agent.sh cross-model review (2026-06-15)
+
+Ran `run-agent.sh` with a custom WORKER_SCRIPT (review prompt) from the mcp-steroid repo, read-only,
+across genuine cross-model backends (gemini not installed here):
+- Reviewer 1 (claude, requirement-fidelity/correctness): **PASS_WITH_NOTES** (8 issues)
+- Reviewer 2 (codex, simplicity/complexity-placement): **HOLD** (5 issues)
+- Reviewer 3 (claude, robustness/security/tests): **PASS_WITH_NOTES** (11 issues)
+Results: jb-cli/agents/results/run-agent/inst-rev-{1-claude,2-codex,3-claude}/claude_1.json.
+
+Consensus: directionally sound, several must-fix items before P3. Adopted resolutions R-1..R-15 are
+recorded as §12 of docs/installer-v8-design.md and are BINDING for implementation. Headlines:
+- R-1 remove v7 auto-GC (honor "no cleanup, we keep adding"); document unbounded growth.
+- R-2 commit website/installer/devrig-coordinates.json (release-time) → generateInstaller is a pure
+  data-merge; NO plugin build in the site deploy / daily PR.
+- R-3 version.json is the single script-generation source of truth (model → version.json → scripts).
+- R-4 plugin ships inside the devrig artifact (no separate plugin entry); doc it.
+- R-5 test windows-arm64/Azul via pwsh-on-Linux (download+verify+unpack).
+- R-6 one canonical launcher render (relative-to-home; normalized compare).
+- R-7 lock-free atomic-rename (state as change from v7); pid/age-gated stale sweep; concurrent test.
+- R-8 hermetic per-PR CI via file:// fixtures; real CDN only in daily/weekly job.
+- R-9 daily byte-verify + resolve both JDK vendors (keep MS warm) + inspect real archive root.
+- R-10 install.ps1 home = USERPROFILE→HOME→GetFolderPath.
+- R-11 devrig upgrade OUT OF SCOPE for v8 (v7 signed-properties upgrade does not carry over).
+- R-12 distributionBaseName=devrig-$version (binSubpath build-enforced).
+- R-13 no nested gradle in tests (dependsOn generateInstaller + system property).
+- R-14 launcher stdout-silent before exec (+ test).
+- R-15 document install-time trust model (TLS + sha256; version.json unsigned in v8).
+
+P2 COMPLETE. Next: P3 implementation, starting with cherry-pick base from 0101-installer-docker.

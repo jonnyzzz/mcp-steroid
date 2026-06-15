@@ -592,3 +592,63 @@ tests at generated output; (e) delete the committed static scripts (§10).
 ```
 
 result: Drafted the full v8 design doc as my message above — 11 sections, implementation-ready, naming the new `:installer-gen` module + `generateInstaller`/`resolveJdkCoordinates` tasks, the `website/installer/jdk-coordinates.json` source, exact v8 `version.json` `installer.*` schema (sha256, `binSubpath`/`javaHomeSubpath`, `installerSchema: 8`), the `~/.mcp-steroid/binaries/<artifact>-<os>-<cpu>-<version>-<sha12>/` layout, `BinLauncher.kt` self-registration, the `installer-jdk-refresh.yml` daily cron + `github-pages.yml` path-trigger, the D8 Docker drivers (`ubuntu:24.04` + `mcr.microsoft.com/powershell`) with `INSTALL_SH_E2E_OK`/`INSTALL_PS1_E2E_OK` markers, the cherry-pick table, and de-binary-fication. Azul Zulu primary / Microsoft fallback for windows-arm64 incorporated. The doc is returned verbatim above (not written to disk, per instructions).
+---
+
+## 12. Quorum resolutions (v8.1)
+
+Outcome of the 3× cross-model `run-agent.sh` quorum (Claude ×2 + Codex): 2 PASS_WITH_NOTES + 1
+HOLD. Directionally sound; the following resolutions are adopted and are binding for P3.
+
+- **R-1 — No auto-GC (honor "no cleanup").** Req#6 is explicit ("we keep adding"). v8 **removes**
+  the carried-over v7 auto-GC entirely (its keep-set depended on the now-absent on-disk manifest).
+  `binaries/` grows monotonically by design. Risk note: each new devrig/JDK version adds
+  ~200–400 MB; acceptable per the explicit decision. A manual opt-in `devrig prune` may be added
+  later, never automatic. (Closes the Codex HOLD #1; R1#2; R3#1.)
+- **R-2 — Commit `website/installer/devrig-coordinates.json`** (url/sha256/size/format/binSubpath
+  per platform), written at **release time** (by the devrig release task/CI), symmetric with
+  `jdk-coordinates.json`. `generateInstaller` becomes a **pure data-merge** (devrig-coords +
+  jdk-coords + version) with **no** devrig/plugin build dependency — so the Hugo site deploy and
+  the daily JDK PR regenerate version.json + scripts without building the IntelliJ plugin, and the
+  devrig sha is the published-artifact sha (never a non-reproducible local re-hash). (R1#3; R3#2.)
+- **R-3 — version.json is the single script-generation source of truth.** `generateInstaller`
+  builds ONE manifest model → writes `version.json` → renders `install.sh`/`install.ps1` by
+  **re-reading the serialized version.json**. No side-channel. (Codex #3; req#1.)
+- **R-4 — Plugin URL.** The IntelliJ plugin ships **inside** the devrig artifact (devrig dist
+  bundles `ij-plugin.zip`; `DevrigRoot` walks `lib/`+`ij-plugin.zip`); no separate
+  `installer.platforms.*.plugin` entry. Documented in §2/§3. The existing `version-base` +
+  `updatePlugins.xml` remains the marketplace plugin-update channel. (Codex #2; R3#11.)
+- **R-5 — windows-arm64 (Azul) is integration-tested.** The pwsh-on-Linux driver ALSO runs the
+  `windows-arm64` entry (`DEVRIG_OS=windows DEVRIG_CPU=arm64`): download → sha256-verify →
+  Expand-Archive → resolve `javaHomeSubpath`. (.exe/registry excluded.) (R1#4; R3#3.)
+- **R-6 — One canonical launcher render.** A single shared renderer emits the `bin/` launcher
+  **relative to `$HOME`/`%USERPROFILE%`**; devrig's `BinLauncher` compares **normalized** content
+  (not raw `readText`) so it rewrites only on a real change (no rewrite-every-launch). (R1#1.)
+- **R-7 — Lock-free install, correctly described.** v8 uses the WIP's lock-free atomic-rename +
+  loser-cleanup (a **change** from v7's `mkdir` per-SHA locks — not "verbatim"). The stale-`.tmp.*`
+  sweep removes an entry only when its pid is dead OR mtime exceeds a threshold, never the current
+  pid's. D8 adds a concurrent-install case (two `install.sh` in parallel in one container).
+  (R1#6; R3#7.)
+- **R-8 — Hermetic per-PR CI.** Routine `ciIntegrationTests` uses `file://` fixtures / a tiny pinned
+  fake-archive with a known sha256 (no CDN). Real-CDN download+verify runs only in the daily/weekly
+  job. Avoids the banned detection-and-skip and CDN flakiness. (R3#10.)
+- **R-9 — Byte-verify + warm fallback.** The daily resolver downloads ≥1 canonical JDK + the devrig
+  zip and verifies bytes vs the recorded sha256 (fail the PR on mismatch); it resolves **both**
+  vendors daily (Azul active, Microsoft standby recorded) so the MS path stays warm; and it inspects
+  the actual archive top-level dir for `javaHomeSubpath` for **both** vendors (not string-derived).
+  (R3#4/#5; R1#8.)
+- **R-10 — pwsh home resolution.** `install.ps1` resolves the install root via
+  `$env:USERPROFILE` → `$HOME` → `[Environment]::GetFolderPath('UserProfile')` (so the pwsh-on-Linux
+  test can locate `~/.mcp-steroid`). D8-parameterized. (R3#6.)
+- **R-11 — `devrig upgrade` is OUT OF SCOPE for v8.** The v7 signed-`version.properties` upgrade does
+  NOT carry over unchanged; v8 ships install + generated scripts only. Upgrade redesign deferred
+  (tracked in TASKS). (Codex #4.)
+- **R-12 — Enforce installDist root name.** `distributions { main { distributionBaseName =
+  "devrig-$version" } }` so `binSubpath` is build-enforced, not asserted. (R1#5.)
+- **R-13 — No nested Gradle in tests.** `:test-integration:test` `dependsOn(generateInstaller)` and
+  consumes its output dir via a system property; it never re-invokes `./gradlew`. (R3#8.)
+- **R-14 — Launcher stdout discipline.** The generated `bin/devrig` launcher writes only stderr
+  before `exec` (MCP stdio channel); a test asserts empty stdout pre-exec. (R3#9.)
+- **R-15 — Install-time trust model (documented).** Trust root = TLS to the website
+  (install.sh + version.json) + TLS to each JDK vendor; version.json is **unsigned** in v8;
+  integrity = full sha256 verification of every downloaded artifact against the baked value. A
+  signed manifest is deferred together with `devrig upgrade` (R-11). (R1#7.)
