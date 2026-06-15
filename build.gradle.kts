@@ -386,6 +386,60 @@ val ciDevrigTests by tasks.registering {
 }
 
 /**
+ * Merge-gate **compile check**: compile every source set of every module and stop there.
+ *
+ * "Every source set" is taken literally — for each project Gradle exposes one lifecycle
+ * `<sourceSet>Classes` task per source set (`main` → `classes`, `test` → `testClasses`, and any
+ * extra set a module declares, e.g. `:ij-plugin`'s `integrationTest` → `integrationTestClasses`).
+ * Depending on all of them compiles production AND test AND auxiliary code without running a single
+ * test or packaging an artifact. New modules and new source sets are picked up automatically — there
+ * is no hand-maintained list to drift.
+ *
+ * Wiring lives in [gradle.projectsEvaluated] because a source set's `*Classes` task is only created
+ * while its owning subproject is being evaluated; at root-script configuration time most of them do
+ * not exist yet. The hard `require(...)` guards turn a silently-empty graph (e.g. the Kotlin/JVM
+ * plugin failing to apply, or a module being renamed out of existence) into a fast, loud failure
+ * instead of a green build that compiled nothing.
+ */
+val compileAllClasses by tasks.registering {
+    group = "build"
+    description = "Compile every source set (classes / testClasses / extra source sets) across all modules — no tests, no packaging."
+}
+
+gradle.projectsEvaluated {
+    // Use `tasks.names` (lazy — lists registered task names without realizing the tasks) and depend
+    // on path strings. Realizing the actual task objects here (e.g. via `tasks.matching { }`) would
+    // force-create unrelated tasks such as `:ocr-tesseract:extractWindowsNatives`, which resolve a
+    // configuration at creation time and fail with "unsafe configuration resolution". String paths
+    // realize only the `*Classes` tasks themselves, and only when the execution graph is built.
+    val classesTaskPaths = subprojects.flatMap { p ->
+        p.tasks.names
+            .filter { it == "classes" || it.endsWith("Classes") }
+            .map { "${p.path}:$it" }
+    }
+    require(classesTaskPaths.isNotEmpty()) {
+        "compileAllClasses resolved to zero *Classes tasks — the Kotlin/JVM plugins likely failed to apply to the subprojects."
+    }
+    // Fail fast if a structurally-important compile target silently drops out of the graph
+    // (renamed module, lost source set, plugin regression). These are the load-bearing ones:
+    // the IntelliJ plugin (+ its test and integrationTest sets) and the generated prompt corpus.
+    val resolvedPaths = classesTaskPaths.toSet()
+    val mustInclude = listOf(
+        ":ij-plugin:classes",
+        ":ij-plugin:testClasses",
+        ":ij-plugin:integrationTestClasses",
+        ":mcp-steroid-server:classes",
+        ":prompts:classes",
+        ":prompts:testClasses",
+    )
+    val missing = mustInclude.filterNot { it in resolvedPaths }
+    require(missing.isEmpty()) {
+        "compileAllClasses is missing expected compile target(s): $missing\nResolved targets:\n  ${resolvedPaths.sorted().joinToString("\n  ")}"
+    }
+    compileAllClasses.configure { dependsOn(classesTaskPaths) }
+}
+
+/**
  * Enforce strict ordering between the three steps. Configured inside
  * `gradle.projectsEvaluated` because the tasks live in subprojects that are not yet
  * evaluated when this script runs; `tasks.named(...)` on a not-yet-known task would

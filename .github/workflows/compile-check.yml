@@ -1,0 +1,71 @@
+# Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Compile Check
+
+# Merge gate: confirm the whole repo still COMPILES (every module, every source set —
+# main / test / integrationTest / …) before a PR can be merged. Compilation only — no tests
+# run and no artifacts are packaged; full test coverage stays on TeamCity (see build-plugin.yml).
+# Mark the `compile` job as a required status check in branch protection to enforce it.
+on:
+  pull_request:
+    branches: [main]
+  # Also run on main so the default branch stays green and the Gradle/SDK cache layer stays warm.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One run per ref (PR head branch or main); a newer push cancels the in-flight outdated run.
+  group: compile-check-${{ github.ref }}
+  cancel-in-progress: true
+
+# Opt JavaScript actions (actions/checkout) onto Node 24 — Node 20 is deprecated on
+# GitHub-hosted runners and removed 2026-09-16. Matches build-plugin.yml.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  compile:
+    name: compile
+    runs-on: ubuntu-latest
+    # Compiling :ij-plugin resolves the IntelliJ Platform SDK on a cold cache; 45m leaves head-room.
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Same toolchain as the plugin build: the docker/build image pins JDK 25 (the Gradle daemon
+      # JVM the project requires) and the rest of the build environment, so GitHub and TeamCity
+      # compile against an identical setup.
+      - name: Build Docker build image
+        run: docker build -t mcp-steroid-build:ci docker/build
+
+      - name: Compile all classes (Docker)
+        # compileAllClasses (defined in the root build.gradle.kts) depends on the per-source-set
+        # `*Classes` lifecycle task of every module, so this fails on the first compilation error
+        # anywhere — production, test, or auxiliary (integrationTest/tartTest) code.
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.gradle-home"
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e GRADLE_USER_HOME=/build/.gradle-home \
+            -v "$GITHUB_WORKSPACE:/build" \
+            -w /build \
+            mcp-steroid-build:ci \
+            ./gradlew compileAllClasses \
+              --no-daemon \
+              --stacktrace
