@@ -59,9 +59,9 @@ install_artifact() {
   log "SHA-256 verified: $ia_sha"
   mkdir -p "$ia_unpack"
   case "$ia_fmt" in
-    zip)    command -v unzip >/dev/null 2>&1 || fail "unzip not found"; unzip -q "$ia_tmp" -d "$ia_unpack" ;;
-    tar.gz) command -v tar   >/dev/null 2>&1 || fail "tar not found";   tar -xzf "$ia_tmp" -C "$ia_unpack" ;;
-    tar.xz) command -v tar   >/dev/null 2>&1 || fail "tar not found";   tar -xJf "$ia_tmp" -C "$ia_unpack" ;;
+    zip)    unzip -q "$ia_tmp" -d "$ia_unpack" ;;   # unzip presence guaranteed by the preflight below
+    tar.gz) tar -xzf "$ia_tmp" -C "$ia_unpack" ;;   # tar presence guaranteed by the preflight below
+    tar.xz) tar -xJf "$ia_tmp" -C "$ia_unpack" ;;
     *) fail "unknown archive format '$ia_fmt' for ${ia_kind}" ;;
   esac
   promote_tree "$ia_unpack" "$ia_target"
@@ -101,21 +101,41 @@ main() {
     *) fail "platform '$key' is not supported by this build" ;;
   esac
 
-  # ── tooling ──
+  # ── preflight: required tools ──
+  # This installer NEVER installs system packages. If a prerequisite is missing it lists exactly
+  # what to install (and how), then stops — so a missing tool is reported up front, before any
+  # download, rather than failing half-way through.
+  have_any() { for _c in "$@"; do command -v "$_c" >/dev/null 2>&1 && return 0; done; return 1; }
+  missing=''
+  add_missing() { missing="${missing}${missing:+|}$1"; }
+
+  have_any curl wget        || add_missing 'curl (or wget) — to download files'
+  have_any sha256sum shasum || add_missing 'sha256sum (or shasum) — to verify downloads'
+  case " $DEVRIG_FORMAT $jdk_format " in *' zip '*)             have_any unzip || add_missing 'unzip — to extract .zip archives' ;; esac
+  case " $DEVRIG_FORMAT $jdk_format " in *' tar.gz '*|*' tar.xz '*) have_any tar || add_missing 'tar — to extract .tar archives' ;; esac
+
+  if [ -n "$missing" ]; then
+    log "ERROR: cannot install — required tools are missing, and this installer does not install"
+    log "system packages for you. Please install the following, then re-run:"
+    pf_ifs=$IFS; IFS='|'
+    for m in $missing; do log "  - $m"; done
+    IFS=$pf_ifs
+    log ""
+    log "for example, with your OS package manager:"
+    log "    Debian/Ubuntu:  sudo apt-get update && sudo apt-get install -y curl unzip tar"
+    log "    Alpine:         sudo apk add curl unzip tar"
+    log "    Fedora/RHEL:    sudo dnf install -y curl unzip tar"
+    log "    macOS:          curl & tar are preinstalled; run 'brew install unzip' if unzip is missing"
+    exit 1
+  fi
+
+  # Bind the concrete download + checksum tools now that the preflight proved one of each exists.
   if command -v curl >/dev/null 2>&1; then
     fetch() { curl -fsSL "$1" -o "$2"; }
-  elif command -v wget >/dev/null 2>&1; then
+  else
     fetch() { wget -q "$1" -O "$2"; }
-  else
-    fail "neither curl nor wget found — install one and re-run"
   fi
-  if command -v shasum >/dev/null 2>&1; then
-    sha_tool="shasum -a 256"
-  elif command -v sha256sum >/dev/null 2>&1; then
-    sha_tool="sha256sum"
-  else
-    fail "neither shasum nor sha256sum found — cannot verify downloads; install one and re-run"
-  fi
+  if command -v sha256sum >/dev/null 2>&1; then sha_tool="sha256sum"; else sha_tool="shasum -a 256"; fi
 
   mkdir -p "$BIN_DIR" "$BINARIES_DIR"
   # Sweep orphaned staging from runs killed before cleanup (different $$ each run).

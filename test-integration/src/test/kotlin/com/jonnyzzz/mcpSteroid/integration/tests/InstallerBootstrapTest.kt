@@ -195,6 +195,65 @@ class InstallerBootstrapTest {
             log("ALL INSTALLER ASSERTIONS PASSED (a)-(g)")
         }
 
+    /**
+     * The installer must NEVER install system packages. On a host missing a prerequisite it must
+     * report — up front, before any download — exactly what to install and how, then stop. Here a
+     * bare `ubuntu:24.04` (no apt-get) ships tar + sha256sum but no curl/wget and no unzip, so the
+     * preflight must flag those two, print package-manager hints, exit non-zero, and download nothing.
+     */
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.MINUTES)
+    fun `generated install_sh reports missing prerequisites and never installs packages`() =
+        runWithCloseableStack { lifetime ->
+            // Coordinates are never fetched in this run (preflight fails first), so the URLs/shas only
+            // need to be structurally valid. No nginx side-car and no fixtures are required.
+            val coordsDir = createWorkDir("installer-missing-coords")
+            val dummySha = "a".repeat(64)
+            val jdkCoords = File(coordsDir, "jdk-coordinates.json")
+                .also { it.writeText(jdkCoordinatesJson("0.0.0.0", dummySha)) }
+            val devrigCoords = File(coordsDir, "devrig-coordinates.json")
+                .also { it.writeText(devrigCoordinatesJson("0.0.0.0", dummySha)) }
+            val genDir = createWorkDir("installer-missing-gen")
+            runInstallerGenerator(
+                arrayOf(
+                    "--out-dir", genDir.absolutePath,
+                    "--jdk-coordinates", jdkCoords.absolutePath,
+                    "--devrig-coordinates", devrigCoords.absolutePath,
+                    "--version", version,
+                )
+            )
+            makeWorldReadable(genDir)
+
+            // Bare ubuntu — deliberately NO apt-get. curl/wget + unzip are absent; tar + sha256sum present.
+            val install = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest()
+                    .image(installImage)
+                    .logPrefix("installer-missing")
+                    .volumes(ContainerVolume(genDir, "/gen", "ro"))
+                    .entryPoint("sh", "-c", "mkdir -p \"$homeDir\"; sleep 3000"),
+            )
+
+            val run = runInstall(install, env = mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
+            // Must fail fast at the preflight, naming the missing tools + how to install them, and stating
+            // plainly that it does not install packages itself.
+            require(run.exitCode != 0) { "install.sh must fail when prerequisites are missing:\n$run" }
+            run.assertOutputContains(
+                "required tools are missing",
+                "does not install",
+                "curl (or wget)",
+                "unzip — to extract",
+                "apt-get install",
+                message = "preflight must clearly list the missing packages and how to install them",
+            )
+            // It must stop BEFORE any download, must not flag already-present tools, and must install nothing.
+            run.assertNoMessageInOutput("downloading devrig")
+            run.assertNoMessageInOutput("tar — to extract")
+            sh(install, "test ! -d \"$homeDir/.mcp-steroid/binaries\" && echo NO_BINARIES")
+                .assertOutputContains("NO_BINARIES", message = "nothing must have been installed")
+            log("MISSING-PREREQ assertions passed (clear report, no package install, no download)")
+        }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private fun runInstall(c: ContainerDriver, env: Map<String, String>): ProcessResult =
