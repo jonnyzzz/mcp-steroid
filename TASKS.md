@@ -4217,6 +4217,22 @@ REMAINING (then 3x quorum, iterate until accepted):
   B devrig-coordinates (from release / installDist).
 - D: devrig BinLauncher.kt self-registration + HomePaths.binDir; Makefile wiring; daily action yml.
 
+## Requirement (2026-06-16): installer must NOT install packages — DONE (install.sh)
+
+User direction (answering "which lane next"): the install scripts must never install system
+packages; instead they must clearly state which packages are required. Implemented in
+install.sh as a single up-front preflight (right after platform selection, before any download):
+collects EVERY missing prerequisite — a downloader (curl/wget), a sha256 tool (sha256sum/shasum),
+and the archive tool each selected format needs (zip→unzip, tar.gz/xz→tar) — and prints one clear
+message naming each + the package-manager command (Debian/Alpine/Fedora/macOS), then exits 1.
+Removed the redundant mid-unpack unzip/tar guards. install.ps1 needs no change (built-in cmdlets
+only: Invoke-WebRequest/Get-FileHash/Expand-Archive — no external packages). Proven by a new
+InstallerBootstrapTest case on bare ubuntu:24.04 (no apt-get): names curl+unzip with hints, exits
+non-zero, doesn't flag the present tar/sha256sum, installs/downloads nothing. Both lanes green.
+- Knock-on for the future Alpine lane: it should still test the HAPPY path (apk add curl unzip tar
+  is harness env-prep, not the script installing) — the "no package install" behavior is now
+  covered by this bare-container negative case and need not be re-proven per OS.
+
 ## DX/docs (2026-06-16): document the one-command bootstrap + test the literal piped command
 
 The new generated scripts deliver a zero-prereq one-liner, but README + website still only document
