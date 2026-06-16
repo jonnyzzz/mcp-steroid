@@ -4240,7 +4240,29 @@ Steroid inspections (0 WARNING+) → 3x adversarial quorum (all GO/GO_WITH_CHANG
 Remaining of "D": Makefile wiring (update-config → generateInstaller) + daily installer-jdk-refresh.yml.
 Follow-up (minor): verify on a real bundled JDK that java.home canonicalization never triggers a once-per-launch rewrite.
 
-REMAINING BLOCKS: resolver tools A/B (next — design workflow launched), then Makefile + daily GH action, then docs E1/E2.
+REMAINING BLOCKS: resolver tools A/B (IN PROGRESS — see Block 2 below), then Makefile + daily GH action, then docs E1/E2.
+
+## Block 2 IN PROGRESS (2026-06-16): coordinate resolvers — user-specified architecture
+
+User direction: Gradle downloads ALL 5 real JDK packages (so we validate real hash-sums + inspect real
+inner folders) + builds the devrig zip; the RESOLVERS receive files FROM DISK and do all the hard logic
++ asserts (sha256, inspect inner top-dir → javaHomeSubpath, assert bin/java), baking exact values into
+the generated scripts (zero client-side inference). Real mode → public asset URLs; local tests → nginx
+side-car serving the pre-downloaded JDKs + built devrig zip from disk.
+
+PART 1 DONE (commit 026d344a): the resolver ENGINE in :installer-gen.
+- CoordinateResolver.kt: JdkCoordinateResolver.resolve(localArtifacts) — sha256 + inspectJavaHomeSubpath
+  (commons-compress reads the real archive; derives the JAVA_HOME dir from the actual bin/java entry, never
+  string-derived) + optional vendor-sha cross-check + shared validate(). DevrigCoordinateResolver for the
+  zip (sha+size). validate() made internal. Added commons-compress 1.27.1.
+- 5 hermetic CoordinateResolverTest cases (all 5 archive layouts incl. macOS Contents/Home + win java.exe
+  + Azul; sha-mismatch + missing-bin/java + nested-launcher-decoy + devrig). :installer-gen:test green.
+
+PART 2 TODO: Gradle real-JDK download wiring (de.undercouch.download for the 5 pinned coordinate URLs +
+Corretto .sig + pubkey; reuse the :pgp-verifier install-dist config like :jdk-downloader) feeding a
+`resolveJdkCoordinates`/`resolveDevrigCoordinates` task; + nginx-side-car integration test that serves the
+real downloaded JDKs + built :npx-kt devrig zip and runs them end-to-end through the resolvers → generator.
+THEN: MCP Steroid inspection gate + 3x quorum for the whole block. Daily GH action + Makefile = later block.
 
 ## Requirement (2026-06-16): installer must NOT install packages — DONE (install.sh)
 
