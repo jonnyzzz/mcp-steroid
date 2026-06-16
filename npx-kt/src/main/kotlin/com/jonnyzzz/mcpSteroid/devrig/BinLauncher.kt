@@ -37,7 +37,7 @@ fun ensureBinLauncher(home: HomePaths) {
             userHome = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
         )
     } catch (e: Exception) {
-        System.err.println("[mcp-steroid] could not (re)write the devrig launcher: ${e.message}")
+        System.err.println("[mcp-steroid] could not (re)write the devrig launcher: $e")
     }
 }
 
@@ -57,7 +57,6 @@ internal fun ensureBinLauncher(
     // (integration tests, `./gradlew run`), do NOT repoint the user's launcher at a transient dir.
     if (!ownRoot.toAbsolutePath().normalize().startsWith(home.home.toAbsolutePath().normalize())) return
 
-    Files.createDirectories(home.binDir)
     val ownBin = ownRoot.resolve("bin").resolve(if (isWin) "devrig.bat" else "devrig")
     val launcherRel = relToHome(userHome, ownBin)
     val jdkHomeRel = relToHome(userHome, ownJava)
@@ -95,7 +94,14 @@ internal fun renderWindowsCmd(): String =
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0devrig.ps1\" %*\r\n"
 
 private fun writeIfChanged(dir: Path, target: Path, desired: String, executable: Boolean, ownBin: Path) {
-    val current = if (target.exists()) target.readText() else null
+    // An unreadable existing launcher (non-UTF-8 bytes, wrong file type, transient IO) counts as
+    // "changed" so a corrupt launcher self-heals rather than being left in place.
+    val current = if (!target.exists()) null else try {
+        target.readText()
+    } catch (e: Exception) {
+        System.err.println("[mcp-steroid] existing launcher $target is unreadable ($e); rewriting it")
+        null
+    }
     if (current != null && normalizeLauncher(current) == normalizeLauncher(desired)) return
     writeAtomically(dir, target, desired, executable)
     System.err.println("[mcp-steroid] (re)wrote $target -> $ownBin")

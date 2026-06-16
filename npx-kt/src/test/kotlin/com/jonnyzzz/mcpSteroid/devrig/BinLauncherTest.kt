@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -71,7 +72,7 @@ class BinLauncherTest {
     @Test
     fun `relToHome strips the home prefix and rejects escaping paths`() {
         assertEquals(
-            "a/b/c".replace('/', java.io.File.separatorChar),
+            "a/b/c".replace('/', File.separatorChar),
             relToHome(tmp, tmp.resolve("a").resolve("b").resolve("c")),
         )
         assertFailsWith<IllegalArgumentException> { relToHome(tmp.resolve("home"), tmp.resolve("elsewhere").resolve("x")) }
@@ -155,7 +156,63 @@ class BinLauncherTest {
 
     @Test
     fun `public ensureBinLauncher never throws when the devrig root is unresolvable`() {
-        DevrigRootTestSupport.reset() // no override → DevrigRoot.path fails to find an installDist in the test JVM
+        // Force DevrigRoot.path to throw deterministically: a code-source with no lib/+ij-plugin.zip ancestor.
+        DevrigRootTestSupport.overrideCodeSource(tmp.resolve("no-installdist").resolve("classes"))
         assertDoesNotThrow { ensureBinLauncher(home) }
+        assertFalse(home.binDir.resolve("devrig").exists(), "nothing should be written when the root is unresolvable")
+    }
+
+    // ── cross-module drift guard: the renderers must stay byte-identical (modulo line endings) to the
+    //    launcher bodies the generated install.sh / install.ps1 actually write (installer-gen templates),
+    //    else a fresh install + self-heal would rewrite on every launch. ──
+
+    @Test
+    fun `renderPosixLauncher matches the install_sh_tmpl heredoc body`() {
+        val tmpl = repoFile("installer-gen/src/main/resources/templates/install.sh.tmpl").readText()
+        val start = tmpl.indexOf("<<EOF\n") + "<<EOF\n".length
+        val end = tmpl.indexOf("\nEOF", start)
+        require(start > 5 && end > start) { "could not locate the launcher heredoc in install.sh.tmpl" }
+        val jdk = "REL/jdk-home"
+        val launcher = "REL/bin/devrig"
+        // Emulate the unquoted-heredoc expansion: install.sh shell-expands ${jdk_home_rel}/${launcher_rel};
+        // \$ becomes a literal $ in the written file.
+        val expanded = tmpl.substring(start, end + 1)
+            .replace("\${jdk_home_rel}", jdk)
+            .replace("\${launcher_rel}", launcher)
+            .replace("\\\$", "\$")
+        assertEquals(normalizeLauncher(renderPosixLauncher(launcher, jdk)), normalizeLauncher(expanded))
+    }
+
+    @Test
+    fun `renderWindowsPs1 and renderWindowsCmd match the install_ps1_tmpl bodies`() {
+        val tmpl = repoFile("installer-gen/src/main/resources/templates/install.ps1.tmpl").readText()
+        val jdk = "REL\\jdk-home"
+        val launcher = "REL\\bin\\devrig.bat"
+
+        // devrig.ps1 here-string: PowerShell expands $jdkHomeRel/$launcherRel; backtick-$ becomes literal $.
+        val ps1Start = tmpl.indexOf("@\"\n") + "@\"\n".length
+        val ps1End = tmpl.indexOf("\n\"@", ps1Start)
+        require(ps1Start > 2 && ps1End > ps1Start) { "could not locate the devrig.ps1 here-string in install.ps1.tmpl" }
+        val ps1Expanded = tmpl.substring(ps1Start, ps1End)
+            .replace("\$jdkHomeRel", jdk)
+            .replace("\$launcherRel", launcher)
+            .replace("`\$", "\$")
+        assertEquals(normalizeLauncher(renderWindowsPs1(launcher, jdk)), normalizeLauncher(ps1Expanded))
+
+        // devrig.cmd $cmd string: decode `r`n -> CRLF and `" -> ".
+        val cmdLine = tmpl.lines().first { it.trimStart().startsWith("\$cmd = ") }
+        val cmdDecoded = cmdLine.substringAfter("\"").substringBeforeLast("\"")
+            .replace("`r`n", "\n")
+            .replace("`\"", "\"")
+        assertEquals(normalizeLauncher(renderWindowsCmd()), normalizeLauncher(cmdDecoded))
+    }
+
+    private fun repoFile(rel: String): File {
+        var d: File? = File("").absoluteFile
+        while (d != null) {
+            if (File(d, "settings.gradle.kts").isFile) return File(d, rel)
+            d = d.parentFile
+        }
+        error("could not locate the repo root (settings.gradle.kts) from ${File("").absolutePath}")
     }
 }
