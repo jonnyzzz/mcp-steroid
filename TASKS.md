@@ -4210,7 +4210,11 @@ install`; DEVRIG_NO_AUTO_INSTALL skips it; idempotent re-run. No generator/templ
 Added testImplementation(project(":installer-gen")). Committed.
 
 REMAINING (then 3x quorum, iterate until accepted):
-- Alpine lane (musl/busybox; apk add bash curl unzip tar) — parameterize the lane, same assertions.
+- [DONE 2026-06-16] Alpine lane (musl/busybox) — parameterized happy path into PosixLane(name,image,
+  installToolsCmd); runs ubuntu:24.04 (glibc) + alpine:3.21 (musl). Both assert (a)-(g) over the nginx
+  mock. install.sh runs under busybox ash on Alpine (invoked `sh /gen/install.sh`); the lane's
+  `apk add bash curl unzip tar` includes bash only because the test-helper docker-exec transport
+  hardcodes `bash -c` — bash never interprets install.sh. 3 tests green (2 happy lanes + negative).
 - pwsh-on-Linux lane (mcr.microsoft.com/powershell) for install.ps1 incl. windows-arm64/Azul —
   needs windows fixtures (devrig.bat recorder + JDK zip).
 - Resolver tools: A jdk-coordinates (download→GPG/sha256 verify→unpack→assert bin/java for all 5 OS),
