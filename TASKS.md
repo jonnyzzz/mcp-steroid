@@ -4215,8 +4215,14 @@ REMAINING (then 3x quorum, iterate until accepted):
   mock. install.sh runs under busybox ash on Alpine (invoked `sh /gen/install.sh`); the lane's
   `apk add bash curl unzip tar` includes bash only because the test-helper docker-exec transport
   hardcodes `bash -c` — bash never interprets install.sh. 3 tests green (2 happy lanes + negative).
-- pwsh-on-Linux lane (mcr.microsoft.com/powershell) for install.ps1 incl. windows-arm64/Azul —
-  needs windows fixtures (devrig.bat recorder + JDK zip).
+- [DONE 2026-06-16] pwsh-on-Linux lane for install.ps1 incl. windows-x64 (Corretto) + windows-arm64
+  (Azul). Windows fixtures: devrig.zip (bin/devrig.bat recorder) + jdk.zip (jdk/bin/java stub). Asserts
+  detection + hashtable lookup, HTTP download, SHA-256 verify, Expand-Archive unpack, content-address,
+  devrig.ps1/devrig.cmd written w/ DEVRIG_JAVA_HOME, idempotent, arm64 entry. Logic-only (the .bat
+  launcher can't run on Linux → always DEVRIG_NO_AUTO_INSTALL=1; wrapper-exec stays Windows-manual).
+  pwsh provisioning: MS ships no linux/arm64 image (qemu-segfaults on Apple Silicon), so the lane
+  installs pwsh 7.4.6 from the official tarball for the container's arch → native on dev(arm64)+CI(amd64).
+  CAUGHT + FIXED a real install.ps1 bug: "$kind:" parsed as a scoped var ref → "${kind}:". 4 tests green.
 - Resolver tools: A jdk-coordinates (download→GPG/sha256 verify→unpack→assert bin/java for all 5 OS),
   B devrig-coordinates (from release / installDist).
 - D: devrig BinLauncher.kt self-registration + HomePaths.binDir; Makefile wiring; daily action yml.
