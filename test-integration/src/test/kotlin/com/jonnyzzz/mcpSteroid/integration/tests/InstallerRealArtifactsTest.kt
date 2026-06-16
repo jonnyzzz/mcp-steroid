@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.installer.JdkCoordinateResolver
 import com.jonnyzzz.mcpSteroid.installer.JdkCoordinates
 import com.jonnyzzz.mcpSteroid.installer.LocalJdkArtifact
 import com.jonnyzzz.mcpSteroid.installer.main as runInstallerGenerator
+import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
 import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
@@ -40,7 +41,8 @@ class InstallerRealArtifactsTest {
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val committed: JdkCoordinates by lazy {
-        json.decodeFromString(File(repoRoot(), "website/installer/jdk-coordinates.json").readText())
+        val coordsFile = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("website/installer/jdk-coordinates.json")
+        json.decodeFromString(coordsFile.toFile().readText())
     }
 
     /** No network: inspect the 5 Gradle-downloaded JDKs and assert the resolver reproduces the committed
@@ -212,15 +214,6 @@ class InstallerRealArtifactsTest {
             if (it.isDirectory) it.setExecutable(true, false)
         }
         dir.setExecutable(true, false)
-    }
-
-    private fun repoRoot(): File {
-        var d: File? = File("").absoluteFile
-        while (d != null) {
-            if (File(d, "settings.gradle.kts").isFile) return d
-            d = d.parentFile
-        }
-        error("could not locate repo root from ${File("").absolutePath}")
     }
 
     private fun log(msg: String) = println("[InstallerRealArtifactsTest] $msg")
