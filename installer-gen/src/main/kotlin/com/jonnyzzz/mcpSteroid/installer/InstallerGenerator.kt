@@ -56,7 +56,7 @@ private fun loadResource(name: String): String =
 /** Marker object so the resource loader has a stable class to anchor `getResource` on. */
 private object InstallerGenerator
 
-private fun validate(jdk: JdkCoordinates) {
+internal fun validate(jdk: JdkCoordinates) {
     val missing = ALL_PLATFORMS.filterNot { it in jdk.platforms.keys }
     require(missing.isEmpty()) { "jdk-coordinates.json is missing platforms: $missing" }
     jdk.platforms.forEach { (key, e) ->

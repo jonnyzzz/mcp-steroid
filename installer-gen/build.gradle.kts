@@ -14,6 +14,8 @@ repositories {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    // Read JDK archives (tar.gz / tar.xz / zip) to inspect their real inner layout in the resolver.
+    implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation(kotlin("test"))
 }
 
