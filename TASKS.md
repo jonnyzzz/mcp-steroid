@@ -4258,10 +4258,22 @@ PART 1 DONE (commit 026d344a): the resolver ENGINE in :installer-gen.
 - 5 hermetic CoordinateResolverTest cases (all 5 archive layouts incl. macOS Contents/Home + win java.exe
   + Azul; sha-mismatch + missing-bin/java + nested-launcher-decoy + devrig). :installer-gen:test green.
 
-PART 2 TODO: Gradle real-JDK download wiring (de.undercouch.download for the 5 pinned coordinate URLs +
-Corretto .sig + pubkey; reuse the :pgp-verifier install-dist config like :jdk-downloader) feeding a
-`resolveJdkCoordinates`/`resolveDevrigCoordinates` task; + nginx-side-car integration test that serves the
-real downloaded JDKs + built :npx-kt devrig zip and runs them end-to-end through the resolvers → generator.
+PART 2a DONE (commit bb8140cf): Gradle download + resolve tasks in :installer-gen.
+- de.undercouch.download tasks downloadJdk_<platform> (x5) + downloadAllJdks pull the pinned vendor URLs
+  (parsed at config time from the committed jdk-coordinates.json) into build/jdk-download/.
+- resolveJdkCoordinates (JavaExec → ResolverMain 'jdk') inspects the downloaded files via the Part-1 engine
+  → (re)generates jdk-coordinates.json (real sha256 + inspected javaHomeSubpath). -Pout / -PurlBase knobs.
+- ResolverMain 'devrig' entrypoint for resolver B; jdkDownloadElements consumable config exposes the
+  download dir to :test-integration (no build/ reach-in).
+- VERIFIED: dry-run wires 5 downloads → resolve; real linux-x64 download's sha256 == committed 00486fa4…
+  and bin/java top dir == committed javaHomeSubpath. GPG verify (Corretto .sig via :pgp-verifier) deferred
+  to the daily-refresh wiring; sha256 cross-check is the integrity gate for now.
+
+PART 2b TODO: nginx-side-car integration test in :test-integration — resolvable config consuming
+:installer-gen:jdkDownloadElements (real downloaded JDKs, all 5) + the built :npx-kt devrig zip; serve via
+nginx; run the resolvers in-process (side-car URLs) → assert resolved sha/javaHomeSubpath MATCH committed
+(validation on real bytes); generate install.sh → install the REAL linux-x64 JDK in ubuntu end-to-end.
+Needs ~1GB JDK download on first run. + resolveDevrigCoordinates Gradle task wiring (consume :npx-kt distZip).
 THEN: MCP Steroid inspection gate + 3x quorum for the whole block. Daily GH action + Makefile = later block.
 
 ## Requirement (2026-06-16): installer must NOT install packages — DONE (install.sh)
