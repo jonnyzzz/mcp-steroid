@@ -40,7 +40,7 @@ class InstallerRealArtifactsTest {
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val committed: JdkCoordinates by lazy {
-        json.decodeFromString(repoFile("website/installer/jdk-coordinates.json").readText())
+        json.decodeFromString(File(repoRoot(), "website/installer/jdk-coordinates.json").readText())
     }
 
     /** No network: inspect the 5 Gradle-downloaded JDKs and assert the resolver reproduces the committed
@@ -214,10 +214,10 @@ class InstallerRealArtifactsTest {
         dir.setExecutable(true, false)
     }
 
-    private fun repoFile(rel: String): File {
+    private fun repoRoot(): File {
         var d: File? = File("").absoluteFile
         while (d != null) {
-            if (File(d, "settings.gradle.kts").isFile) return File(d, rel)
+            if (File(d, "settings.gradle.kts").isFile) return d
             d = d.parentFile
         }
         error("could not locate repo root from ${File("").absolutePath}")

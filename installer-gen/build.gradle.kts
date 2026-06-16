@@ -106,7 +106,7 @@ val resolveJdkCoordinates by tasks.registering(JavaExec::class) {
     group = "installer"
     description = "Inspect the downloaded JDKs and (re)generate jdk-coordinates.json with real sha256 + javaHomeSubpath."
     dependsOn(downloadAllJdks)
-    mainClass.set("com.jonnyzzz.mcpSteroid.installer.ResolverMainKt")
+    mainClass.set("com.jonnyzzz.mcpSteroid.installer.resolver.ResolverMainKt")
     classpath = sourceSets["main"].runtimeClasspath
 
     val source = rootProject.file("website/installer/jdk-coordinates.json").absolutePath
