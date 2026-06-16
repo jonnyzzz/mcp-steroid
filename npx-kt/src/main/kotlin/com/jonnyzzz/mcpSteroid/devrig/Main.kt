@@ -160,6 +160,10 @@ suspend fun DevrigServices.mainImplMcp(
     // The monitor opens one POST <rpcBaseUrl>/projects/stream per IDE and receives
     // push notifications on project open/close.
 
+    // Self-heal the user-facing ~/.mcp-steroid/bin launcher to devrig's current location + JDK before
+    // serving. Best-effort + stderr-only (stdout is the MCP JSON-RPC channel).
+    ensureBinLauncher(homePaths)
+
     val discoveryJob = ideDiscovery.start(this)
     val monitorJob = ideMonitor.start(this)
     val portDiscoveryJob = portDiscovery.start(this)

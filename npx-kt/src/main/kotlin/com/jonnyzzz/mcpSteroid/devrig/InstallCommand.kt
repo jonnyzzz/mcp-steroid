@@ -18,14 +18,19 @@ private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
 fun DevrigServices.runInstallCommand(
     command: DevrigCommand.DevrigCommandInstall,
     runner: AiAgentCliRunner = ProcessAiAgentCliRunner(),
-): Int = runInstallCommand(
-    command = command,
-    launcher = resolveDevrigLauncher(),
-    javaHome = Path.of(System.getProperty("java.home")),
-    out = mcpStdout,
-    err = System.err,
-    runner = runner,
-)
+): Int {
+    // Self-heal the user-facing ~/.mcp-steroid/bin launcher before we register devrig with the agent,
+    // so the command we record and the launcher on PATH both point at devrig's current location.
+    ensureBinLauncher(homePaths)
+    return runInstallCommand(
+        command = command,
+        launcher = resolveDevrigLauncher(),
+        javaHome = Path.of(System.getProperty("java.home")),
+        out = mcpStdout,
+        err = System.err,
+        runner = runner,
+    )
+}
 
 /**
  * Registers devrig as the `mcp-steroid` stdio MCP server in [command]'s agent, narrating each step so
@@ -173,6 +178,3 @@ private fun resolveDevrigLauncher(): Path {
 
     error("devrig launcher is missing: $expected")
 }
-
-private fun isWindows(): Boolean =
-    System.getProperty("os.name").lowercase().contains("windows")
