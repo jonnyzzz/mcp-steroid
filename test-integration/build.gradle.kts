@@ -30,10 +30,22 @@ val devrigPackageDist by configurations.creating {
     }
 }
 
+// Resolvable configuration: the real JDK archives :installer-gen pre-downloaded (build/jdk-download).
+// InstallerRealArtifactsTest serves these from the nginx side-car — the TEST never hits a vendor CDN;
+// Gradle's download task (a dependency of this config) is the only real fetch.
+val installerJdkDownloads by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-download-dir"))
+    }
+}
+
 dependencies {
     pluginZip(project(":ij-plugin"))
     agentOutputFilterDist(project(path = ":agent-output-filter", configuration = "executableDistribution"))
     devrigPackageDist(project(":npx-kt"))
+    installerJdkDownloads(project(":installer-gen"))
 
     // Infrastructure code lives in src/main/kotlin so it can be reused by :test-experiments.
     implementation(project(":test-helper"))
@@ -86,7 +98,7 @@ fun Test.configureIntegrationTest(sourceSetName: String = "test") {
     testLogging { showStandardStreams = true }
     systemProperty("junit.jupiter.execution.timeout.default", "15m")
 
-    dependsOn(pluginZip, agentOutputFilterDist, devrigPackageDist)
+    dependsOn(pluginZip, agentOutputFilterDist, devrigPackageDist, installerJdkDownloads)
     doFirst {
         delete(layout.buildDirectory.dir("test-results/${this@configureIntegrationTest.name}/binary"))
         val testOutDir = layout.buildDirectory
@@ -113,6 +125,10 @@ fun Test.configureIntegrationTest(sourceSetName: String = "test") {
         systemProperty(
             "test.integration.devrig.package.zip",
             devrigPackageDist.singleFile.absolutePath,
+        )
+        systemProperty(
+            "test.integration.jdk.download.dir",
+            installerJdkDownloads.singleFile.absolutePath,
         )
         systemProperty(
             "test.integration.repo.cache.dir",
