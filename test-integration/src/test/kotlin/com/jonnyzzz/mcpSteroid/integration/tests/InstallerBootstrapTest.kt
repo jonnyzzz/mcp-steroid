@@ -41,6 +41,21 @@ class InstallerBootstrapTest {
     private val nginxImage = "nginx:alpine"
     private val installImage = "ubuntu:24.04"
 
+    /**
+     * The powershell lane installs PowerShell for the container's CPU arch from the official tarball
+     * at container start. Microsoft ships no linux/arm64 pwsh image, so a fixed image qemu-segfaults
+     * on Apple Silicon; the tarball has native arm64 + x64 builds, so this runs natively on both dev
+     * (arm64) and CI (amd64). pwsh is only the harness's interpreter for install.ps1 — analogous to
+     * bash being the docker-exec transport — and install.ps1 itself uses only built-in cmdlets.
+     */
+    private val pwshInstallCmd =
+        "apt-get update -qq && apt-get install -y -qq curl ca-certificates libicu74 >/dev/null 2>&1; " +
+            "arch=\$(uname -m); case \"\$arch\" in aarch64) p=arm64;; x86_64) p=x64;; " +
+            "*) echo \"unsupported arch: \$arch\" >&2; exit 1;; esac; ver=7.4.6; " +
+            "curl -fsSL \"https://github.com/PowerShell/PowerShell/releases/download/v\$ver/powershell-\$ver-linux-\$p.tar.gz\" -o /tmp/pwsh.tar.gz; " +
+            "mkdir -p /opt/pwsh && tar -xzf /tmp/pwsh.tar.gz -C /opt/pwsh; " +
+            "chmod +x /opt/pwsh/pwsh && ln -sf /opt/pwsh/pwsh /usr/local/bin/pwsh"
+
     /** HOME with a space catches quoting bugs in install.sh / the launcher wrapper. */
     private val homeDir = "/home/tester one"
 
@@ -275,6 +290,125 @@ class InstallerBootstrapTest {
             log("MISSING-PREREQ assertions passed (clear report, no package install, no download)")
         }
 
+    /**
+     * Windows lane: drives the GENERATED install.ps1 under PowerShell on Linux
+     * (`mcr.microsoft.com/powershell`). install.ps1 uses only built-in cmdlets (Invoke-WebRequest /
+     * Get-FileHash / Expand-Archive), so the image needs no extra tools.
+     *
+     * Logic-only by design (§8): the devrig launcher is a `.bat`, which cannot execute on pwsh-on-Linux
+     * (no cmd.exe), so wrapper-exec + auto `devrig install` are a Windows-manual concern. We always set
+     * DEVRIG_NO_AUTO_INSTALL=1 (so install.ps1 never touches the .bat) and assert the install MECHANICS:
+     * detection + hashtable lookup, HTTP download, SHA-256 verify, Expand-Archive unpack, content-address,
+     * launcher files written with DEVRIG_JAVA_HOME, idempotent re-run, and the windows-arm64 (Azul) entry.
+     */
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `generated install_ps1 end-to-end on powershell (pwsh-on-linux)`() =
+        runWithCloseableStack { lifetime ->
+            // ── fixtures: zip archives (install.ps1 only supports zip) ──
+            val fixturesDir = createWorkDir("installer-fixtures-win")
+            val devrigZip = File(fixturesDir, "devrig.zip").also { buildFakeDevrigZipWindows(it) }
+            val jdkZip = File(fixturesDir, "jdk.zip").also { buildFakeJdkZip(it) }
+            val devrigSha = sha256(devrigZip)
+            val jdkSha = sha256(jdkZip)
+            makeWorldReadable(fixturesDir)
+
+            // ── nginx side-car serving the windows fixtures ──
+            val nginx = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest()
+                    .image(nginxImage)
+                    .logPrefix("installer-nginx-win")
+                    .volumes(ContainerVolume(fixturesDir, "/usr/share/nginx/html", "ro")),
+            )
+            val nginxIp = nginx.queryContainerIp()
+                ?: error("nginx side-car has no bridge IP — cannot serve fixtures")
+            log("nginx side-car serving windows fixtures at http://$nginxIp/")
+
+            // ── coordinate files + generate install.ps1 ──
+            val coordsDir = createWorkDir("installer-coords-win")
+            val jdkCoords = File(coordsDir, "jdk-coordinates.json")
+                .also { it.writeText(jdkCoordinatesJsonWindows(nginxIp, jdkSha)) }
+            val devrigCoords = File(coordsDir, "devrig-coordinates.json")
+                .also { it.writeText(devrigCoordinatesJson(nginxIp, devrigSha)) }
+            val genDir = createWorkDir("installer-gen-out-win")
+            runInstallerGenerator(
+                arrayOf(
+                    "--out-dir", genDir.absolutePath,
+                    "--jdk-coordinates", jdkCoords.absolutePath,
+                    "--devrig-coordinates", devrigCoords.absolutePath,
+                    "--version", version,
+                )
+            )
+            require(File(genDir, "install.ps1").isFile) { "generator did not produce install.ps1" }
+            makeWorldReadable(genDir)
+
+            // ── powershell-on-Linux install container ──
+            val install = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest()
+                    .image(installImage)
+                    .logPrefix("installer-pwsh")
+                    .volumes(ContainerVolume(genDir, "/gen", "ro"))
+                    .entryPoint("sh", "-c", "$pwshInstallCmd; mkdir -p \"$homeDir\"; sleep 3000"),
+            )
+            awaitPwshReady(install)
+
+            val devrigSha12 = devrigSha.take(12)
+            val jdkSha12 = jdkSha.take(12)
+            // Always opt out of auto-install (the .bat launcher cannot run on pwsh-on-Linux — see kdoc).
+            val winEnv = mapOf(
+                "HOME" to homeDir, "DEVRIG_OS" to "windows", "DEVRIG_CPU" to "x64", "DEVRIG_NO_AUTO_INSTALL" to "1",
+            )
+
+            // ── run #1: windows-x64 ──
+            runInstallPs1(install, winEnv)
+                .assertExitCode(0) { "install.ps1 (windows-x64) failed:\n$this" }
+                .assertOutputContains(
+                    "platform: windows-x64",
+                    "SHA-256 verified",
+                    "skipping",
+                    message = "ps1 must select windows-x64, verify downloads, and honor DEVRIG_NO_AUTO_INSTALL",
+                )
+
+            val devrigKey = "devrig-windows-x64-$version-$devrigSha12"
+            val jdkKey = "jdk-windows-x64-$version-$jdkSha12"
+            // content-addressed dirs created
+            sh(install, "ls -1 \"$homeDir/.mcp-steroid/binaries\"")
+                .assertExitCode(0) { "could not list binaries dir:\n$this" }
+                .assertOutputContains(devrigKey, jdkKey, message = "expected windows-x64 content-addressed dirs")
+            // JDK unpacked verbatim (Expand-Archive), bin/java present under javaHomeSubpath=jdk
+            sh(install, "test -f \"$homeDir/.mcp-steroid/binaries/$jdkKey/jdk/bin/java\" && echo JDK_OK")
+                .assertOutputContains("JDK_OK", message = "bundled JDK bin/java missing — not downloaded/unpacked")
+            // both launchers written; devrig.ps1 sets DEVRIG_JAVA_HOME to the bundled jdk (relative to home)
+            sh(install, "test -f \"$homeDir/.mcp-steroid/bin/devrig.ps1\" && test -f \"$homeDir/.mcp-steroid/bin/devrig.cmd\" && echo LAUNCHERS_OK")
+                .assertOutputContains("LAUNCHERS_OK", message = "devrig.ps1 / devrig.cmd not written")
+            sh(install, "cat \"$homeDir/.mcp-steroid/bin/devrig.ps1\"")
+                .assertOutputContains(
+                    "DEVRIG_JAVA_HOME",
+                    "binaries/$jdkKey/jdk",
+                    message = "launcher must set DEVRIG_JAVA_HOME to the bundled jdk",
+                )
+
+            // ── run #2: idempotent re-run reuses existing dirs ──
+            runInstallPs1(install, winEnv)
+                .assertExitCode(0) { "idempotent re-run failed:\n$this" }
+                .assertOutputContains(
+                    "already installed: $devrigKey",
+                    "already installed: $jdkKey",
+                    message = "idempotent re-run must report 'already installed' for both artifacts",
+                )
+
+            // ── run #3: windows-arm64 (the Azul second-vendor entry) installs into its own content dir ──
+            runInstallPs1(install, winEnv + ("DEVRIG_CPU" to "arm64"))
+                .assertExitCode(0) { "install.ps1 (windows-arm64) failed:\n$this" }
+                .assertOutputContains("platform: windows-arm64", message = "ps1 must select the windows-arm64 entry")
+            sh(install, "test -d \"$homeDir/.mcp-steroid/binaries/jdk-windows-arm64-$version-$jdkSha12\" && echo ARM64_OK")
+                .assertOutputContains("ARM64_OK", message = "windows-arm64 content-addressed jdk dir missing")
+
+            log("ALL INSTALL.PS1 ASSERTIONS PASSED (pwsh-on-linux: windows-x64 + windows-arm64)")
+        }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private fun runInstall(c: ContainerDriver, env: Map<String, String>): ProcessResult =
@@ -284,6 +418,27 @@ class InstallerBootstrapTest {
                 .description("run generated install.sh")
                 .extraEnv(env)
         }.awaitForProcessFinish()
+
+    private fun runInstallPs1(c: ContainerDriver, env: Map<String, String>): ProcessResult =
+        c.startProcessInContainer {
+            args("pwsh", "-NoProfile", "-File", "/gen/install.ps1")
+                .timeoutSeconds(300)
+                .description("run generated install.ps1")
+                .extraEnv(env)
+        }.awaitForProcessFinish()
+
+    private fun awaitPwshReady(c: ContainerDriver) {
+        val deadline = System.currentTimeMillis() + 4 * 60_000
+        while (System.currentTimeMillis() < deadline) {
+            val r = sh(c, "command -v pwsh >/dev/null 2>&1 && echo PWSH_OK")
+            if (r.exitCode == 0 && "PWSH_OK" in r.stdout) {
+                log("pwsh present in install container")
+                return
+            }
+            Thread.sleep(2_000)
+        }
+        error("pwsh was not available in the powershell container within the timeout")
+    }
 
     /** Run a `sh -c <script>` inside the container with the given env (HOME defaults to the spaced home). */
     private fun sh(
@@ -421,6 +576,38 @@ class InstallerBootstrapTest {
         }
     }
 
+    /**
+     * Fake Windows devrig dist zip. Top dir `devrig-<version>/`, with `bin/devrig.bat` (the Windows
+     * binSubpath). The .bat is never executed on pwsh-on-Linux; only its presence matters (install.ps1
+     * asserts the launcher exists). Content is a harmless recorder for the record.
+     */
+    private fun buildFakeDevrigZipWindows(target: File) {
+        val bat = "@echo off\r\necho DEVRIG_RAN %*\r\n".toByteArray()
+        ZipOutputStream(FileOutputStream(target)).use { zip ->
+            zip.putNextEntry(ZipEntry("devrig-$version/"))
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("devrig-$version/bin/"))
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("devrig-$version/bin/devrig.bat"))
+            zip.write(bat)
+            zip.closeEntry()
+        }
+    }
+
+    /** Fake JDK zip. Top dir `jdk/` (matches javaHomeSubpath="jdk") with a `bin/java` sh stub. */
+    private fun buildFakeJdkZip(target: File) {
+        val javaStub = "#!/bin/sh\necho 'java-stub 25'\nexit 0\n".toByteArray()
+        ZipOutputStream(FileOutputStream(target)).use { zip ->
+            zip.putNextEntry(ZipEntry("jdk/"))
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("jdk/bin/"))
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("jdk/bin/java"))
+            zip.write(javaStub)
+            zip.closeEntry()
+        }
+    }
+
     // ── coordinate files (all 5 platforms share the POSIX fixtures for the POSIX lane) ──
 
     private fun jdkCoordinatesJson(nginxIp: String, jdkSha: String): String {
@@ -444,6 +631,49 @@ class InstallerBootstrapTest {
                 "macos-arm64": ${entry()},
                 "windows-x64": ${entry()},
                 "windows-arm64": ${entry()}
+              }
+            }
+        """.trimIndent()
+    }
+
+    /**
+     * Windows JDK coordinates: windows-x64 + windows-arm64 point at the zip fixture (both share it —
+     * the lane proves the arm64 KEY path installs, not vendor bytes). The three POSIX entries are
+     * unused by install.ps1 (renderPsTable emits only the windows platforms) but the generator
+     * validates all 5 are present with a valid sha256, so they get a dummy.
+     */
+    private fun jdkCoordinatesJsonWindows(nginxIp: String, jdkSha: String): String {
+        val winUrl = "http://$nginxIp/jdk.zip"
+        fun winEntry() = """
+            {
+              "vendor": "test-vendor",
+              "version": "$version",
+              "url": "$winUrl",
+              "sha256": "$jdkSha",
+              "format": "zip",
+              "javaHomeSubpath": "jdk"
+            }
+        """.trimIndent()
+        val dummySha = "b".repeat(64)
+        fun posixEntry() = """
+            {
+              "vendor": "test-vendor",
+              "version": "$version",
+              "url": "http://0.0.0.0/unused.tar.gz",
+              "sha256": "$dummySha",
+              "format": "tar.gz",
+              "javaHomeSubpath": "jdk"
+            }
+        """.trimIndent()
+        return """
+            {
+              "schema": 1,
+              "platforms": {
+                "linux-x64": ${posixEntry()},
+                "linux-arm64": ${posixEntry()},
+                "macos-arm64": ${posixEntry()},
+                "windows-x64": ${winEntry()},
+                "windows-arm64": ${winEntry()}
               }
             }
         """.trimIndent()

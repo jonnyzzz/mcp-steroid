@@ -72,7 +72,7 @@ function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fm
   Write-Log "downloading $kind ($url)..."
   Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing
   $actual = (Get-FileHash -Algorithm SHA256 -Path $tmpZip).Hash.ToLowerInvariant()
-  if ($actual -ne $sha) { Fail "SHA-256 mismatch for $kind: expected $sha, got $actual" }
+  if ($actual -ne $sha) { Fail "SHA-256 mismatch for ${kind}: expected $sha, got $actual" }
   Write-Log "SHA-256 verified: $sha"
 
   New-Item -ItemType Directory -Force -Path $tmpUnpack | Out-Null
