@@ -44,9 +44,31 @@ class InstallerBootstrapTest {
     /** HOME with a space catches quoting bugs in install.sh / the launcher wrapper. */
     private val homeDir = "/home/tester one"
 
+    /**
+     * A POSIX install lane. [installToolsCmd] runs in the container entrypoint to provide the
+     * prerequisites (and `bash`, which the test-helper's `docker exec` transport needs — absent on
+     * Alpine). install.sh itself is always invoked as `sh /gen/install.sh`, so on Alpine it runs
+     * under busybox `ash` against musl — exercising the script's POSIX portability, not bash.
+     */
+    private data class PosixLane(val name: String, val image: String, val installToolsCmd: String)
+
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
-    fun `generated install_sh downloads, verifies, unpacks, links and auto-installs over a mock server`() =
+    fun `generated install_sh end-to-end on ubuntu (glibc)`() = runHappyPathLane(
+        PosixLane("ubuntu", "ubuntu:24.04", "apt-get update -qq && apt-get install -y -qq curl unzip >/dev/null 2>&1"),
+    )
+
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `generated install_sh end-to-end on alpine (musl, busybox)`() = runHappyPathLane(
+        PosixLane("alpine", "alpine:3.21", "apk add --no-cache bash curl unzip tar >/dev/null 2>&1"),
+    )
+
+    /**
+     * Drives the full download → sha256-verify → unpack-verbatim → content-address → launcher →
+     * PATH-symlink → auto-install pipeline over the nginx mock for one POSIX [lane], asserting (a)-(g).
+     */
+    private fun runHappyPathLane(lane: PosixLane) =
         runWithCloseableStack { lifetime ->
             // ── 1. build fixtures into a temp dir ──
             val fixturesDir = createWorkDir("installer-fixtures")
@@ -90,21 +112,20 @@ class InstallerBootstrapTest {
             require(installSh.isFile) { "generator did not produce install.sh at $installSh" }
             makeWorldReadable(genDir)
 
-            // ── 5. start the install container (ubuntu, no JDK, space-in-HOME) ──
+            // ── 5. start the install container (no JDK, space-in-HOME) ──
             val install = startDockerContainerAndDispose(
                 lifetime,
                 StartContainerRequest()
-                    .image(installImage)
-                    .logPrefix("installer-ubuntu")
+                    .image(lane.image)
+                    .logPrefix("installer-${lane.name}")
                     .volumes(ContainerVolume(genDir, "/gen", "ro"))
                     .entryPoint(
                         "sh", "-c",
-                        "apt-get update -qq && apt-get install -y -qq curl unzip >/dev/null 2>&1; " +
-                            "mkdir -p \"$homeDir\"; sleep 3000",
+                        lane.installToolsCmd + "; mkdir -p \"$homeDir\"; sleep 3000",
                     ),
             )
 
-            // Wait until apt-get has installed curl+unzip (entrypoint runs them before `sleep 3000`).
+            // Wait until the entrypoint installed the prerequisites (it runs them before `sleep 3000`).
             awaitToolsInstalled(install)
 
             // ── verify nginx really serves the archives (proves the side-car + URL wiring) ──
@@ -192,7 +213,7 @@ class InstallerBootstrapTest {
                     message = "DEVRIG_NO_AUTO_INSTALL run must log that auto-install was skipped",
                 )
 
-            log("ALL INSTALLER ASSERTIONS PASSED (a)-(g)")
+            log("ALL INSTALLER ASSERTIONS PASSED (a)-(g) on lane '${lane.name}' (${lane.image})")
         }
 
     /**
