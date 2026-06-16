@@ -4227,6 +4227,21 @@ REMAINING (then 3x quorum, iterate until accepted):
   B devrig-coordinates (from release / installDist).
 - D: devrig BinLauncher.kt self-registration + HomePaths.binDir; Makefile wiring; daily action yml.
 
+## Block 1 DONE (2026-06-16): devrig BinLauncher self-registration + HomePaths.binDir
+
+Commits e8869216 (impl) + a177480a (quorum fixes) on installer/version-json-driven. BinLauncher.ensureBinLauncher
+self-heals ~/.mcp-steroid/bin/{devrig | devrig.ps1+devrig.cmd} to devrig's own installDist location + current JDK on
+every `devrig mcp` / `devrig install` startup; byte-identical to install.sh/install.ps1 output; rewrites only on real
+change (CRLF/trailing-NL tolerant); best-effort (never crashes mcp; stderr-only); guarded to fire ONLY from an installed
+location under ~/.mcp-steroid (build-tree runs don't repoint the user's launcher). HomePaths.binDir added + created in
+mkdirsAll; isWindows() promoted private→internal top-level. 13 BinLauncherTest cases incl. a CROSS-MODULE drift guard
+(reads installer-gen templates, asserts renderer parity). Process: design via /workflows fan-out → implement → MCP
+Steroid inspections (0 WARNING+) → 3x adversarial quorum (all GO/GO_WITH_CHANGES, no blockers) → fixes → re-verify.
+Remaining of "D": Makefile wiring (update-config → generateInstaller) + daily installer-jdk-refresh.yml.
+Follow-up (minor): verify on a real bundled JDK that java.home canonicalization never triggers a once-per-launch rewrite.
+
+REMAINING BLOCKS: resolver tools A/B (next — design workflow launched), then Makefile + daily GH action, then docs E1/E2.
+
 ## Requirement (2026-06-16): installer must NOT install packages — DONE (install.sh)
 
 User direction (answering "which lane next"): the install scripts must never install system
