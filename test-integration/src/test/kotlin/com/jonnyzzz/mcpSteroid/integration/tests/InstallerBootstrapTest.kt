@@ -11,9 +11,9 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoMessageInOutput
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.File
@@ -87,7 +87,7 @@ class InstallerBootstrapTest {
                 )
             )
             val installSh = File(genDir, "install.sh")
-            assertTrue(installSh.isFile) { "generator did not produce install.sh at $installSh" }
+            require(installSh.isFile) { "generator did not produce install.sh at $installSh" }
             makeWorldReadable(genDir)
 
             // ── 5. start the install container (ubuntu, no JDK, space-in-HOME) ──
@@ -124,46 +124,39 @@ class InstallerBootstrapTest {
             val runPath = "$homeBin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
             // ── run #1: default (auto-install ON) ──
-            val run1 = runInstall(
+            // (a) install.sh exits 0; (e) AUTO-INSTALL: by default it ran 'devrig install'
+            runInstall(
                 install,
                 env = mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64", "PATH" to runPath),
             )
-            // (a) install.sh exits 0
-            run1.assertExitCode(0) { "install.sh run #1 failed:\n$this" }
-            val run1All = run1.stdout + "\n" + run1.stderr
-
-            // (e) AUTO-INSTALL: by default install.sh ran 'devrig install'
-            assertTrue("DEVRIG_INSTALL_CALLED" in run1All) {
-                "run #1 (default) must auto-run 'devrig install' — DEVRIG_INSTALL_CALLED not found:\n$run1All"
-            }
+                .assertExitCode(0) { "install.sh run #1 failed:\n$this" }
+                .assertOutputContains(
+                    "DEVRIG_INSTALL_CALLED",
+                    message = "run #1 (default) must auto-run 'devrig install'",
+                )
 
             // (a) content-addressed dirs exist
-            val binariesLs = sh(install, "ls -1 \"$homeDir/.mcp-steroid/binaries\"")
-                .assertExitCode(0) { "could not list binaries dir:\n$this" }.stdout
-            assertTrue(binariesLs.lines().any { it == devrigKey }) {
-                "expected devrig content-addressed dir '$devrigKey', got:\n$binariesLs"
-            }
-            assertTrue(binariesLs.lines().any { it == jdkKey }) {
-                "expected jdk content-addressed dir '$jdkKey', got:\n$binariesLs"
-            }
+            sh(install, "ls -1 \"$homeDir/.mcp-steroid/binaries\"")
+                .assertExitCode(0) { "could not list binaries dir:\n$this" }
+                .assertOutputContains(devrigKey, jdkKey, message = "expected content-addressed dirs")
 
             // (b) bundled JDK was really downloaded + unpacked verbatim (javaHomeSubpath=jdk)
             sh(install, "test -x \"$homeDir/.mcp-steroid/binaries/$jdkKey/jdk/bin/java\" && echo JDK_JAVA_OK")
                 .assertExitCode(0) { "bundled JDK bin/java missing — not downloaded/unpacked:\n$this" }
-                .let { assertTrue("JDK_JAVA_OK" in it.stdout) { "JDK bin/java not executable:\n${it.stdout}" } }
+                .assertOutputContains("JDK_JAVA_OK", message = "JDK bin/java not executable")
 
             // (c) bin/devrig wrapper exists and, when run, sets DEVRIG_JAVA_HOME to the bundled jdk
             sh(install, "test -x \"$homeDir/.mcp-steroid/bin/devrig\" && echo WRAPPER_OK")
                 .assertExitCode(0) { "bin/devrig wrapper missing:\n$this" }
-            val mcpRun = sh(install, "\"$homeDir/.mcp-steroid/bin/devrig\" mcp")
-                .assertExitCode(0) { "running the devrig wrapper failed:\n$this" }
-            val mcpAll = mcpRun.stdout + "\n" + mcpRun.stderr
-            assertTrue("DEVRIG_RAN mcp" in mcpAll) { "wrapper did not exec the real devrig:\n$mcpAll" }
             // The wrapper must export DEVRIG_JAVA_HOME pointing at the bundled JDK (the recorder echoes it).
             val expectedJavaHome = "$homeDir/.mcp-steroid/binaries/$jdkKey/jdk"
-            assertTrue("DEVRIG_JAVA_HOME=$expectedJavaHome" in mcpAll) {
-                "wrapper must set DEVRIG_JAVA_HOME to the bundled jdk ($expectedJavaHome):\n$mcpAll"
-            }
+            sh(install, "\"$homeDir/.mcp-steroid/bin/devrig\" mcp")
+                .assertExitCode(0) { "running the devrig wrapper failed:\n$this" }
+                .assertOutputContains("DEVRIG_RAN mcp", message = "wrapper did not exec the real devrig")
+                .assertOutputContains(
+                    "DEVRIG_JAVA_HOME=$expectedJavaHome",
+                    message = "wrapper must set DEVRIG_JAVA_HOME to the bundled jdk ($expectedJavaHome)",
+                )
 
             // (d) PATH symlink: a 'devrig' symlink was created in a writable PATH dir under HOME and resolves
             //     to ~/.mcp-steroid/bin/devrig; 'command -v devrig' finds it. We put $HOME/.local/bin on the
@@ -171,17 +164,18 @@ class InstallerBootstrapTest {
             assertSymlinkCreated(install, homeBin, runPath)
 
             // (g) idempotent: re-running reuses existing dirs ('already installed')
-            val run2 = runInstall(install, env = mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
-            run2.assertExitCode(0) { "idempotent re-run failed:\n$this" }
-            val run2All = run2.stdout + "\n" + run2.stderr
-            assertTrue("already installed: $devrigKey" in run2All && "already installed: $jdkKey" in run2All) {
-                "idempotent re-run must report 'already installed' for both artifacts:\n$run2All"
-            }
+            runInstall(install, env = mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
+                .assertExitCode(0) { "idempotent re-run failed:\n$this" }
+                .assertOutputContains(
+                    "already installed: $devrigKey",
+                    "already installed: $jdkKey",
+                    message = "idempotent re-run must report 'already installed' for both artifacts",
+                )
 
             // ── (f) DEVRIG_NO_AUTO_INSTALL: a fresh HOME with that env must NOT auto-install ──
             val freshHome = "/home/tester two"
             sh(install, "mkdir -p \"$freshHome\"").assertExitCode(0) { "could not create fresh HOME:\n$this" }
-            val run3 = runInstall(
+            runInstall(
                 install,
                 env = mapOf(
                     "HOME" to freshHome,
@@ -190,14 +184,13 @@ class InstallerBootstrapTest {
                     "DEVRIG_NO_AUTO_INSTALL" to "1",
                 ),
             )
-            run3.assertExitCode(0) { "DEVRIG_NO_AUTO_INSTALL run failed:\n$this" }
-            val run3All = run3.stdout + "\n" + run3.stderr
-            assertFalse("DEVRIG_INSTALL_CALLED" in run3All) {
-                "DEVRIG_NO_AUTO_INSTALL must NOT run 'devrig install':\n$run3All"
-            }
-            assertTrue("DEVRIG_NO_AUTO_INSTALL set" in run3All && "skipping" in run3All.lowercase()) {
-                "DEVRIG_NO_AUTO_INSTALL run must log that auto-install was skipped:\n$run3All"
-            }
+                .assertExitCode(0) { "DEVRIG_NO_AUTO_INSTALL run failed:\n$this" }
+                .assertNoMessageInOutput("DEVRIG_INSTALL_CALLED")
+                .assertOutputContains(
+                    "DEVRIG_NO_AUTO_INSTALL set",
+                    "skipping",
+                    message = "DEVRIG_NO_AUTO_INSTALL run must log that auto-install was skipped",
+                )
 
             log("ALL INSTALLER ASSERTIONS PASSED (a)-(g)")
         }
@@ -240,7 +233,7 @@ class InstallerBootstrapTest {
 
     private fun verifyMockServes(install: ContainerDriver, nginxIp: String, path: String) {
         val r = sh(install, "curl -fsSL -o /dev/null http://$nginxIp$path && echo SERVED_$path")
-        check(r.exitCode == 0 && "SERVED_$path" in r.stdout) {
+        require(r.exitCode == 0 && "SERVED_$path" in r.stdout) {
             "nginx side-car does not serve $path (curl from install container):\nstdout=${r.stdout}\nstderr=${r.stderr}"
         }
         log("mock server serves $path")
@@ -260,11 +253,13 @@ class InstallerBootstrapTest {
                 "command -v devrig >/dev/null 2>&1 && echo CMDV_OK",
             env = mapOf("HOME" to homeDir, "PATH" to runPath),
         )
-        val all = r.stdout + "\n" + r.stderr
-        assertTrue(r.exitCode == 0 && "SYMLINK_OK" in all && "CMDV_OK" in all) {
-            "PATH symlink not created in $homeBin / not resolvable via command -v devrig:\n$all"
-        }
-        log("PATH symlink verified: $all")
+            .assertExitCode(0) { "PATH symlink check failed in $homeBin:\n$this" }
+            .assertOutputContains(
+                "SYMLINK_OK",
+                "CMDV_OK",
+                message = "PATH symlink not created in $homeBin / not resolvable via command -v devrig",
+            )
+        log("PATH symlink verified: ${r.stdout}\n${r.stderr}")
     }
 
     private fun log(msg: String) = println("[InstallerBootstrapTest] $msg")
