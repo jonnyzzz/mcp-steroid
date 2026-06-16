@@ -4216,3 +4216,24 @@ REMAINING (then 3x quorum, iterate until accepted):
 - Resolver tools: A jdk-coordinates (download→GPG/sha256 verify→unpack→assert bin/java for all 5 OS),
   B devrig-coordinates (from release / installDist).
 - D: devrig BinLauncher.kt self-registration + HomePaths.binDir; Makefile wiring; daily action yml.
+
+## DX/docs (2026-06-16): document the one-command bootstrap + test the literal piped command
+
+The new generated scripts deliver a zero-prereq one-liner, but README + website still only document
+the marketplace plugin, `deployNpx` dev build, and `devrig install <agent>` (registration). Neither
+documents the curl|sh / irm|iex bootstrap, and the JDK-25-prereq caveat in both still applies to the
+old paths only — the curl path bundles a JDK.
+- E1 (docs): add a "One-command install (recommended)" block to README §Install and
+  website/content/docs/devrig.md §Install:
+    POSIX:    curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh
+    Windows:  irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex
+  Note (spec §11 risk 5): "use the curl one-liner, don't cache install.sh" (vendor 404 on stale local
+  copies). v8 install.sh auto-runs `devrig install` at the end (DEVRIG_NO_AUTO_INSTALL to opt out), so
+  the bare one-liner both installs AND registers — `devrig install <agent>` stays documented as the
+  manual/re-registration step.
+- E2 (test): the existing test runs `sh /gen/install.sh` (script as a mounted local file). Add a lane
+  that exercises the *documented* invocation end-to-end: serve install.sh from the nginx side-car too
+  and run `curl -fsSL http://<nginxIp>/install.sh | sh`. This proves the piped path: HTTP fetch of the
+  script itself + the `main()`/trailing-invocation truncation guard (a partial `curl|sh` body must not
+  execute). Same (a)-(g) assertions. (User flagged 2026-06-16: the documented command itself must be
+  tested; OK as a later task.)
