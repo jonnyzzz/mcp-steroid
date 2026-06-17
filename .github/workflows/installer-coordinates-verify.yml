@@ -1,0 +1,57 @@
+# Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Verifies the pinned installer coordinates against reality: downloads every JDK in
+# website/installer/jdk-coordinates.json and HEADs the devrig package URL, asserting the URLs still
+# resolve and the bytes still match the committed sha256 (resolveJdkCoordinates fails the build on a
+# sha mismatch). The pinned JDK 25 versions are intentionally HARDCODED — releases are stable — so this
+# is an integrity guard, NOT an auto-bumper: on a failure a maintainer updates the coordinates by hand.
+#
+# Future enhancement (intentionally not built yet): auto-detect a newer BUILD of the same JDK 25 major
+# via the vendor metadata APIs (Corretto GitHub releases / Azul metadata) and open a refresh PR.
+name: installer-coordinates-verify
+
+on:
+  schedule:
+    # Weekly — the pinned vendor artifacts are immutable, so a daily re-download would just re-fetch
+    # ~1 GB of identical bytes. Bump to a daily cron if drift detection needs to be tighter.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: "25"
+          distribution: temurin
+
+      - name: Verify pinned JDK coordinates (download + sha256 cross-check, fails on drift)
+        run: ./gradlew :installer-gen:resolveJdkCoordinates --no-daemon
+
+      - name: Verify the devrig package URL is reachable
+        run: |
+          url=$(jq -r '.devrig.url' website/installer/devrig-coordinates.json)
+          case "$url" in
+            *PLACEHOLDER*) echo "devrig-coordinates.json is still the release-time placeholder — skipping URL check"; exit 0 ;;
+          esac
+          echo "HEAD $url"
+          curl -fsSLI -o /dev/null "$url"
