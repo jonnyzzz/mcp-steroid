@@ -229,11 +229,13 @@ your MCP server:
 - `devrig backend provision <id>` — install the MCP Steroid plugin into it.
 
 The backend ids come from `devrig backend --json` (the
-`backends[].backend_name` field). Launcher path: on **macOS/Linux** run
-`devrig` (or `<install>/bin/devrig`); on **Windows** run `devrig.bat` via
-`cmd.exe /c devrig.bat backend ...`. devrig needs **Java 25** — if
-`java` / `JAVA_HOME` is not 25, set `DEVRIG_JAVA_HOME` to a JDK/JRE 25
-home for the devrig process.
+`backends[].backend_name` field). Launcher path: use the installed
+launcher under `~/.mcp-steroid/bin` (also linked onto `PATH` as `devrig`).
+On **macOS/Linux** run `~/.mcp-steroid/bin/devrig`; on **Windows** run it
+via `cmd.exe`, quoting the path —
+`cmd.exe /c "%USERPROFILE%\.mcp-steroid\bin\devrig.cmd" backend ...`. The
+launcher pins the bundled **Java 25** itself (it exports `DEVRIG_JAVA_HOME`),
+so you do **not** need to set `JAVA_HOME` or worry which `java` is on `PATH`.
 
 See also: `mcp-steroid://open-project/managing-backends`.
 

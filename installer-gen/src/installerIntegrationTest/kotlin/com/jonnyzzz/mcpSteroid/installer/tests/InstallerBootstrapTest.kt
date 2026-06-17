@@ -159,7 +159,9 @@ class InstallerBootstrapTest {
             val runPath = "$homeBin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
             // ── run #1: default (auto-install ON) ──
-            // (a) install.sh exits 0; (e) AUTO-INSTALL: by default it ran 'devrig install'
+            // (a) install.sh exits 0; (e) AUTO-INSTALL: by default it ran 'devrig install'.
+            //     This FIRST run is a clean HOME, so it must actually DOWNLOAD both artifacts — we assert
+            //     the "downloading …" log lines so the incremental re-run check below has a contrast.
             runInstall(
                 install,
                 env = mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64", "PATH" to runPath),
@@ -168,6 +170,11 @@ class InstallerBootstrapTest {
                 .assertOutputContains(
                     "DEVRIG_INSTALL_CALLED",
                     message = "run #1 (default) must auto-run 'devrig install'",
+                )
+                .assertOutputContains(
+                    "downloading devrig",
+                    "downloading jdk",
+                    message = "run #1 (clean HOME) must download both artifacts fresh",
                 )
 
             // (a) content-addressed dirs exist
@@ -198,14 +205,21 @@ class InstallerBootstrapTest {
             //     install-time PATH (above), so install.sh links there deterministically.
             assertSymlinkCreated(install, homeBin, runPath)
 
-            // (g) idempotent: re-running reuses existing dirs ('already installed')
-            runInstall(install, env = mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
+            // (g) INCREMENTAL idempotent re-run: the content-addressed dirs already exist, so install.sh
+            //     must REUSE them and DOWNLOAD NOTHING. The existence check sits BEFORE the download in
+            //     install_artifact(), so "already installed: <key>" proves the fetch was skipped — we ALSO
+            //     assert the absence of any "downloading …" line so a regression that re-downloads the
+            //     (unchanged) JDK fails loudly. This is the "update only re-fetches changed files" guarantee
+            //     that the update flow (curl … | sh of the published install.sh) relies on.
+            val reRun = runInstall(install, env = mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
                 .assertExitCode(0) { "idempotent re-run failed:\n$this" }
                 .assertOutputContains(
                     "already installed: $devrigKey",
                     "already installed: $jdkKey",
                     message = "idempotent re-run must report 'already installed' for both artifacts",
                 )
+            reRun.assertNoMessageInOutput("downloading jdk")
+            reRun.assertNoMessageInOutput("downloading devrig")
 
             // ── (f) DEVRIG_NO_AUTO_INSTALL: a fresh HOME with that env must NOT auto-install ──
             val freshHome = "/home/tester two"

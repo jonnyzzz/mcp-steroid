@@ -5,14 +5,19 @@ import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliResult
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliRunner
+import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class InstallCommandTest {
     private val launcher = Path.of("/opt/devrig/bin/devrig")
@@ -51,6 +56,74 @@ class InstallCommandTest {
             listOf("/d", "/c", "set \"JAVA_HOME=/opt/jdk-21\" && call \"/opt/devrig/bin/devrig.bat\" mcp"),
             command.args,
         )
+    }
+
+    @Test
+    fun `resolveSelfMcpCommand prefers the bin wrapper on posix and records no JAVA_HOME`(@TempDir tmp: Path) {
+        val home = HomePaths(tmp)
+        Files.createDirectories(home.binDir)
+        Files.writeString(home.binDir.resolve("devrig"), "#!/bin/sh\n")
+
+        val reg = resolveSelfMcpCommand(home, windows = false)
+        assertNull(reg.javaHomeNote, "wrapper sets DEVRIG_JAVA_HOME itself — none recorded")
+        assertEquals(home.binDir.resolve("devrig").toString(), reg.mcpCommand.command)
+        assertEquals(listOf("mcp"), reg.mcpCommand.args)
+    }
+
+    @Test
+    fun `resolveSelfMcpCommand prefers the bin wrapper on windows via cmd exe and records no JAVA_HOME`(@TempDir tmp: Path) {
+        val home = HomePaths(tmp)
+        Files.createDirectories(home.binDir)
+        Files.writeString(home.binDir.resolve("devrig.cmd"), "@echo off\r\n")
+
+        val reg = resolveSelfMcpCommand(home, windows = true)
+        assertNull(reg.javaHomeNote)
+        assertEquals("cmd.exe", reg.mcpCommand.command)
+        assertEquals(listOf("/d", "/c"), reg.mcpCommand.args.subList(0, 2))
+        val line = reg.mcpCommand.args[2]
+        assertTrue(line.startsWith("\"") && line.contains("devrig.cmd\""), line)
+        assertTrue(line.endsWith(" mcp"), line)
+        assertFalse(line.contains("JAVA_HOME"), line)
+    }
+
+    @Test
+    fun `resolveSelfMcpCommand falls back to the install-dist launcher and JAVA_HOME when no wrapper (posix)`(@TempDir tmp: Path) {
+        val home = HomePaths(tmp) // no bin/devrig written → wrapper absent → fallback branch
+        val reg = resolveSelfMcpCommand(home, windows = false, installDistLauncher = { Path.of("/opt/devrig/bin/devrig") })
+        assertNotNull(reg.javaHomeNote, "fallback must record the explicit JAVA_HOME it bakes into the command")
+        assertEquals("/usr/bin/env", reg.mcpCommand.command)
+        assertEquals(
+            listOf("JAVA_HOME=${reg.javaHomeNote}", "/opt/devrig/bin/devrig", "mcp"),
+            reg.mcpCommand.args,
+        )
+    }
+
+    @Test
+    fun `resolveSelfMcpCommand falls back to cmd exe and JAVA_HOME when no wrapper (windows)`(@TempDir tmp: Path) {
+        val home = HomePaths(tmp)
+        val reg = resolveSelfMcpCommand(home, windows = true, installDistLauncher = { Path.of("/opt/devrig/bin/devrig.bat") })
+        assertNotNull(reg.javaHomeNote)
+        assertEquals("cmd.exe", reg.mcpCommand.command)
+        assertTrue(reg.mcpCommand.args.last().contains("call \"/opt/devrig/bin/devrig.bat\" mcp"), reg.mcpCommand.args.toString())
+        assertTrue(reg.mcpCommand.args.last().contains("JAVA_HOME="), reg.mcpCommand.args.toString())
+    }
+
+    @Test
+    fun `install in wrapper mode records no JAVA_HOME and narrates that the launcher sets it`() {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val exit = runInstallCommand(
+            command = DevrigCommand.DevrigCommandInstall(AiAgentCli.CLAUDE),
+            mcpCommand = StdioMcpCommand("/home/u/.mcp-steroid/bin/devrig", listOf("mcp")),
+            javaHomeNote = null, // wrapper mode: the launcher exports DEVRIG_JAVA_HOME itself
+            out = PrintStream(stdout, true, Charsets.UTF_8),
+            err = PrintStream(stderr, true, Charsets.UTF_8),
+            runner = RecordingRunner(),
+        )
+        assertEquals(0, exit)
+        val out = stdout.toString(Charsets.UTF_8)
+        assertContains(out, "JAVA_HOME is set by the launcher")
+        assertFalse(out.contains("JAVA_HOME recorded for that launch"), out)
     }
 
     @Test
@@ -205,12 +278,14 @@ class InstallCommandTest {
     }
 
     private fun runInstall(agent: AiAgentCli, runner: RecordingRunner): InstallRunResult {
+        // Drives the install-dist fallback registration (install-dist launcher + explicit JAVA_HOME) —
+        // the path used when the ~/.mcp-steroid/bin wrapper is absent (dev / integration test build trees).
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
         val exitCode = runInstallCommand(
             command = DevrigCommand.DevrigCommandInstall(agent),
-            launcher = launcher,
-            javaHome = javaHome,
+            mcpCommand = selfMcpCommand(launcher, javaHome, windows = false),
+            javaHomeNote = javaHome,
             out = PrintStream(stdout, true, Charsets.UTF_8),
             err = PrintStream(stderr, true, Charsets.UTF_8),
             runner = runner,

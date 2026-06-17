@@ -61,7 +61,8 @@ suspend fun checkForUpdates(onNotice: (String) -> Unit = {}) {
     val message = buildString {
         appendLine()
         appendLine("A new version of devrig is available: $newVersion (current: $currentVersion)")
-        appendLine("Download update from: https://mcp-steroid.jonnyzzz.com/releases/")
+        appendLine("Run 'devrig upgrade' to update — it re-runs the published install script, which only")
+        appendLine("downloads the artifacts that changed (an unchanged JDK is reused).")
         appendLine()
     }
     System.err.println(message)

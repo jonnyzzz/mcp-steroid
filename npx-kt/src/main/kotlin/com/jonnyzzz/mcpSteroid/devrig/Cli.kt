@@ -76,6 +76,11 @@ sealed interface DevrigCommand {
         override val json: Boolean = false,
     ) : DevrigCommand
 
+    data class DevrigCommandUpgrade(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
     data class DevrigCommandParseError(
         val text: String,
         override val debug: Boolean = false,
@@ -169,6 +174,7 @@ private class DevrigRootCommand(
             backend,
             ProjectCommand(selected, this),
             InstallCommand(selected, this),
+            UpgradeCommand(selected, this),
             HelpCommand(selected, this),
             VersionCommand(selected, this),
         )
@@ -217,6 +223,16 @@ private class InstallCommand(
         val target = AiAgentCli.parse(agent)
             ?: throw UsageError("agent must be one of: claude, codex, gemini")
         select(DevrigCommand.DevrigCommandInstall(target, debug = options.debug, json = options.json))
+    }
+}
+
+private class UpgradeCommand(
+    selected: SelectedDevrigCommand,
+    parent: DevrigCliktCommand,
+) : DevrigCliktCommand("upgrade", selected, parent) {
+    override fun run() {
+        val options = options()
+        select(DevrigCommand.DevrigCommandUpgrade(debug = options.debug, json = options.json))
     }
 }
 
@@ -327,6 +343,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandBackendProvision -> runBackendProvisionCommand(command)
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
             is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
+            is DevrigCommand.DevrigCommandUpgrade -> runUpgradeCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

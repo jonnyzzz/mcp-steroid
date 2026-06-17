@@ -29,6 +29,11 @@ fun printHelp(out: PrintStream) : Int {
                                          mcp-steroid stdio MCP server in the
                                          selected coding agent.
 
+          devrig upgrade                 update devrig by re-running the published
+                                         install script; it is incremental, so only
+                                         changed artifacts are downloaded (an unchanged
+                                         JDK is reused).
+
           devrig backend download [<id>] [--version <v>] [--json]
                                          no id → list IDEs available for download.
                                          With id, download and install a managed

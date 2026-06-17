@@ -4392,6 +4392,33 @@ tests in :installer-gen split into test + installerIntegrationTest), plus inline
 at the flagged spots (§1 scope, §2 URL source, §3 jdk-coordinates header, §7 daily-job/resolveJdkCoordinates,
 §8 tests, §10 de-binary-fication). No stale resolveJdkCoordinates/generateJdk25Coordinates refs remain in code/CI.
 
+## devrig launcher invocation consolidation + `devrig upgrade` (2026-06-17, in #113)
+
+User asks (4 of 5 done; #2 vendor-sha + #3 website-merge/rename + #1 fuzz-test conversion still queued):
+- #4 DONE: single source of truth `DevrigUserLauncher` (npx-kt) for invoking the ~/.mcp-steroid/bin/devrig
+  family (POSIX execs it; Windows `cmd.exe /d /c "…\bin\devrig.cmd"` — path QUOTED for spaces). Agent
+  registration (resolveSelfMcpCommand) prefers the stable wrapper (NO JAVA_HOME — the wrapper sets
+  DEVRIG_JAVA_HOME), falls back to the install-dist launcher + JAVA_HOME only when the wrapper is absent
+  (build-tree/dev). Consolidated the managing-backends prompt + AGENT-STEROID-GUIDE to this form.
+- #5 DONE: `devrig upgrade` fetches + RUNS the published install script (POSIX downloads to a temp file then
+  `&&`-chains `sh` so a failed curl PROPAGATES — not the failure-swallowing `curl|sh` pipe; Windows
+  `irm …/install.ps1 | iex` — irm returns the BODY, iwr would pipe an object and never run). The installer is
+  content-addressed/incremental: install_artifact() checks the dir BEFORE downloading → "already installed",
+  so an unchanged JDK/devrig is reused, never re-downloaded. checkForUpdates points at `devrig upgrade`;
+  HelpCommand lists it; DevrigBeacon mode "upgrade". InstallerBootstrapTest now asserts run#1 logs
+  "downloading devrig/jdk" and the idempotent re-run asserts "already installed" + NO "downloading" line.
+  installer-v8-design §0.6 + preamble/§6/§11 updated (only SIGNED-manifest self-update stays out of scope).
+- #1 applied to all NEW tests (declared per-case methods, no parameterized); DevrigCommandFuzzTest conversion
+  still pending.
+- 2 quorums (wf_a59f440e launcher GO_WITH_CHANGES; wf_10b19695 upgrade — caught a Windows iwr|iex BLOCKER +
+  POSIX silent-fetch-failure MAJOR, both fixed). All npx-kt + prompt + Docker tests green; 0 WARNING+ inspections.
+
+REMAINING (next turns): #2 — drop hardcoded shas, fetch vendor-published sha (Corretto latest_sha256 / Azul
+metadata sha256_hash / MS .sha256sum.txt), verify download correctness, replace circular JdkCoordinatesMetadataTest
+with real binary-correctness tests. #3 — move website release-detection + plugin.xml→updatePlugins.xml + version.json
+generation into the module (Kotlin), delete Make/Python, RENAME :installer-gen appropriately (generates more than
+installers). #1 — convert DevrigCommandFuzzTest to declared methods.
+
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 
 E2 (commit on installer): InstallerBootstrapTest case runs the EXACT `curl -fsSL <sidecar>/install.sh | sh`

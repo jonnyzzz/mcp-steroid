@@ -22,14 +22,42 @@ fun DevrigServices.runInstallCommand(
     // Self-heal the user-facing ~/.mcp-steroid/bin launcher before we register devrig with the agent,
     // so the command we record and the launcher on PATH both point at devrig's current location.
     ensureBinLauncher(homePaths)
+    val registration = resolveSelfMcpCommand(homePaths)
     return runInstallCommand(
         command = command,
-        launcher = resolveDevrigLauncher(),
-        javaHome = Path.of(System.getProperty("java.home")),
+        mcpCommand = registration.mcpCommand,
+        javaHomeNote = registration.javaHomeNote,
         out = mcpStdout,
         err = System.err,
         runner = runner,
     )
+}
+
+/** The command an agent runs to start devrig as its MCP server, plus the JAVA_HOME to narrate (if any). */
+internal data class SelfMcpRegistration(val mcpCommand: StdioMcpCommand, val javaHomeNote: Path?)
+
+/**
+ * Choose how the agent will launch devrig. Prefers the STABLE user wrapper
+ * `~/.mcp-steroid/bin/devrig` ([DevrigUserLauncher]) — it sets `DEVRIG_JAVA_HOME` to the bundled JDK
+ * itself, so no JAVA_HOME is recorded and an upgrade that repoints the wrapper needs no re-registration.
+ * Falls back to the content-addressed install-dist launcher + an explicit JAVA_HOME only when the
+ * wrapper is absent — i.e. devrig running from a build tree in dev / integration tests, where
+ * [ensureBinLauncher]'s guard intentionally does not write the wrapper.
+ */
+internal fun resolveSelfMcpCommand(
+    home: HomePaths,
+    windows: Boolean = isWindows(),
+    installDistLauncher: () -> Path = ::resolveDevrigLauncher,
+): SelfMcpRegistration {
+    val wrapper = DevrigUserLauncher.path(home, windows)
+    // Correctness depends on ensureBinLauncher(home) having run earlier in THIS process (the public
+    // runInstallCommand does so immediately before calling us): that self-heals the wrapper's content,
+    // so a present file here is guaranteed to be our launcher, not a stale/foreign one.
+    if (wrapper.isRegularFile()) {
+        return SelfMcpRegistration(DevrigUserLauncher.invocation(home, listOf("mcp"), windows), javaHomeNote = null)
+    }
+    val javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize()
+    return SelfMcpRegistration(selfMcpCommand(installDistLauncher(), javaHome, windows), javaHomeNote = javaHome)
 }
 
 /**
@@ -49,14 +77,13 @@ fun DevrigServices.runInstallCommand(
  */
 fun runInstallCommand(
     command: DevrigCommand.DevrigCommandInstall,
-    launcher: Path,
-    javaHome: Path,
+    mcpCommand: StdioMcpCommand,
+    javaHomeNote: Path?,
     out: PrintStream,
     err: PrintStream,
     runner: AiAgentCliRunner,
 ): Int {
     val agent = command.agent
-    val mcpCommand = selfMcpCommand(launcher, javaHome)
     val renderedCommand = "${mcpCommand.command} ${mcpCommand.args.joinToString(" ")}"
 
     out.println("Installing devrig as the '$DEVRIG_MCP_SERVER_NAME' MCP server for ${agent.displayName}.")
@@ -68,7 +95,11 @@ fun runInstallCommand(
         "'$DEVRIG_MCP_SERVER_NAME' registration (user scope).")
     out.println("  - ${agent.displayName} will launch this command to start it:")
     out.println("      $renderedCommand")
-    out.println("  - JAVA_HOME recorded for that launch: $javaHome")
+    if (javaHomeNote != null) {
+        out.println("  - JAVA_HOME recorded for that launch: $javaHomeNote")
+    } else {
+        out.println("  - JAVA_HOME is set by the launcher (bundled JDK) — none recorded here.")
+    }
     out.println()
     out.println("Re-running install is safe — existing devrig entries are replaced.")
     out.println()

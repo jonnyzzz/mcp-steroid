@@ -30,16 +30,18 @@ server, invoked with a `backend` subcommand:
 The `<id>` values come from `devrig backend --json` (the
 `backends[].backend_name` field — see Step 1).
 
-**Launcher path.** On **macOS / Linux** run `devrig` (or, if it is not on
-`PATH`, `<install>/bin/devrig`). On **Windows** the launcher is
-`devrig.bat`; run it through `cmd.exe` — e.g.
-`cmd.exe /c devrig.bat backend --json` or
-`cmd.exe /c devrig.bat backend download idea-ultimate --json`.
+**Launcher path.** Use the installed launcher under `~/.mcp-steroid/bin`
+(also linked onto `PATH` as `devrig`). On **macOS / Linux** run
+`~/.mcp-steroid/bin/devrig` — e.g. `~/.mcp-steroid/bin/devrig backend --json`.
+On **Windows** the launcher is `~/.mcp-steroid/bin/devrig.cmd`; run it
+through `cmd.exe`, quoting the path (a user profile may contain a space) — e.g.
+`cmd.exe /c "%USERPROFILE%\.mcp-steroid\bin\devrig.cmd" backend --json` or
+`cmd.exe /c "%USERPROFILE%\.mcp-steroid\bin\devrig.cmd" backend download idea-ultimate --json`.
 
-**Java 25 is required.** devrig launches on Java 25. If the `java` on
-`PATH` or `JAVA_HOME` points at an older JDK, set `DEVRIG_JAVA_HOME` to a
-JDK/JRE 25 home for the devrig process (it takes precedence over
-`JAVA_HOME` for devrig) before invoking any `devrig backend` command.
+**No JAVA_HOME needed.** This launcher pins the bundled Java 25 itself
+(it exports `DEVRIG_JAVA_HOME` for the devrig process), so you do **not**
+need to set `JAVA_HOME` or care which `java` is on `PATH` — just invoke
+the launcher above.
 
 ## Step 1 — See what IDEs are available
 

@@ -4,9 +4,11 @@ Author: Eugene Petrenko · Status: implemented (PR #113) — see §0 for the
 as-built deviations from the original plan below.
 
 The `~/.mcp-steroid/` install-root layout and the wrapper/launcher mechanics
-are reused from the prior `docs/devrig-deployment-spec.md`. **`devrig upgrade`
-and any release signing are OUT OF SCOPE for this spec** — it covers install
-plus the generated install scripts only.
+are reused from the prior `docs/devrig-deployment-spec.md`. **SIGNED-manifest
+self-update and any release signing are OUT OF SCOPE for this spec.** Note (§0.6):
+`devrig upgrade` itself now SHIPS as the unsigned, re-run-the-installer update path
+(it just re-runs the incremental install script); only the *signed-manifest* form
+stays deferred.
 
 ---
 
@@ -54,6 +56,22 @@ this section, this section wins.**
    `onlyIf`-guarded, appended to `ciIntegrationTestTaskPaths`). The Docker tests
    consume the GENERATED coords + `:jdk-downloader`'s real downloads + `:npx-kt`'s
    devrig zip via `test.installer.*` system properties.
+
+6. **Update = re-run the install script; it is INCREMENTAL (`devrig upgrade` now
+   exists).** `devrig upgrade` fetches and runs the PUBLISHED install script
+   (`curl -fsSL …/install.sh | sh`; Windows `Invoke-WebRequest …/install.ps1 | iex`)
+   — the same self-contained installer the website serves. Because the script is
+   content-addressed (`<artifact>-<os>-<cpu>-<version>-<sha12>`), `install_artifact()`
+   checks the target dir BEFORE downloading and logs `already installed: <key>`, so an
+   unchanged JDK / devrig is **reused, never re-downloaded** — an upgrade fetches only
+   the artifacts that actually changed, then repoints `~/.mcp-steroid/bin`. The update
+   notice (`checkForUpdates`) points the user at `devrig upgrade`. The incremental
+   guarantee is regression-tested in `InstallerBootstrapTest` (run #1 logs
+   `downloading …`; the idempotent re-run logs `already installed: …` and asserts NO
+   `downloading …` line). This supersedes the "devrig upgrade is out of scope" notes in
+   the preamble, §1, §2, §6, and §11 for the *fetch-and-run-installer* update path; a
+   SIGNED-manifest self-update remains out of scope (integrity is still per-artifact
+   sha256 baked into the script + TLS to the website for the script body itself).
 
 ---
 
@@ -129,11 +147,12 @@ Rationale:
 - devrig does not re-resolve or download at runtime — the install script owns
   downloads; the `bin/` launcher just sets `JAVA_HOME` to the already-unpacked
   JDK. No runtime consumer needs an installer block.
-- `devrig upgrade` — the only feature that would read a published installer
-  manifest — is out of scope. A published block would be equally stale unless
-  the script read it live (which would defeat the baked-in design), so it adds
-  no protection. Mitigations live in the pipeline (daily byte-verify), not in a
-  published manifest.
+- `devrig upgrade` (which ships — §0.6) does NOT read a published manifest either:
+  it just re-runs the published install script, which has every URL+sha baked in.
+  A SIGNED-manifest self-update is the only deferred form; a plain published block
+  would be equally stale unless the script read it live (defeating the baked-in
+  design), so it adds no protection. Mitigations live in the pipeline (byte-verify),
+  not in a published manifest.
 
 **The URL source is the coordinate files** — as built (§0.1) the committed
 `jdk-downloader/jdk25-pinned.json` (JDKs) + `website/installer/devrig-coordinates.json`
@@ -613,8 +632,14 @@ are gitignored.
 Install-time trust = TLS to the website (`install.sh` / `install.ps1`) + TLS to
 each JDK vendor. `version.json` is **unsigned**. Integrity is provided by full
 sha256 verification of every downloaded artifact against the value baked into the
-script. A signed manifest is deferred together with `devrig upgrade` (out of
-scope).
+script. A *signed manifest / signed self-update* is deferred (out of scope).
+
+`devrig upgrade` (§0.6) adds one in-product trust surface: devrig itself runs the
+network-fetched install script (`curl -fsSL …/install.sh | sh` via a temp file;
+Windows `irm …/install.ps1 | iex`). TLS to the website is the integrity boundary on
+the **script body** (same as the human one-liner); once running, the script's baked-in
+per-artifact sha256 verification governs every binary it then downloads. No additional
+signature is checked on the script — identical to the documented manual bootstrap.
 
 ### Risks / open questions
 
