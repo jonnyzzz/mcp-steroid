@@ -4329,9 +4329,27 @@ User redirect: jdk-coordinates.json + devrig-coordinates.json should ALWAYS be G
   :installer-gen ad-hoc, not the incremental jdk-downloader way). Same generator for website AND tests.
 - devrig coords: website = LATEST published release artifact; tests = local :npx-kt distZip (via config).
 - NEW test: validate all metadata in the generated jdk-coordinates is correct.
-Design workflow wltmcxjba running to map jdk-downloader role/consumers + reuse the installer-gen resolver +
-the latest-release path. THEN implement with the per-block discipline (inspect + 3x quorum). Supersedes the
-committed-jdk-coordinates approach from Block 2/3 (which used a committed source file).
+Design workflow wltmcxjba mapped it (blueprint: jdk-downloader owns the JDK-25 download+generate ALONGSIDE
+the legacy Corretto-21 path; reuse installer-gen ResolverMainKt via JavaExec; committed jdk25-pinned.json is
+the source of truth; coords become build outputs). Supersedes the Block 2/3 committed-jdk-coordinates approach.
+
+PART 1 DONE (commit 5f2701b4) — VERIFIED LOSSLESS:
+- jdk-downloader/jdk25-pinned.json (committed source: vendor/version/url/sha256/format ×5; no javaHomeSubpath).
+- jdk-downloader: downloadJdk25_<key> ×5 + downloadAllJdk25 + generateJdk25Coordinates (JavaExec reusing
+  installer-gen ResolverMainKt; incremental) + jdkCoordinatesElements + jdk25DownloadElements configs.
+- JdkEntry.javaHomeSubpath optional (inferred). Generated coords == old committed (jq -S diff clean).
+
+REMAINING (Block 4 parts 2+):
+- installer-gen: generateInstaller consumes :jdk-downloader:jdkCoordinatesElements (drop its own downloadJdk_*,
+  downloadAllJdks, resolveJdkCoordinates, jdkPlatformUrls parse, jdkDownloadElements).
+- test-integration: repoint installerJdkDownloads → :jdk-downloader:jdk25DownloadElements; add a jdk-coordinates
+  resolvable config + test.integration.jdk.coordinates.json sysprop; add JdkCoordinatesMetadataTest (validate
+  generated metadata, all 5 platforms).
+- gitignore + git rm --cached website/installer/jdk-coordinates.json + devrig-coordinates.json.
+- daily installer-coordinates-verify.yml → :jdk-downloader:generateJdk25Coordinates.
+- website branch (deferred): Makefile repoint to the generated artifact + devrig latest-release (--release-tag)
+  mode on ResolverMain.
+- THEN MCP Steroid inspection + 3x quorum for Block 4.
 
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 
