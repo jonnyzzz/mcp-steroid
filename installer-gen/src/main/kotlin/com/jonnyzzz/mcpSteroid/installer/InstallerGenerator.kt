@@ -32,7 +32,9 @@ data class JdkEntry(
     val url: String,
     val sha256: String,
     val format: String,
-    val javaHomeSubpath: String,
+    // Optional in the committed PINNED-INPUT (jdk-downloader/jdk25-pinned.json) — the resolver INFERS it
+    // from the real archive and always sets it in the generated jdk-coordinates.json.
+    val javaHomeSubpath: String = "",
 )
 
 @Serializable
