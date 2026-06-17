@@ -4320,6 +4320,19 @@ BLOCK 3 COMPLETE — gates passed (commit 35601b54 = quorum fixes):
   verify action uses ranged GET (not HEAD) + timeout + concurrency.
 - MCP Steroid inspection on InstallerGenerator.kt = 0 WARNING+. installer-gen 7 + InstallerBootstrapTest 4 green.
 
+## Block 4 — coordinates must be GENERATED, not committed (2026-06-17, in #113)
+
+User redirect: jdk-coordinates.json + devrig-coordinates.json should ALWAYS be GENERATED (not committed).
+- JDK coords: :jdk-downloader downloads ALL 5 JDK 25 (Corretto x4 + Azul win-arm64), infers paths +
+  computes sha, GENERATES jdk-coordinates.json — Gradle-incremental + cached (download all, fetch all,
+  infer all paths). User notes this is NOT yet implemented (my Block-2 download/resolve lives in
+  :installer-gen ad-hoc, not the incremental jdk-downloader way). Same generator for website AND tests.
+- devrig coords: website = LATEST published release artifact; tests = local :npx-kt distZip (via config).
+- NEW test: validate all metadata in the generated jdk-coordinates is correct.
+Design workflow wltmcxjba running to map jdk-downloader role/consumers + reuse the installer-gen resolver +
+the latest-release path. THEN implement with the per-block discipline (inspect + 3x quorum). Supersedes the
+committed-jdk-coordinates approach from Block 2/3 (which used a committed source file).
+
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 
 E2 (commit on installer): InstallerBootstrapTest case runs the EXACT `curl -fsSL <sidecar>/install.sh | sh`
