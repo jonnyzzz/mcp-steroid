@@ -19,7 +19,9 @@ import kotlin.io.path.writeText
  *   jdk    --source <jdk-coordinates.json> --download-dir <dir> --out <out.json> [--url-base <sidecar>]
  *   devrig --dist-zip <devrig.zip> --url <public-url> --out <out.json>
  */
-private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
+// encodeDefaults keeps schema/format/size in the emitted JSON (they equal their model defaults) so the
+// regenerated coordinate files stay stable + readable instead of silently dropping those fields.
+private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
 
 fun main(argv: Array<String>) {
     when (argv.firstOrNull()) {

@@ -138,3 +138,36 @@ val jdkDownloadElements by configurations.creating {
 artifacts {
     add(jdkDownloadElements.name, jdkDownloadDir) { builtBy(downloadAllJdks) }
 }
+
+// ── Resolver B: devrig-coordinates from the built :npx-kt devrig package zip (release-time) ──
+// Task-scoped coupling only: this resolvable config is resolved ONLY by resolveDevrigCoordinates, so
+// generateInstaller (the pure data-merge) stays independent of the devrig/plugin build.
+val devrigPackage by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "devrig-package")) }
+}
+
+dependencies {
+    devrigPackage(project(":npx-kt"))
+}
+
+// Manual / release entrypoint (the release task/CI invokes this to refresh devrig-coordinates.json from
+// the published artifact). Records the public release URL; sha256 + size are computed from the zip bytes.
+val resolveDevrigCoordinates by tasks.registering(JavaExec::class) {
+    group = "installer"
+    description = "Compute devrig-coordinates.json (sha256 + size) from the built :npx-kt devrig package zip."
+    dependsOn(devrigPackage)
+    mainClass.set("com.jonnyzzz.mcpSteroid.installer.resolver.ResolverMainKt")
+    classpath = sourceSets["main"].runtimeClasspath
+
+    val out = (project.findProperty("out") as String?)
+        ?.let { rootProject.file(it).absolutePath }
+        ?: layout.buildDirectory.file("installer-resolved/devrig-coordinates.json").get().asFile.absolutePath
+    val version = project.version.toString()
+    val url = (project.findProperty("devrigUrl") as String?)
+        ?: "https://github.com/jonnyzzz/mcp-steroid/releases/download/v$version/devrig-$version.zip"
+    doFirst {
+        args("devrig", "--dist-zip", devrigPackage.singleFile.absolutePath, "--url", url, "--out", out)
+    }
+}
