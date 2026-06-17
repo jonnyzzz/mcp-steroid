@@ -14,9 +14,11 @@
 
 # Verifies the pinned installer coordinates against reality: downloads every JDK in
 # jdk-downloader/jdk25-pinned.json (via :jdk-downloader) and HEADs the devrig package URL, asserting the
-# URLs still resolve and the bytes still match the pinned sha256 (generateJdkCoordinates fails the build
-# on a sha mismatch). The pinned JDK 25 versions are intentionally HARDCODED — releases are stable — so
-# this is an integrity guard, NOT an auto-bumper: on a failure a maintainer updates jdk25-pinned.json by hand.
+# URLs still resolve and each download's bytes match the sha256 FETCHED FROM THE VENDOR (per the entry's
+# sha256Url — no hardcoded sha; generateJdkCoordinates fails the build on a mismatch). A mismatch means a
+# corrupt download OR (for Corretto, whose sha256Url tracks the latest build) a newer JDK 25 build shipped.
+# The pinned JDK 25 versions are intentionally HARDCODED — so this is an integrity guard, NOT an
+# auto-bumper: on a failure a maintainer updates jdk25-pinned.json (version + url) by hand.
 #
 # Future enhancement (intentionally not built yet): auto-detect a newer BUILD of the same JDK 25 major
 # via the vendor metadata APIs (Corretto GitHub releases / Azul metadata) and open a refresh PR.

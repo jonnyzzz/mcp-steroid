@@ -20,10 +20,10 @@ this section, this section wins.**
 
 1. **`jdk-coordinates.json` is GENERATED, not committed.** The single source of
    truth is the committed **`jdk-downloader/jdk25-pinned.json`** (5 platforms:
-   `vendor`/`version`/`url`/`sha256`/`format`; **no** `javaHomeSubpath`).
-   `website/installer/jdk-coordinates.json` is a build artifact — `git rm`'d and
-   gitignored. (`devrig-coordinates.json` stays committed as the release-time
-   placeholder, overwritten by `resolveDevrigCoordinates`.)
+   `vendor`/`version`/`url`/`format`/`sha256Url`; **no** hardcoded `sha256`, **no**
+   `javaHomeSubpath`). `website/installer/jdk-coordinates.json` is a build artifact —
+   `git rm`'d and gitignored. (`devrig-coordinates.json` stays committed as the
+   release-time placeholder, overwritten by `resolveDevrigCoordinates`.)
 
 2. **`javaHomeSubpath` is INFERRED, not pinned.** The resolver inspects each real
    downloaded archive (shortest `*/bin/java[.exe]`, stripped) and writes the
@@ -35,10 +35,14 @@ this section, this section wins.**
    generates.** `:jdk-downloader` is download-only — `downloadAllJdk25` fetches
    the 5 archives and exposes them + the pinned file as Usage-attributed
    consumables (`jdk-download-dir`, `jdk-pinned`). `:installer-gen:generateJdkCoordinates`
-   resolves those, verifies each download's bytes against the pinned `sha256`
-   (fail-fast on drift), infers `javaHomeSubpath`, and emits the coordinates
-   (exposed via `jdk-coordinates`). This replaces the planned
-   `:installer-gen:resolveJdkCoordinates` (§7) — that task name no longer exists.
+   resolves those, FETCHES each `sha256Url` from the vendor (Corretto `latest_sha256`
+   bare-hex / Azul metadata `sha256_hash` / Microsoft `.sha256sum.txt`), verifies each
+   download's bytes against it (fail-fast: corrupt download OR — for Corretto, whose
+   `latest_sha256` alias tracks the latest build — a newer build shipped → fix the pin
+   by hand; Azul's UUID-pinned detail URL never drifts, so an Azul mismatch = corruption
+   only), infers `javaHomeSubpath`, and emits the coordinates (exposed
+   via `jdk-coordinates`). This replaces the planned `:installer-gen:resolveJdkCoordinates`
+   (§7) — that task name no longer exists.
 
 4. **Discovery is integrity-VERIFY, not auto-bump.** The JDK 25 versions are
    intentionally HARDCODED in `jdk25-pinned.json` (same major; bumped by hand).
@@ -172,14 +176,16 @@ channel.
 
 The generator merges two committed coordinate files plus `project.version` and
 renders the two scripts. Both files share the per-platform `<os>-<cpu>` key
-form and carry vendor-/release-authoritative sha256 values.
+form. (As built — §0 — the JDK pin carries a vendor `sha256Url` fetched + verified
+at generation; the generated coordinate files carry the resolved sha256 values.)
 
 ### `website/installer/jdk-coordinates.json` — edited by the daily GH Action
 
 > **Superseded — see §0.** As built, this file is GENERATED (not committed, not
-> daily-edited). The committed source of truth is `jdk-downloader/jdk25-pinned.json`
-> (same fields **minus** `javaHomeSubpath`, which the resolver infers). The
-> `javaHomeSubpath` values shown below are resolver *outputs*.
+> daily-edited). The committed source of truth is `jdk-downloader/jdk25-pinned.json`,
+> which carries a `sha256Url` (fetched + verified at generation) **instead of** a
+> hardcoded `sha256`, and **no** `javaHomeSubpath` (the resolver infers it). The
+> `sha256` + `javaHomeSubpath` values shown below are resolver *outputs*.
 
 ```jsonc
 {
@@ -209,14 +215,17 @@ Per-platform JDK fields: `vendor` (`corretto` | `azul-zulu` | `microsoft`),
 `JAVA_HOME`; `""` = unpack root — covers macOS `Contents/Home`, versioned
 Linux/Win dirs uniformly).
 
-The sha256 values are vendor-authoritative — read from each vendor's published
-checksum, never by re-hashing a downloaded blob. Corretto:
-`GET https://corretto.aws/downloads/latest_sha256/<asset>` (bare 64-hex). Azul:
-the `sha256_hash` field in `api.azul.com/metadata/v1` package detail. Microsoft
-(fallback): the `.sha256sum.txt` sidecar. `javaHomeSubpath` is read from the
-real archive top-level directory for both vendors by the daily job (Azul's is
-the filename minus `.zip`; Microsoft's `jdk-25.0.x+N` cannot be string-derived,
-so it is inspected from the archive).
+The sha256 values are vendor-authoritative — the generator FETCHES each vendor's
+published checksum (per the pin's `sha256Url`) and the resolver re-hashes the
+downloaded bytes and cross-checks them against it (fail-fast on mismatch).
+Corretto: `GET https://corretto.aws/downloads/latest_sha256/<asset>` (bare
+64-hex). Azul: the `sha256_hash` field in `api.azul.com/metadata/v1` package
+detail (the pin names the package-UUID detail URL). Microsoft (fallback): the
+`.sha256sum.txt` sidecar. **Vendor asymmetry:** Corretto's `latest_sha256` alias
+tracks the *latest* build, so a mismatch also flags "a newer JDK 25 shipped —
+bump the pin"; Azul's UUID-pinned detail URL never drifts, so an Azul mismatch
+means corruption only (bump Azul version+url+uuid by hand). `javaHomeSubpath` is
+INFERRED from the real archive top-level directory by the resolver.
 
 ### `website/installer/devrig-coordinates.json` — written at devrig release time
 

@@ -1,40 +1,40 @@
 {
-  "schema": 1,
-  "_comment": "PINNED source of truth for the 5-platform JDK 25 installer coordinates. The ONLY file the daily installer-jdk-refresh job edits. :jdk-downloader downloads these, the installer-gen resolver verifies each download against the sha256 here, INFERS javaHomeSubpath from the real archive, and GENERATES website/installer/jdk-coordinates.json (a build output — not committed). vendor: corretto | azul-zulu | microsoft. sha256: vendor-authoritative, 64 lowercase hex. format: zip | tar.gz | tar.xz. javaHomeSubpath is intentionally absent — it is inferred by the generator.",
+  "schema": 2,
+  "_comment": "PINNED source of truth for the 5-platform JDK 25 installer coordinates. The ONLY file the maintainer edits (version + url) when a vendor ships a newer JDK 25 build. :jdk-downloader downloads each 'url'; the installer-gen resolver fetches each 'sha256Url' from the VENDOR, verifies the downloaded bytes against it (a mismatch = corrupt download OR a newer build shipped -> fix the pin by hand), INFERS javaHomeSubpath from the real archive, and GENERATES website/installer/jdk-coordinates.json (a build output, not committed). NO sha256 is hardcoded here — it is downloaded from the vendor so download correctness is validated, not asserted against a stale literal. vendor: corretto | azul-zulu | microsoft. sha256Url body: corretto = bare 64-hex; azul-zulu = JSON with 'sha256_hash'; microsoft = '.sha256sum.txt' (sha + filename). Vendor asymmetry: Corretto's latest_sha256 alias tracks the LATEST build, so a mismatch also signals 'a newer JDK 25 shipped — bump version+url'; Azul's UUID-pinned detail URL never drifts, so an Azul mismatch means corruption only (bump Azul version+url+uuid by hand). format: zip | tar.gz | tar.xz. javaHomeSubpath is intentionally absent — inferred by the generator.",
   "platforms": {
     "linux-x64": {
       "vendor": "corretto",
       "version": "25.0.3.9.1",
       "url": "https://corretto.aws/downloads/resources/25.0.3.9.1/amazon-corretto-25.0.3.9.1-linux-x64.tar.gz",
-      "sha256": "00486fa402136f8d40512b101c645dd4db9be2b5535171530ad241cd96c1223d",
+      "sha256Url": "https://corretto.aws/downloads/latest_sha256/amazon-corretto-25-x64-linux-jdk.tar.gz",
       "format": "tar.gz"
     },
     "linux-arm64": {
       "vendor": "corretto",
       "version": "25.0.3.9.1",
       "url": "https://corretto.aws/downloads/resources/25.0.3.9.1/amazon-corretto-25.0.3.9.1-linux-aarch64.tar.gz",
-      "sha256": "8b1fd78bbd1f188f3884f580be674727174635252c0d4d6dfa7cd15de51879ce",
+      "sha256Url": "https://corretto.aws/downloads/latest_sha256/amazon-corretto-25-aarch64-linux-jdk.tar.gz",
       "format": "tar.gz"
     },
     "macos-arm64": {
       "vendor": "corretto",
       "version": "25.0.3.9.1",
       "url": "https://corretto.aws/downloads/resources/25.0.3.9.1/amazon-corretto-25.0.3.9.1-macosx-aarch64.tar.gz",
-      "sha256": "614107ed76e9fb86d62d8cf2686a9cc4b3a11c019502ca3ba605fc5d51f4d7bb",
+      "sha256Url": "https://corretto.aws/downloads/latest_sha256/amazon-corretto-25-aarch64-macos-jdk.tar.gz",
       "format": "tar.gz"
     },
     "windows-x64": {
       "vendor": "corretto",
       "version": "25.0.3.9.1",
       "url": "https://corretto.aws/downloads/resources/25.0.3.9.1/amazon-corretto-25.0.3.9.1-windows-x64-jdk.zip",
-      "sha256": "3404a8be08f0fdbbd24c9bbdda79ba1ded87b264a833247b2124ac45da1c16e0",
+      "sha256Url": "https://corretto.aws/downloads/latest_sha256/amazon-corretto-25-x64-windows-jdk.zip",
       "format": "zip"
     },
     "windows-arm64": {
       "vendor": "azul-zulu",
       "version": "25.0.3",
       "url": "https://cdn.azul.com/zulu/bin/zulu25.34.17-ca-jdk25.0.3-win_aarch64.zip",
-      "sha256": "60b6b1faa1a93fea8e64b09f2b9ab136a86b02428f004f8378cfb04cd818a0d4",
+      "sha256Url": "https://api.azul.com/metadata/v1/zulu/packages/7e4b3352-ff70-4dd9-958e-44910f65b9d1",
       "format": "zip"
     }
   }

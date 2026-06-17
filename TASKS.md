@@ -4413,11 +4413,23 @@ User asks (4 of 5 done; #2 vendor-sha + #3 website-merge/rename + #1 fuzz-test c
 - 2 quorums (wf_a59f440e launcher GO_WITH_CHANGES; wf_10b19695 upgrade — caught a Windows iwr|iex BLOCKER +
   POSIX silent-fetch-failure MAJOR, both fixed). All npx-kt + prompt + Docker tests green; 0 WARNING+ inspections.
 
-REMAINING (next turns): #2 — drop hardcoded shas, fetch vendor-published sha (Corretto latest_sha256 / Azul
-metadata sha256_hash / MS .sha256sum.txt), verify download correctness, replace circular JdkCoordinatesMetadataTest
-with real binary-correctness tests. #3 — move website release-detection + plugin.xml→updatePlugins.xml + version.json
-generation into the module (Kotlin), delete Make/Python, RENAME :installer-gen appropriately (generates more than
-installers). #1 — convert DevrigCommandFuzzTest to declared methods.
+#1 DONE (commit a4bfc2c3): DevrigCommandFuzzTest converted off @ParameterizedTest to a declared @Test loop +
+helper (fuzzes 'upgrade' too).
+
+#2 DONE: dropped hardcoded shas. jdk25-pinned.json (schema 2) carries a per-platform sha256Url (Corretto
+latest_sha256 alias ×4 / Azul metadata-by-uuid). installer-gen VendorSha.kt (PinnedJdkCoordinates model;
+ShaFetcher seam + HttpShaFetcher with followRedirects; parseVendorSha per vendor). ResolverMain fetches+parses
+the vendor sha, passes it as expectedSha256; the resolver re-hashes the download + cross-checks (fail-fast,
+vendor-aware message: Corretto alias mismatch = newer build → bump pin; Azul uuid mismatch = corruption only).
+Tests: VendorShaTest (parse per vendor + malformed); CoordinateResolverTest resolveJdk fetch→verify→emit +
+mismatch-throws (injected fetcher); JdkCoordinatesMetadataTest reworked (download-correctness now enforced by
+generation's live vendor-verify, a task dependency). Verified live (all 5 endpoints return the exact shas);
+generate ran end-to-end; quorum wf_4792d6ff GO_WITH_CHANGES (0 blockers; applied: vendor-aware mismatch msg,
+followRedirects, doc-drift §3, Azul-asymmetry notes). 0 WARNING+ inspections.
+
+REMAINING (next): #3 — move website release-detection + plugin.xml→updatePlugins.xml + version.json generation
+into the module (Kotlin), delete Make/Python duplication, RENAME :installer-gen appropriately (generates more
+than installers).
 
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 

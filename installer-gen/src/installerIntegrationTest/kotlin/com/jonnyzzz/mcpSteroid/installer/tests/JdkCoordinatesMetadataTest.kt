@@ -3,18 +3,21 @@ package com.jonnyzzz.mcpSteroid.installer.tests
 
 import com.jonnyzzz.mcpSteroid.installer.ALL_PLATFORMS
 import com.jonnyzzz.mcpSteroid.installer.JdkCoordinates
+import com.jonnyzzz.mcpSteroid.installer.resolver.PinnedJdkCoordinates
 import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import java.io.File
 
 /**
- * Validates the GENERATED `jdk-coordinates.json` (`:installer-gen:generateJdkCoordinates`, computed by
- * downloading + inspecting the real JDK 25 archives) against the PINNED source
- * (`jdk-downloader/jdk25-pinned.json`). This is the metadata-correctness guard the user asked for: every
- * one of the 5 platforms must be present, carry the exact pinned vendor/version/url/sha256/format, and
- * have a non-empty `javaHomeSubpath` that the generator INFERRED from the archive (the pinned source
- * never carries one). No network + no Docker — it asserts on Gradle-produced files only.
+ * Validates the GENERATED `jdk-coordinates.json` (`:installer-gen:generateJdkCoordinates`) against the
+ * PINNED source (`jdk-downloader/jdk25-pinned.json`). Generation is a TASK DEPENDENCY of this lane, and it
+ * fails fast unless every downloaded JDK's bytes match the sha256 FETCHED from the vendor — so the mere
+ * fact this test runs means "jdk-downloader downloaded the correct binaries" (validated against the vendor,
+ * not a hardcoded literal). Here we then assert the generated METADATA is well-formed: all 5 platforms,
+ * vendor/version/url/format carried through from the pin, a real 64-hex sha256, and a `javaHomeSubpath`
+ * the generator INFERRED from the archive (the pin never carries one — it carries a `sha256Url` instead).
+ * No network + no Docker in this test itself — it asserts on Gradle-produced files.
  */
 class JdkCoordinatesMetadataTest {
     private val json = Json { ignoreUnknownKeys = true }
@@ -27,7 +30,7 @@ class JdkCoordinatesMetadataTest {
         json.decodeFromString(f.readText())
     }
 
-    private val pinned: JdkCoordinates by lazy {
+    private val pinned: PinnedJdkCoordinates by lazy {
         val f = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("jdk-downloader/jdk25-pinned.json").toFile()
         require(f.isFile) { "pinned source missing: $f" }
         json.decodeFromString(f.readText())
@@ -44,15 +47,16 @@ class JdkCoordinatesMetadataTest {
     }
 
     @Test
-    fun `each generated platform preserves the pinned vendor, version, url, sha256 and format`() {
+    fun `each generated platform preserves the pinned vendor, version, url and format`() {
         ALL_PLATFORMS.forEach { key ->
             val g = generated.platforms.getValue(key)
             val p = pinned.platforms.getValue(key)
             require(g.vendor == p.vendor) { "$key: vendor drift '${g.vendor}' != pinned '${p.vendor}'" }
             require(g.version == p.version) { "$key: version drift '${g.version}' != pinned '${p.version}'" }
             require(g.url == p.url) { "$key: url drift '${g.url}' != pinned '${p.url}'" }
-            require(g.sha256 == p.sha256) { "$key: sha256 drift '${g.sha256}' != pinned '${p.sha256}'" }
             require(g.format == p.format) { "$key: format drift '${g.format}' != pinned '${p.format}'" }
+            // sha256 is NOT pinned — it is fetched from the vendor + verified at generation. So we assert
+            // the generated sha is a real digest, not equality with a (nonexistent) pinned literal.
         }
     }
 
@@ -68,9 +72,15 @@ class JdkCoordinatesMetadataTest {
                 "$key: javaHomeSubpath '${g.javaHomeSubpath}' must be a relative, non-trailing-slash archive subpath"
             }
         }
-        // The pinned source intentionally omits javaHomeSubpath; prove that contract so a drift is caught.
-        require(pinned.platforms.values.all { it.javaHomeSubpath.isBlank() }) {
-            "jdk25-pinned.json must NOT carry javaHomeSubpath — it is inferred by the generator"
+    }
+
+    @Test
+    fun `the pin carries a vendor sha256Url instead of a hardcoded sha256`() {
+        // The whole point of the redesign: no hardcoded shas. Each platform names a vendor endpoint the
+        // generator fetches + verifies the download against; an absolute https URL is the contract.
+        ALL_PLATFORMS.forEach { key ->
+            val url = pinned.platforms.getValue(key).sha256Url
+            require(url.startsWith("https://")) { "$key: sha256Url must be an absolute https URL, got '$url'" }
         }
     }
 }

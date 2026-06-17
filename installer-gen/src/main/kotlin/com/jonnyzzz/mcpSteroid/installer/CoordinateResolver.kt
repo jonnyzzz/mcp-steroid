@@ -43,7 +43,10 @@ object JdkCoordinateResolver {
             a.expectedSha256?.let { expected ->
                 val norm = expected.trim().lowercase()
                 require(sha == norm) {
-                    "sha256 mismatch for ${a.platformKey}: computed $sha != expected $norm (${a.file})"
+                    "sha256 mismatch for ${a.platformKey}: computed $sha != vendor-published $norm (${a.file}). " +
+                        "For a moving vendor alias (e.g. Corretto latest_sha256) this usually means a NEWER JDK " +
+                        "build shipped — bump version+url in jdk-downloader/jdk25-pinned.json; otherwise the " +
+                        "download is corrupt."
                 }
             }
             val javaHomeSubpath = inspectJavaHomeSubpath(a.file, a.format, a.platformKey)

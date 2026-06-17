@@ -1,6 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.installer
 
+import com.jonnyzzz.mcpSteroid.installer.resolver.PinnedJdkCoordinates
+import com.jonnyzzz.mcpSteroid.installer.resolver.PinnedJdkEntry
+import com.jonnyzzz.mcpSteroid.installer.resolver.resolveJdk
+import kotlinx.serialization.json.Json
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
@@ -10,6 +14,8 @@ import org.apache.commons.compress.compressors.xz.XZCompressorOutputStream
 import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -19,6 +25,8 @@ import org.junit.jupiter.api.io.TempDir
 class CoordinateResolverTest {
     @TempDir
     lateinit var tmp: Path
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     // The 5 real-world archive layouts the resolver must inspect (top dir differs from filename; macOS
     // nests Contents/Home; Windows uses bin/java.exe; Azul has its own dir name).
@@ -150,6 +158,68 @@ class CoordinateResolverTest {
         val backslash = tmp.resolve("backslash.zip")
         writeArchive(backslash, "zip", linkedMapOf("jdk25_0_3_9\\bin\\java.exe" to "real".toByteArray()))
         assertEquals("jdk25_0_3_9", inspectJavaHomeSubpath(backslash, "zip", "windows-x64"))
+    }
+
+    // ── ResolverMain.resolveJdk: vendor sha is FETCHED (no hardcoded sha) + verified against the download ──
+
+    /** Build the fixture into [dir] named by URL basename `<key>.<format>` (what resolveJdk resolves). */
+    private fun buildArchiveInto(dir: Path, f: Fixture): Path {
+        val out = dir.resolve("${f.key}.${f.format}")
+        val zip = f.format == "zip"
+        writeArchive(
+            out, f.format,
+            linkedMapOf(
+                "${f.topDir}/release" to "JAVA_VERSION=\"25\"\n".toByteArray(),
+                javaEntry(f.topDir, zip) to "#!/bin/sh\necho java-stub\n".toByteArray(),
+            ),
+        )
+        return out
+    }
+
+    /** Vendor-shaped sha body: azul-zulu returns JSON `sha256_hash`; corretto/microsoft return bare hex. */
+    private fun fakeShaBody(vendor: String, sha: String) =
+        if (vendor == "azul-zulu") """{"sha256_hash":"$sha"}""" else "$sha\n"
+
+    private fun writePinned(dir: Path): Pair<Path, MutableMap<String, String>> {
+        val shaByUrl = HashMap<String, String>()
+        val platforms = fixtures.associate { f ->
+            val file = buildArchiveInto(dir, f)
+            val shaUrl = "https://sha.example/${f.key}"
+            shaByUrl[shaUrl] = fakeShaBody(f.vendor, sha256(file))
+            f.key to PinnedJdkEntry(f.vendor, f.version, "https://dl.example/${file.fileName}", f.format, shaUrl)
+        }
+        val source = tmp.resolve("pinned.json")
+        source.writeText(Json.encodeToString(PinnedJdkCoordinates(2, platforms)))
+        return source to shaByUrl
+    }
+
+    @Test
+    fun `resolveJdk fetches the vendor sha, verifies the download, and emits coordinates`() {
+        val dl = Files.createDirectories(tmp.resolve("dl"))
+        val (source, shaByUrl) = writePinned(dl)
+        val out = tmp.resolve("out/jdk-coordinates.json")
+
+        resolveJdk(source, dl, out, urlBase = null, fetcher = { shaByUrl.getValue(it) })
+
+        val coords = json.decodeFromString<JdkCoordinates>(out.readText())
+        assertEquals(fixtures.map { it.key }.toSet(), coords.platforms.keys)
+        // The emitted sha is the real digest of the downloaded file (== the vendor sha we served).
+        assertEquals(sha256(dl.resolve("linux-x64.tar.gz")), coords.platforms.getValue("linux-x64").sha256)
+        assertEquals("zulu25.34.17-ca-jdk25.0.3-win_aarch64", coords.platforms.getValue("windows-arm64").javaHomeSubpath)
+    }
+
+    @Test
+    fun `resolveJdk fails when the vendor sha does not match the download`() {
+        val dl = Files.createDirectories(tmp.resolve("dl"))
+        val (source, shaByUrl) = writePinned(dl)
+        // Vendor reports a different sha for one platform → corrupt download OR a newer build shipped.
+        shaByUrl["https://sha.example/linux-x64"] = "${"a".repeat(64)}\n"
+        val out = tmp.resolve("out/jdk-coordinates.json")
+
+        val ex = assertFailsWith<IllegalArgumentException> {
+            resolveJdk(source, dl, out, urlBase = null, fetcher = { shaByUrl.getValue(it) })
+        }
+        assertTrue(ex.message!!.contains("sha256 mismatch"), ex.message)
     }
 
     @Test

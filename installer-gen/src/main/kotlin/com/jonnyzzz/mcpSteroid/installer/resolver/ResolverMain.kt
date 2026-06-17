@@ -3,7 +3,6 @@ package com.jonnyzzz.mcpSteroid.installer.resolver
 
 import com.jonnyzzz.mcpSteroid.installer.DevrigCoordinateResolver
 import com.jonnyzzz.mcpSteroid.installer.JdkCoordinateResolver
-import com.jonnyzzz.mcpSteroid.installer.JdkCoordinates
 import com.jonnyzzz.mcpSteroid.installer.LocalJdkArtifact
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
@@ -52,9 +51,21 @@ private fun resolveJdk(args: List<String>) {
     val out = Path.of(req("out"))
     val urlBase = m["url-base"]?.trimEnd('/') // present in test mode → record side-car URLs
 
-    val src = prettyJson.decodeFromString<JdkCoordinates>(source.readText())
+    resolveJdk(source, downloadDir, out, urlBase, HttpShaFetcher)
+}
+
+/**
+ * Testable core: the only non-pure step is [fetcher] (HTTP to the vendor) — injected so tests stay
+ * hermetic. The sha is FETCHED from the vendor (per [PinnedJdkEntry.sha256Url]) and cross-checked against
+ * the real downloaded bytes; a mismatch means the download is corrupt OR the vendor shipped a newer build
+ * — either way generation fails and the maintainer fixes `jdk25-pinned.json` (version + url) by hand.
+ */
+internal fun resolveJdk(source: Path, downloadDir: Path, out: Path, urlBase: String?, fetcher: ShaFetcher) {
+    val src = prettyJson.decodeFromString<PinnedJdkCoordinates>(source.readText())
     val artifacts = src.platforms.entries.map { (key, e) ->
         val fileName = e.url.substringAfterLast('/')
+        val vendorSha = parseVendorSha(e.vendor, fetcher.fetch(e.sha256Url))
+        System.err.println("[resolver] $key: verifying against vendor sha ${vendorSha.take(12)}… (${e.sha256Url})")
         LocalJdkArtifact(
             platformKey = key,
             file = downloadDir.resolve(fileName),
@@ -62,9 +73,7 @@ private fun resolveJdk(args: List<String>) {
             vendor = e.vendor,
             version = e.version,
             format = e.format,
-            // Cross-check the downloaded bytes against the source's vendor-authoritative sha256
-            // (trust = sha256 + TLS): a tampered/corrupt download fails fast instead of being emitted.
-            expectedSha256 = e.sha256,
+            expectedSha256 = vendorSha,
         )
     }
     val resolved = JdkCoordinateResolver.resolve(artifacts)
