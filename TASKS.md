@@ -4312,11 +4312,18 @@ DONE (commits 3920a3bf + 02a124a7):
 - Verified: placeholder guard takes SKIP branch; both workflow YAMLs parse; resolveDevrigCoordinates emits
   valid coords from the real distZip.
 
-GATES: 3x quorum running (wqbc44v6w). MCP Steroid inspection N/A for this batch (YAML/Makefile, no Kotlin
-changed beyond the already-inspected ResolverMain). After quorum → address findings.
+BLOCK 3 COMPLETE — gates passed (commit 35601b54 = quorum fixes):
+- 3x adversarial quorum (wqbc44v6w; all GO_WITH_CHANGES, no blockers). Fixed: generateInstaller runs
+  validateDevrig (rejects placeholder/malformed devrig coords — http allowed for the test side-car);
+  Makefile guard fail-CLOSED; resolveDevrigCoordinates warns on non-release version + has inputs/outputs;
+  placeholder filename devrig-PLACEHOLDER.zip; _comment reconciled (same-job hash+upload assumption);
+  verify action uses ranged GET (not HEAD) + timeout + concurrency.
+- MCP Steroid inspection on InstallerGenerator.kt = 0 WARNING+. installer-gen 7 + InstallerBootstrapTest 4 green.
 
-REMAINING: docs E1/E2 (document curl|sh / irm|iex one-liner + test the piped command). Future TODO:
-vendor-API latest-JDK-25-build auto-detect + auto-refresh PR (deferred per user).
+REMAINING: docs E1/E2 (document curl|sh / irm|iex one-liner in README + website; test the piped command).
+Future TODO (deferred per user — "do not complicate it now"): vendor-API latest-JDK-25-BUILD auto-detect +
+auto-refresh PR; full release workflow that publishes the devrig zip + runs resolveDevrigCoordinates
+(activates install.sh generation + the placeholder→real devrig coords).
 
 ## Requirement (2026-06-16): installer must NOT install packages — DONE (install.sh)
 
