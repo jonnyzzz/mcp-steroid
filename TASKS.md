@@ -4320,10 +4320,37 @@ BLOCK 3 COMPLETE — gates passed (commit 35601b54 = quorum fixes):
   verify action uses ranged GET (not HEAD) + timeout + concurrency.
 - MCP Steroid inspection on InstallerGenerator.kt = 0 WARNING+. installer-gen 7 + InstallerBootstrapTest 4 green.
 
-REMAINING: docs E1/E2 (document curl|sh / irm|iex one-liner in README + website; test the piped command).
-Future TODO (deferred per user — "do not complicate it now"): vendor-API latest-JDK-25-BUILD auto-detect +
-auto-refresh PR; full release workflow that publishes the devrig zip + runs resolveDevrigCoordinates
-(activates install.sh generation + the placeholder→real devrig coords).
+## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
+
+E2 (commit on installer): InstallerBootstrapTest case runs the EXACT `curl -fsSL <sidecar>/install.sh | sh`
+one-liner — proves the HTTP-fetched-script path + the main() truncation guard. Green.
+
+User direction (gradual rollout — staged PRs, NOT all at once):
+- THIS PR (installer/version-json-driven): the install-script FEATURE ONLY — generator, resolvers,
+  BinLauncher, Gradle download/resolve tasks, coordinate-verify CI action, coordinate DATA, all tests.
+  NO website-deploy changes, NO doc/CTA promotion. (Reverted the website Makefile install.sh-generation +
+  github-pages JDK step back off this branch — commit 8e34953b.)
+- Branch docs/devrig-install-oneliner (PR after 0.101): devrig docs-page one-liner. No JDK talk (impl
+  detail — installer is self-contained; "nobody cares").
+- Branch website/devrig-install-cta (PR later, with a release that publishes install.sh): devrig-first
+  homepage CTA + the Makefile install.sh generation + github-pages JDK step. No JDK talk in the CTA;
+  dropped the "Requires JDK 25+" homepage footnote. Needs a designer/responsive pass before shipping.
+- README JDK note kept as-is (that's the dev/from-checkout path, not the website).
+
+v0.100 install-script suitability — ASSESSED: NOT good enough for public use (confirms the user's view):
+  1. No verified published devrig-0.100 coordinates — devrig-coordinates.json is still the PLACEHOLDER
+     (resolveDevrigCoordinates never run for 0.100), so install.sh has no sha to verify/bake; website
+     generation is guarded-skip until real coords exist.
+  2. 0.100 devrig is explicitly a PREVIEW (release notes) with 29 open dogfooding agent-experience gaps
+     (epic #91); the headless/CI path is "actively being hardened".
+  3. The released 0.100 devrig ships WITHOUT a bundled runtime (needs a system JDK 25); the bundled-JDK
+     install.sh is NEW (this branch), not part of what 0.100 shipped.
+  → Debut the install script with a later, more-mature release (0.101+) whose release job runs
+     resolveDevrigCoordinates to publish real verified coords. This is exactly the gradual rollout above.
+
+Future TODO (deferred per user): vendor-API latest-JDK-25-BUILD auto-detect + auto-refresh PR; the release
+workflow that publishes the devrig zip + runs resolveDevrigCoordinates (flips placeholder→real coords and
+activates install.sh generation).
 
 ## Requirement (2026-06-16): installer must NOT install packages — DONE (install.sh)
 
