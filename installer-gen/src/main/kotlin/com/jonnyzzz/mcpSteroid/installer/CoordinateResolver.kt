@@ -104,7 +104,9 @@ internal fun inspectJavaHomeSubpath(file: Path, format: String, platformKey: Str
     require(binJava.isNotEmpty()) {
         "no */bin/java(.exe) entry in the $platformKey archive $file — not a JDK, or the layout changed"
     }
-    // The JDK launcher is the shortest such path (any nested jre/sample launcher would sit deeper).
+    // Invariant: a JDK archive ships its real launcher once and its JAVA_HOME is that launcher's
+    // shallowest parent. Picking the SHORTEST "*/bin/java(.exe)" path therefore selects the real home
+    // and ignores any deeper nested launcher (e.g. a demo/sample). Holds for all 5 pinned layouts.
     val launcher = binJava.minByOrNull { it.length }!!
     return launcher.removeSuffix(".exe").removeSuffix("/bin/java")
 }

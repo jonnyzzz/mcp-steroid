@@ -6,6 +6,8 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorOutputStream
+import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
@@ -45,24 +47,29 @@ class CoordinateResolverTest {
 
     private fun writeArchive(out: Path, format: String, entries: Map<String, ByteArray>) {
         Files.newOutputStream(out).use { fileOut ->
-            if (format == "zip") {
-                ZipArchiveOutputStream(fileOut).use { zip ->
+            when (format) {
+                "zip" -> ZipArchiveOutputStream(fileOut).use { zip ->
                     for ((name, bytes) in entries) {
                         zip.putArchiveEntry(ZipArchiveEntry(name))
                         zip.write(bytes)
                         zip.closeArchiveEntry()
                     }
                 }
-            } else {
-                TarArchiveOutputStream(GzipCompressorOutputStream(fileOut)).use { tar ->
-                    for ((name, bytes) in entries) {
-                        val e = TarArchiveEntry(name)
-                        e.size = bytes.size.toLong()
-                        tar.putArchiveEntry(e)
-                        tar.write(bytes)
-                        tar.closeArchiveEntry()
-                    }
-                }
+                "tar.gz" -> writeTar(GzipCompressorOutputStream(fileOut), entries)
+                "tar.xz" -> writeTar(XZCompressorOutputStream(fileOut), entries)
+                else -> error("unsupported test archive format: $format")
+            }
+        }
+    }
+
+    private fun writeTar(compressed: OutputStream, entries: Map<String, ByteArray>) {
+        TarArchiveOutputStream(compressed).use { tar ->
+            for ((name, bytes) in entries) {
+                val e = TarArchiveEntry(name)
+                e.size = bytes.size.toLong()
+                tar.putArchiveEntry(e)
+                tar.write(bytes)
+                tar.closeArchiveEntry()
             }
         }
     }
@@ -125,6 +132,24 @@ class CoordinateResolverTest {
             ),
         )
         assertEquals("jdk-25", inspectJavaHomeSubpath(out, "tar.gz", "linux-x64"))
+    }
+
+    @Test
+    fun `tar_xz archives are inspected (xz codec is on the classpath)`() {
+        val out = tmp.resolve("jdk.tar.xz")
+        writeArchive(out, "tar.xz", linkedMapOf("jdk-25-xz/release" to "x".toByteArray(), "jdk-25-xz/bin/java" to "real".toByteArray()))
+        assertEquals("jdk-25-xz", inspectJavaHomeSubpath(out, "tar.xz", "linux-x64"))
+    }
+
+    @Test
+    fun `entry-name normalization handles leading dot-slash and backslashes`() {
+        val dotSlash = tmp.resolve("dotslash.tar.gz")
+        writeArchive(dotSlash, "tar.gz", linkedMapOf("./jdk-25/bin/java" to "real".toByteArray()))
+        assertEquals("jdk-25", inspectJavaHomeSubpath(dotSlash, "tar.gz", "linux-x64"))
+
+        val backslash = tmp.resolve("backslash.zip")
+        writeArchive(backslash, "zip", linkedMapOf("jdk25_0_3_9\\bin\\java.exe" to "real".toByteArray()))
+        assertEquals("jdk25_0_3_9", inspectJavaHomeSubpath(backslash, "zip", "windows-x64"))
     }
 
     @Test

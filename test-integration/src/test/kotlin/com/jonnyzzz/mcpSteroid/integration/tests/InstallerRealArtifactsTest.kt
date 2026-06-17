@@ -79,6 +79,11 @@ class InstallerRealArtifactsTest {
             val plat = committed.platforms.getValue(platformKey)
             val realJdk = File(jdkDownloadDir, plat.url.substringAfterLast('/'))
             require(realJdk.isFile) { "Gradle did not download the $platformKey JDK: $realJdk" }
+            // The generator bakes binSubpath = devrig-<version>/bin/devrig; assert the real zip's layout
+            // matches the derived version so a drift fails here, not deep inside install.sh.
+            require(ZipFile(devrigZip).use { it.getEntry("devrig-$devrigVersion/bin/devrig") != null }) {
+                "devrig zip $devrigZip has no devrig-$devrigVersion/bin/devrig entry (version-derivation drift)"
+            }
 
             // Side-car serves ONLY the real local files (no CDN). Keep the real filenames simple for the URL.
             val fixturesDir = createWorkDir("real-fixtures")
@@ -135,6 +140,13 @@ class InstallerRealArtifactsTest {
                     ),
             )
             awaitToolsInstalled(install)
+            // os.arch (host) drove platformKey; assert the container's real arch agrees, so a non-default
+            // Docker --platform (emulation) fails loud here instead of with a confusing rosetta/elf error.
+            val containerArch = sh(install, "uname -m").stdout.trim()
+            val expectedArch = if (cpuToken == "arm64") "aarch64" else "x86_64"
+            require(containerArch == expectedArch) {
+                "container arch '$containerArch' != expected '$expectedArch' for $platformKey — host os.arch and container arch disagree"
+            }
             verifyMockServes(install, nginxIp, "/jdk.tar.gz")
             verifyMockServes(install, nginxIp, "/devrig.zip")
 
@@ -149,7 +161,7 @@ class InstallerRealArtifactsTest {
             // (1) The bundled JDK is the REAL Amazon Corretto 25 (run it).
             sh(install, "\"$jdkHome/bin/java\" -version 2>&1")
                 .assertExitCode(0) { "bundled bin/java did not run:\n$this" }
-                .assertOutputContains("Corretto", "25", message = "bundled JDK is not real Corretto 25")
+                .assertOutputContains("Corretto-25", message = "bundled JDK is not real Corretto 25")
 
             // (2) The REAL devrig launches under that bundled JDK (ubuntu has no system Java) via the wrapper.
             sh(install, "test -d \"$homeDir/.mcp-steroid/binaries/devrig-$platformKey-$devrigVersion-$devrigSha12\" && echo DEVRIG_DIR_OK")

@@ -20,6 +20,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     // Read JDK archives (tar.gz / tar.xz / zip) to inspect their real inner layout in the resolver.
     implementation("org.apache.commons:commons-compress:1.27.1")
+    // XZ codec for tar.xz: an OPTIONAL transitive of commons-compress, so it must be declared
+    // explicitly — the resolver + install scripts both accept tar.xz, and without this the tar.xz
+    // path would throw NoClassDefFoundError instead of working.
+    implementation("org.tukaani:xz:1.10")
     testImplementation(kotlin("test"))
 }
 
@@ -71,9 +75,13 @@ val generateInstaller by tasks.registering(JavaExec::class) {
 @Suppress("UNCHECKED_CAST")
 val jdkPlatformUrls: Map<String, String> = run {
     val f = rootProject.file("website/installer/jdk-coordinates.json")
-    val root = JsonSlurper().parse(f) as Map<String, Any?>
-    val platforms = root["platforms"] as Map<String, Map<String, Any?>>
-    platforms.mapValues { (_, e) -> e["url"] as String }
+    val root = JsonSlurper().parse(f) as? Map<String, Any?>
+        ?: error("jdk-coordinates.json is not a JSON object: $f")
+    val platforms = root["platforms"] as? Map<String, Map<String, Any?>>
+        ?: error("jdk-coordinates.json: missing 'platforms' object ($f)")
+    platforms.mapValues { (key, e) ->
+        (e["url"] as? String) ?: error("jdk-coordinates.json: platform '$key' has no 'url' ($f)")
+    }
 }
 
 val jdkDownloadDir = layout.buildDirectory.dir("jdk-download")
@@ -91,17 +99,20 @@ jdkPlatformUrls.forEach { (key, url) ->
         val destFile = jdkDownloadDir.get().asFile.resolve(fileName)
         src(url)
         dest(destFile)
-        onlyIfModified(true)
         connectTimeout(30_000)
         readTimeout(15 * 60_000)
         retries(5)
         tempAndMove(true)
-        // Vendor artifacts are immutable for a pinned URL; skip the fetch if already on disk.
+        // Vendor artifacts are immutable for a pinned URL; skip the fetch entirely if already on disk
+        // (this supersedes onlyIfModified — when present we never re-check, when absent we always fetch).
         onlyIf { !destFile.exists() }
     }
     downloadAllJdks.configure { dependsOn(dl) }
 }
 
+// Manual / daily-refresh entrypoint (no automated caller yet — the daily installer-jdk-refresh GH
+// Action that invokes this lands in the release-wiring block). The integration test exercises the
+// resolver in-process; this task is the production path that regenerates the committed coordinates.
 val resolveJdkCoordinates by tasks.registering(JavaExec::class) {
     group = "installer"
     description = "Inspect the downloaded JDKs and (re)generate jdk-coordinates.json with real sha256 + javaHomeSubpath."

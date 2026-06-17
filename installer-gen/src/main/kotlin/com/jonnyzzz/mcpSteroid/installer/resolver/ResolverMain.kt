@@ -60,6 +60,9 @@ private fun resolveJdk(args: List<String>) {
             vendor = e.vendor,
             version = e.version,
             format = e.format,
+            // Cross-check the downloaded bytes against the source's vendor-authoritative sha256
+            // (trust = sha256 + TLS): a tampered/corrupt download fails fast instead of being emitted.
+            expectedSha256 = e.sha256,
         )
     }
     val resolved = JdkCoordinateResolver.resolve(artifacts)
