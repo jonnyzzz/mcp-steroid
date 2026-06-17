@@ -4269,12 +4269,31 @@ PART 2a DONE (commit bb8140cf): Gradle download + resolve tasks in :installer-ge
   and bin/java top dir == committed javaHomeSubpath. GPG verify (Corretto .sig via :pgp-verifier) deferred
   to the daily-refresh wiring; sha256 cross-check is the integrity gate for now.
 
-PART 2b TODO: nginx-side-car integration test in :test-integration — resolvable config consuming
-:installer-gen:jdkDownloadElements (real downloaded JDKs, all 5) + the built :npx-kt devrig zip; serve via
-nginx; run the resolvers in-process (side-car URLs) → assert resolved sha/javaHomeSubpath MATCH committed
-(validation on real bytes); generate install.sh → install the REAL linux-x64 JDK in ubuntu end-to-end.
-Needs ~1GB JDK download on first run. + resolveDevrigCoordinates Gradle task wiring (consume :npx-kt distZip).
-THEN: MCP Steroid inspection gate + 3x quorum for the whole block. Daily GH action + Makefile = later block.
+PART 2b DONE (commits 3b2cecef + f08e1d77 inspection + b629b097/d7cb211b/82e2ddf9 quorum): nginx-side-car
+integration test InstallerRealArtifactsTest in :test-integration. installerJdkDownloads resolvable config
+consumes :installer-gen:jdkDownloadElements (triggers downloadAllJdks, all 5 real JDKs); the real :npx-kt
+devrig zip via the existing devrig-package config. Two tests: (1) resolver reproduces the committed sha256 +
+javaHomeSubpath from the 5 real downloaded JDKs (no network); (2) install.sh installs the arch-matching real
+Corretto + real devrig from the side-car → asserts bundled Corretto-25 runs AND the real devrig launches under
+it (devrig --version). Only Gradle-downloaded files served via nginx; no CDN in the test. Both green (arm64).
+
+BLOCK 2 COMPLETE — gates passed:
+- MCP Steroid inspections on all touched files: 0 WARNING+ (fixed: duplicate-main ambiguity via resolver
+  sub-package, unused import, always-constant param).
+- 3x adversarial quorum (all GO_WITH_CHANGES, no blockers). Fixed: tar.xz dead branch (added org.tukaani:xz
+  + fixture), ResolverMain sha256 cross-check, require-guards on JSON parse, dropped redundant onlyIfModified,
+  tightened Corretto-25 assertion, container-arch assert, devrig binSubpath guard, normalization tests,
+  heuristic comment, manual-entrypoint doc.
+- repoRoot/repoFile filesystem-walks replaced with the shared ProjectHomeDirectory utility in BOTH
+  InstallerRealArtifactsTest and BinLauncherTest (npx-kt gained testImplementation(:test-helper)).
+
+DEFERRED (noted): (a) extract the side-car/workdir/version-from-zip helpers duplicated between
+InstallerBootstrapTest + InstallerRealArtifactsTest (cosmetic); (b) register the config-time JSON read as a
+config-cache input (CC off by default — latent); (c) resolveDevrigCoordinates Gradle task (release mode,
+would couple :installer-gen → :npx-kt) — resolver-B engine + ResolverMain 'devrig' done + exercised in-process.
+
+REMAINING BLOCKS: release wiring (daily installer-jdk-refresh.yml + weekly liveness + website Makefile
+update-config → generateInstaller; + the deferred resolveDevrigCoordinates task), then docs E1/E2.
 
 ## Requirement (2026-06-16): installer must NOT install packages — DONE (install.sh)
 
