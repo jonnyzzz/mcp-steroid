@@ -37,7 +37,7 @@ update-config: ensure-public-repo copy-root-files
 	@echo "Updating version to $(VERSION)"
 	@sed -i.bak 's/version = ".*"/version = "$(VERSION)"/' hugo.toml && rm -f hugo.toml.bak
 	@echo "Generating version.json + updatePlugins.xml via :site-gen:generateSiteArtifacts"
-	( cd .. && ./gradlew --quiet :site-gen:generateSiteArtifacts -PsiteVersion=$(VERSION) -PoutDir=website/static )
+	( cd .. && ./gradlew --info --stacktrace :site-gen:generateSiteArtifacts -PsiteVersion=$(VERSION) -PoutDir=website/static )
 	@test -s static/version.json     || { echo "ERROR: version.json not generated"     >&2; exit 1; }
 	@test -s static/updatePlugins.xml || { echo "ERROR: updatePlugins.xml not generated" >&2; exit 1; }
 	@xmllint --noout static/updatePlugins.xml 2>/dev/null && echo "updatePlugins.xml is valid XML" || echo "WARNING: xmllint not available, skipping XML validation"

@@ -63,7 +63,7 @@ class BinLauncherTest {
         }
         assertEquals(ps1, renderWindowsPs1("d\\devrig.bat", "j\\jdk"))
         assertEquals(
-            "@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0devrig.ps1\" %*\r\n",
+            "@echo off\r\npowershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%~dp0devrig.ps1\" %*\r\n",
             renderWindowsCmd(),
         )
     }
@@ -164,12 +164,12 @@ class BinLauncherTest {
     }
 
     // ── cross-module drift guard: the renderers must stay byte-identical (modulo line endings) to the
-    //    launcher bodies the generated install.sh / install.ps1 actually write (installer-gen templates),
+    //    launcher bodies the generated install.sh / install.ps1 actually write (site-gen templates),
     //    else a fresh install + self-heal would rewrite on every launch. ──
 
     @Test
     fun `renderPosixLauncher matches the install_sh_tmpl heredoc body`() {
-        val tmpl = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("installer-gen/src/main/resources/templates/install.sh.tmpl").readText()
+        val tmpl = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("site-gen/src/main/resources/templates/install.sh.tmpl").readText()
         val start = tmpl.indexOf("<<EOF\n") + "<<EOF\n".length
         val end = tmpl.indexOf("\nEOF", start)
         require(start > 5 && end > start) { "could not locate the launcher heredoc in install.sh.tmpl" }
@@ -186,7 +186,7 @@ class BinLauncherTest {
 
     @Test
     fun `renderWindowsPs1 and renderWindowsCmd match the install_ps1_tmpl bodies`() {
-        val tmpl = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("installer-gen/src/main/resources/templates/install.ps1.tmpl").readText()
+        val tmpl = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("site-gen/src/main/resources/templates/install.ps1.tmpl").readText()
         val jdk = "REL\\jdk-home"
         val launcher = "REL\\bin\\devrig.bat"
 

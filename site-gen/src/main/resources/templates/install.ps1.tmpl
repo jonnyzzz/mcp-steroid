@@ -112,7 +112,7 @@ if (-not `$env:DEVRIG_JAVA_HOME) { `$env:DEVRIG_JAVA_HOME = Join-Path `$root '$j
 exit `$LASTEXITCODE
 "@
 Set-Content -Path (Join-Path $BinDir 'devrig.ps1') -Value $ps1 -NoNewline:$false
-$cmd = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0devrig.ps1`" %*`r`n"
+$cmd = "@echo off`r`npowershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"%~dp0devrig.ps1`" %*`r`n"
 Set-Content -Path (Join-Path $BinDir 'devrig.cmd') -Value $cmd -NoNewline:$false
 Write-Log "launcher: $BinDir\devrig.ps1 -> $launcherRel (DEVRIG_JAVA_HOME=$jdkHomeRel)"
 

@@ -29,7 +29,7 @@ import java.util.zip.ZipFile
  * artifacts, using only files Gradle already put on disk. Gradle's :jdk-downloader:downloadAllJdk25 (the
  * sole real network fetch, cached) provides the 5 real JDK archives; :npx-kt's devrig package provides
  * the real devrig zip. The regression guard compares the resolver against the GENERATED
- * jdk-coordinates.json (:installer-gen:generateJdkCoordinates). Inside the test, every download
+ * jdk-coordinates.json (:site-gen:generateJdkCoordinates). Inside the test, every download
  * URL points at the nginx side-car serving those local files — the test never reaches a vendor CDN.
  */
 class InstallerRealArtifactsTest {
@@ -40,11 +40,11 @@ class InstallerRealArtifactsTest {
     private val homeDir = "/home/tester one"
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
-    // The GENERATED jdk-coordinates.json (:installer-gen:generateJdkCoordinates output), not a committed
+    // The GENERATED jdk-coordinates.json (:site-gen:generateJdkCoordinates output), not a committed
     // file — jdk-coordinates.json is a build artifact derived from jdk-downloader/jdk25-pinned.json.
     private val generated: JdkCoordinates by lazy {
         val coordsFile = File(prop("test.installer.jdk.coordinates"))
-        require(coordsFile.isFile) { "generated jdk-coordinates.json missing: $coordsFile (run :installer-gen:generateJdkCoordinates)" }
+        require(coordsFile.isFile) { "generated jdk-coordinates.json missing: $coordsFile (run :site-gen:generateJdkCoordinates)" }
         json.decodeFromString(coordsFile.readText())
     }
 
@@ -234,5 +234,5 @@ class InstallerRealArtifactsTest {
     private fun log(msg: String) = println("[InstallerRealArtifactsTest] $msg")
 
     private fun prop(name: String): String =
-        System.getProperty(name) ?: error("required system property '$name' not set (configured in installer-gen/build.gradle.kts)")
+        System.getProperty(name) ?: error("required system property '$name' not set (configured in site-gen/build.gradle.kts)")
 }

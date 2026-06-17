@@ -4443,6 +4443,47 @@ explicit upToDateWhen{false}, drop GH_TOKEN). DESCRIPTION_HTML intentionally dro
 ALL 5 user asks (#1 fuzz-style, #2 vendor-sha, #3 website-merge+rename, #4 launcher service, #5 devrig upgrade)
 DONE on installer/version-json-driven.
 
+## Installer follow-up refinements (2026-06-17, batch 2) — partial; rest sequenced below
+
+DONE this batch:
+- Makefile calls Gradle with `--info --stacktrace` (not `--quiet`) for debuggability.
+- cmd.exe/launcher STDOUT audit: chain is stdout-clean (install.ps1 logs via [Console]::Error.WriteLine;
+  New-Item|Out-Null; devrig.ps1 emits no stdout; devrig.cmd `@echo off`; registration `cmd.exe /d /c` skips
+  AutoRun). Hardened the cmd shim's powershell call with `-NonInteractive` (+ matching install.ps1.tmpl +
+  BinLauncherTest byte-drift guard).
+- RENAME REGRESSION FIX: the :installer-gen→:site-gen commit (c7b030b5) missed several test refs because
+  :npx-kt:test wasn't run — BinLauncherTest hardcoded the OLD installer-gen/src/.../templates path (functional
+  break) + various `:installer-gen:generateJdkCoordinates` / log-prefix / doc comments. All repointed to site-gen.
+
+TODO — future Docker smoke test (vanilla published install script):
+- [ ] Smoke test: in a Docker container, run the EXACT published `curl -fsSL …/install.sh | sh` against the
+      REAL production release + official vendor binaries (not fixtures), assert devrig installs + runs. Guards
+      that the real published artifacts (devrig zip + 5 JDKs) actually work together.
+- [ ] TODO: equivalent smoke for Windows (install.ps1 on a real Windows runner) and macOS (install.sh on macOS) —
+      pwsh-on-Linux + ubuntu/alpine cover logic but not the native OS filesystem/exec semantics.
+
+TODO — REMAINING refinements (NOT yet done; sequenced as blocks):
+- BLOCK P (coordinate-pipeline simplification): move the JDK-25 URL+sha256 LIST into the gen Gradle file (each
+  URL a download task with url+sha as inputs, file as cached output, sha verified at download); DELETE
+  jdk25-pinned.json; DELETE VendorSha.kt (just compute sha from the downloaded file — jdk-downloader/gradle owns
+  integrity); make resolveJdk compute everything ad-hoc from the files with NO intermediate jdk-coordinates.json;
+  javaHomeSubpath required (no "" default) + fail-fast; consider folding the JDK-25 download out of :jdk-downloader
+  fully into :site-gen (the legacy Corretto-21 path stays in jdk-downloader); remove the website/installer/
+  jdk-coordinates.json gitignore entry (no longer generated). Heavy test rework (CoordinateResolverTest,
+  JdkCoordinatesMetadataTest, InstallerRealArtifactsTest, InstallerBootstrapTest all assume coord-JSON I/O).
+- BLOCK Q (devrig coords by default): DELETE committed website/installer/devrig-coordinates.json; site-gen
+  resolves devrig coords by default (from the published release / npx-kt zip) with an override property.
+- BLOCK R (install-flow behavior): install.sh/ps1 — first install devrig in PATH, then VERIFY the PATH devrig
+  works (clear error + stop if not); the agent registration must double-check the installed command works.
+  runInstallCommand — drop the JAVA_HOME narration AND the install-dist fallback case entirely; ALWAYS register
+  the version-independent ~/.mcp-steroid/bin/devrig wrapper. NOTE TENSION: CliInstallIntegrationTest currently
+  asserts the install-dist `/tmp/.../bin/devrig` path (the fallback) — that test must change to install devrig
+  under ~/.mcp-steroid (so the wrapper exists) and assert the bin/devrig registration.
+- BLOCK S (CI): combine the daily coordinate VALIDATION into the regular (daily) website build — one GH action,
+  not two; delete installer-coordinates-verify.yml; the gen task validates + fails with a clear message.
+- BLOCK T: strengthen the generated-plugin-xml test (parse the emitted XML, assert the tree) — generator already
+  uses XML DOM (renderUpdatePluginsXml), no string manipulation; just add a parse-and-assert test.
+
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 
 E2 (commit on installer): InstallerBootstrapTest case runs the EXACT `curl -fsSL <sidecar>/install.sh | sh`

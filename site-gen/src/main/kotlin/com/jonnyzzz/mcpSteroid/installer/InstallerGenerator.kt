@@ -161,5 +161,5 @@ fun main(argv: Array<String>) {
 
     args.outDir.resolve("install.sh").writeText(if (sh.endsWith("\n")) sh else sh + "\n")
     args.outDir.resolve("install.ps1").writeText(if (ps.endsWith("\n")) ps else ps + "\n")
-    System.err.println("[installer-gen] wrote install.sh + install.ps1 to ${args.outDir} (version ${args.version})")
+    System.err.println("[site-gen] wrote install.sh + install.ps1 to ${args.outDir} (version ${args.version})")
 }

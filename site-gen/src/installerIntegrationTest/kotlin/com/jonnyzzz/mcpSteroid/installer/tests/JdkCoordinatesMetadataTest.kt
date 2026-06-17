@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
 import java.io.File
 
 /**
- * Validates the GENERATED `jdk-coordinates.json` (`:installer-gen:generateJdkCoordinates`) against the
+ * Validates the GENERATED `jdk-coordinates.json` (`:site-gen:generateJdkCoordinates`) against the
  * PINNED source (`jdk-downloader/jdk25-pinned.json`). Generation is a TASK DEPENDENCY of this lane, and it
  * fails fast unless every downloaded JDK's bytes match the sha256 FETCHED from the vendor — so the mere
  * fact this test runs means "jdk-downloader downloaded the correct binaries" (validated against the vendor,
@@ -24,9 +24,9 @@ class JdkCoordinatesMetadataTest {
 
     private val generated: JdkCoordinates by lazy {
         val prop = "test.installer.jdk.coordinates"
-        val path = System.getProperty(prop) ?: error("required system property '$prop' not set (configured in installer-gen/build.gradle.kts)")
+        val path = System.getProperty(prop) ?: error("required system property '$prop' not set (configured in site-gen/build.gradle.kts)")
         val f = File(path)
-        require(f.isFile) { "generated jdk-coordinates.json missing: $f (run :installer-gen:generateJdkCoordinates)" }
+        require(f.isFile) { "generated jdk-coordinates.json missing: $f (run :site-gen:generateJdkCoordinates)" }
         json.decodeFromString(f.readText())
     }
 

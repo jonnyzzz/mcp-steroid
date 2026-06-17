@@ -32,7 +32,7 @@ import java.util.zip.ZipOutputStream
  * download → sha256-verify → unpack-verbatim → content-address → launcher → PATH-symlink → auto-install
  * pipeline.
  *
- * The generator (:installer-gen) is invoked directly via its main() so the baked
+ * The generator (:site-gen) is invoked directly via its main() so the baked
  * devrig binSubpath = devrig-<version>/bin/devrig matches the fixture archive top dir.
  */
 class InstallerBootstrapTest {
