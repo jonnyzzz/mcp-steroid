@@ -409,6 +409,79 @@ class InstallerBootstrapTest {
             log("ALL INSTALL.PS1 ASSERTIONS PASSED (pwsh-on-linux: windows-x64 + windows-arm64)")
         }
 
+    /**
+     * E2: the EXACT documented one-liner — `curl -fsSL <url>/install.sh | sh`. The side-car serves both
+     * the fixtures AND install.sh itself, so this exercises the HTTP fetch of the SCRIPT (not a mounted
+     * local file) plus the `main()`/trailing-invocation truncation guard: a partial `curl | sh` body must
+     * never execute a half-script. Proves the published bootstrap command works end-to-end.
+     */
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `the documented curl pipe sh one-liner installs end-to-end`() =
+        runWithCloseableStack { lifetime ->
+            val fixturesDir = createWorkDir("installer-piped-fixtures")
+            val devrigZip = File(fixturesDir, "devrig.zip").also { buildFakeDevrigZip(it) }
+            val jdkTarGz = File(fixturesDir, "jdk.tar.gz").also { buildFakeJdkTarGz(it) }
+            val devrigSha = sha256(devrigZip)
+            val jdkSha = sha256(jdkTarGz)
+            makeWorldReadable(fixturesDir)
+
+            val nginx = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest()
+                    .image(nginxImage)
+                    .logPrefix("installer-piped-nginx")
+                    .volumes(ContainerVolume(fixturesDir, "/usr/share/nginx/html", "ro")),
+            )
+            val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
+
+            val coordsDir = createWorkDir("installer-piped-coords")
+            val jdkCoords = File(coordsDir, "jdk-coordinates.json").also { it.writeText(jdkCoordinatesJson(nginxIp, jdkSha)) }
+            val devrigCoords = File(coordsDir, "devrig-coordinates.json").also { it.writeText(devrigCoordinatesJson(nginxIp, devrigSha)) }
+            val genDir = createWorkDir("installer-piped-gen")
+            runInstallerGenerator(
+                arrayOf(
+                    "--out-dir", genDir.absolutePath,
+                    "--jdk-coordinates", jdkCoords.absolutePath,
+                    "--devrig-coordinates", devrigCoords.absolutePath,
+                    "--version", version,
+                )
+            )
+            // Serve install.sh itself from the side-car (copy into the live, already-mounted nginx dir).
+            File(genDir, "install.sh").copyTo(File(fixturesDir, "install.sh"), overwrite = true)
+            makeWorldReadable(fixturesDir)
+
+            val install = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest()
+                    .image(installImage)
+                    .logPrefix("installer-piped")
+                    .entryPoint(
+                        "sh", "-c",
+                        "apt-get update -qq && apt-get install -y -qq curl unzip >/dev/null 2>&1; " +
+                            "mkdir -p \"$homeDir\"; sleep 3000",
+                    ),
+            )
+            awaitToolsInstalled(install)
+
+            // The published command, verbatim. DEVRIG_NO_AUTO_INSTALL skips the 'devrig install' finalize.
+            val piped = install.startProcessInContainer {
+                args("sh", "-c", "curl -fsSL http://$nginxIp/install.sh | sh")
+                    .timeoutSeconds(300)
+                    .description("curl | sh one-liner")
+                    .extraEnv(mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64", "DEVRIG_NO_AUTO_INSTALL" to "1"))
+            }.awaitForProcessFinish()
+            piped.assertExitCode(0) { "curl | sh one-liner failed:\n$this" }
+                .assertOutputContains("DEVRIG_NO_AUTO_INSTALL set", message = "piped install did not reach finalize (truncated?)")
+
+            val devrigKey = "devrig-linux-x64-$version-${devrigSha.take(12)}"
+            sh(install, "test -x \"$homeDir/.mcp-steroid/bin/devrig\" && echo WRAPPER_OK")
+                .assertOutputContains("WRAPPER_OK", message = "piped install did not write the launcher")
+            sh(install, "ls -1 \"$homeDir/.mcp-steroid/binaries\"")
+                .assertOutputContains(devrigKey, message = "piped install did not create the content-addressed devrig dir")
+            log("curl | sh one-liner installed end-to-end (truncation-safe main())")
+        }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private fun runInstall(c: ContainerDriver, env: Map<String, String>): ProcessResult =
