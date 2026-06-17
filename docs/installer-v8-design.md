@@ -1,11 +1,59 @@
 # Installer — version.json-driven, generated self-contained installer
 
-Author: Eugene Petrenko · Status: implementation-ready design
+Author: Eugene Petrenko · Status: implemented (PR #113) — see §0 for the
+as-built deviations from the original plan below.
 
 The `~/.mcp-steroid/` install-root layout and the wrapper/launcher mechanics
 are reused from the prior `docs/devrig-deployment-spec.md`. **`devrig upgrade`
 and any release signing are OUT OF SCOPE for this spec** — it covers install
 plus the generated install scripts only.
+
+---
+
+## 0. As-built status (2026-06-17) — deviations from the plan
+
+The design below is preserved as the original plan; the shipped implementation
+(PR #113) differs on these load-bearing points. **Where §1–§11 conflict with
+this section, this section wins.**
+
+1. **`jdk-coordinates.json` is GENERATED, not committed.** The single source of
+   truth is the committed **`jdk-downloader/jdk25-pinned.json`** (5 platforms:
+   `vendor`/`version`/`url`/`sha256`/`format`; **no** `javaHomeSubpath`).
+   `website/installer/jdk-coordinates.json` is a build artifact — `git rm`'d and
+   gitignored. (`devrig-coordinates.json` stays committed as the release-time
+   placeholder, overwritten by `resolveDevrigCoordinates`.)
+
+2. **`javaHomeSubpath` is INFERRED, not pinned.** The resolver inspects each real
+   downloaded archive (shortest `*/bin/java[.exe]`, stripped) and writes the
+   inferred value into the generated coordinates. The pinned source never carries
+   it. So the per-platform `javaHomeSubpath` examples in §3 are *outputs*, not
+   inputs.
+
+3. **Cycle-broken split (Option B): downloader downloads, installer-gen
+   generates.** `:jdk-downloader` is download-only — `downloadAllJdk25` fetches
+   the 5 archives and exposes them + the pinned file as Usage-attributed
+   consumables (`jdk-download-dir`, `jdk-pinned`). `:installer-gen:generateJdkCoordinates`
+   resolves those, verifies each download's bytes against the pinned `sha256`
+   (fail-fast on drift), infers `javaHomeSubpath`, and emits the coordinates
+   (exposed via `jdk-coordinates`). This replaces the planned
+   `:installer-gen:resolveJdkCoordinates` (§7) — that task name no longer exists.
+
+4. **Discovery is integrity-VERIFY, not auto-bump.** The JDK 25 versions are
+   intentionally HARDCODED in `jdk25-pinned.json` (same major; bumped by hand).
+   The scheduled job (`.github/workflows/installer-coordinates-verify.yml`,
+   weekly) downloads + sha256-cross-checks via `:installer-gen:generateJdkCoordinates`
+   and FAILS on drift so a maintainer fixes the pin manually. The planned daily
+   auto-resolver-with-PR (§7) and the vendor-metadata `latest=true` discovery are
+   NOT built (deferred).
+
+5. **Tests are consolidated into `:installer-gen` and split into two lanes** (not
+   `:test-integration`, §8): `:installer-gen:test` (fast `CoordinateResolverTest`,
+   no Docker/downloads — stays in the cross-OS plugin matrix) and
+   `:installer-gen:installerIntegrationTest` (a dedicated source set: the Docker
+   bootstrap + real-artifact lanes + `JdkCoordinatesMetadataTest`, `maxParallelForks=1`,
+   `onlyIf`-guarded, appended to `ciIntegrationTestTaskPaths`). The Docker tests
+   consume the GENERATED coords + `:jdk-downloader`'s real downloads + `:npx-kt`'s
+   devrig zip via `test.installer.*` system properties.
 
 ---
 
@@ -23,12 +71,14 @@ the published installation artifact.
 
 ### Scope
 
-- **In:** the two committed coordinate sources (`jdk-coordinates.json`,
-  `devrig-coordinates.json`); the generator (`:installer-gen` Gradle module +
-  `generateInstaller` task) and its two consumers (website Makefile,
-  `:test-integration`); the two generated scripts; the `bin/` self-registration
-  change in devrig; the daily coordinate-refresh GH Action; Docker integration
-  tests of the generated scripts; removal of the committed static scripts.
+- **In:** the coordinate sources — as built (§0.1) the committed
+  `jdk-downloader/jdk25-pinned.json` (pinned JDK input) + the committed
+  `devrig-coordinates.json` (release placeholder), with `jdk-coordinates.json`
+  GENERATED; the generator (`:installer-gen` Gradle module: `generateJdkCoordinates`
+  + `generateInstaller`) and its consumers (website Makefile, `:installer-gen`
+  integration tests); the two generated scripts; the `bin/` self-registration
+  change in devrig; the scheduled coordinate-VERIFY GH Action (§0.4); Docker
+  integration tests of the generated scripts; removal of the committed static scripts.
 - **Out:** `devrig upgrade` (signed-manifest self-update — deferred, tracked in
   TASKS); release signing / a signed manifest; Hugo/site authoring.
 
@@ -85,8 +135,9 @@ Rationale:
   no protection. Mitigations live in the pipeline (daily byte-verify), not in a
   published manifest.
 
-**The URL source is the committed coordinate files**
-(`website/installer/jdk-coordinates.json` + `website/installer/devrig-coordinates.json`).
+**The URL source is the coordinate files** — as built (§0.1) the committed
+`jdk-downloader/jdk25-pinned.json` (JDKs) + `website/installer/devrig-coordinates.json`
+(devrig), with `website/installer/jdk-coordinates.json` GENERATED from the former.
 They are the single human-/job-edited declarative source of all URLs+shas;
 `generateInstaller` consumes them and renders the self-contained scripts, which
 are the published installation artifact. The coordinate files are the source;
@@ -106,7 +157,10 @@ form and carry vendor-/release-authoritative sha256 values.
 
 ### `website/installer/jdk-coordinates.json` — edited by the daily GH Action
 
-The **only** file the daily JDK job edits. Committed; not served to users.
+> **Superseded — see §0.** As built, this file is GENERATED (not committed, not
+> daily-edited). The committed source of truth is `jdk-downloader/jdk25-pinned.json`
+> (same fields **minus** `javaHomeSubpath`, which the resolver infers). The
+> `javaHomeSubpath` values shown below are resolver *outputs*.
 
 ```jsonc
 {
@@ -375,6 +429,15 @@ raw `readText`) so it rewrites only on a real change — never every launch.
 
 ## 7. Daily GH Action — `installer-jdk-refresh.yml`
 
+> **Superseded — see §0.4.** As built this is an integrity **verify** job
+> (`.github/workflows/installer-coordinates-verify.yml`, **weekly**), not a daily
+> auto-bump-with-PR. The renamed task is **`:installer-gen:generateJdkCoordinates`**
+> (`resolveJdkCoordinates` no longer exists); it downloads + sha256-cross-checks
+> the pinned set and FAILS on drift so a maintainer updates `jdk25-pinned.json` by
+> hand. The vendor-metadata `latest=true` auto-discovery + auto-PR (steps 1/3/4/5
+> below) are deferred, not implemented. The rest of this section is the original
+> plan, retained for the eventual auto-discovery follow-up.
+
 ```yaml
 name: installer-jdk-refresh
 on:
@@ -382,8 +445,8 @@ on:
   workflow_dispatch:
 ```
 
-A single Kotlin resolver, `:installer-gen:resolveJdkCoordinates`, keeps logic
-testable and out of YAML:
+A single Kotlin resolver (today `:installer-gen:generateJdkCoordinates`; an
+auto-discovery variant would extend it) keeps logic testable and out of YAML:
 
 1. **Resolve current coordinates** for all 5 platforms:
    - Corretto (4 platforms): GitHub API
@@ -422,6 +485,14 @@ A weekly URL-liveness check should also HEAD all 5 JDK URLs + the devrig URL.
 ---
 
 ## 8. Integration tests
+
+> **Superseded — see §0.5.** As built the tests live in **`:installer-gen`**, not
+> `:test-integration`, split into a fast `:installer-gen:test` (CoordinateResolverTest)
+> and a Docker `:installer-gen:installerIntegrationTest` (own source set; bootstrap
+> + real-artifact lanes + `JdkCoordinatesMetadataTest`), the latter appended to the
+> serialized `ciIntegrationTests` chain. They consume the GENERATED coords +
+> `:jdk-downloader`'s real downloads + `:npx-kt`'s devrig zip via `test.installer.*`
+> system properties. The fixture/side-car approach below is otherwise accurate.
 
 ### Kotlin-only, over the `test-helper` Docker toolkit
 
@@ -510,20 +581,24 @@ static scripts (section 10).
    static/install.sh
    static/install.ps1
    ```
-3. **Coordinate files stay committed** — `jdk-coordinates.json` (daily-PR
-   target) and `devrig-coordinates.json` (release-time target) are input data,
-   not generated artifacts.
+3. **Coordinate files** — *(superseded, see §0.1)* as built, **only**
+   `devrig-coordinates.json` (release-time placeholder) stays committed. The
+   committed input for JDKs is `jdk-downloader/jdk25-pinned.json`;
+   `website/installer/jdk-coordinates.json` is now GENERATED (`git rm`'d +
+   gitignored alongside the install scripts).
 4. **Dev (`deployNpx`)**: dev mode pre-populates the cache and writes `bin/`
    launchers directly via `ensureBinLauncher` (section 6) + the dev-mode cache
    copy — it does not need the generated install scripts. Optionally `deployNpx`
    may run `:installer-gen:generateInstaller -PoutDir=build/installer` for local
    inspection, but that output is gitignored and not required for dev.
 5. **CI**: the site build (`github-pages.yml` → `make update-config`) generates
-   and deploys the scripts; `:test-integration` generates them via the task
-   dependency for its Docker runs. Neither reads a committed copy. The single
-   source of truth for "what gets installed" is therefore `jdk-coordinates.json`
-   + `devrig-coordinates.json` + the generator — all reproducible, none binary,
-   none committed-as-output.
+   and deploys the scripts; `:installer-gen:installerIntegrationTest` generates the
+   coordinates + scripts via its task dependencies for its Docker runs. Neither
+   reads a committed copy. As built (§0.1), the single source of truth for "what
+   gets installed" is **`jdk-downloader/jdk25-pinned.json`** (JDKs) +
+   `devrig-coordinates.json` (devrig) + the generator — all reproducible, none
+   binary, none committed-as-output (the JDK coordinates themselves are now a
+   generated artifact, not committed).
 
 The generated install scripts are produced only by the website build and by
 integration tests; the templates live in `:installer-gen`; the generated outputs

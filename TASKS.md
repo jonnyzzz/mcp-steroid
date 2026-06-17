@@ -4386,9 +4386,11 @@ containers concurrently with :test-integration's IDE containers (OOM rule). FIXE
   mustRunAfter chain serializes it after :test-integration:test. `check` compiles it (no run).
 Also fixed quorum nits: stale prop() error msg (→ installer-gen/build.gradle.kts) + removed stale generateInstaller
 KDoc. Re-verified: both lanes compile; routing confirmed (test→plugin matrix, installerIntegrationTest→Docker chain).
-FOLLOW-UP (out of scope, pre-existing): docs/installer-v8-design.md still names resolveJdkCoordinates + a daily
-PR editing the now-generated committed jdk-coordinates.json — needs a doc-sync pass (pinned edits now go to
-jdk-downloader/jdk25-pinned.json).
+DOC-SYNC DONE: docs/installer-v8-design.md gained an authoritative "§0 As-built status" section recording the
+5 deviations (generated jdk-coordinates; inferred javaHomeSubpath; Option-B cycle split; verify-not-autobump;
+tests in :installer-gen split into test + installerIntegrationTest), plus inline "superseded — see §0" pointers
+at the flagged spots (§1 scope, §2 URL source, §3 jdk-coordinates header, §7 daily-job/resolveJdkCoordinates,
+§8 tests, §10 de-binary-fication). No stale resolveJdkCoordinates/generateJdk25Coordinates refs remain in code/CI.
 
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 
