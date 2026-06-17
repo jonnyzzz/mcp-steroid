@@ -660,33 +660,25 @@ val verifyJdkConfigurations by tasks.registering {
 
 extractAllJdks.configure { dependsOn(verifyAllJdks, auditJdkPermissions) }
 
-// ── JDK 25 installer coordinates: download all 5 platforms + GENERATE jdk-coordinates.json ──
+// ── JDK 25 installer coordinates: DOWNLOAD all 5 platforms (generation lives in :installer-gen) ──
 // Separate from the legacy Corretto-21 path above (which feeds :npx-kt version.json via jdkManifestElements
-// and must stay). This pipeline owns the installer's 5-platform JDK 25 set (Corretto x4 + Azul win-arm64),
-// downloads every archive (incremental: immutable pinned URLs, skip-if-present), and reuses :installer-gen's
-// resolver to infer javaHomeSubpath + verify sha256 + emit jdk-coordinates.json.
+// and must stay). jdk-downloader owns the installer's 5-platform JDK 25 SET (Corretto x4 + Azul win-arm64)
+// and DOWNLOADS every archive (incremental: immutable pinned URLs, skip-if-present). It exposes the
+// download dir + the pinned source as consumables; :installer-gen runs the resolver over them to GENERATE
+// jdk-coordinates.json (kept there to avoid an installer-gen <-> jdk-downloader dependency cycle).
 
-// Resolvable classpath for the installer-gen resolver CLI (ResolverMainKt) — reuse, no duplicated logic.
-val installerGenRuntime by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
-dependencies {
-    installerGenRuntime(project(":installer-gen"))
-}
+val jdk25PinnedFile = file("jdk25-pinned.json")
 
 // Pinned source of truth (the only file the daily refresh edits). Parsed at config time for the URLs.
 @Suppress("UNCHECKED_CAST")
 val jdk25Pinned: Map<String, Map<String, Any?>> = run {
-    val f = file("jdk25-pinned.json")
-    val root = JsonSlurper().parse(f) as? Map<String, Any?>
-        ?: error("jdk25-pinned.json is not a JSON object: $f")
+    val root = JsonSlurper().parse(jdk25PinnedFile) as? Map<String, Any?>
+        ?: error("jdk25-pinned.json is not a JSON object: $jdk25PinnedFile")
     (root["platforms"] as? Map<String, Map<String, Any?>>)
-        ?: error("jdk25-pinned.json: missing 'platforms' object ($f)")
+        ?: error("jdk25-pinned.json: missing 'platforms' object ($jdk25PinnedFile)")
 }
 
 val jdk25DownloadDir = layout.buildDirectory.dir("jdk25-download")
-val jdk25CoordinatesFile = layout.buildDirectory.file("jdk25-coordinates/jdk-coordinates.json")
 
 val downloadAllJdk25 by tasks.registering {
     group = jdkDownloaderTaskGroup
@@ -708,42 +700,18 @@ jdk25Pinned.forEach { (key, entry) ->
     downloadAllJdk25.configure { dependsOn(dl) }
 }
 
-val jdk25Archives = jdk25Pinned.keys.map { key ->
-    tasks.named<Download>("downloadJdk25_$key").map { it.outputs.files.singleFile }
-}
-
-val generateJdk25Coordinates by tasks.registering(JavaExec::class) {
-    group = jdkDownloaderTaskGroup
-    description = "Generate jdk-coordinates.json from the downloaded JDK 25 archives (inferred javaHomeSubpath + verified sha256)."
-    dependsOn(downloadAllJdk25)
-    classpath = installerGenRuntime
-    mainClass.set("com.jonnyzzz.mcpSteroid.installer.resolver.ResolverMainKt")
-
-    val pinned = file("jdk25-pinned.json")
-    inputs.file(pinned).withPropertyName("pinned")
-    inputs.files(jdk25Archives).withPropertyName("jdk25Archives")
-    outputs.file(jdk25CoordinatesFile)
-
-    args(
-        "jdk",
-        "--source", pinned.absolutePath,
-        "--download-dir", jdk25DownloadDir.get().asFile.absolutePath,
-        "--out", jdk25CoordinatesFile.get().asFile.absolutePath,
-    )
-}
-
-// Consumables for :installer-gen (generateInstaller) + :test-integration (side-car + metadata test).
-val jdkCoordinatesElements by configurations.creating {
-    isCanBeConsumed = true
-    isCanBeResolved = false
-    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-coordinates")) }
-}
+// Consumables for :installer-gen's generate task (the download dir + the pinned source).
 val jdk25DownloadElements by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
     attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-download-dir")) }
 }
+val jdk25PinnedElements by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-pinned")) }
+}
 artifacts {
-    add(jdkCoordinatesElements.name, jdk25CoordinatesFile) { builtBy(generateJdk25Coordinates) }
     add(jdk25DownloadElements.name, jdk25DownloadDir) { builtBy(downloadAllJdk25) }
+    add(jdk25PinnedElements.name, jdk25PinnedFile)
 }

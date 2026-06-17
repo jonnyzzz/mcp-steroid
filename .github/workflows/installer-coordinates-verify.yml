@@ -13,10 +13,10 @@
 # limitations under the License.
 
 # Verifies the pinned installer coordinates against reality: downloads every JDK in
-# website/installer/jdk-coordinates.json and HEADs the devrig package URL, asserting the URLs still
-# resolve and the bytes still match the committed sha256 (resolveJdkCoordinates fails the build on a
-# sha mismatch). The pinned JDK 25 versions are intentionally HARDCODED — releases are stable — so this
-# is an integrity guard, NOT an auto-bumper: on a failure a maintainer updates the coordinates by hand.
+# jdk-downloader/jdk25-pinned.json (via :jdk-downloader) and HEADs the devrig package URL, asserting the
+# URLs still resolve and the bytes still match the pinned sha256 (generateJdkCoordinates fails the build
+# on a sha mismatch). The pinned JDK 25 versions are intentionally HARDCODED — releases are stable — so
+# this is an integrity guard, NOT an auto-bumper: on a failure a maintainer updates jdk25-pinned.json by hand.
 #
 # Future enhancement (intentionally not built yet): auto-detect a newer BUILD of the same JDK 25 major
 # via the vendor metadata APIs (Corretto GitHub releases / Azul metadata) and open a refresh PR.
@@ -50,7 +50,7 @@ jobs:
           distribution: temurin
 
       - name: Verify pinned JDK coordinates (download + sha256 cross-check, fails on drift)
-        run: ./gradlew :installer-gen:resolveJdkCoordinates --no-daemon
+        run: ./gradlew :installer-gen:generateJdkCoordinates --no-daemon
 
       - name: Verify the devrig package URL is reachable
         run: |

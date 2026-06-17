@@ -1,11 +1,7 @@
-import de.undercouch.gradle.tasks.download.Download
-import groovy.json.JsonSlurper
-
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     application
-    id("de.undercouch.download")
 }
 
 kotlin {
@@ -24,119 +20,108 @@ dependencies {
     // explicitly — the resolver + install scripts both accept tar.xz, and without this the tar.xz
     // path would throw NoClassDefFoundError instead of working.
     implementation("org.tukaani:xz:1.10")
+
     testImplementation(kotlin("test"))
+    // Docker integration infra (containers, nginx side-car, ProjectHomeDirectory) for the installer
+    // bootstrap + real-artifact tests, consolidated into this module.
+    testImplementation(project(":test-helper"))
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter-api")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly("org.slf4j:slf4j-simple:2.0.17")
 }
 
 application {
     mainClass.set("com.jonnyzzz.mcpSteroid.installer.InstallerGeneratorKt")
 }
 
-tasks.test {
-    useJUnitPlatform()
+// tasks.test is configured at the END of this file — it depends on generateJdkCoordinates / jdk25Downloads
+// / devrigPackage, which are declared below.
+
+// ── JDK coordinates GENERATION: :jdk-downloader downloads the 5 JDK 25 archives; this module's resolver
+//    inspects them to produce jdk-coordinates.json (sha256 + inferred javaHomeSubpath). Generation lives
+//    here (not in jdk-downloader) to avoid an installer-gen <-> jdk-downloader project cycle. ──
+val jdk25Downloads by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-download-dir")) }
+}
+val jdk25Pinned by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-pinned")) }
+}
+dependencies {
+    jdk25Downloads(project(":jdk-downloader"))
+    jdk25Pinned(project(":jdk-downloader"))
 }
 
-/**
- * Render `install.sh` + `install.ps1` from the committed coordinate files. A pure data-merge:
- * no devrig/plugin build dependency. Invoked by the website Makefile (shelling out to ./gradlew)
- * and by :test-integration (which consumes the output dir via a system property). Relative -P
- * paths resolve against the repo root so `-PoutDir=website/static` works from `cd .. && ./gradlew`.
- */
+val generatedJdkCoordinates = layout.buildDirectory.file("installer-coords/jdk-coordinates.json")
+
+val generateJdkCoordinates by tasks.registering(JavaExec::class) {
+    group = "installer"
+    description = "Generate jdk-coordinates.json from the JDK 25 archives :jdk-downloader downloaded (verified sha256 + inferred javaHomeSubpath)."
+    mainClass.set("com.jonnyzzz.mcpSteroid.installer.resolver.ResolverMainKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    inputs.files(jdk25Downloads).withPropertyName("jdk25Downloads")
+    inputs.files(jdk25Pinned).withPropertyName("jdk25Pinned")
+    outputs.file(generatedJdkCoordinates)
+    doFirst {
+        args(
+            "jdk",
+            "--source", jdk25Pinned.singleFile.absolutePath,
+            "--download-dir", jdk25Downloads.singleFile.absolutePath,
+            "--out", generatedJdkCoordinates.get().asFile.absolutePath,
+        )
+    }
+}
+
+// Expose the generated jdk-coordinates for the website build + the installer tests.
+val jdkCoordinatesElements by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-coordinates")) }
+}
+artifacts {
+    add(jdkCoordinatesElements.name, generatedJdkCoordinates) { builtBy(generateJdkCoordinates) }
+}
+
+// ── Render install.sh + install.ps1 — a pure data-merge. jdk-coordinates defaults to the GENERATED
+//    artifact above; -PjdkCoordinatesFile overrides (e.g. tests). ──
 val generateInstaller by tasks.registering(JavaExec::class) {
     group = "installer"
-    description = "Generate install.sh + install.ps1 from website/installer/*-coordinates.json."
+    description = "Generate install.sh + install.ps1 from the coordinate files."
     mainClass.set("com.jonnyzzz.mcpSteroid.installer.InstallerGeneratorKt")
     classpath = sourceSets["main"].runtimeClasspath
 
     val outDirProp = project.findProperty("outDir") as String?
     val outDir = if (outDirProp != null) rootProject.file(outDirProp).absolutePath
                  else layout.buildDirectory.dir("installer").get().asFile.absolutePath
-    val jdkCoords = rootProject.file((project.findProperty("jdkCoordinatesFile") as String?)
-        ?: "website/installer/jdk-coordinates.json").absolutePath
+    val jdkCoordsOverride = (project.findProperty("jdkCoordinatesFile") as String?)?.let { rootProject.file(it).absolutePath }
     val devrigCoords = rootProject.file((project.findProperty("devrigCoordinatesFile") as String?)
         ?: "website/installer/devrig-coordinates.json").absolutePath
 
-    inputs.file(jdkCoords)
+    if (jdkCoordsOverride == null) {
+        dependsOn(generateJdkCoordinates)
+        inputs.file(generatedJdkCoordinates)
+    } else {
+        inputs.file(jdkCoordsOverride)
+    }
     inputs.file(devrigCoords)
     inputs.property("version", project.version.toString())
     outputs.dir(outDir)
 
-    args(
-        "--out-dir", outDir,
-        "--jdk-coordinates", jdkCoords,
-        "--devrig-coordinates", devrigCoords,
-        "--version", project.version.toString(),
-    )
-    doFirst { logger.lifecycle("[installer-gen] generateInstaller -> $outDir") }
-}
-
-// ── Block 2: coordinate resolvers — Gradle downloads the real artifacts; the resolver inspects them ──
-
-// Pinned download URLs come from the committed coordinate file (parsed at configuration time).
-@Suppress("UNCHECKED_CAST")
-val jdkPlatformUrls: Map<String, String> = run {
-    val f = rootProject.file("website/installer/jdk-coordinates.json")
-    val root = JsonSlurper().parse(f) as? Map<String, Any?>
-        ?: error("jdk-coordinates.json is not a JSON object: $f")
-    val platforms = root["platforms"] as? Map<String, Map<String, Any?>>
-        ?: error("jdk-coordinates.json: missing 'platforms' object ($f)")
-    platforms.mapValues { (key, e) ->
-        (e["url"] as? String) ?: error("jdk-coordinates.json: platform '$key' has no 'url' ($f)")
+    doFirst {
+        val jdkCoords = jdkCoordsOverride ?: generatedJdkCoordinates.get().asFile.absolutePath
+        args(
+            "--out-dir", outDir,
+            "--jdk-coordinates", jdkCoords,
+            "--devrig-coordinates", devrigCoords,
+            "--version", project.version.toString(),
+        )
+        logger.lifecycle("[installer-gen] generateInstaller -> $outDir (jdk-coords: $jdkCoords)")
     }
-}
-
-val jdkDownloadDir = layout.buildDirectory.dir("jdk-download")
-
-val downloadAllJdks by tasks.registering {
-    group = "installer"
-    description = "Download all real JDK packages pinned in website/installer/jdk-coordinates.json."
-}
-
-jdkPlatformUrls.forEach { (key, url) ->
-    val fileName = url.substringAfterLast('/')
-    val dl = tasks.register<Download>("downloadJdk_$key") {
-        group = "installer"
-        description = "Download the $key JDK package ($fileName)."
-        val destFile = jdkDownloadDir.get().asFile.resolve(fileName)
-        src(url)
-        dest(destFile)
-        connectTimeout(30_000)
-        readTimeout(15 * 60_000)
-        retries(5)
-        tempAndMove(true)
-        // Vendor artifacts are immutable for a pinned URL; skip the fetch entirely if already on disk
-        // (this supersedes onlyIfModified — when present we never re-check, when absent we always fetch).
-        onlyIf { !destFile.exists() }
-    }
-    downloadAllJdks.configure { dependsOn(dl) }
-}
-
-// Manual / daily-refresh entrypoint (no automated caller yet — the daily installer-jdk-refresh GH
-// Action that invokes this lands in the release-wiring block). The integration test exercises the
-// resolver in-process; this task is the production path that regenerates the committed coordinates.
-val resolveJdkCoordinates by tasks.registering(JavaExec::class) {
-    group = "installer"
-    description = "Inspect the downloaded JDKs and (re)generate jdk-coordinates.json with real sha256 + javaHomeSubpath."
-    dependsOn(downloadAllJdks)
-    mainClass.set("com.jonnyzzz.mcpSteroid.installer.resolver.ResolverMainKt")
-    classpath = sourceSets["main"].runtimeClasspath
-
-    val source = rootProject.file("website/installer/jdk-coordinates.json").absolutePath
-    val out = (project.findProperty("out") as String?)
-        ?.let { rootProject.file(it).absolutePath }
-        ?: layout.buildDirectory.file("installer-resolved/jdk-coordinates.json").get().asFile.absolutePath
-    val argList = mutableListOf("jdk", "--source", source, "--download-dir", jdkDownloadDir.get().asFile.absolutePath, "--out", out)
-    (project.findProperty("urlBase") as String?)?.let { argList += listOf("--url-base", it) }
-    args(*argList.toTypedArray())
-}
-
-// Expose the downloaded-JDK directory so :test-integration can serve the real archives from a side-car.
-val jdkDownloadElements by configurations.creating {
-    isCanBeConsumed = true
-    isCanBeResolved = false
-    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-download-dir")) }
-}
-artifacts {
-    add(jdkDownloadElements.name, jdkDownloadDir) { builtBy(downloadAllJdks) }
 }
 
 // ── Resolver B: devrig-coordinates from the built :npx-kt devrig package zip (release-time) ──
@@ -187,3 +172,54 @@ val resolveDevrigCoordinates by tasks.registering(JavaExec::class) {
         args("devrig", "--dist-zip", devrigPackage.singleFile.absolutePath, "--url", url, "--out", out)
     }
 }
+
+// ── Tests split into two lanes, both living in this module ────────────────────────────────────────
+//  • `test` (src/test)            — FAST, pure-JVM unit tests (CoordinateResolverTest): synthetic
+//    archives only, no Docker, no downloads. Stays in the per-OS `ciBuildPluginTests` matrix (cheap,
+//    cross-OS), so it must NOT depend on the heavy JDK-download / devrig-build / Docker artifacts.
+//  • `installerIntegrationTest`   — HEAVY Docker + real-artifact suite (install.sh/ps1 bootstrap via an
+//    nginx side-car + ubuntu/alpine/pwsh containers, the real-artifact lane, and the generated-coords
+//    metadata validation). It boots Docker and downloads the 5 real JDK 25 archives, so it joins the
+//    serialized `ciIntegrationTests` chain (root build.gradle.kts) — NEVER the parallel plugin matrix —
+//    mirroring how :test-integration is isolated (no two Docker test JVMs at once → OOM guard).
+tasks.test {
+    useJUnitPlatform()
+}
+
+val installerIntegrationTestSourceSet = sourceSets.create("installerIntegrationTest") {
+    compileClasspath += sourceSets["main"].output + sourceSets["test"].output + configurations["testRuntimeClasspath"]
+    runtimeClasspath += output + compileClasspath
+}
+
+val installerIntegrationTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Docker-backed installer bootstrap + real-artifact tests + generated jdk-coordinates metadata validation."
+    useJUnitPlatform()
+    testClassesDirs = installerIntegrationTestSourceSet.output.classesDirs
+    classpath = installerIntegrationTestSourceSet.runtimeClasspath
+    // Docker side-car + install containers: never run two installer test JVMs at once (RAM/CPU OOM
+    // guard, mirrors the repo-wide :test-integration discipline).
+    maxParallelForks = 1
+    testLogging { showStandardStreams = true }
+    systemProperty("junit.jupiter.execution.timeout.default", "15m")
+
+    dependsOn(generateJdkCoordinates, jdk25Downloads, devrigPackage)
+    doFirst {
+        systemProperty("test.installer.jdk.download.dir", jdk25Downloads.singleFile.absolutePath)
+        systemProperty("test.installer.devrig.package.zip", devrigPackage.singleFile.absolutePath)
+        systemProperty("test.installer.jdk.coordinates", generatedJdkCoordinates.get().asFile.absolutePath)
+    }
+
+    // Heavyweight (Docker + ~1GB JDK downloads): require an explicit invocation — either this task
+    // directly or the serialized ciIntegrationTests aggregator — so plain root `./gradlew test` /
+    // `check` aggregation never boots Docker. Mirrors :test-integration:test's onlyIf guard.
+    onlyIf("Requires explicit :installer-gen:installerIntegrationTest or ciIntegrationTests invocation — needs Docker + downloads") {
+        val names = gradle.startParameter.taskNames
+        names.any { it.contains(":installer-gen:installerIntegrationTest") || it == "installerIntegrationTest" } ||
+            names.any { it == "ciIntegrationTests" || it.endsWith(":ciIntegrationTests") }
+    }
+}
+
+// Compile the heavy lane as part of `check` (without running it) so the merge-gate compile check + a
+// plain build still catch breakage in those tests even when Docker isn't available to run them.
+tasks.named("check") { dependsOn(installerIntegrationTestSourceSet.classesTaskName) }

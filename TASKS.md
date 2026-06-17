@@ -4351,6 +4351,45 @@ REMAINING (Block 4 parts 2+):
   mode on ResolverMain.
 - THEN MCP Steroid inspection + 3x quorum for Block 4.
 
+PART 2 DONE (Option B — cycle break: "jdk-downloader DOWNLOADS, installer-gen GENERATES"):
+- Cycle resolved by MOVING generation OUT of jdk-downloader (Part-1's generateJdk25Coordinates) INTO
+  :installer-gen. jdk-downloader is now download-ONLY: downloadAllJdk25 + jdk25DownloadElements (Usage
+  "jdk-download-dir") + jdk25PinnedElements (Usage "jdk-pinned"). No generate task there anymore.
+- :installer-gen: generateJdkCoordinates (JavaExec ResolverMainKt jdk) consumes jdk-downloader's
+  download-dir + pinned configs, emits build/installer-coords/jdk-coordinates.json, exposes it via
+  jdkCoordinatesElements (Usage "jdk-coordinates"). generateInstaller defaults --jdk-coordinates to that
+  generated file (-PjdkCoordinatesFile overrides). Dropped installer-gen's downloadJdk_*/downloadAllJdks/
+  resolveJdkCoordinates/jdkPlatformUrls/jdkDownloadElements + the de.undercouch.download plugin. RE-VERIFIED
+  LOSSLESS (jq -S '.platforms' diff clean vs old committed file).
+- TESTS CONSOLIDATED into :installer-gen (moved from :test-integration via git mv, package
+  ...installer.tests): InstallerBootstrapTest + InstallerRealArtifactsTest (now read GENERATED coords +
+  jdk-downloader downloads via test.installer.* sysprops) + NEW JdkCoordinatesMetadataTest (all 5 platforms
+  vs pinned). :installer-gen test deps += :test-helper + JUnit Jupiter; test task maxParallelForks=1,
+  dependsOn(generateJdkCoordinates, jdk25Downloads, devrigPackage). Removed installer wiring from
+  :test-integration (installerJdkDownloads, :installer-gen testImpl, jdk.download.dir sysprop).
+- git rm --cached + gitignore website/installer/jdk-coordinates.json (build artifact now). devrig-coordinates.json
+  STAYS committed (release-time placeholder overwritten by resolveDevrigCoordinates) — out of scope.
+- installer-coordinates-verify.yml repointed → :installer-gen:generateJdkCoordinates.
+- VALIDATION: green — CoordinateResolverTest + JdkCoordinatesMetadataTest + Docker lanes
+  (ubuntu/alpine/powershell/missing-prereq/curl|sh + real-artifact: bundled Corretto 25 + real devrig launch,
+  resolver reproduces GENERATED sha256+javaHomeSubpath ×5). IDE inspections 0 WARNING+ on changed Kotlin.
+
+3x QUORUM (wf_bb6a0bcb) → NO_GO, unanimous single blocker (CI membership): the moved Docker tests were
+swept into the per-OS ciBuildPluginTests matrix (installer-gen in no exclusion set) while absent from the
+serialized ciIntegrationTests chain → would break Docker-less Windows/macOS agents + run installer Docker
+containers concurrently with :test-integration's IDE containers (OOM rule). FIXED by splitting the lanes:
+- `:installer-gen:test` (src/test) = FAST CoordinateResolverTest only — no Docker/downloads — stays in the
+  cross-OS plugin matrix.
+- `:installer-gen:installerIntegrationTest` (NEW src/installerIntegrationTest source set) = the 3 heavy tests
+  (2 Docker + JdkCoordinatesMetadata) with the heavy dependsOn + sysprops + maxParallelForks=1 + 15m timeout
+  + an onlyIf guard (explicit task or ciIntegrationTests). Appended to root ciIntegrationTestTaskPaths so the
+  mustRunAfter chain serializes it after :test-integration:test. `check` compiles it (no run).
+Also fixed quorum nits: stale prop() error msg (→ installer-gen/build.gradle.kts) + removed stale generateInstaller
+KDoc. Re-verified: both lanes compile; routing confirmed (test→plugin matrix, installerIntegrationTest→Docker chain).
+FOLLOW-UP (out of scope, pre-existing): docs/installer-v8-design.md still names resolveJdkCoordinates + a daily
+PR editing the now-generated committed jdk-coordinates.json — needs a doc-sync pass (pinned edits now go to
+jdk-downloader/jdk25-pinned.json).
+
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 
 E2 (commit on installer): InstallerBootstrapTest case runs the EXACT `curl -fsSL <sidecar>/install.sh | sh`

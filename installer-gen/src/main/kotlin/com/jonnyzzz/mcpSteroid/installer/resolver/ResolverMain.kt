@@ -12,11 +12,11 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 /**
- * CLI entrypoints for the coordinate RESOLVERS, invoked by Gradle (`:installer-gen:resolveJdkCoordinates`
+ * CLI entrypoints for the coordinate RESOLVERS, invoked by Gradle (`:installer-gen:generateJdkCoordinates`
  * / `:resolveDevrigCoordinates`). Gradle downloads the real artifacts to disk; these mains hand the local
  * files to [JdkCoordinateResolver] / [DevrigCoordinateResolver], which do the inspection + asserts.
  *
- *   jdk    --source <jdk-coordinates.json> --download-dir <dir> --out <out.json> [--url-base <sidecar>]
+ *   jdk    --source <jdk25-pinned.json> --download-dir <dir> --out <out.json> [--url-base <sidecar>]
  *   devrig --dist-zip <devrig.zip> --url <public-url> --out <out.json>
  */
 // encodeDefaults keeps schema/format/size in the emitted JSON (they equal their model defaults) so the

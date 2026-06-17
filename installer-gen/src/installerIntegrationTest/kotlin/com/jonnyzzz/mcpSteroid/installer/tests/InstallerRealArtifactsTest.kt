@@ -1,12 +1,11 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
-package com.jonnyzzz.mcpSteroid.integration.tests
+package com.jonnyzzz.mcpSteroid.installer.tests
 
 import com.jonnyzzz.mcpSteroid.installer.DevrigCoordinateResolver
 import com.jonnyzzz.mcpSteroid.installer.JdkCoordinateResolver
 import com.jonnyzzz.mcpSteroid.installer.JdkCoordinates
 import com.jonnyzzz.mcpSteroid.installer.LocalJdkArtifact
 import com.jonnyzzz.mcpSteroid.installer.main as runInstallerGenerator
-import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
 import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
@@ -27,40 +26,44 @@ import java.util.zip.ZipFile
 
 /**
  * Block 2 part 2b — validate the coordinate resolvers and the generated install.sh against the REAL
- * artifacts, using only files Gradle already put on disk. Gradle's :installer-gen:downloadAllJdks (the
- * sole real network fetch, cached) provides the 5 real JDK archives; :npx-kt:distZip provides the real
- * devrig package. Inside the test, every download URL points at the nginx side-car serving those local
- * files — the test never reaches a vendor CDN.
+ * artifacts, using only files Gradle already put on disk. Gradle's :jdk-downloader:downloadAllJdk25 (the
+ * sole real network fetch, cached) provides the 5 real JDK archives; :npx-kt's devrig package provides
+ * the real devrig zip. The regression guard compares the resolver against the GENERATED
+ * jdk-coordinates.json (:installer-gen:generateJdkCoordinates). Inside the test, every download
+ * URL points at the nginx side-car serving those local files — the test never reaches a vendor CDN.
  */
 class InstallerRealArtifactsTest {
-    private val jdkDownloadDir = File(prop("test.integration.jdk.download.dir"))
-    private val devrigZip = File(prop("test.integration.devrig.package.zip"))
+    private val jdkDownloadDir = File(prop("test.installer.jdk.download.dir"))
+    private val devrigZip = File(prop("test.installer.devrig.package.zip"))
     private val nginxImage = "nginx:alpine"
     private val installImage = "ubuntu:24.04"
     private val homeDir = "/home/tester one"
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
-    private val committed: JdkCoordinates by lazy {
-        val coordsFile = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("website/installer/jdk-coordinates.json")
-        json.decodeFromString(coordsFile.toFile().readText())
+    // The GENERATED jdk-coordinates.json (:installer-gen:generateJdkCoordinates output), not a committed
+    // file — jdk-coordinates.json is a build artifact derived from jdk-downloader/jdk25-pinned.json.
+    private val generated: JdkCoordinates by lazy {
+        val coordsFile = File(prop("test.installer.jdk.coordinates"))
+        require(coordsFile.isFile) { "generated jdk-coordinates.json missing: $coordsFile (run :installer-gen:generateJdkCoordinates)" }
+        json.decodeFromString(coordsFile.readText())
     }
 
-    /** No network: inspect the 5 Gradle-downloaded JDKs and assert the resolver reproduces the committed
-     *  sha256 + javaHomeSubpath exactly — a regression guard that the committed coordinates match reality. */
+    /** No network: inspect the 5 Gradle-downloaded JDKs and assert the resolver reproduces the GENERATED
+     *  sha256 + javaHomeSubpath exactly — a regression guard that the generated coordinates match reality. */
     @Test
-    fun `resolver reproduces the committed coordinates from the real downloaded JDKs`() {
-        val artifacts = committed.platforms.map { (key, e) ->
+    fun `resolver reproduces the generated coordinates from the real downloaded JDKs`() {
+        val artifacts = generated.platforms.map { (key, e) ->
             val file = File(jdkDownloadDir, e.url.substringAfterLast('/'))
-            require(file.isFile) { "Gradle did not download $key: $file (run :installer-gen:downloadAllJdks)" }
+            require(file.isFile) { "Gradle did not download $key: $file (run :jdk-downloader:downloadAllJdk25)" }
             LocalJdkArtifact(key, file.toPath(), e.url, e.vendor, e.version, e.format)
         }
         val resolved = JdkCoordinateResolver.resolve(artifacts)
-        committed.platforms.forEach { (key, exp) ->
+        generated.platforms.forEach { (key, exp) ->
             val got = resolved.platforms.getValue(key)
-            require(exp.sha256 == got.sha256) { "sha256 drift for $key vs committed jdk-coordinates.json: ${exp.sha256} != ${got.sha256}" }
+            require(exp.sha256 == got.sha256) { "sha256 drift for $key vs generated jdk-coordinates.json: ${exp.sha256} != ${got.sha256}" }
             require(exp.javaHomeSubpath == got.javaHomeSubpath) { "javaHomeSubpath drift for $key: '${exp.javaHomeSubpath}' != '${got.javaHomeSubpath}'" }
         }
-        log("resolver reproduced committed sha256 + javaHomeSubpath for all ${resolved.platforms.size} platforms")
+        log("resolver reproduced generated sha256 + javaHomeSubpath for all ${resolved.platforms.size} platforms")
     }
 
     /** End-to-end: serve the REAL linux-x64 Corretto + REAL devrig zip from the side-car, generate
@@ -76,7 +79,7 @@ class InstallerRealArtifactsTest {
             val hostArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
             val platformKey = if (hostArm64) "linux-arm64" else "linux-x64"
             val cpuToken = if (hostArm64) "arm64" else "x64"
-            val plat = committed.platforms.getValue(platformKey)
+            val plat = generated.platforms.getValue(platformKey)
             val realJdk = File(jdkDownloadDir, plat.url.substringAfterLast('/'))
             require(realJdk.isFile) { "Gradle did not download the $platformKey JDK: $realJdk" }
             // The generator bakes binSubpath = devrig-<version>/bin/devrig; assert the real zip's layout
@@ -102,7 +105,7 @@ class InstallerRealArtifactsTest {
             log("side-car serving real artifacts at http://$nginxIp/")
 
             // Resolve coordinates from the real local files; linux-x64 + devrig point at the side-car.
-            val artifacts = committed.platforms.map { (key, e) ->
+            val artifacts = generated.platforms.map { (key, e) ->
                 val file = File(jdkDownloadDir, e.url.substringAfterLast('/'))
                 val url = if (key == platformKey) "http://$nginxIp/jdk.tar.gz" else e.url
                 LocalJdkArtifact(key, file.toPath(), url, e.vendor, e.version, e.format)
@@ -231,5 +234,5 @@ class InstallerRealArtifactsTest {
     private fun log(msg: String) = println("[InstallerRealArtifactsTest] $msg")
 
     private fun prop(name: String): String =
-        System.getProperty(name) ?: error("required system property '$name' not set (configured in test-integration/build.gradle.kts)")
+        System.getProperty(name) ?: error("required system property '$name' not set (configured in installer-gen/build.gradle.kts)")
 }
