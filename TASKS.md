@@ -4292,8 +4292,31 @@ InstallerBootstrapTest + InstallerRealArtifactsTest (cosmetic); (b) register the
 config-cache input (CC off by default — latent); (c) resolveDevrigCoordinates Gradle task (release mode,
 would couple :installer-gen → :npx-kt) — resolver-B engine + ResolverMain 'devrig' done + exercised in-process.
 
-REMAINING BLOCKS: release wiring (daily installer-jdk-refresh.yml + weekly liveness + website Makefile
-update-config → generateInstaller; + the deferred resolveDevrigCoordinates task), then docs E1/E2.
+## Block 3 IN PROGRESS (2026-06-17): release wiring
+
+User-clarified discovery scope: stay in the SAME JDK major (25); HARDCODE current versions; "discovery"
+= fetch each pinned artifact + verify URL works + sha256 matches, FAIL on mismatch for manual fix
+(releases are stable). Vendor-API latest-25-BUILD auto-detection = deliberate future TODO ("do not
+complicate it now"). → resolveJdkCoordinates already does exactly this (download + expectedSha cross-check).
+
+DONE (commits 3920a3bf + 02a124a7):
+- resolveDevrigCoordinates Gradle task (resolver B, release mode): devrig-coordinates.json from the built
+  :npx-kt distZip (sha256 + size + release URL); task-scoped devrigPackage config so generateInstaller stays
+  build-independent. ResolverMain encodeDefaults=true. Verified against the real 237 MB distZip.
+- .github/workflows/installer-coordinates-verify.yml (weekly + dispatch): JDK 25 + resolveJdkCoordinates
+  (downloads all 5 pinned JDKs, verifies URL + sha, fails on drift) + HEAD devrig URL. Weekly because the
+  pinned artifacts are immutable (adjustable). Vendor-API latest-build detection noted as future TODO.
+- website/Makefile update-config: generates install.sh/.ps1 via generateInstaller, GUARDED to skip while
+  devrig-coordinates.json is the PLACEHOLDER (never ship a broken devrig URL; auto-activates post-release).
+  install.sh/.ps1 already gitignored (.gitignore:50-51). github-pages.yml gained a Set up JDK 25 step.
+- Verified: placeholder guard takes SKIP branch; both workflow YAMLs parse; resolveDevrigCoordinates emits
+  valid coords from the real distZip.
+
+GATES: 3x quorum running (wqbc44v6w). MCP Steroid inspection N/A for this batch (YAML/Makefile, no Kotlin
+changed beyond the already-inspected ResolverMain). After quorum → address findings.
+
+REMAINING: docs E1/E2 (document curl|sh / irm|iex one-liner + test the piped command). Future TODO:
+vendor-API latest-JDK-25-build auto-detect + auto-refresh PR (deferred per user).
 
 ## Requirement (2026-06-16): installer must NOT install packages — DONE (install.sh)
 
