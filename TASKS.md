@@ -4484,6 +4484,21 @@ TODO — REMAINING refinements (NOT yet done; sequenced as blocks):
 - BLOCK T: strengthen the generated-plugin-xml test (parse the emitted XML, assert the tree) — generator already
   uses XML DOM (renderUpdatePluginsXml), no string manipulation; just add a parse-and-assert test.
 
+## Batch 3 (2026-06-17): Windows launcher = CMD-only (PowerShell only for the install script)
+
+User: "I do not get why we need powershell in the devrig binaries — CMD is enough. We only need powershell for
+the install script." DONE: the ~/.mcp-steroid/bin Windows launcher family is now a SINGLE self-contained
+devrig.cmd (`@echo off` + `if "%DEVRIG_JAVA_HOME%"=="" set ...%USERPROFILE%\<jdkHomeRel>` + `call
+"%USERPROFILE%\<launcherRel>" %*`) — NO devrig.ps1, NO powershell at launch time. PowerShell remains ONLY the
+install SCRIPT (install.ps1). BinLauncher: renderWindowsCmd(launcherRel, jdkHomeRel) is the full launcher,
+renderWindowsPs1 removed, Windows branch writes devrig.cmd only + deletes any orphan devrig.ps1 from older
+installs. install.ps1.tmpl: writes devrig.cmd (full batch); all internal devrig.ps1 refs (finalize, PATH hint,
+log) → devrig.cmd. DevrigUserLauncher registration already invokes `cmd.exe /d /c <devrig.cmd>` (unchanged).
+STDOUT stays clean (no powershell at launch; @echo off + set/if/call only). BinLauncherTest updated (cmd byte-exact
++ drift guard + writes-cmd-only). Note: this further simplifies the launcher beyond batch-2's -NonInteractive
+hardening (that flag is now moot for the launcher; -NonInteractive/-NoProfile stay relevant only if any future
+powershell launch returns — currently none).
+
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 
 E2 (commit on installer): InstallerBootstrapTest case runs the EXACT `curl -fsSL <sidecar>/install.sh | sh`

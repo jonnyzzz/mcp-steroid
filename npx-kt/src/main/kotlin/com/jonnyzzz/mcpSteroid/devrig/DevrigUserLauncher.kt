@@ -9,9 +9,9 @@ import java.nio.file.Path
  * INVOKE it from another process (agent MCP registration, prompts/docs, anywhere a command line is
  * built).
  *
- * The launcher family — POSIX `devrig`; Windows `devrig.cmd` → `devrig.ps1` — is the self-healing
- * wrapper that [ensureBinLauncher] writes. It sets `DEVRIG_JAVA_HOME` to the bundled JDK ITSELF, so
- * **no caller needs to deal with JAVA_HOME**. Pointing registrations/docs at this stable path (rather
+ * The launcher — POSIX `devrig`; Windows `devrig.cmd` (a self-contained batch, no PowerShell) — is the
+ * self-healing wrapper that [ensureBinLauncher] writes. It always sets `DEVRIG_JAVA_HOME` to the bundled
+ * JDK ITSELF, so **no caller needs to deal with JAVA_HOME**. Pointing registrations/docs at this stable path (rather
  * than a content-addressed `binaries/devrig-…-<sha12>/bin/devrig` that changes on every upgrade) is
  * what lets the wrapper repoint underneath without re-registering the agent.
  *

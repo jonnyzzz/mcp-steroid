@@ -393,10 +393,13 @@ class InstallerBootstrapTest {
             // JDK unpacked verbatim (Expand-Archive), bin/java present under javaHomeSubpath=jdk
             sh(install, "test -f \"$homeDir/.mcp-steroid/binaries/$jdkKey/jdk/bin/java\" && echo JDK_OK")
                 .assertOutputContains("JDK_OK", message = "bundled JDK bin/java missing — not downloaded/unpacked")
-            // both launchers written; devrig.ps1 sets DEVRIG_JAVA_HOME to the bundled jdk (relative to home)
-            sh(install, "test -f \"$homeDir/.mcp-steroid/bin/devrig.ps1\" && test -f \"$homeDir/.mcp-steroid/bin/devrig.cmd\" && echo LAUNCHERS_OK")
-                .assertOutputContains("LAUNCHERS_OK", message = "devrig.ps1 / devrig.cmd not written")
-            sh(install, "cat \"$homeDir/.mcp-steroid/bin/devrig.ps1\"")
+            // CMD-only launcher: a single devrig.cmd is written (no devrig.ps1 — PowerShell is only the
+            // install script), and it sets DEVRIG_JAVA_HOME to the bundled jdk (relative to %USERPROFILE%).
+            sh(install, "test -f \"$homeDir/.mcp-steroid/bin/devrig.cmd\" && echo CMD_OK")
+                .assertOutputContains("CMD_OK", message = "devrig.cmd not written")
+            sh(install, "test ! -f \"$homeDir/.mcp-steroid/bin/devrig.ps1\" && echo NO_PS1")
+                .assertOutputContains("NO_PS1", message = "launcher must be CMD-only — no devrig.ps1")
+            sh(install, "cat \"$homeDir/.mcp-steroid/bin/devrig.cmd\"")
                 .assertOutputContains(
                     "DEVRIG_JAVA_HOME",
                     "binaries/$jdkKey/jdk",
