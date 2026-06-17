@@ -660,12 +660,12 @@ val verifyJdkConfigurations by tasks.registering {
 
 extractAllJdks.configure { dependsOn(verifyAllJdks, auditJdkPermissions) }
 
-// ── JDK 25 installer coordinates: DOWNLOAD all 5 platforms (generation lives in :installer-gen) ──
+// ── JDK 25 installer coordinates: DOWNLOAD all 5 platforms (generation lives in :site-gen) ──
 // Separate from the legacy Corretto-21 path above (which feeds :npx-kt version.json via jdkManifestElements
 // and must stay). jdk-downloader owns the installer's 5-platform JDK 25 SET (Corretto x4 + Azul win-arm64)
 // and DOWNLOADS every archive (incremental: immutable pinned URLs, skip-if-present). It exposes the
-// download dir + the pinned source as consumables; :installer-gen runs the resolver over them to GENERATE
-// jdk-coordinates.json (kept there to avoid an installer-gen <-> jdk-downloader dependency cycle).
+// download dir + the pinned source as consumables; :site-gen runs the resolver over them to GENERATE
+// jdk-coordinates.json (kept there to avoid an site-gen <-> jdk-downloader dependency cycle).
 
 val jdk25PinnedFile = file("jdk25-pinned.json")
 
@@ -700,7 +700,7 @@ jdk25Pinned.forEach { (key, entry) ->
     downloadAllJdk25.configure { dependsOn(dl) }
 }
 
-// Consumables for :installer-gen's generate task (the download dir + the pinned source).
+// Consumables for :site-gen's generate task (the download dir + the pinned source).
 val jdk25DownloadElements by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false

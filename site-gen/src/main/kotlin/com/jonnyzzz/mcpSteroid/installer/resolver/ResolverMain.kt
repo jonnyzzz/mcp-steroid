@@ -11,7 +11,7 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 /**
- * CLI entrypoints for the coordinate RESOLVERS, invoked by Gradle (`:installer-gen:generateJdkCoordinates`
+ * CLI entrypoints for the coordinate RESOLVERS, invoked by Gradle (`:site-gen:generateJdkCoordinates`
  * / `:resolveDevrigCoordinates`). Gradle downloads the real artifacts to disk; these mains hand the local
  * files to [JdkCoordinateResolver] / [DevrigCoordinateResolver], which do the inspection + asserts.
  *

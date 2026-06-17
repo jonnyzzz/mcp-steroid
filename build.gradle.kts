@@ -326,7 +326,7 @@ val ciBuildPromptsTests by tasks.registering {
  * 3. `:test-integration:test`      — Docker IntelliJ smoke matrix (IntelliJContainer,
  *                                    DialogKiller, WhatYouSee, PyCharm, EapSmoke…).
  *                                    Spins up a full IDE container per test.
- * 4. `:installer-gen:installerIntegrationTest` — Docker installer suite (install.sh/ps1
+ * 4. `:site-gen:installerIntegrationTest` — Docker installer suite (install.sh/ps1
  *                                    bootstrap via an nginx side-car + ubuntu/alpine/pwsh
  *                                    containers, and the real-artifact lane) + the generated
  *                                    jdk-coordinates metadata validation. Boots Docker and
@@ -341,7 +341,7 @@ val ciIntegrationTestTaskPaths = listOf(
     ":test-helper:test",
     ":ij-plugin:integrationTest",
     ":test-integration:test",
-    ":installer-gen:installerIntegrationTest",
+    ":site-gen:installerIntegrationTest",
 )
 
 /**

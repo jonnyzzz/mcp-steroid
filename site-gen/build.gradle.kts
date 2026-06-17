@@ -41,7 +41,7 @@ application {
 
 // ── JDK coordinates GENERATION: :jdk-downloader downloads the 5 JDK 25 archives; this module's resolver
 //    inspects them to produce jdk-coordinates.json (sha256 + inferred javaHomeSubpath). Generation lives
-//    here (not in jdk-downloader) to avoid an installer-gen <-> jdk-downloader project cycle. ──
+//    here (not in jdk-downloader) to avoid a site-gen <-> jdk-downloader project cycle. ──
 val jdk25Downloads by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -120,7 +120,7 @@ val generateInstaller by tasks.registering(JavaExec::class) {
             "--devrig-coordinates", devrigCoords,
             "--version", project.version.toString(),
         )
-        logger.lifecycle("[installer-gen] generateInstaller -> $outDir (jdk-coords: $jdkCoords)")
+        logger.lifecycle("[site-gen] generateInstaller -> $outDir (jdk-coords: $jdkCoords)")
     }
 }
 
@@ -213,9 +213,9 @@ val installerIntegrationTest by tasks.registering(Test::class) {
     // Heavyweight (Docker + ~1GB JDK downloads): require an explicit invocation — either this task
     // directly or the serialized ciIntegrationTests aggregator — so plain root `./gradlew test` /
     // `check` aggregation never boots Docker. Mirrors :test-integration:test's onlyIf guard.
-    onlyIf("Requires explicit :installer-gen:installerIntegrationTest or ciIntegrationTests invocation — needs Docker + downloads") {
+    onlyIf("Requires explicit :site-gen:installerIntegrationTest or ciIntegrationTests invocation — needs Docker + downloads") {
         val names = gradle.startParameter.taskNames
-        names.any { it.contains(":installer-gen:installerIntegrationTest") || it == "installerIntegrationTest" } ||
+        names.any { it.contains(":site-gen:installerIntegrationTest") || it == "installerIntegrationTest" } ||
             names.any { it == "ciIntegrationTests" || it.endsWith(":ciIntegrationTests") }
     }
 }

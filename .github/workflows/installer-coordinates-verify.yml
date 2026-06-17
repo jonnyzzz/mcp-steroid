@@ -52,7 +52,7 @@ jobs:
           distribution: temurin
 
       - name: Verify pinned JDK coordinates (download + sha256 cross-check, fails on drift)
-        run: ./gradlew :installer-gen:generateJdkCoordinates --no-daemon
+        run: ./gradlew :site-gen:generateJdkCoordinates --no-daemon
 
       - name: Verify the devrig package URL is reachable
         run: |
