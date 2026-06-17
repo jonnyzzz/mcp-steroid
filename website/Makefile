@@ -55,6 +55,7 @@ update-config: ensure-public-repo copy-root-files
 	@# Guard: skip while devrig-coordinates.json is the release-time placeholder so the site never
 	@# publishes an install.sh with a broken devrig URL. Auto-activates once a release writes real
 	@# devrig coordinates. Needs a JDK on the host (github-pages CI sets one up).
+	@if [ ! -r installer/devrig-coordinates.json ]; then echo "ERROR: installer/devrig-coordinates.json missing/unreadable" >&2; exit 1; fi
 	@if grep -q PLACEHOLDER installer/devrig-coordinates.json; then \
 		echo "  SKIP: devrig-coordinates.json is the placeholder — install scripts not generated until a release sets real coordinates"; \
 	else \

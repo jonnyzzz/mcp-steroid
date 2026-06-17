@@ -32,9 +32,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: installer-coordinates-verify
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -53,5 +58,7 @@ jobs:
           case "$url" in
             *PLACEHOLDER*) echo "devrig-coordinates.json is still the release-time placeholder — skipping URL check"; exit 0 ;;
           esac
-          echo "HEAD $url"
-          curl -fsSLI -o /dev/null "$url"
+          # Ranged GET of the first byte, not HEAD: GitHub release URLs 302-redirect to a signed,
+          # expiring objects.githubusercontent.com URL where HEAD can 403/405.
+          echo "GET (first byte) $url"
+          curl -fsSL -o /dev/null -r 0-0 "$url"

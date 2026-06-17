@@ -165,9 +165,25 @@ val resolveDevrigCoordinates by tasks.registering(JavaExec::class) {
         ?.let { rootProject.file(it).absolutePath }
         ?: layout.buildDirectory.file("installer-resolved/devrig-coordinates.json").get().asFile.absolutePath
     val version = project.version.toString()
-    val url = (project.findProperty("devrigUrl") as String?)
+    val explicitUrl = project.findProperty("devrigUrl") as String?
+    // Auto-derived from project.version (which carries a -<gitHash>/-SNAPSHOT suffix, NOT a clean
+    // vX.Y.Z). Correct only when the release tag includes that exact version; pass -PdevrigUrl=<published
+    // asset url> otherwise (the doFirst warns when the auto-derived URL is a non-release version).
+    val url = explicitUrl
         ?: "https://github.com/jonnyzzz/mcp-steroid/releases/download/v$version/devrig-$version.zip"
+
+    inputs.files(devrigPackage)
+    inputs.property("url", url)
+    inputs.property("version", version)
+    outputs.file(out)
+
     doFirst {
+        if (explicitUrl == null && ("SNAPSHOT" in version || ".19999" in version)) {
+            logger.warn(
+                "[resolveDevrigCoordinates] project.version '$version' is not a release version — the " +
+                    "auto-derived URL $url will not resolve. Pass -PdevrigUrl=<published asset url> for a real release.",
+            )
+        }
         args("devrig", "--dist-zip", devrigPackage.singleFile.absolutePath, "--url", url, "--out", out)
     }
 }

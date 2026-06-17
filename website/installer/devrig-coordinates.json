@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "_comment": "devrig artifact coordinates, written at devrig RELEASE time from the published release asset (so generateInstaller is a pure data-merge with no devrig/plugin build dependency, and the sha256 is the published-artifact sha — never a non-reproducible local re-hash). The devrig installDist zip is universal across platforms today; binSubpath is derived by the generator as devrig-<version>/bin/devrig (POSIX) or devrig-<version>/bin/devrig.bat (Windows), matching distributionBaseName=devrig-$version. PLACEHOLDER values below are overwritten by the release task; integration tests supply their own coordinate file pointing at the mock server.",
+  "_comment": "devrig artifact coordinates, written at devrig RELEASE time by resolveDevrigCoordinates (so generateInstaller is a pure data-merge with no devrig/plugin build dependency). The sha256 is computed from the :npx-kt distZip — which the release CI uploads verbatim as the GitHub asset IN THE SAME JOB, so the recorded sha matches the published bytes (distZip is not byte-reproducible across machines, hence same-job hash+upload). The zip is universal across platforms; binSubpath is derived by the generator as devrig-<version>/bin/devrig (POSIX) or devrig-<version>/bin/devrig.bat (Windows), matching distributionBaseName=devrig-$version. PLACEHOLDER values below are overwritten by the release task; integration tests supply their own coordinate file pointing at the mock server.",
   "devrig": {
-    "url": "https://github.com/jonnyzzz/mcp-steroid/releases/download/PLACEHOLDER/devrig-installDist.zip",
+    "url": "https://github.com/jonnyzzz/mcp-steroid/releases/download/PLACEHOLDER/devrig-PLACEHOLDER.zip",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
     "size": 0,
     "format": "zip"

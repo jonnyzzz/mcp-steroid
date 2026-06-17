@@ -65,6 +65,20 @@ internal fun validate(jdk: JdkCoordinates) {
     }
 }
 
+/** Reject placeholder/malformed devrig coordinates so the generator never bakes a broken download URL. */
+internal fun validateDevrig(devrig: DevrigCoordinates) {
+    val e = devrig.devrig
+    // Absolute http(s) URL, never the placeholder. http is allowed so the integration tests' nginx
+    // side-car URLs pass; production records https release URLs.
+    require((e.url.startsWith("https://") || e.url.startsWith("http://")) && "PLACEHOLDER" !in e.url) {
+        "devrig-coordinates.json: url must be an absolute http(s) URL without PLACEHOLDER (run resolveDevrigCoordinates at release), got '${e.url}'"
+    }
+    require(e.sha256.matches(Regex("[0-9a-f]{64}"))) {
+        "devrig-coordinates.json: sha256 must be 64 lowercase hex, got '${e.sha256}'"
+    }
+    require(e.format in setOf("zip", "tar.gz", "tar.xz")) { "devrig-coordinates.json: unknown format '${e.format}'" }
+}
+
 /** POSIX `case` arms for the install.sh baked table (single-quoted values; sha256/url carry no quotes). */
 private fun renderShCase(jdk: JdkCoordinates, version: String): String = buildString {
     for (key in POSIX_PLATFORMS) {
@@ -122,6 +136,7 @@ fun main(argv: Array<String>) {
     val jdk = json.decodeFromString<JdkCoordinates>(args.jdkFile.readText())
     val devrig = json.decodeFromString<DevrigCoordinates>(args.devrigFile.readText())
     validate(jdk)
+    validateDevrig(devrig)
 
     // devrig artifact is universal across platforms today; binSubpath is derived per-OS from version.
     val devrigSubs = mapOf(
