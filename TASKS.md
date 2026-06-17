@@ -4427,9 +4427,21 @@ generation's live vendor-verify, a task dependency). Verified live (all 5 endpoi
 generate ran end-to-end; quorum wf_4792d6ff GO_WITH_CHANGES (0 blockers; applied: vendor-aware mismatch msg,
 followRedirects, doc-drift §3, Azul-asymmetry notes). 0 WARNING+ inspections.
 
-REMAINING (next): #3 — move website release-detection + plugin.xml→updatePlugins.xml + version.json generation
-into the module (Kotlin), delete Make/Python duplication, RENAME :installer-gen appropriately (generates more
-than installers).
+#3 DONE: (a) RENAMED module :installer-gen → :site-gen (commit c7b030b5; git mv + settings/root-build/ci-path/
+workflow/comment refs; package stays ...installer). (b) MERGED the website build logic into Kotlin —
+site-gen/.../site/SiteArtifacts.kt: resolveReleaseZipUrl (GitHub REST, mcp-steroid-*.zip asset, v→bare fallback) +
+extractPluginCoordinates (release ZIP → ij-plugin jar → plugin.xml id/version/since-build, javax.xml) +
+markdownToHtml + renderUpdatePluginsXml (DOM+CDATA) + main(version.json + updatePlugins.xml); HTTP behind
+injectable seams. generateSiteArtifacts Gradle task; website/Makefile update-config calls it; DELETED
+scripts/generate-update-plugins-xml.{py,sh} + the python test; github-pages.yml gains JDK 25 (drops uv/GH_TOKEN).
+Tests: SiteArtifactsTest (asset selection, nested-zip extraction + guard branches, XML render, md→html — declared
+methods). Verified: unit tests green; LIVE smoke vs published v0.100 produced correct version.json + updatePlugins.xml
+(plugin 0.100-409f23a2, since-build 261); quorum wf_c717b8e6 GO_WITH_CHANGES (0 blockers; applied: CLAUDE.md
+prereqs→JDK25, version-in-url guard, direct-child idea-version, version.json via serializer, +guard/markdown tests,
+explicit upToDateWhen{false}, drop GH_TOKEN). DESCRIPTION_HTML intentionally drops stale 8/58 counts. 0 WARNING+.
+
+ALL 5 user asks (#1 fuzz-style, #2 vendor-sha, #3 website-merge+rename, #4 launcher service, #5 devrig upgrade)
+DONE on installer/version-json-driven.
 
 ## E2 DONE + GRADUAL ROLLOUT decided (2026-06-17)
 

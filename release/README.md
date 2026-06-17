@@ -123,9 +123,9 @@ The website build (`cd website/website && make build`) automatically generates:
 
 The `updatePlugins.xml` generation pipeline:
 
-1. Makefile queries `gh` for the release ZIP download URL, trying `v<VERSION>` tag first then `<VERSION>` (no fallback — build fails if `gh` unavailable or release not found)
-2. `scripts/generate-update-plugins-xml.py` (run via `uv`) downloads the ZIP, extracts `ij-plugin-*.jar`, reads `META-INF/plugin.xml` to get the exact plugin version (e.g. `0.91.0-13655642`) and `since-build`
-3. Validates URL format (HTTPS, GitHub release pattern, version present) and generates XML with the artifact's actual version
+1. `:site-gen:generateSiteArtifacts` (Kotlin) resolves the release ZIP URL via the GitHub REST API, trying the `v<VERSION>` tag first then `<VERSION>` (no fallback — build fails if the release is not found)
+2. It downloads the ZIP, extracts `ij-plugin-*.jar`, and reads `META-INF/plugin.xml` to get the exact plugin version (e.g. `0.91.0-13655642`) and `since-build`
+3. Validates the URL format (HTTPS, GitHub release pattern) and renders the XML with the artifact's actual version; also writes `version.json`
 
 This ensures `updatePlugins.xml` always matches the published artifact. Always points to the latest release only.
 

@@ -124,6 +124,26 @@ val generateInstaller by tasks.registering(JavaExec::class) {
     }
 }
 
+// ── Website release artifacts (version.json + updatePlugins.xml) — replaces the former
+//    website/Makefile curl + scripts/generate-update-plugins-xml.{sh,py}. Detects the published release,
+//    reads the real plugin.xml from the artifact, renders the custom-repo XML. Network task (release
+//    lookup + ZIP download), so it is never up-to-date — it always re-runs. ──
+val generateSiteArtifacts by tasks.registering(JavaExec::class) {
+    group = "installer"
+    description = "Generate version.json + updatePlugins.xml for the website from the published GitHub release."
+    mainClass.set("com.jonnyzzz.mcpSteroid.installer.site.SiteArtifactsKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    val siteVersion = (project.findProperty("siteVersion") as String?) ?: project.version.toString()
+    val outDir = rootProject.file((project.findProperty("outDir") as String?) ?: "website/static").absolutePath
+    val notes = rootProject.file("release/notes/$siteVersion.md")
+    val argList = mutableListOf("--version", siteVersion, "--out-dir", outDir)
+    if (notes.isFile) argList += listOf("--notes", notes.absolutePath)
+    (project.findProperty("zipUrl") as String?)?.let { argList += listOf("--zip-url", it) }
+    args(argList)
+    outputs.upToDateWhen { false } // network task (release lookup + ZIP download) — always re-run
+    doFirst { logger.lifecycle("[site-gen] generateSiteArtifacts (v$siteVersion) -> $outDir") }
+}
+
 // ── Resolver B: devrig-coordinates from the built :npx-kt devrig package zip (release-time) ──
 // Task-scoped coupling only: this resolvable config is resolved ONLY by resolveDevrigCoordinates, so
 // generateInstaller (the pure data-merge) stays independent of the devrig/plugin build.
