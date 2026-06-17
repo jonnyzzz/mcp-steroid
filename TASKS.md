@@ -4462,6 +4462,24 @@ TODO — future Docker smoke test (vanilla published install script):
 - [ ] TODO: equivalent smoke for Windows (install.ps1 on a real Windows runner) and macOS (install.sh on macOS) —
       pwsh-on-Linux + ubuntu/alpine cover logic but not the native OS filesystem/exec semantics.
 
+BLOCK P DONE (2026-06-17, batch 4): the simple tool. site-gen/build.gradle.kts holds the 5 pinned JDK 25
+{url+sha256+vendor+version+format} as a hardcoded Kotlin list + one cached Download task each (sha as input).
+generateInstaller (the one tool) gets the downloaded paths + metadata via `--jdk platform|vendor|version|format|sha256|url|file`
+(one per platform) and inspects each file AD-HOC — computes sha (verify == pinned, fail-fast vendor-aware msg) +
+infers javaHomeSubpath (fail-fast) — then renders install.sh/ps1. Devrig: `-PdevrigZip`+`-PdevrigUrl` (local
+override / tests), `-PdevrigVersion`, else the latest GitHub release (resolveLatestDevrigZipUrl). NO intermediate
+jdk-coordinates.json / devrig-coordinates.json, NO jdk25-pinned.json, NO VendorSha, NO ResolverMain. JdkEntry.
+javaHomeSubpath has no default (required). jdk-downloader: JDK-25 block + jdk25-pinned.json DELETED; legacy
+Corretto-21 path stays (npx-kt version.json). Deleted committed website/installer/*.json + the gitignore entry.
+Tests reworked to the specs contract: CoordinateResolverTest (dropped resolveJdk/Pinned), JdkCoordinatesMetadataTest
+(resolve the real downloads from test.installer.jdk.specs → verify sha + javaHomeSubpath = the "downloads correct
+binaries" guard), InstallerRealArtifactsTest + InstallerBootstrapTest (generator main fed --jdk specs + --devrig-zip).
+installer-coordinates-verify.yml repointed to :site-gen:generateInstaller. Covers user asks #1/#2/#9/#10/#11/#12/#13/#16.
+FOLLOW-UP: installer-v8-design.md now diverges further (no pinned file, no intermediate JSON, no VendorSha, JDK list
+in Gradle) — needs a doc-sync pass. Blocks R (install-then-verify + always-bin/devrig registration), S (combine the
+verify into the daily website build), T (plugin-xml parse test) still pending.
+
+(superseded plan below — kept for history)
 TODO — REMAINING refinements (NOT yet done; sequenced as blocks):
 - BLOCK P (coordinate-pipeline simplification): move the JDK-25 URL+sha256 LIST into the gen Gradle file (each
   URL a download task with url+sha as inputs, file as cached output, sha verified at download); DELETE

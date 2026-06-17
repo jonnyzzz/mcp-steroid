@@ -12,16 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Verifies the pinned installer coordinates against reality: downloads every JDK in
-# jdk-downloader/jdk25-pinned.json (via :jdk-downloader) and HEADs the devrig package URL, asserting the
-# URLs still resolve and each download's bytes match the sha256 FETCHED FROM THE VENDOR (per the entry's
-# sha256Url — no hardcoded sha; generateJdkCoordinates fails the build on a mismatch). A mismatch means a
-# corrupt download OR (for Corretto, whose sha256Url tracks the latest build) a newer JDK 25 build shipped.
-# The pinned JDK 25 versions are intentionally HARDCODED — so this is an integrity guard, NOT an
-# auto-bumper: on a failure a maintainer updates jdk25-pinned.json (version + url) by hand.
+# Verifies the pinned installer coordinates against reality: :site-gen:generateInstaller downloads every
+# pinned JDK 25 archive (the url+sha256 list in site-gen/build.gradle.kts) and re-hashes each — failing on
+# any mismatch (a corrupt download, or — for Corretto's immutable versioned URLs — a maintainer-visible
+# drift) — plus resolves the latest devrig release, then renders install.sh/ps1. The pinned versions are
+# intentionally HARDCODED: this is an integrity guard, NOT an auto-bumper. On a failure a maintainer
+# updates the url+sha256 in site-gen/build.gradle.kts by hand.
 #
-# Future enhancement (intentionally not built yet): auto-detect a newer BUILD of the same JDK 25 major
-# via the vendor metadata APIs (Corretto GitHub releases / Azul metadata) and open a refresh PR.
+# TODO (TASKS.md Block S): fold this validation into the daily website build so there is a SINGLE GH action.
 name: installer-coordinates-verify
 
 on:
@@ -51,8 +49,8 @@ jobs:
           java-version: "25"
           distribution: temurin
 
-      - name: Verify pinned JDK coordinates (download + sha256 cross-check, fails on drift)
-        run: ./gradlew :site-gen:generateJdkCoordinates --no-daemon
+      - name: Verify pinned JDK coordinates (download + sha256 re-hash, render install scripts, fail on drift)
+        run: ./gradlew :site-gen:generateInstaller --no-daemon --info --stacktrace
 
       - name: Verify the devrig package URL is reachable
         run: |

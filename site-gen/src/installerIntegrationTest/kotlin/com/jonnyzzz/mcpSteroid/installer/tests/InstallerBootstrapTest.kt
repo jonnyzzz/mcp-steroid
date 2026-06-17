@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.installer.tests
 
+import com.jonnyzzz.mcpSteroid.installer.ALL_PLATFORMS
 import com.jonnyzzz.mcpSteroid.installer.main as runInstallerGenerator
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
@@ -105,23 +106,10 @@ class InstallerBootstrapTest {
                 ?: error("nginx side-car has no bridge IP — cannot serve fixtures")
             log("nginx side-car serving fixtures at http://$nginxIp/")
 
-            // ── 2. write TEMP coordinate files pointing at the mock server ──
-            val coordsDir = createWorkDir("installer-coords")
-            val jdkCoords = File(coordsDir, "jdk-coordinates.json")
-                .also { it.writeText(jdkCoordinatesJson(nginxIp, jdkSha)) }
-            val devrigCoords = File(coordsDir, "devrig-coordinates.json")
-                .also { it.writeText(devrigCoordinatesJson(nginxIp, devrigSha)) }
-
-            // ── 3. run the generator to produce install.sh into a temp dir ──
+            // ── 2+3. run the generator: it inspects the fake JDK + devrig zips directly (no coord JSON),
+            //         baking the side-car URLs in. All 5 platforms point at the one fake jdk.tar.gz. ──
             val genDir = createWorkDir("installer-gen-out")
-            runInstallerGenerator(
-                arrayOf(
-                    "--out-dir", genDir.absolutePath,
-                    "--jdk-coordinates", jdkCoords.absolutePath,
-                    "--devrig-coordinates", devrigCoords.absolutePath,
-                    "--version", version,
-                )
-            )
+            runInstallerGenerator(generatorArgs(genDir, jdkTarGz, "http://$nginxIp/jdk.tar.gz", "tar.gz", devrigZip, "http://$nginxIp/devrig.zip"))
             val installSh = File(genDir, "install.sh")
             require(installSh.isFile) { "generator did not produce install.sh at $installSh" }
             makeWorldReadable(genDir)
@@ -254,23 +242,13 @@ class InstallerBootstrapTest {
     @Timeout(value = 10, unit = TimeUnit.MINUTES)
     fun `generated install_sh reports missing prerequisites and never installs packages`() =
         runWithCloseableStack { lifetime ->
-            // Coordinates are never fetched in this run (preflight fails first), so the URLs/shas only
-            // need to be structurally valid. No nginx side-car and no fixtures are required.
-            val coordsDir = createWorkDir("installer-missing-coords")
-            val dummySha = "a".repeat(64)
-            val jdkCoords = File(coordsDir, "jdk-coordinates.json")
-                .also { it.writeText(jdkCoordinatesJson("0.0.0.0", dummySha)) }
-            val devrigCoords = File(coordsDir, "devrig-coordinates.json")
-                .also { it.writeText(devrigCoordinatesJson("0.0.0.0", dummySha)) }
+            // Nothing is fetched in this run (preflight fails first), so the baked URLs are dummies. The
+            // generator still inspects real fixture zips (it computes sha + javaHomeSubpath), so build them.
+            val fixturesDir = createWorkDir("installer-missing-fixtures")
+            val devrigZip = File(fixturesDir, "devrig.zip").also { buildFakeDevrigZip(it) }
+            val jdkTarGz = File(fixturesDir, "jdk.tar.gz").also { buildFakeJdkTarGz(it) }
             val genDir = createWorkDir("installer-missing-gen")
-            runInstallerGenerator(
-                arrayOf(
-                    "--out-dir", genDir.absolutePath,
-                    "--jdk-coordinates", jdkCoords.absolutePath,
-                    "--devrig-coordinates", devrigCoords.absolutePath,
-                    "--version", version,
-                )
-            )
+            runInstallerGenerator(generatorArgs(genDir, jdkTarGz, "http://0.0.0.0/jdk.tar.gz", "tar.gz", devrigZip, "http://0.0.0.0/devrig.zip"))
             makeWorldReadable(genDir)
 
             // Bare ubuntu — deliberately NO apt-get. curl/wget + unzip are absent; tar + sha256sum present.
@@ -338,21 +316,10 @@ class InstallerBootstrapTest {
                 ?: error("nginx side-car has no bridge IP — cannot serve fixtures")
             log("nginx side-car serving windows fixtures at http://$nginxIp/")
 
-            // ── coordinate files + generate install.ps1 ──
-            val coordsDir = createWorkDir("installer-coords-win")
-            val jdkCoords = File(coordsDir, "jdk-coordinates.json")
-                .also { it.writeText(jdkCoordinatesJsonWindows(nginxIp, jdkSha)) }
-            val devrigCoords = File(coordsDir, "devrig-coordinates.json")
-                .also { it.writeText(devrigCoordinatesJson(nginxIp, devrigSha)) }
+            // ── generate install.ps1: all 5 platforms point at the one fake jdk.zip (install.ps1 only uses
+            //    the windows entries; the generator still inspects every file). devrig is the windows zip. ──
             val genDir = createWorkDir("installer-gen-out-win")
-            runInstallerGenerator(
-                arrayOf(
-                    "--out-dir", genDir.absolutePath,
-                    "--jdk-coordinates", jdkCoords.absolutePath,
-                    "--devrig-coordinates", devrigCoords.absolutePath,
-                    "--version", version,
-                )
-            )
+            runInstallerGenerator(generatorArgs(genDir, jdkZip, "http://$nginxIp/jdk.zip", "zip", devrigZip, "http://$nginxIp/devrig.zip"))
             require(File(genDir, "install.ps1").isFile) { "generator did not produce install.ps1" }
             makeWorldReadable(genDir)
 
@@ -439,7 +406,6 @@ class InstallerBootstrapTest {
             val devrigZip = File(fixturesDir, "devrig.zip").also { buildFakeDevrigZip(it) }
             val jdkTarGz = File(fixturesDir, "jdk.tar.gz").also { buildFakeJdkTarGz(it) }
             val devrigSha = sha256(devrigZip)
-            val jdkSha = sha256(jdkTarGz)
             makeWorldReadable(fixturesDir)
 
             val nginx = startDockerContainerAndDispose(
@@ -451,18 +417,8 @@ class InstallerBootstrapTest {
             )
             val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
 
-            val coordsDir = createWorkDir("installer-piped-coords")
-            val jdkCoords = File(coordsDir, "jdk-coordinates.json").also { it.writeText(jdkCoordinatesJson(nginxIp, jdkSha)) }
-            val devrigCoords = File(coordsDir, "devrig-coordinates.json").also { it.writeText(devrigCoordinatesJson(nginxIp, devrigSha)) }
             val genDir = createWorkDir("installer-piped-gen")
-            runInstallerGenerator(
-                arrayOf(
-                    "--out-dir", genDir.absolutePath,
-                    "--jdk-coordinates", jdkCoords.absolutePath,
-                    "--devrig-coordinates", devrigCoords.absolutePath,
-                    "--version", version,
-                )
-            )
+            runInstallerGenerator(generatorArgs(genDir, jdkTarGz, "http://$nginxIp/jdk.tar.gz", "tar.gz", devrigZip, "http://$nginxIp/devrig.zip"))
             // Serve install.sh itself from the side-car (copy into the live, already-mounted nginx dir).
             File(genDir, "install.sh").copyTo(File(fixturesDir, "install.sh"), overwrite = true)
             makeWorldReadable(fixturesDir)
@@ -697,88 +653,17 @@ class InstallerBootstrapTest {
         }
     }
 
-    // ── coordinate files (all 5 platforms share the POSIX fixtures for the POSIX lane) ──
-
-    private fun jdkCoordinatesJson(nginxIp: String, jdkSha: String): String {
-        val url = "http://$nginxIp/jdk.tar.gz"
-        fun entry() = """
-            {
-              "vendor": "test-vendor",
-              "version": "$version",
-              "url": "$url",
-              "sha256": "$jdkSha",
-              "format": "tar.gz",
-              "javaHomeSubpath": "jdk"
-            }
-        """.trimIndent()
-        return """
-            {
-              "schema": 1,
-              "platforms": {
-                "linux-x64": ${entry()},
-                "linux-arm64": ${entry()},
-                "macos-arm64": ${entry()},
-                "windows-x64": ${entry()},
-                "windows-arm64": ${entry()}
-              }
-            }
-        """.trimIndent()
-    }
-
-    /**
-     * Windows JDK coordinates: windows-x64 + windows-arm64 point at the zip fixture (both share it —
-     * the lane proves the arm64 KEY path installs, not vendor bytes). The three POSIX entries are
-     * unused by install.ps1 (renderPsTable emits only the windows platforms) but the generator
-     * validates all 5 are present with a valid sha256, so they get a dummy.
-     */
-    private fun jdkCoordinatesJsonWindows(nginxIp: String, jdkSha: String): String {
-        val winUrl = "http://$nginxIp/jdk.zip"
-        fun winEntry() = """
-            {
-              "vendor": "test-vendor",
-              "version": "$version",
-              "url": "$winUrl",
-              "sha256": "$jdkSha",
-              "format": "zip",
-              "javaHomeSubpath": "jdk"
-            }
-        """.trimIndent()
-        val dummySha = "b".repeat(64)
-        fun posixEntry() = """
-            {
-              "vendor": "test-vendor",
-              "version": "$version",
-              "url": "http://0.0.0.0/unused.tar.gz",
-              "sha256": "$dummySha",
-              "format": "tar.gz",
-              "javaHomeSubpath": "jdk"
-            }
-        """.trimIndent()
-        return """
-            {
-              "schema": 1,
-              "platforms": {
-                "linux-x64": ${posixEntry()},
-                "linux-arm64": ${posixEntry()},
-                "macos-arm64": ${posixEntry()},
-                "windows-x64": ${winEntry()},
-                "windows-arm64": ${winEntry()}
-              }
-            }
-        """.trimIndent()
-    }
-
-    private fun devrigCoordinatesJson(nginxIp: String, devrigSha: String): String = """
-        {
-          "schema": 1,
-          "devrig": {
-            "url": "http://$nginxIp/devrig.zip",
-            "sha256": "$devrigSha",
-            "size": 0,
-            "format": "zip"
-          }
+    // ── generator args: every platform points at the ONE fake [jdkFile] (served at [jdkUrl], format [fmt]);
+    //    devrig is the local [devrigZip] (served at [devrigUrl]). The generator inspects the files directly —
+    //    computes sha + infers javaHomeSubpath ("jdk" for the fakes) — and bakes the side-car URLs in. ──
+    private fun generatorArgs(genDir: File, jdkFile: File, jdkUrl: String, fmt: String, devrigZip: File, devrigUrl: String): Array<String> {
+        val sha = sha256(jdkFile)
+        val jdkArgs = ALL_PLATFORMS.flatMap { p ->
+            listOf("--jdk", listOf(p, "test-vendor", version, fmt, sha, jdkUrl, jdkFile.absolutePath).joinToString("|"))
         }
-    """.trimIndent()
+        return (listOf("--out-dir", genDir.absolutePath, "--version", version) + jdkArgs +
+            listOf("--devrig-zip", devrigZip.absolutePath, "--devrig-url", devrigUrl)).toTypedArray()
+    }
 }
 
 /**

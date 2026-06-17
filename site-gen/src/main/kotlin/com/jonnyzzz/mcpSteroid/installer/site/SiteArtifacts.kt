@@ -101,6 +101,18 @@ fun resolveReleaseZipUrl(version: String, fetcher: UrlTextFetcher = HttpTextFetc
     error("no mcp-steroid-*.zip asset found for release v$version (or $version) on jonnyzzz/mcp-steroid")
 }
 
+/**
+ * The latest published GitHub release's `devrig-*.zip` asset URL — used by the installer generator when
+ * no devrig version is pinned. (`startsWith("devrig")` distinguishes it from the `mcp-steroid-*.zip` plugin.)
+ */
+fun resolveLatestDevrigZipUrl(fetcher: UrlTextFetcher = HttpTextFetcher): String {
+    val body = fetcher.fetch("https://api.github.com/repos/jonnyzzz/mcp-steroid/releases/latest")
+    return ghJson.decodeFromString<GhRelease>(body).assets
+        .firstOrNull { it.name.startsWith("devrig") && it.name.endsWith(".zip") }
+        ?.browser_download_url
+        ?: error("no devrig-*.zip asset on the latest jonnyzzz/mcp-steroid release")
+}
+
 /** Download + open the release ZIP, find the `ij-plugin-*.jar`, and read id/version/since-build from plugin.xml. */
 fun extractPluginCoordinates(zipBytes: ByteArray): PluginCoordinates {
     val jarBytes = readZipEntry(zipBytes) { it.contains("/lib/ij-plugin-") && it.endsWith(".jar") }

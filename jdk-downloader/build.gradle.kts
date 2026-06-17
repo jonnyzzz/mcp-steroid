@@ -1,6 +1,5 @@
 import de.undercouch.gradle.tasks.download.Download
 import groovy.json.JsonOutput
-import groovy.json.JsonSlurper
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.file.RelativePath
 import java.nio.file.FileVisitOption
@@ -660,58 +659,6 @@ val verifyJdkConfigurations by tasks.registering {
 
 extractAllJdks.configure { dependsOn(verifyAllJdks, auditJdkPermissions) }
 
-// ── JDK 25 installer coordinates: DOWNLOAD all 5 platforms (generation lives in :site-gen) ──
-// Separate from the legacy Corretto-21 path above (which feeds :npx-kt version.json via jdkManifestElements
-// and must stay). jdk-downloader owns the installer's 5-platform JDK 25 SET (Corretto x4 + Azul win-arm64)
-// and DOWNLOADS every archive (incremental: immutable pinned URLs, skip-if-present). It exposes the
-// download dir + the pinned source as consumables; :site-gen runs the resolver over them to GENERATE
-// jdk-coordinates.json (kept there to avoid an site-gen <-> jdk-downloader dependency cycle).
-
-val jdk25PinnedFile = file("jdk25-pinned.json")
-
-// Pinned source of truth (the only file the daily refresh edits). Parsed at config time for the URLs.
-@Suppress("UNCHECKED_CAST")
-val jdk25Pinned: Map<String, Map<String, Any?>> = run {
-    val root = JsonSlurper().parse(jdk25PinnedFile) as? Map<String, Any?>
-        ?: error("jdk25-pinned.json is not a JSON object: $jdk25PinnedFile")
-    (root["platforms"] as? Map<String, Map<String, Any?>>)
-        ?: error("jdk25-pinned.json: missing 'platforms' object ($jdk25PinnedFile)")
-}
-
-val jdk25DownloadDir = layout.buildDirectory.dir("jdk25-download")
-
-val downloadAllJdk25 by tasks.registering {
-    group = jdkDownloaderTaskGroup
-    description = "Download all 5 pinned JDK 25 packages (Corretto x4 + Azul win-arm64) for the installer coordinates."
-}
-
-jdk25Pinned.forEach { (key, entry) ->
-    val url = (entry["url"] as? String) ?: error("jdk25-pinned.json: platform '$key' has no url")
-    val fileName = url.substringAfterLast('/')
-    val dl = tasks.register<Download>("downloadJdk25_$key") {
-        group = jdkDownloaderTaskGroup
-        description = "Download the $key JDK 25 package ($fileName)."
-        val destFile = jdk25DownloadDir.get().asFile.resolve(fileName)
-        src(url)
-        dest(destFile)
-        configureReliableDownload()
-        onlyIf { !destFile.exists() } // immutable pinned URL
-    }
-    downloadAllJdk25.configure { dependsOn(dl) }
-}
-
-// Consumables for :site-gen's generate task (the download dir + the pinned source).
-val jdk25DownloadElements by configurations.creating {
-    isCanBeConsumed = true
-    isCanBeResolved = false
-    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-download-dir")) }
-}
-val jdk25PinnedElements by configurations.creating {
-    isCanBeConsumed = true
-    isCanBeResolved = false
-    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-pinned")) }
-}
-artifacts {
-    add(jdk25DownloadElements.name, jdk25DownloadDir) { builtBy(downloadAllJdk25) }
-    add(jdk25PinnedElements.name, jdk25PinnedFile)
-}
+// NOTE: the installer's JDK 25 set (5 platforms) moved into :site-gen, which now owns its own pinned
+// url+sha256 list + Download tasks (no cross-module wiring, no jdk25-pinned.json). This module keeps ONLY
+// the legacy Corretto-21 path above, which still feeds :npx-kt's version.json via jdkManifestElements.

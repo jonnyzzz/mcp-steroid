@@ -1,7 +1,10 @@
+import de.undercouch.gradle.tasks.download.Download
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     application
+    id("de.undercouch.download")
 }
 
 kotlin {
@@ -36,91 +39,87 @@ application {
     mainClass.set("com.jonnyzzz.mcpSteroid.installer.InstallerGeneratorKt")
 }
 
-// tasks.test is configured at the END of this file — it depends on generateJdkCoordinates / jdk25Downloads
-// / devrigPackage, which are declared below.
+// tasks.test is configured at the END of this file — it depends on downloadJdks / devrigPackage, declared below.
 
-// ── JDK coordinates GENERATION: :jdk-downloader downloads the 5 JDK 25 archives; this module's resolver
-//    inspects them to produce jdk-coordinates.json (sha256 + inferred javaHomeSubpath). Generation lives
-//    here (not in jdk-downloader) to avoid a site-gen <-> jdk-downloader project cycle. ──
-val jdk25Downloads by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-download-dir")) }
-}
-val jdk25Pinned by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-pinned")) }
-}
-dependencies {
-    jdk25Downloads(project(":jdk-downloader"))
-    jdk25Pinned(project(":jdk-downloader"))
-}
+// ── The 5 pinned JDK 25 archives. This list is the ONLY thing a maintainer edits on a JDK bump
+//    (url + sha256 + version). One cached Download task each; the generator re-verifies the bytes
+//    against the sha256 below. No external pinned file, no cross-module wiring. ──
+data class Jdk25(val platform: String, val vendor: String, val version: String, val format: String, val url: String, val sha256: String)
 
-val generatedJdkCoordinates = layout.buildDirectory.file("installer-coords/jdk-coordinates.json")
+val jdk25 = listOf(
+    Jdk25("linux-x64", "corretto", "25.0.3.9.1", "tar.gz",
+        "https://corretto.aws/downloads/resources/25.0.3.9.1/amazon-corretto-25.0.3.9.1-linux-x64.tar.gz",
+        "00486fa402136f8d40512b101c645dd4db9be2b5535171530ad241cd96c1223d"),
+    Jdk25("linux-arm64", "corretto", "25.0.3.9.1", "tar.gz",
+        "https://corretto.aws/downloads/resources/25.0.3.9.1/amazon-corretto-25.0.3.9.1-linux-aarch64.tar.gz",
+        "8b1fd78bbd1f188f3884f580be674727174635252c0d4d6dfa7cd15de51879ce"),
+    Jdk25("macos-arm64", "corretto", "25.0.3.9.1", "tar.gz",
+        "https://corretto.aws/downloads/resources/25.0.3.9.1/amazon-corretto-25.0.3.9.1-macosx-aarch64.tar.gz",
+        "614107ed76e9fb86d62d8cf2686a9cc4b3a11c019502ca3ba605fc5d51f4d7bb"),
+    Jdk25("windows-x64", "corretto", "25.0.3.9.1", "zip",
+        "https://corretto.aws/downloads/resources/25.0.3.9.1/amazon-corretto-25.0.3.9.1-windows-x64-jdk.zip",
+        "3404a8be08f0fdbbd24c9bbdda79ba1ded87b264a833247b2124ac45da1c16e0"),
+    Jdk25("windows-arm64", "azul-zulu", "25.0.3", "zip",
+        "https://cdn.azul.com/zulu/bin/zulu25.34.17-ca-jdk25.0.3-win_aarch64.zip",
+        "60b6b1faa1a93fea8e64b09f2b9ab136a86b02428f004f8378cfb04cd818a0d4"),
+)
 
-val generateJdkCoordinates by tasks.registering(JavaExec::class) {
+val jdk25DownloadDir = layout.buildDirectory.dir("jdk25")
+
+/** Downloaded archive file for a pinned JDK (named by URL basename, kept locally to avoid re-fetch). */
+fun jdk25File(j: Jdk25) = jdk25DownloadDir.get().asFile.resolve(j.url.substringAfterLast('/'))
+
+val downloadJdks by tasks.registering {
     group = "installer"
-    description = "Generate jdk-coordinates.json from the JDK 25 archives :jdk-downloader downloaded (verified sha256 + inferred javaHomeSubpath)."
-    mainClass.set("com.jonnyzzz.mcpSteroid.installer.resolver.ResolverMainKt")
-    classpath = sourceSets["main"].runtimeClasspath
-    inputs.files(jdk25Downloads).withPropertyName("jdk25Downloads")
-    inputs.files(jdk25Pinned).withPropertyName("jdk25Pinned")
-    outputs.file(generatedJdkCoordinates)
-    doFirst {
-        args(
-            "jdk",
-            "--source", jdk25Pinned.singleFile.absolutePath,
-            "--download-dir", jdk25Downloads.singleFile.absolutePath,
-            "--out", generatedJdkCoordinates.get().asFile.absolutePath,
-        )
+    description = "Download the 5 pinned JDK 25 archives into build/jdk25 (cached — immutable pinned URLs)."
+}
+jdk25.forEach { j ->
+    val dl = tasks.register<Download>("downloadJdk_${j.platform}") {
+        group = "installer"
+        description = "Download the ${j.platform} JDK (${j.vendor} ${j.version})."
+        src(j.url)
+        dest(jdk25File(j))
+        connectTimeout(30_000)
+        readTimeout(15 * 60_000)
+        retries(5)
+        tempAndMove(true)
+        inputs.property("sha256", j.sha256) // a pin bump (new sha) invalidates + re-downloads
+        onlyIf { !jdk25File(j).exists() }   // immutable pinned URL — skip if already local
     }
+    downloadJdks.configure { dependsOn(dl) }
 }
 
-// Expose the generated jdk-coordinates for the website build + the installer tests.
-val jdkCoordinatesElements by configurations.creating {
-    isCanBeConsumed = true
-    isCanBeResolved = false
-    attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-coordinates")) }
-}
-artifacts {
-    add(jdkCoordinatesElements.name, generatedJdkCoordinates) { builtBy(generateJdkCoordinates) }
-}
+/** One `--jdk` value the generator parses: `platform|vendor|version|format|sha256|url|file`. */
+fun jdk25Arg(j: Jdk25) = listOf(j.platform, j.vendor, j.version, j.format, j.sha256, j.url, jdk25File(j).absolutePath).joinToString("|")
 
-// ── Render install.sh + install.ps1 — a pure data-merge. jdk-coordinates defaults to the GENERATED
-//    artifact above; -PjdkCoordinatesFile overrides (e.g. tests). ──
+// ── Generate install.sh + install.ps1: the tool inspects the downloaded JDK files ad-hoc (sha verify +
+//    javaHomeSubpath inference) and resolves devrig (local -PdevrigZip override, -PdevrigVersion, else the
+//    latest release), baking everything in. No intermediate jdk-coordinates / devrig-coordinates JSON. ──
 val generateInstaller by tasks.registering(JavaExec::class) {
     group = "installer"
-    description = "Generate install.sh + install.ps1 from the coordinate files."
+    description = "Generate install.sh + install.ps1 from the downloaded JDKs + devrig (override or latest release)."
     mainClass.set("com.jonnyzzz.mcpSteroid.installer.InstallerGeneratorKt")
     classpath = sourceSets["main"].runtimeClasspath
+    dependsOn(downloadJdks)
 
     val outDirProp = project.findProperty("outDir") as String?
     val outDir = if (outDirProp != null) rootProject.file(outDirProp).absolutePath
                  else layout.buildDirectory.dir("installer").get().asFile.absolutePath
-    val jdkCoordsOverride = (project.findProperty("jdkCoordinatesFile") as String?)?.let { rootProject.file(it).absolutePath }
-    val devrigCoords = rootProject.file((project.findProperty("devrigCoordinatesFile") as String?)
-        ?: "website/installer/devrig-coordinates.json").absolutePath
-
-    if (jdkCoordsOverride == null) {
-        dependsOn(generateJdkCoordinates)
-        inputs.file(generatedJdkCoordinates)
-    } else {
-        inputs.file(jdkCoordsOverride)
-    }
-    inputs.file(devrigCoords)
+    val devrigZip = (project.findProperty("devrigZip") as String?)?.let { rootProject.file(it).absolutePath }
+    val devrigUrl = project.findProperty("devrigUrl") as String?
+    val devrigVersion = project.findProperty("devrigVersion") as String?
+    jdk25.forEach { inputs.property("sha-${it.platform}", it.sha256) }
     inputs.property("version", project.version.toString())
     outputs.dir(outDir)
 
     doFirst {
-        val jdkCoords = jdkCoordsOverride ?: generatedJdkCoordinates.get().asFile.absolutePath
-        args(
-            "--out-dir", outDir,
-            "--jdk-coordinates", jdkCoords,
-            "--devrig-coordinates", devrigCoords,
-            "--version", project.version.toString(),
-        )
-        logger.lifecycle("[site-gen] generateInstaller -> $outDir (jdk-coords: $jdkCoords)")
+        val argList = mutableListOf("--out-dir", outDir, "--version", project.version.toString())
+        jdk25.forEach { argList += listOf("--jdk", jdk25Arg(it)) }
+        if (devrigZip != null) argList += listOf("--devrig-zip", devrigZip)
+        devrigUrl?.let { argList += listOf("--devrig-url", it) }
+        devrigVersion?.let { argList += listOf("--devrig-version", it) }
+        args(argList)
+        logger.lifecycle("[site-gen] generateInstaller -> $outDir")
     }
 }
 
@@ -144,9 +143,8 @@ val generateSiteArtifacts by tasks.registering(JavaExec::class) {
     doFirst { logger.lifecycle("[site-gen] generateSiteArtifacts (v$siteVersion) -> $outDir") }
 }
 
-// ── Resolver B: devrig-coordinates from the built :npx-kt devrig package zip (release-time) ──
-// Task-scoped coupling only: this resolvable config is resolved ONLY by resolveDevrigCoordinates, so
-// generateInstaller (the pure data-merge) stays independent of the devrig/plugin build.
+// The built :npx-kt devrig zip — resolved ONLY so the installer integration tests can pass it to the
+// generator as a local `--devrig-zip` override (the website build instead resolves the latest release).
 val devrigPackage by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -155,42 +153,6 @@ val devrigPackage by configurations.creating {
 
 dependencies {
     devrigPackage(project(":npx-kt"))
-}
-
-// Manual / release entrypoint (the release task/CI invokes this to refresh devrig-coordinates.json from
-// the published artifact). Records the public release URL; sha256 + size are computed from the zip bytes.
-val resolveDevrigCoordinates by tasks.registering(JavaExec::class) {
-    group = "installer"
-    description = "Compute devrig-coordinates.json (sha256 + size) from the built :npx-kt devrig package zip."
-    dependsOn(devrigPackage)
-    mainClass.set("com.jonnyzzz.mcpSteroid.installer.resolver.ResolverMainKt")
-    classpath = sourceSets["main"].runtimeClasspath
-
-    val out = (project.findProperty("out") as String?)
-        ?.let { rootProject.file(it).absolutePath }
-        ?: layout.buildDirectory.file("installer-resolved/devrig-coordinates.json").get().asFile.absolutePath
-    val version = project.version.toString()
-    val explicitUrl = project.findProperty("devrigUrl") as String?
-    // Auto-derived from project.version (which carries a -<gitHash>/-SNAPSHOT suffix, NOT a clean
-    // vX.Y.Z). Correct only when the release tag includes that exact version; pass -PdevrigUrl=<published
-    // asset url> otherwise (the doFirst warns when the auto-derived URL is a non-release version).
-    val url = explicitUrl
-        ?: "https://github.com/jonnyzzz/mcp-steroid/releases/download/v$version/devrig-$version.zip"
-
-    inputs.files(devrigPackage)
-    inputs.property("url", url)
-    inputs.property("version", version)
-    outputs.file(out)
-
-    doFirst {
-        if (explicitUrl == null && ("SNAPSHOT" in version || ".19999" in version)) {
-            logger.warn(
-                "[resolveDevrigCoordinates] project.version '$version' is not a release version — the " +
-                    "auto-derived URL $url will not resolve. Pass -PdevrigUrl=<published asset url> for a real release.",
-            )
-        }
-        args("devrig", "--dist-zip", devrigPackage.singleFile.absolutePath, "--url", url, "--out", out)
-    }
 }
 
 // ── Tests split into two lanes, both living in this module ────────────────────────────────────────
@@ -223,11 +185,12 @@ val installerIntegrationTest by tasks.registering(Test::class) {
     testLogging { showStandardStreams = true }
     systemProperty("junit.jupiter.execution.timeout.default", "15m")
 
-    dependsOn(generateJdkCoordinates, jdk25Downloads, devrigPackage)
+    dependsOn(downloadJdks, devrigPackage)
     doFirst {
-        systemProperty("test.installer.jdk.download.dir", jdk25Downloads.singleFile.absolutePath)
+        // The 5 pinned JDK specs (platform|vendor|version|format|sha256|url|file) the generator consumes —
+        // the test reuses them to resolve the real downloads + to drive the generator. Joined by newline.
+        systemProperty("test.installer.jdk.specs", jdk25.joinToString("\n") { jdk25Arg(it) })
         systemProperty("test.installer.devrig.package.zip", devrigPackage.singleFile.absolutePath)
-        systemProperty("test.installer.jdk.coordinates", generatedJdkCoordinates.get().asFile.absolutePath)
     }
 
     // Heavyweight (Docker + ~1GB JDK downloads): require an explicit invocation — either this task

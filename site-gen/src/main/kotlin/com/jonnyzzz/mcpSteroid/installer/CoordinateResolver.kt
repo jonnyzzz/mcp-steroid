@@ -59,8 +59,8 @@ object JdkCoordinateResolver {
                 javaHomeSubpath = javaHomeSubpath,
             )
         }
-        val coords = JdkCoordinates(schema = 1, platforms = platforms)
-        validate(coords) // all 5 platforms present, sha256 == 64 lowercase hex, format in the allowed set
+        val coords = JdkCoordinates(platforms = platforms)
+        validate(coords) // all 5 platforms present, sha256 == 64 lowercase hex, format allowed, javaHomeSubpath set
         return coords
     }
 }
@@ -70,7 +70,6 @@ object DevrigCoordinateResolver {
     fun resolve(file: Path, publicUrl: String, format: String = "zip"): DevrigCoordinates {
         require(Files.isRegularFile(file)) { "missing devrig package: $file" }
         return DevrigCoordinates(
-            schema = 1,
             devrig = DevrigEntry(url = publicUrl, sha256 = sha256(file), size = Files.size(file), format = format),
         )
     }
@@ -97,7 +96,7 @@ internal fun sha256(file: Path): String {
  * full version; macOS nests Contents/Home; Microsoft's jdk-25.0.x+N is unguessable) AND asserts a JDK
  * launcher is present, so a malformed/wrong archive fails fast instead of baking a bad path into a script.
  */
-internal fun inspectJavaHomeSubpath(file: Path, format: String, platformKey: String): String {
+fun inspectJavaHomeSubpath(file: Path, format: String, platformKey: String): String {
     val binJava = mutableListOf<String>()
     forEachArchiveEntry(file, format) { name, isDirectory ->
         if (isDirectory) return@forEachArchiveEntry

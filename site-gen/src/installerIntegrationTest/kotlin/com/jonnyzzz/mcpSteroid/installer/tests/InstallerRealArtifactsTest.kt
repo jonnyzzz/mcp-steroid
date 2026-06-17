@@ -2,9 +2,9 @@
 package com.jonnyzzz.mcpSteroid.installer.tests
 
 import com.jonnyzzz.mcpSteroid.installer.DevrigCoordinateResolver
-import com.jonnyzzz.mcpSteroid.installer.JdkCoordinateResolver
-import com.jonnyzzz.mcpSteroid.installer.JdkCoordinates
 import com.jonnyzzz.mcpSteroid.installer.LocalJdkArtifact
+import com.jonnyzzz.mcpSteroid.installer.inspectJavaHomeSubpath
+import com.jonnyzzz.mcpSteroid.installer.parseJdkArg
 import com.jonnyzzz.mcpSteroid.installer.main as runInstallerGenerator
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
@@ -16,7 +16,6 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
-import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.File
@@ -25,70 +24,47 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
 
 /**
- * Block 2 part 2b — validate the coordinate resolvers and the generated install.sh against the REAL
- * artifacts, using only files Gradle already put on disk. Gradle's :jdk-downloader:downloadAllJdk25 (the
- * sole real network fetch, cached) provides the 5 real JDK archives; :npx-kt's devrig package provides
- * the real devrig zip. The regression guard compares the resolver against the GENERATED
- * jdk-coordinates.json (:site-gen:generateJdkCoordinates). Inside the test, every download
- * URL points at the nginx side-car serving those local files — the test never reaches a vendor CDN.
+ * End-to-end against the REAL artifacts, using only files Gradle already put on disk: the 5 pinned JDK 25
+ * archives (the `--jdk` specs in `test.installer.jdk.specs`) + the built :npx-kt devrig zip
+ * (`test.installer.devrig.package.zip`). Serves the container-arch JDK + devrig from an nginx side-car,
+ * generates install.sh by running the generator's main() with those specs (URL overridden to the side-car
+ * for the served platform; `--devrig-zip` for the local devrig), installs in ubuntu, and proves the bundled
+ * JDK is real Corretto 25 AND that the real devrig launches under it. No coordinate JSON: the generator
+ * inspects the files ad-hoc.
  */
 class InstallerRealArtifactsTest {
-    private val jdkDownloadDir = File(prop("test.installer.jdk.download.dir"))
     private val devrigZip = File(prop("test.installer.devrig.package.zip"))
     private val nginxImage = "nginx:alpine"
     private val installImage = "ubuntu:24.04"
     private val homeDir = "/home/tester one"
 
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
-    // The GENERATED jdk-coordinates.json (:site-gen:generateJdkCoordinates output), not a committed
-    // file — jdk-coordinates.json is a build artifact derived from jdk-downloader/jdk25-pinned.json.
-    private val generated: JdkCoordinates by lazy {
-        val coordsFile = File(prop("test.installer.jdk.coordinates"))
-        require(coordsFile.isFile) { "generated jdk-coordinates.json missing: $coordsFile (run :site-gen:generateJdkCoordinates)" }
-        json.decodeFromString(coordsFile.readText())
+    /** The 5 pinned JDK specs (platform|vendor|version|format|sha256|url|file) → resolved local artifacts. */
+    private val artifacts: List<LocalJdkArtifact> by lazy {
+        prop("test.installer.jdk.specs").trim().lines().filter { it.isNotBlank() }.map { parseJdkArg(it) }
     }
 
-    /** No network: inspect the 5 Gradle-downloaded JDKs and assert the resolver reproduces the GENERATED
-     *  sha256 + javaHomeSubpath exactly — a regression guard that the generated coordinates match reality. */
-    @Test
-    fun `resolver reproduces the generated coordinates from the real downloaded JDKs`() {
-        val artifacts = generated.platforms.map { (key, e) ->
-            val file = File(jdkDownloadDir, e.url.substringAfterLast('/'))
-            require(file.isFile) { "Gradle did not download $key: $file (run :jdk-downloader:downloadAllJdk25)" }
-            LocalJdkArtifact(key, file.toPath(), e.url, e.vendor, e.version, e.format)
-        }
-        val resolved = JdkCoordinateResolver.resolve(artifacts)
-        generated.platforms.forEach { (key, exp) ->
-            val got = resolved.platforms.getValue(key)
-            require(exp.sha256 == got.sha256) { "sha256 drift for $key vs generated jdk-coordinates.json: ${exp.sha256} != ${got.sha256}" }
-            require(exp.javaHomeSubpath == got.javaHomeSubpath) { "javaHomeSubpath drift for $key: '${exp.javaHomeSubpath}' != '${got.javaHomeSubpath}'" }
-        }
-        log("resolver reproduced generated sha256 + javaHomeSubpath for all ${resolved.platforms.size} platforms")
-    }
+    private fun specOf(a: LocalJdkArtifact, url: String): String =
+        listOf(a.platformKey, a.vendor, a.version, a.format, a.expectedSha256!!, url, a.file.toString()).joinToString("|")
 
-    /** End-to-end: serve the REAL linux-x64 Corretto + REAL devrig zip from the side-car, generate
-     *  install.sh from resolver output, install in ubuntu, and prove the bundled JDK is real Corretto 25
-     *  AND that the real devrig actually launches under it. */
+    /** End-to-end: serve the REAL container-arch Corretto + REAL devrig zip from the side-car, generate
+     *  install.sh, install in ubuntu, and prove the bundled JDK is real Corretto 25 AND the real devrig runs. */
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `install_sh installs the real JDK and runs the real devrig from the side-car`() =
         runWithCloseableStack { lifetime ->
             val devrigVersion = readDevrigVersion(devrigZip)
-            // Use the JDK matching the container's CPU arch so bin/java runs natively — under default
-            // Docker the container is the host arch, and an x86-64 JDK can't exec on an arm64 host.
+            // Use the JDK matching the container's CPU arch so bin/java runs natively.
             val hostArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
             val platformKey = if (hostArm64) "linux-arm64" else "linux-x64"
             val cpuToken = if (hostArm64) "arm64" else "x64"
-            val plat = generated.platforms.getValue(platformKey)
-            val realJdk = File(jdkDownloadDir, plat.url.substringAfterLast('/'))
-            require(realJdk.isFile) { "Gradle did not download the $platformKey JDK: $realJdk" }
-            // The generator bakes binSubpath = devrig-<version>/bin/devrig; assert the real zip's layout
-            // matches the derived version so a drift fails here, not deep inside install.sh.
+            val served = artifacts.first { it.platformKey == platformKey }
+            val realJdk = served.file.toFile()
+            require(realJdk.isFile) { "Gradle did not download the $platformKey JDK: $realJdk (run :site-gen:downloadJdks)" }
             require(ZipFile(devrigZip).use { it.getEntry("devrig-$devrigVersion/bin/devrig") != null }) {
                 "devrig zip $devrigZip has no devrig-$devrigVersion/bin/devrig entry (version-derivation drift)"
             }
 
-            // Side-car serves ONLY the real local files (no CDN). Keep the real filenames simple for the URL.
+            // Side-car serves ONLY the real local files (no CDN).
             val fixturesDir = createWorkDir("real-fixtures")
             File(fixturesDir, "jdk.tar.gz").also { linkOrCopy(realJdk, it) }
             val servedDevrig = File(fixturesDir, "devrig.zip").also { linkOrCopy(devrigZip, it) }
@@ -96,55 +72,36 @@ class InstallerRealArtifactsTest {
 
             val nginx = startDockerContainerAndDispose(
                 lifetime,
-                StartContainerRequest()
-                    .image(nginxImage)
-                    .logPrefix("real-nginx")
+                StartContainerRequest().image(nginxImage).logPrefix("real-nginx")
                     .volumes(ContainerVolume(fixturesDir, "/usr/share/nginx/html", "ro")),
             )
             val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
             log("side-car serving real artifacts at http://$nginxIp/")
 
-            // Resolve coordinates from the real local files; linux-x64 + devrig point at the side-car.
-            val artifacts = generated.platforms.map { (key, e) ->
-                val file = File(jdkDownloadDir, e.url.substringAfterLast('/'))
-                val url = if (key == platformKey) "http://$nginxIp/jdk.tar.gz" else e.url
-                LocalJdkArtifact(key, file.toPath(), url, e.vendor, e.version, e.format)
-            }
-            val jdkCoords = JdkCoordinateResolver.resolve(artifacts)
-            val devrigCoords = DevrigCoordinateResolver.resolve(servedDevrig.toPath(), "http://$nginxIp/devrig.zip")
-
-            val coordsDir = createWorkDir("real-coords")
-            File(coordsDir, "jdk-coordinates.json").writeText(json.encodeToString(jdkCoords) + "\n")
-            File(coordsDir, "devrig-coordinates.json").writeText(json.encodeToString(devrigCoords) + "\n")
-
-            // Generate install.sh; --version must match the real devrig zip's top dir so binSubpath lines up.
+            // Generate install.sh from the real files: every platform's spec is passed (the generator inspects
+            // all 5), but the served platform + devrig point at the side-car so install.sh fetches from it.
             val genDir = createWorkDir("real-gen")
+            val jdkArgs = artifacts.flatMap { a ->
+                val url = if (a.platformKey == platformKey) "http://$nginxIp/jdk.tar.gz" else a.publicUrl
+                listOf("--jdk", specOf(a, url))
+            }
             runInstallerGenerator(
-                arrayOf(
-                    "--out-dir", genDir.absolutePath,
-                    "--jdk-coordinates", File(coordsDir, "jdk-coordinates.json").absolutePath,
-                    "--devrig-coordinates", File(coordsDir, "devrig-coordinates.json").absolutePath,
-                    "--version", devrigVersion,
-                )
+                (listOf("--out-dir", genDir.absolutePath, "--version", devrigVersion) + jdkArgs +
+                    listOf("--devrig-zip", servedDevrig.absolutePath, "--devrig-url", "http://$nginxIp/devrig.zip")).toTypedArray(),
             )
             require(File(genDir, "install.sh").isFile) { "generator did not produce install.sh" }
             makeWorldReadable(genDir)
 
             val install = startDockerContainerAndDispose(
                 lifetime,
-                StartContainerRequest()
-                    .image(installImage)
-                    .logPrefix("real-ubuntu")
+                StartContainerRequest().image(installImage).logPrefix("real-ubuntu")
                     .volumes(ContainerVolume(genDir, "/gen", "ro"))
                     .entryPoint(
                         "sh", "-c",
-                        "apt-get update -qq && apt-get install -y -qq curl unzip >/dev/null 2>&1; " +
-                            "mkdir -p \"$homeDir\"; sleep 3000",
+                        "apt-get update -qq && apt-get install -y -qq curl unzip >/dev/null 2>&1; mkdir -p \"$homeDir\"; sleep 3000",
                     ),
             )
             awaitToolsInstalled(install)
-            // os.arch (host) drove platformKey; assert the container's real arch agrees, so a non-default
-            // Docker --platform (emulation) fails loud here instead of with a confusing rosetta/elf error.
             val containerArch = sh(install, "uname -m").stdout.trim()
             val expectedArch = if (cpuToken == "arm64") "aarch64" else "x86_64"
             require(containerArch == expectedArch) {
@@ -153,13 +110,14 @@ class InstallerRealArtifactsTest {
             verifyMockServes(install, nginxIp, "/jdk.tar.gz")
             verifyMockServes(install, nginxIp, "/devrig.zip")
 
-            // Install (skip auto 'devrig install' — we only need the bundled JDK + launcher proven).
             runInstall(install, mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to cpuToken, "DEVRIG_NO_AUTO_INSTALL" to "1"))
                 .assertExitCode(0) { "install.sh failed:\n$this" }
 
-            val jdkSha12 = jdkCoords.platforms.getValue(platformKey).sha256.take(12)
-            val devrigSha12 = devrigCoords.devrig.sha256.take(12)
-            val jdkHome = "$homeDir/.mcp-steroid/binaries/jdk-$platformKey-$devrigVersion-$jdkSha12/${plat.javaHomeSubpath}"
+            // Content-addressed names use --version + the baked sha (= pinned sha for the JDK; computed for devrig).
+            val jdkSha12 = served.expectedSha256!!.take(12)
+            val devrigSha12 = DevrigCoordinateResolver.resolve(servedDevrig.toPath(), "http://$nginxIp/devrig.zip").devrig.sha256.take(12)
+            val javaHomeSub = inspectJavaHomeSubpath(realJdk.toPath(), served.format, platformKey)
+            val jdkHome = "$homeDir/.mcp-steroid/binaries/jdk-$platformKey-$devrigVersion-$jdkSha12/$javaHomeSub"
 
             // (1) The bundled JDK is the REAL Amazon Corretto 25 (run it).
             sh(install, "\"$jdkHome/bin/java\" -version 2>&1")
@@ -204,8 +162,7 @@ class InstallerRealArtifactsTest {
     }
 
     private fun readDevrigVersion(zip: File): String = ZipFile(zip).use { z ->
-        val top = z.entries().asSequence().map { it.name.substringBefore('/') }.first { it.startsWith("devrig-") }
-        top.removePrefix("devrig-")
+        z.entries().asSequence().map { it.name.substringBefore('/') }.first { it.startsWith("devrig-") }.removePrefix("devrig-")
     }
 
     private fun linkOrCopy(src: File, dst: File) {
