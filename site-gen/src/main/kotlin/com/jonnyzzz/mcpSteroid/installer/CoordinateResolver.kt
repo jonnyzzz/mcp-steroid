@@ -45,7 +45,7 @@ object JdkCoordinateResolver {
                 require(sha == norm) {
                     "sha256 mismatch for ${a.platformKey}: computed $sha != vendor-published $norm (${a.file}). " +
                         "For a moving vendor alias (e.g. Corretto latest_sha256) this usually means a NEWER JDK " +
-                        "build shipped — bump version+url in jdk-downloader/jdk25-pinned.json; otherwise the " +
+                        "build shipped — bump version+url+sha256 in site-gen/build.gradle.kts; otherwise the " +
                         "download is corrupt."
                 }
             }

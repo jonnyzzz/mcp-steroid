@@ -49,16 +49,8 @@ jobs:
           java-version: "25"
           distribution: temurin
 
-      - name: Verify pinned JDK coordinates (download + sha256 re-hash, render install scripts, fail on drift)
+      # generateInstaller downloads + re-hashes the 5 JDKs AND resolves + downloads the latest devrig release
+      # (resolveLatestDevrigZipUrl), so a vanished/!200 devrig asset already fails this one step — no separate
+      # devrig URL check needed (the old one read the now-deleted devrig-coordinates.json).
+      - name: Verify pinned JDK coordinates + devrig (download + sha256 re-hash, render install scripts, fail on drift)
         run: ./gradlew :site-gen:generateInstaller --no-daemon --info --stacktrace
-
-      - name: Verify the devrig package URL is reachable
-        run: |
-          url=$(jq -r '.devrig.url' website/installer/devrig-coordinates.json)
-          case "$url" in
-            *PLACEHOLDER*) echo "devrig-coordinates.json is still the release-time placeholder — skipping URL check"; exit 0 ;;
-          esac
-          # Ranged GET of the first byte, not HEAD: GitHub release URLs 302-redirect to a signed,
-          # expiring objects.githubusercontent.com URL where HEAD can 403/405.
-          echo "GET (first byte) $url"
-          curl -fsSL -o /dev/null -r 0-0 "$url"
