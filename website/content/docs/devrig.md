@@ -39,13 +39,30 @@ download and start more on demand:
 <figcaption style="color:#909090;font-size:0.85rem;margin-top:0.4rem;">One <code>devrig</code> process bridges your agent to every IntelliJ-family IDE running on the machine — and can start more.</figcaption>
 </figure>
 
-Devrig is a Java application and requires **Java 25** to run. It does not bundle
-a JVM: `java` must be on the `PATH`, or `JAVA_HOME` / `DEVRIG_JAVA_HOME` must
-point at a Java 25 home.
-
 ## Install
 
-Register devrig as the `mcp-steroid` stdio MCP server in your coding agent:
+One command installs devrig under `~/.mcp-steroid`, puts it on your `PATH`, and
+registers it with your agents — no prerequisites:
+
+```bash
+# macOS / Linux
+curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex
+```
+
+It finishes by running `devrig install` to register the `mcp-steroid` server
+with every supported coding agent it finds; set `DEVRIG_NO_AUTO_INSTALL=1` first
+to skip that step. Always run the one-liner fresh rather than caching
+`install.sh` — it points at the current, verified download URLs.
+
+### Register with an agent manually
+
+To register (or re-register) devrig as the `mcp-steroid` stdio MCP server with a
+specific agent:
 
 ```bash
 devrig install claude
