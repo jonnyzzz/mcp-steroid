@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -168,7 +169,7 @@ class BinLauncherTest {
 
     @Test
     fun `renderPosixLauncher matches the install_sh_tmpl heredoc body`() {
-        val tmpl = repoFile("installer-gen/src/main/resources/templates/install.sh.tmpl").readText()
+        val tmpl = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("installer-gen/src/main/resources/templates/install.sh.tmpl").readText()
         val start = tmpl.indexOf("<<EOF\n") + "<<EOF\n".length
         val end = tmpl.indexOf("\nEOF", start)
         require(start > 5 && end > start) { "could not locate the launcher heredoc in install.sh.tmpl" }
@@ -185,7 +186,7 @@ class BinLauncherTest {
 
     @Test
     fun `renderWindowsPs1 and renderWindowsCmd match the install_ps1_tmpl bodies`() {
-        val tmpl = repoFile("installer-gen/src/main/resources/templates/install.ps1.tmpl").readText()
+        val tmpl = ProjectHomeDirectory.requireProjectHomeDirectory().resolve("installer-gen/src/main/resources/templates/install.ps1.tmpl").readText()
         val jdk = "REL\\jdk-home"
         val launcher = "REL\\bin\\devrig.bat"
 
@@ -207,12 +208,4 @@ class BinLauncherTest {
         assertEquals(normalizeLauncher(renderWindowsCmd()), normalizeLauncher(cmdDecoded))
     }
 
-    private fun repoFile(rel: String): File {
-        var d: File? = File("").absoluteFile
-        while (d != null) {
-            if (File(d, "settings.gradle.kts").isFile) return File(d, rel)
-            d = d.parentFile
-        }
-        error("could not locate the repo root (settings.gradle.kts) from ${File("").absolutePath}")
-    }
 }

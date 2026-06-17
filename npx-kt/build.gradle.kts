@@ -139,6 +139,9 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.5.32")
 
     testImplementation(kotlin("test"))
+    // ProjectHomeDirectory: the shared utility that resolves the repo root from the
+    // mcp.steroid.test.projectHome system property (set for every test task by the root build).
+    testImplementation(project(":test-helper"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     // Spin up an in-process Ktor server in monitor round-trip tests so the
     // monitor's HTTP client talks to a real socket. testImplementation only —
