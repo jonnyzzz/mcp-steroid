@@ -4462,6 +4462,40 @@ TODO — future Docker smoke test (vanilla published install script):
 - [ ] TODO: equivalent smoke for Windows (install.ps1 on a real Windows runner) and macOS (install.sh on macOS) —
       pwsh-on-Linux + ubuntu/alpine cover logic but not the native OS filesystem/exec semantics.
 
+## ✅ SESSION UPDATE 2 (2026-06-18 later) — website-gen EXTRACTED to main (#119 + #120 MERGED)
+
+The WEBSITE half of #113's `:site-gen` now lives on main as a separate module — further shrinking the
+branch. Rebase onto main and drop the parts now upstream.
+
+**#119 MERGED (`1fed1560`)** — new **`:website-gen`** module (`website-gen/`, package
+`com.jonnyzzz.mcpSteroid.websitegen`) owns `version.json` + `updatePlugins.xml` generation in Kotlin
+(**Ktor CIO** HTTP — the going-forward HTTP standard), replacing `website/scripts/*.py|sh` + curl/jq/xmllint.
+It resolves the GitHub release itself, reads plugin.xml from the published ZIP, renders the XML via DOM,
+change-notes from `release/notes/<version>.md`. The `generateWebsite` Gradle task is isolated (zero
+`project()` deps → never builds the rest of the project). `github-pages.yml` uses `setup-java` (not uv);
+the Python scripts are deleted; `website/Makefile` `update-config` calls `:website-gen:generateWebsite`
+(`--info --stacktrace`). CI ran green + deployed live; output is **count-free** (the stale "8 MCP Tools" /
+"58 MCP Resources" counts were intentionally dropped — repo has 10 tools now).
+
+**#120 MERGED** — CLAUDE.md now documents: `jb` runs **TeamCity only**, NO GitHub Actions; `jb/main`
+deletes every `.github/workflows/*`, so a modify/delete conflict on a workflow during `jb-merge` is
+expected → **keep it deleted on jb**.
+
+IMPLICATIONS FOR #113 — the website half is DONE upstream:
+- On rebase, **DROP from #113's `:site-gen`**: `site/SiteArtifacts.kt` + `SiteArtifactsTest.kt`, the
+  `website/Makefile` rewrite, the `github-pages.yml` change, the `website/scripts/*.py|sh` deletions —
+  all now on main via `:website-gen`. #113's `:site-gen` keeps ONLY the INSTALLER half (InstallerGenerator,
+  CoordinateResolver, install.sh|ps1 templates, JDK pinning, installerIntegrationTest).
+- **Block T is effectively DONE**: `WebsiteArtifactsTest` already parse-asserts the rendered
+  updatePlugins.xml (id/url/version/since-build/CDATA). Mirror that pattern if the installer needs its own.
+- **Block S** (combine daily coordinate validation into the website build): reconsider given the split —
+  `:website-gen` builds the site; installer-coordinate validation can be its own `:site-gen` task. Decide
+  placement now that the two halves are separate modules.
+- Consider renaming `:site-gen` (it's installer-only now) and reusing `:website-gen`'s release resolution
+  (`resolveReleaseZipUrl` / `PluginCoordinates`) instead of a private copy.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 ## ✅ SESSION UPDATE (2026-06-18 PM) — the bin/devrig PR LANDED on main (#117 + #118 MERGED)
 
 The "focused bin/devrig PR" anticipated below is DONE: **#117** (binary owns the launcher) **and #118**
