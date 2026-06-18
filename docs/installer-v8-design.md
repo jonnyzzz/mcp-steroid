@@ -10,6 +10,16 @@ self-update and any release signing are OUT OF SCOPE for this spec.** Note (§0.
 (it just re-runs the incremental install script); only the *signed-manifest* form
 stays deferred.
 
+> **⚠️ SUPERSEDED for the launcher/registration parts (2026-06-18, PRs #117 + #118 merged to main).**
+> The **devrig BINARY** now owns `~/.mcp-steroid/bin/devrig` (POSIX) / `devrig.cmd` (Windows, CMD-only —
+> **no devrig.ps1**): it (re)writes the launcher atomically on every start, owns the user-PATH entry
+> (POSIX symlink / Windows HKCU PATH), and `devrig install` registers that stable wrapper with **no
+> JAVA_HOME** (the launcher pins `DEVRIG_JAVA_HOME` to the running JVM at generation time). So the
+> install **script** must NOT write the launcher / symlink / registration / JAVA_HOME — its job is
+> download + sha-verify + unpack devrig + JDK, then invoke the binary (`devrig install`). See the
+> "SESSION UPDATE" block in `TASKS.md` and `BinLauncher.kt` / `DevrigUserLauncher.kt` on main. This §
+> below predates that and describes a script-owned launcher — treat those parts as historical.
+
 ---
 
 ## 0. As-built status (2026-06-17) — deviations from the plan

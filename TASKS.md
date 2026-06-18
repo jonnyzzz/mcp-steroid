@@ -4462,6 +4462,49 @@ TODO — future Docker smoke test (vanilla published install script):
 - [ ] TODO: equivalent smoke for Windows (install.ps1 on a real Windows runner) and macOS (install.sh on macOS) —
       pwsh-on-Linux + ubuntu/alpine cover logic but not the native OS filesystem/exec semantics.
 
+## ✅ SESSION UPDATE (2026-06-18 PM) — the bin/devrig PR LANDED on main (#117 + #118 MERGED)
+
+The "focused bin/devrig PR" anticipated below is DONE: **#117** (binary owns the launcher) **and #118**
+(docs/agent surfaces point at the stable launcher) are **MERGED to main** (`61d4ce14`); `jb/main` is
+synced (`d276e2cb`) so TeamCity builds it. **When you resume #113: REBASE onto main first** and absorb
+the following — several #113 assumptions are now superseded.
+
+NOW REAL ON MAIN (do NOT re-implement / do NOT keep #113's own copies):
+- `BinLauncher.kt` (`ensureBinLauncher`) + `DevrigUserLauncher.kt` + `HomePaths.binDir`. The devrig
+  BINARY (re)writes `~/.mcp-steroid/bin/devrig` (POSIX) / `devrig.cmd` (Windows, CMD-only — **no
+  devrig.ps1**) on EVERY start: atomic (temp+atomic move), rewrite-only-on-change, ABSOLUTE paths, and it
+  pins `DEVRIG_JAVA_HOME` = the running JVM at generation time (the ONLY place DEVRIG_JAVA_HOME is set).
+  It also OWNS PATH reachability — POSIX symlink into a writable `$HOME` PATH dir; Windows registers
+  `~/.mcp-steroid\bin` on the HKCU user PATH (deduped to 1 entry, marker-gated, never on the `devrig mcp`
+  hot path).
+- `devrig install` registers the STABLE wrapper `~/.mcp-steroid/bin/devrig` (NO JAVA_HOME) and FAILS
+  (exit 64) if the launcher file does not exist before registration. `selfMcpCommand` /
+  `resolveDevrigLauncher` are GONE.
+- Gate `DEVRIG_BIN_NO_AUTO_REGISTER` (yes/no/true/false): OFF by default for SNAPSHOT/dev/test, ON for
+  release; `install` force-writes regardless (an explicit opt-out still wins).
+- No JAVA_HOME / "uses Java" anywhere agent- or user-facing (tool spec, prompts, guide, `devrig --help`).
+
+IMPLICATIONS FOR #113 — **Block R is now mostly SUBSUMED by the binary**:
+- install.sh / install.ps1 must NOT write the bin launcher, NOT create the PATH symlink, NOT register the
+  agent, NOT set JAVA_HOME. The BINARY owns all of that. The script shrinks to: download + sha-verify +
+  unpack devrig + a matching JDK under `~/.mcp-steroid`, then run the binary once / `devrig install <agent>`
+  (which force-creates the launcher + PATH + registers). Re-scope Block R to "download+unpack+invoke".
+- SNAPSHOT defaults the gate OFF, so any script/test driving the binary on a SNAPSHOT dist must set
+  `DEVRIG_BIN_NO_AUTO_REGISTER=false` (or use `devrig install`, which forces it).
+- Windows: the launcher is `devrig.cmd`; agents invoke `cmd.exe /d /c "%USERPROFILE%\.mcp-steroid\bin\devrig.cmd"`
+  (a `.cmd` needs `cmd.exe` only when spawned as a bare process; direct from a shell/PATH it's just `devrig`).
+
+REBASE CONFLICTS to expect — **take main's version**: `prompts/.../open-project/managing-backends.md`
+(main = bare `devrig`, no JAVA_HOME, no `<install>` path — #113 also edited this), `OpenProjectTool.kt`,
+`docs/guides/AGENT-STEROID-GUIDE.md`, `README.md`, `InstallCommand.kt`, `HomePaths.kt`, `Main.kt`, `Cli.kt`.
+Drop any #113-local `BinLauncher.kt`/`DevrigUserLauncher.kt` — main's are canonical.
+
+STILL OPEN for #113 (unchanged): Block S (fold daily coordinate validation into the website build → one
+GH action), Block T (parse-assert test for the generated updatePlugins.xml), `docs/installer-v8-design.md`
+doc-sync (diverged further — no pinned file, no intermediate JSON, no VendorSha, JDK list in Gradle).
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 ## ⏸ PR #113 PARKED (2026-06-18) — pivot to a focused bin/devrig PR off main
 
 PR #113 (`installer/version-json-driven`, 66 commits ahead of main, clean + pushed) is PARKED. We are
