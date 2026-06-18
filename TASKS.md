@@ -4462,6 +4462,32 @@ TODO — future Docker smoke test (vanilla published install script):
 - [ ] TODO: equivalent smoke for Windows (install.ps1 on a real Windows runner) and macOS (install.sh on macOS) —
       pwsh-on-Linux + ubuntu/alpine cover logic but not the native OS filesystem/exec semantics.
 
+## ⏸ PR #113 PARKED (2026-06-18) — pivot to a focused bin/devrig PR off main
+
+PR #113 (`installer/version-json-driven`, 66 commits ahead of main, clean + pushed) is PARKED. We are
+temporarily switching focus to a NEW, smaller PR based on CURRENT MAIN: make the **devrig binary** own its
+`~/.mcp-steroid/bin/devrig` launcher + the user-PATH symlink + the agent registration.
+
+THE NEW-PR CONTRACT (user's words, 2026-06-18):
+- The devrig BINARY is responsible for MCP registration AND the symlink into the user PATH. The install
+  SCRIPT is NOT responsible for either; the first `devrig install` call does the (agent) script registration.
+- STRONGER goal: `~/.mcp-steroid/bin/devrig` is ALWAYS (re)created + updated on EACH START of the devrig
+  binary. The file can change while the binary runs → write atomically (temp + atomic move; never in-place).
+
+MAIN BASELINE (differs from PR113 — the bin/devrig foundation is PR113-only): main has DevrigRoot.kt,
+LauncherResolver.kt, HomePaths.kt (NO binDir), InstallCommand.kt (selfMcpCommand registers the install-dist
+launcher with explicit JAVA_HOME), Cli.kt, Main.kt. main has NO BinLauncher.kt / ensureBinLauncher, NO install
+scripts, NO ~/.mcp-steroid/binaries layout. So the new PR INTRODUCES the bin/devrig self-heal + PATH-symlink
+ownership + repoints registration at ~/.mcp-steroid/bin/devrig — building fresh on main; PR113's BinLauncher.kt /
+DevrigUserLauncher.kt are the reference implementation to port/adapt.
+
+PR113 RESUME CHECKLIST (when we come back): Block R (install-then-verify — now partly subsumed by the new PR's
+contract), Block S (fold daily coordinate validation into the website build → one GH action), Block T
+(parse-assert test for the generated updatePlugins.xml), docs/installer-v8-design.md doc-sync (well behind the
+as-built pipeline). Deferred branches already pushed: docs/devrig-install-oneliner, website/devrig-install-cta.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 BLOCK P DONE (2026-06-17, batch 4): the simple tool. site-gen/build.gradle.kts holds the 5 pinned JDK 25
 {url+sha256+vendor+version+format} as a hardcoded Kotlin list + one cached Download task each (sha as input).
 generateInstaller (the one tool) gets the downloaded paths + metadata via `--jdk platform|vendor|version|format|sha256|url|file`
