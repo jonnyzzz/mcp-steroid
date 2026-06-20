@@ -436,26 +436,40 @@ to** (and vice-versa). The wire surface is: the **JSON-RPC tool-call params** de
   `DevrigToolBridgeClientTest` pins each tool's exact param names/types (golden-ish assertions); a diff
   fails the build. Add a pinned case for any new tool/param.
 
-**Wire additive `project_name` / `backend_name` (#92, INFORMATIONAL — devrig recomputes).** The IDE now
-stamps its own within-IDE-unique `project_name` and self `backend_name` onto the wire as **additive,
-optional** fields so the wire is symmetric with the MCP surface: `ProjectInfo` gains
-`@SerialName("project_name")`/`@SerialName("backend_name")` (both `= null`), and `WindowInfo` /
-`ProgressTaskInfo` gain `@SerialName("backend_name")` (+ `ProgressTaskInfo.projectPath`, also additive).
-These are **informational only** — devrig never trusts them for routing; it recomputes `project_name`
-(`uniqueProjectName(name, path, pid)`) and `backend_name` itself, so the protocol works whether a peer
-populates them or not. The contract is therefore **additive-optional, not pristine**: a new IDE populates
-the fields, an older peer omits them, and both decode (`ignoreUnknownKeys` on the receiver + a `= null`
-default on every added field). The windows/tasks wire deliberately does **not** carry the `project_name`
-*key* — there is no consumer (devrig recomputes; the IDE-direct handler derives it from the open-project
-list) — only the raw v1 `projectName` (folder name) + the additive `backend_name`. `WirePristinenessTest`
-(`mcp-steroid-server`) now guards this additive-optional contract (populated fields serialize + round-trip;
-unset fields decode as null; the `project_name` key never appears on the windows/tasks wire).
+**`project_name` is the single project key; devrig owns its own namespace (#92).** Two separable concerns:
 
-**MCP-surface field naming is snake_case (`project_name`, `backend_name`).** Renaming the camelCase MCP
-keys (`ListedWindow`/`ListedBackgroundTask` were `projectName`) to `@SerialName("project_name")` is free —
-the MCP surface is devrig-computed output, outside the wire compat contract. The frozen wire field
-`"projectName"` (camelCase, raw folder name on `WindowInfo`/`ProgressTaskInfo`) is **NOT** renamed: it's a
-required v1 key and renaming its JSON name would break a released devrig (kotlinx can't emit both names).
+- **IDE — within-IDE uniqueness.** `ProjectNameService` computes `project_name = uniqueProjectName(name,
+  basePath, pid)` (unique among THIS IDE's open projects). `OpenProjectsService` lists + resolves projects
+  ONLY by that key (no raw-name fallback). The IDE stamps it on every wire DTO it emits:
+  - `ProjectInfo` (`/projects/stream`): keeps v1 `{name, path}` and **additively** gains optional
+    `@SerialName("project_name")` + `@SerialName("backend_name")` (both `= null`) — informational; devrig
+    ignores them (see below). Old/new peers interoperate (`ignoreUnknownKeys` + `= null` defaults).
+  - `WindowInfo` / `ProgressTaskInfo` (`/windows`): carry `@SerialName("project_name")` (the IDE's key —
+    the single project identifier; the old camelCase `projectName` raw-folder field and `projectPath` are
+    GONE) + an additive optional `@SerialName("backend_name")`. NOTE: renaming the v1 `projectName` →
+    `project_name` here is **not** additive — an old devrig reading a new IDE's `/windows` breaks, so
+    devrig + plugin must ship together for this surface.
+
+- **devrig — cross-IDE uniqueness, computed directly, IDE's name hidden.** `DevrigProjectRoutingService`
+  builds `ProjectRoute.exposedProjectName = "<name>-<hash(canonicalHome, idePid)>"` straight from the wire
+  `{name, path}` + the discovered IDE's pid; it does **not** read the IDE-stamped `project_name`. Because
+  this is the *same* shared `uniqueProjectName` formula over the *same* pid, devrig's `exposedProjectName`
+  equals the IDE's key — so devrig **forwards `route.exposedProjectName`** to the bridge and the IDE
+  resolves it. Cross-IDE uniqueness is guaranteed by the pid salt (no explicit dedup — collisions need
+  same name+home+pid, structurally impossible across distinct IDEs). For `list_windows`, devrig **relabels**
+  each window/task into its own namespace via `routing.routes()` (match `idePid` + `exposedProjectName ==
+  entry.project_name`), so a window's `project_name` always equals what `list_projects` reports; an entry
+  whose project isn't a current route maps to null.
+
+`WirePristinenessTest` (`mcp-steroid-server`) pins this: `ProjectInfo` additive project_name/backend_name
+(serialize + round-trip + optional), windows/tasks wire carries `project_name` (key) + optional
+`backend_name` and no legacy camelCase `projectName`, and the MCP `ListedWindow`/`ListedBackgroundTask`
+round-trip.
+
+**MCP-surface field naming is snake_case (`project_name`, `backend_name`).** `ListedProject` =
+`project_name` + `name` + `path` + `backend_name`; `ListedWindow`/`ListedBackgroundTask` carry
+`project_name` (+ their own window/task fields) + `backend_name` only — name/path are looked up via
+`steroid_list_projects` by the key.
 
 **MCP-surface-only, never wire-crossing:**
 - `OpenProjectParams.backendName: String? = null` is **MCP-surface only** and is **NOT forwarded** to the

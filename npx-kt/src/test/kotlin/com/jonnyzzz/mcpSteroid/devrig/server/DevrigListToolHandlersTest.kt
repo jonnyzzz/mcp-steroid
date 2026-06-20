@@ -148,23 +148,6 @@ class DevrigListToolHandlersTest {
         @TempDir tempDir: Path,
     ) {
         val port = freePort()
-        // The server is deliberately created OUTSIDE runBlocking: inside it, `embeddedServer` resolves
-        // to the CoroutineScope extension, the server becomes a child of the test coroutine, and
-        // runBlocking then waits forever for it (the AfterEach stop can never run). Top-level call ==
-        // standalone server lifecycle, stopped in tearDown.
-        server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
-            routing {
-                get("/api/jonnyzzz/mcp-steroid/v1/windows") {
-                    // One embedded server plays both IDEs — the bearer token tells which pid is asked.
-                    val pid = when (val auth = call.request.headers["Authorization"]) {
-                        "Bearer token-42" -> 42L
-                        "Bearer token-43" -> 43L
-                        else -> error("unexpected Authorization: $auth")
-                    }
-                    call.respondText(windowsResponseJson(pid), ContentType.Application.Json)
-                }
-            }
-        }.also { it.start(wait = false) }
 
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
@@ -180,6 +163,28 @@ class DevrigListToolHandlersTest {
         )
         val states = listOf(stateA, stateB)
         val routing = DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
+        // The IDE stamps each window's project_name with its route's exposedProjectName ("<name>-<hash(home,pid)>").
+        // Capture that per-pid so the fake /windows response stamps the exact value devrig will match (#92).
+        val exposedByPid = routing.routes().values.associate { it.idePid to it.exposedProjectName }
+
+        // The server is deliberately created OUTSIDE runBlocking: inside it, `embeddedServer` resolves
+        // to the CoroutineScope extension, the server becomes a child of the test coroutine, and
+        // runBlocking then waits forever for it (the AfterEach stop can never run). Top-level call ==
+        // standalone server lifecycle, stopped in tearDown.
+        server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
+            routing {
+                get("/api/jonnyzzz/mcp-steroid/v1/windows") {
+                    // One embedded server plays both IDEs — the bearer token tells which pid is asked.
+                    val pid = when (val auth = call.request.headers["Authorization"]) {
+                        "Bearer token-42" -> 42L
+                        "Bearer token-43" -> 43L
+                        else -> error("unexpected Authorization: $auth")
+                    }
+                    call.respondText(windowsResponseJson(pid, exposedByPid.getValue(pid)), ContentType.Application.Json)
+                }
+            }
+        }.also { it.start(wait = false) }
+
         val inventory = BackendInventory(
             markerRows = { states.map { BackendRow.FromMarker(ide = it.ide, projects = it.lastSnapshot) } },
             portIdes = { emptySet() },
@@ -217,22 +222,24 @@ class DevrigListToolHandlersTest {
         assertEquals(2, response.backgroundTasks.size)
         assertEquals(name42, response.backgroundTasks.single { it.title == "task-42" }.backendName)
         assertEquals(name43, response.backgroundTasks.single { it.title == "task-43" }.backendName)
-        // devrig forwards the IDE-stamped project_name verbatim (#92 — it does not recompute window keys).
+        // devrig relabels each window into its own namespace by matching the IDE-stamped project_name
+        // against its known routes for that pid; the surfaced value is the route's exposedProjectName (#92).
         for (window in response.windows) {
             val pid = if (window.backendName == name42) 42L else 43L
-            assertEquals("ide-key-$pid", window.projectName)
+            assertEquals(exposedByPid.getValue(pid), window.projectName)
         }
         // backends[] joins by the same names.
         assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
     }
 
-    private fun windowsResponseJson(pid: Long): String = McpJson.encodeToString(
+    private fun windowsResponseJson(pid: Long, exposedProjectName: String): String = McpJson.encodeToString(
         NpxBridgeWindowsResponse.serializer(),
         NpxBridgeWindowsResponse(
             windows = listOf(
                 WindowInfo(
-                    // The IDE stamps the within-IDE-unique project_name on the wire (#92); devrig forwards it.
-                    projectName = "ide-key-$pid",
+                    // The IDE stamps the route's exposedProjectName as project_name on the wire (#92); devrig
+                    // matches it back to that route to relabel the window into its own namespace.
+                    projectName = exposedProjectName,
                     title = "window of $pid",
                     isActive = true,
                     isVisible = true,

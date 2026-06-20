@@ -76,15 +76,23 @@ class DevrigListWindowsToolHandler(
 
         // Every window/background-task is bound to its source IDE via backend_name — the same R3.3 id
         // the inventory computes for that IDE's marker row, so entries join backends[] by name.
+        val routes = routing.routes().values
         ListWindowsResponse(
             windows = responses.flatMap { (state, response) ->
                 val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
-                // The IDE already stamped each window's within-IDE-unique project_name (#92); pass it through.
-                response.windows.map { it.listed(backendName) }
+                // Relabel each window into devrig's namespace using its known projects for this IDE (#92):
+                // a window whose project isn't a current route maps to null.
+                response.windows.map { w ->
+                    val mapped = routes.firstOrNull { it.idePid == state.ide.pid && it.exposedProjectName == w.projectName }?.exposedProjectName
+                    w.listed(backendName, mapped)
+                }
             },
             backgroundTasks = responses.flatMap { (state, response) ->
                 val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
-                response.backgroundTasks.map { it.listed(backendName) }
+                response.backgroundTasks.map { t ->
+                    val mapped = routes.firstOrNull { it.idePid == state.ide.pid && it.exposedProjectName == t.projectName }?.exposedProjectName
+                    t.listed(backendName, mapped)
+                }
             },
             backends = inventory.collectBackendInfos(),
         )

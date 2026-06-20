@@ -138,8 +138,8 @@ class DevrigProjectRoutingService(
             bridgeBaseUrl = ide.rpcBaseUrl,
             headers = ide.bridgeHeaders,
             originalProjectName = project.name,
-            // exposedProjectName == uniqueProjectName(name, path, pid): the within-IDE-unique name the
-            // IDE re-derives by the same shared scheme, so devrig forwards exactly this (#92).
+            // devrig computes its own within-IDE-unique name directly (== uniqueProjectName(name, path, pid));
+            // the IDE re-derives the same value by the shared scheme, so devrig forwards exactly this (#92).
             exposedProjectName = "${project.name}-$projectHash",
             projectPath = project.path,
             realProjectHome = realHome,
@@ -187,7 +187,9 @@ data class ProjectRoute(
     val idePid: Long,
     val bridgeBaseUrl: String,
     val headers: Map<String, String>,
+    /** Raw IntelliJ `Project.name` (the folder name). */
     val originalProjectName: String,
+    /** devrig's globally-unique agent-facing `project_name` (cross-IDE-unique; may be disambiguated). */
     val exposedProjectName: String,
     val projectPath: String,
     val realProjectHome: Path,

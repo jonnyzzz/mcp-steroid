@@ -73,8 +73,12 @@ data class ListedWindow(
     @SerialName("backend_name") val backendName: String? = null,
 )
 
-/** Maps the wire [WindowInfo] to the MCP-only [ListedWindow], binding it to [backendName]. */
-fun WindowInfo.listed(backendName: String?): ListedWindow = ListedWindow(
+/**
+ * Maps the wire [WindowInfo] to the MCP-only [ListedWindow], binding it to [backendName]. [projectName]
+ * defaults to the entry's own `project_name` (the in-IDE case); devrig overrides it to relabel the
+ * window into its own globally-unique namespace via its known projects (#92).
+ */
+fun WindowInfo.listed(backendName: String?, projectName: String? = this.projectName): ListedWindow = ListedWindow(
     projectName = projectName,
     title = title,
     isActive = isActive,
@@ -116,8 +120,12 @@ data class ListedBackgroundTask(
     @SerialName("backend_name") val backendName: String? = null,
 )
 
-/** Maps the wire [ProgressTaskInfo] to the MCP-only [ListedBackgroundTask], binding it to [backendName]. */
-fun ProgressTaskInfo.listed(backendName: String?): ListedBackgroundTask = ListedBackgroundTask(
+/**
+ * Maps the wire [ProgressTaskInfo] to the MCP-only [ListedBackgroundTask], binding it to [backendName].
+ * [projectName] defaults to the entry's own `project_name` (the in-IDE case); devrig overrides it to
+ * relabel the task into its own globally-unique namespace via its known projects (#92).
+ */
+fun ProgressTaskInfo.listed(backendName: String?, projectName: String? = this.projectName): ListedBackgroundTask = ListedBackgroundTask(
     title = title,
     text = text,
     text2 = text2,
