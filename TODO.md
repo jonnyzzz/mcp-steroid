@@ -1,11 +1,10 @@
 # TODO
 
-- [ ] **`devrig mcp` parent-death watchdog (process leak).** `devrig mcp` (stdio MCP server) exits cleanly
-  on stdin EOF (`McpStdioServer` read loop), but an orphaned instance whose parent died WITHOUT closing the
-  stdin pipe (e.g. a SIGKILL'd Claude/codex session) never receives EOF and lingers forever. Observed 10
-  live `devrig mcp` processes (one 4 days old, ~250MB each ≈ 2.5GB) from abandoned sessions. Add a
-  parent-liveness watchdog: exit when reparented to launchd (`getppid()` == 1) or the recorded parent pid
-  is gone. (Found 2026-06-20 while debugging "stuck MCP Steroid".)
+- [ ] **`devrig mcp` parent-death watchdog (process leak)** — tracked in
+  [#132](https://github.com/jonnyzzz/mcp-steroid/issues/132). Orphaned `devrig mcp` stdio processes never
+  receive stdin EOF when their parent dies without closing the pipe, so they leak (observed 10 live, one 4
+  days old). Portable fix: poll `ProcessHandle.of(parentPid)` (works on Windows/macOS/Linux); `getppid()`
+  is Unix-only.
 
 - [x] Fix `steroid_open_project` to trust a project path before opening it and cover the no-modal path with an integration test.
 - [x] Agent-driven backend management: evaluated new MCP tool vs CLI passthrough vs hybrid (judge panel). **Decision: no new MCP tool** — agents manage backends via the existing `devrig backend …` CLI (fails the PHILOSOPHY 3-gate for a new tool; the CLI already does it). Shipped `mcp-steroid://open-project/managing-backends` recipe + aligned `open_project` to prefer a running devrig-managed backend (`DevrigProjectRoutingService.openProjectTargetIde()`).
