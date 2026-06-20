@@ -10,6 +10,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressModel
 import com.intellij.openapi.progress.TaskInfo
 import com.intellij.openapi.project.DumbService
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.WindowManager
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.intellij.openapi.wm.ex.StatusBarEx
@@ -25,22 +26,18 @@ import javax.swing.SwingUtilities
  * MCP-only [ListWindowsResponse]: every [ListedWindow]/[ListedBackgroundTask] is bound to this IDE's
  * own `backend_name` and `backends[]` carries exactly the self [BackendInfo] (shared
  * [describeSelfBackend] assembler, same as [ListProjectsToolHandlerIJ]). The `/windows` bridge takes
- * the raw [IdeWindowsCollector.collect] output instead — see [NpxBridgeService.buildWindows] — so the
- * devrig<->IDE wire stays pristine [WindowInfo]/[ProgressTaskInfo].
+ * the same [IdeWindowsCollector.collect] output — see [NpxBridgeService.buildWindows] — whose
+ * [WindowInfo]/[ProgressTaskInfo] already carry the within-IDE-unique `project_name` (#92).
  */
 class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
     override suspend fun collectListWindowsResponse(): ListWindowsResponse {
         val snapshot = IdeWindowsCollector.collect()
         val self = describeSelfBackend()
-        // Resolve each window/task to its project's within-IDE-unique routing key by exact base-path match
-        // against the open-project list — the same `project_name` steroid_list_projects reports (#92).
-        val keyByPath = service<OpenProjectsService>().listOpenProjects()
-            .filter { it.path.isNotEmpty() }
-            .associate { it.path to it.projectName }
-        fun keyFor(path: String?): String? = path?.let { keyByPath[it] }
+        // Each window/task already carries its project's within-IDE-unique `project_name` (the collector
+        // stamps it via ProjectNameService) — the same key steroid_list_projects reports (#92).
         return ListWindowsResponse(
-            windows = snapshot.windows.map { it.listed(self.backendName, keyFor(it.projectPath)) },
-            backgroundTasks = snapshot.backgroundTasks.map { it.listed(self.backendName, keyFor(it.projectPath)) },
+            windows = snapshot.windows.map { it.listed(self.backendName) },
+            backgroundTasks = snapshot.backgroundTasks.map { it.listed(self.backendName) },
             backends = listOf(self.backend),
         )
     }
@@ -66,9 +63,10 @@ object IdeWindowsCollector {
         // fast negative path (canPumpEdtNonModal), then EDT check if needed.
         val lookup = dialogWindowsLookup()
 
-        // Additive, informational (#92): stamp each wire window/task with this IDE's self `backend_name`
-        // for symmetric backend attribution. devrig recomputes routing keys and does not depend on it.
+        // Stamp each window/task with this IDE's self `backend_name` and its project's within-IDE-unique
+        // `project_name` (#92, via the per-project ProjectNameService — the same key list_projects reports).
         val selfBackendName = backendNameForMarker(pid = ProcessHandle.current().pid(), build = IdeInfo.ofApplication().build)
+        fun projectNameOf(project: Project?): String? = project?.service<ProjectNameService>()?.projectName
         val (windowInfos, progressTasks) = lookup.withModalityCheck { isModalShowing ->
             // Window enumeration runs on EDT with ModalityState.any() so it works
             // even when a modal dialog is blocking the normal EDT dispatcher.
@@ -124,8 +122,7 @@ object IdeWindowsCollector {
                                     fraction = if (progressModel.isIndeterminate()) null else progressModel.getFraction(),
                                     isIndeterminate = progressModel.isIndeterminate(),
                                     isCancellable = progressModel.isCancellable(),
-                                    projectName = project?.name,
-                                    projectPath = project?.basePath,
+                                    projectName = projectNameOf(project),
                                     backendName = selfBackendName,
                                 )
                             )
@@ -133,8 +130,7 @@ object IdeWindowsCollector {
                     }
 
                     WindowInfo(
-                        projectName = project?.name,
-                        projectPath = project?.basePath,
+                        projectName = projectNameOf(project),
                         title = (window as? Frame)?.title,
                         isActive = window?.isActive ?: false,
                         isVisible = window?.isVisible ?: false,
@@ -156,7 +152,6 @@ object IdeWindowsCollector {
                         val bounds = window.bounds
                         WindowInfo(
                             projectName = null,
-                            projectPath = null,
                             title = (window as? Frame)?.title,
                             isActive = window.isActive,
                             isVisible = window.isVisible,

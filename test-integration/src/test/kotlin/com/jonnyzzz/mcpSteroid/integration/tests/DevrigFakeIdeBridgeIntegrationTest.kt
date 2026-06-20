@@ -22,6 +22,7 @@ import com.jonnyzzz.mcpSteroid.server.NpxStreamEnvelope
 import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
+import com.jonnyzzz.mcpSteroid.server.uniqueProjectName
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.StdioMcpProcess
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mkdirs
@@ -269,8 +270,9 @@ class DevrigFakeIdeBridgeIntegrationTest {
         NpxBridgeWindowsResponse(
             windows = listOf(
                 WindowInfo(
-                    projectName = "sample",
-                    projectPath = fakeProjectPath,
+                    // The IDE stamps the within-IDE-unique project_name on the wire (#92); the fake IDE
+                    // computes the same key devrig recomputes for the project, so they match.
+                    projectName = uniqueProjectName("sample", fakeProjectPath, fakeIdePid),
                     title = "Fake IDE",
                     isActive = true,
                     isVisible = true,

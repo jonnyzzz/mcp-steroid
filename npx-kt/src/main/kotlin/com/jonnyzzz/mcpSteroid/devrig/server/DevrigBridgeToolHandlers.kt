@@ -79,11 +79,12 @@ class DevrigListWindowsToolHandler(
         ListWindowsResponse(
             windows = responses.flatMap { (state, response) ->
                 val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
-                response.windows.map { it.listed(backendName, routing.windowProjectKey(state.ide.pid, it)) }
+                // The IDE already stamped each window's within-IDE-unique project_name (#92); pass it through.
+                response.windows.map { it.listed(backendName) }
             },
             backgroundTasks = responses.flatMap { (state, response) ->
                 val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
-                response.backgroundTasks.map { it.listed(backendName, routing.taskProjectKey(state.ide.pid, it)) }
+                response.backgroundTasks.map { it.listed(backendName) }
             },
             backends = inventory.collectBackendInfos(),
         )

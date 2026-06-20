@@ -28,8 +28,10 @@ data class OpenProjectEntry(
 @Service(Service.Level.APP)
 class OpenProjectsService {
     /** All open projects with their unique `project_name`, raw name, and base path. */
-    suspend fun listOpenProjects(): List<OpenProjectEntry> =
-        readAction { ProjectManager.getInstance().openProjects.map { it.toEntry() } }
+    suspend fun listOpenProjects(): List<OpenProjectEntry> {
+        val projectManager = ProjectManager.getInstance()
+        return readAction { projectManager.openProjects.map { it.toEntry() } }
+    }
 
     /**
      * Resolve [projectName] (a unique `project_name`) to its open [Project]. Throws
@@ -39,8 +41,9 @@ class OpenProjectsService {
      */
     @Throws(ToolCallErrorException::class)
     suspend fun resolveProject(projectName: String): Project {
+        val projectManager = ProjectManager.getInstance()
         val (project, availableNames) = readAction {
-            val entries = ProjectManager.getInstance().openProjects.map { it.toEntry() }
+            val entries = projectManager.openProjects.map { it.toEntry() }
             entries.firstOrNull { it.projectName == projectName }?.project to entries.map { it.projectName }
         }
         return project ?: throw ToolCallErrorException(

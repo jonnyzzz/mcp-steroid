@@ -9,16 +9,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Guards the devrig<->IDE WIRE contract after #92. The IDE additively stamps its own `project_name`
- * (its within-IDE-unique key) and `backend_name` (its self id) onto the wire as OPTIONAL fields, for
- * symmetry with the MCP surface — but these are INFORMATIONAL only: devrig recomputes both itself and
- * does not depend on the wire values. "Additive optional" means a new IDE populates them and an older
- * peer omits them, and BOTH decode (forward/back compatible). The unique routing key is NOT placed on the
- * windows/tasks wire (no consumer) — only `ProjectInfo` carries `project_name`.
+ * Pins the devrig<->IDE wire DTO shapes after #92. `project_name` is the single project identifier
+ * everywhere: [WindowInfo]/[ProgressTaskInfo] carry it directly (the IDE-stamped within-IDE-unique key),
+ * and [ProjectInfo] additively carries it alongside the v1 `{name, path}` (plus `backend_name`). The MCP
+ * `.listed()` mapping copies the wire entry verbatim into the MCP-only [ListedWindow]/[ListedBackgroundTask].
  */
 class WirePristinenessTest {
     @Test
-    fun `projects-stream ProjectInfo carries project_name and backend_name additively`() {
+    fun `projects-stream ProjectInfo additively carries project_name and backend_name`() {
         val envelope = NpxStreamEnvelope(
             type = "snapshot",
             seq = 1,
@@ -29,7 +27,6 @@ class WirePristinenessTest {
         )
         val json = NpxStreamJson.encodeEnvelope(envelope)
 
-        // The IDE-stamped additive fields appear on the wire (informational; devrig recomputes).
         assertTrue(json.contains("\"project_name\":\"x-1a2b3c4d\""), "wire ProjectInfo should carry the additive project_name: $json")
         assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), "wire ProjectInfo should carry the additive backend_name: $json")
 
@@ -41,7 +38,7 @@ class WirePristinenessTest {
     }
 
     @Test
-    fun `projects-stream stays back-compatible — additive fields are optional and decode as null when unset`() {
+    fun `projects-stream stays back-compatible — additive ProjectInfo fields are optional`() {
         val envelope = NpxStreamEnvelope(
             type = "snapshot",
             seq = 1,
@@ -52,10 +49,6 @@ class WirePristinenessTest {
             projects = listOf(ProjectInfo(name = "x", path = "/p")),
         )
         val json = NpxStreamJson.encodeEnvelope(envelope)
-
-        // The additive fields are OPTIONAL: a newer peer decoding a payload where they are absent or null
-        // sees nulls, and an older peer (ignoreUnknownKeys) ignores them — so old and new peers interoperate.
-        // devrig recomputes the real key/backend regardless, so the wire value is never depended upon.
         val decoded = NpxStreamJson.decodeEnvelope(json).projects!!.single()
         assertEquals("x", decoded.name)
         assertEquals("/p", decoded.path)
@@ -64,12 +57,11 @@ class WirePristinenessTest {
     }
 
     @Test
-    fun `windows wire carries backend_name additively but never the project_name routing key`() {
+    fun `windows wire carries project_name as the key and backend_name`() {
         val response = NpxBridgeWindowsResponse(
             windows = listOf(
                 WindowInfo(
-                    projectName = "x",
-                    projectPath = "/p",
+                    projectName = "x-1a2b3c4d",
                     title = "x - main",
                     isActive = true,
                     isVisible = true,
@@ -86,7 +78,7 @@ class WirePristinenessTest {
                     fraction = null,
                     isIndeterminate = true,
                     isCancellable = false,
-                    projectName = "x",
+                    projectName = "x-1a2b3c4d",
                     backendName = "iu-9fk2a0xQ",
                 ),
             ),
@@ -99,23 +91,23 @@ class WirePristinenessTest {
         )
         val json = McpJson.encodeToString(NpxBridgeWindowsResponse.serializer(), response)
 
-        // `backend_name` is an additive informational wire field (#92).
-        assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), "wire window/task should carry the additive backend_name: $json")
-        // The within-IDE-unique routing KEY (project_name) is intentionally NOT on the windows/tasks wire —
-        // it has no consumer there (devrig recomputes it; the IDE-direct handler derives it from the
-        // open-project list).
-        assertFalse(json.contains("project_name"), "windows/tasks wire must not carry the project_name key: $json")
-        // The raw `projectName` (folder name) IS a legitimate v1 wire field and stays for old-peer compat.
-        assertTrue(json.contains("\"projectName\":\"x\""), "wire keeps the v1 raw projectName: $json")
+        // project_name is the single project identifier on the windows/tasks wire (#92).
+        assertTrue(json.contains("\"project_name\":\"x-1a2b3c4d\""), "windows/tasks wire should carry project_name: $json")
+        assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), "windows/tasks wire should carry backend_name: $json")
+        // The legacy camelCase raw-name field is gone — project_name is the only project field now.
+        assertFalse(json.contains("\"projectName\""), "the legacy camelCase projectName must not appear: $json")
+
+        val decoded = McpJson.decodeFromString(NpxBridgeWindowsResponse.serializer(), json)
+        assertEquals("x-1a2b3c4d", decoded.windows.single().projectName)
+        assertEquals("x-1a2b3c4d", decoded.backgroundTasks.single().projectName)
     }
 
     @Test
-    fun `windows wire stays back-compatible — omits backend_name when unset`() {
+    fun `windows wire backend_name is optional`() {
         val response = NpxBridgeWindowsResponse(
             windows = listOf(
                 WindowInfo(
-                    projectName = "x",
-                    projectPath = "/p",
+                    projectName = "x-1a2b3c4d",
                     title = "x - main",
                     isActive = true,
                     isVisible = true,
@@ -133,16 +125,15 @@ class WirePristinenessTest {
         )
         val json = McpJson.encodeToString(NpxBridgeWindowsResponse.serializer(), response)
 
-        assertFalse(json.contains("backend_name"), "unpopulated additive backend_name must be omitted: $json")
+        assertFalse(json.contains("backend_name"), "unset backend_name must be omitted: $json")
         val decoded = McpJson.decodeFromString(NpxBridgeWindowsResponse.serializer(), json)
         assertNull(decoded.windows.single().backendName)
     }
 
     @Test
-    fun `MCP-only ListedWindow serializes the project_name routing key and backend_name`() {
+    fun `MCP-only ListedWindow carries project_name and backend_name`() {
         val listed = WindowInfo(
-            projectName = "x",
-            projectPath = "/p",
+            projectName = "x-1a2b3c4d",
             title = "x - main",
             isActive = true,
             isVisible = true,
@@ -151,15 +142,14 @@ class WirePristinenessTest {
             modalDialogShowing = true,
             indexingInProgress = false,
             projectInitialized = true,
-        ).listed(backendName = "iu-9fk2a0xQ", projectKey = "x-1a2b3c4d")
+            backendName = "iu-9fk2a0xQ",
+        ).listed(backendName = "iu-9fk2a0xQ")
         val json = McpJson.encodeToString(ListedWindow.serializer(), listed)
 
         assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), "MCP ListedWindow must carry backend_name: $json")
         assertTrue(json.contains("\"project_name\":\"x-1a2b3c4d\""), "MCP ListedWindow must carry the routing key project_name: $json")
         val decoded = McpJson.decodeFromString(ListedWindow.serializer(), json)
         assertEquals(listed, decoded)
-        // project_name is the resolved routing key; the project's raw name/path are NOT duplicated here
-        // (look them up via steroid_list_projects). Other window fields copy verbatim.
         assertEquals("x-1a2b3c4d", decoded.projectName)
         assertEquals("x - main", decoded.title)
         assertEquals(WindowBounds(0, 0, 100, 100), decoded.bounds)
@@ -170,7 +160,7 @@ class WirePristinenessTest {
     }
 
     @Test
-    fun `MCP-only ListedBackgroundTask serializes the project_name routing key and backend_name`() {
+    fun `MCP-only ListedBackgroundTask carries project_name and backend_name`() {
         val listed = ProgressTaskInfo(
             title = "Indexing",
             text = "scanning",
@@ -178,20 +168,17 @@ class WirePristinenessTest {
             fraction = 0.5,
             isIndeterminate = false,
             isCancellable = true,
-            projectName = "x",
-        ).listed(backendName = "iu-9fk2a0xQ", projectKey = "x-1a2b3c4d")
+            projectName = "x-1a2b3c4d",
+        ).listed(backendName = "iu-9fk2a0xQ")
         val json = McpJson.encodeToString(ListedBackgroundTask.serializer(), listed)
 
         assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), "MCP ListedBackgroundTask must carry backend_name: $json")
         assertTrue(json.contains("\"project_name\":\"x-1a2b3c4d\""), "MCP ListedBackgroundTask must carry the routing key project_name: $json")
         val decoded = McpJson.decodeFromString(ListedBackgroundTask.serializer(), json)
         assertEquals(listed, decoded)
-        assertEquals("Indexing", decoded.title)
-        assertEquals("scanning", decoded.text)
-        assertEquals("files", decoded.text2)
-        assertEquals(0.5, decoded.fraction)
-        assertEquals(false, decoded.isIndeterminate)
-        assertTrue(decoded.isCancellable)
         assertEquals("x-1a2b3c4d", decoded.projectName)
+        assertEquals("Indexing", decoded.title)
+        assertEquals(0.5, decoded.fraction)
+        assertTrue(decoded.isCancellable)
     }
 }

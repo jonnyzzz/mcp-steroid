@@ -217,11 +217,10 @@ class DevrigListToolHandlersTest {
         assertEquals(2, response.backgroundTasks.size)
         assertEquals(name42, response.backgroundTasks.single { it.title == "task-42" }.backendName)
         assertEquals(name43, response.backgroundTasks.single { it.title == "task-43" }.backendName)
-        // Each window's project name is rewritten to the devrig-exposed form of ITS OWN backend's route.
+        // devrig forwards the IDE-stamped project_name verbatim (#92 — it does not recompute window keys).
         for (window in response.windows) {
             val pid = if (window.backendName == name42) 42L else 43L
-            val route = routing.routes().values.single { it.idePid == pid }
-            assertEquals(route.exposedProjectName, window.projectName)
+            assertEquals("ide-key-$pid", window.projectName)
         }
         // backends[] joins by the same names.
         assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
@@ -232,8 +231,8 @@ class DevrigListToolHandlersTest {
         NpxBridgeWindowsResponse(
             windows = listOf(
                 WindowInfo(
-                    projectName = "project-$pid",
-                    projectPath = null,
+                    // The IDE stamps the within-IDE-unique project_name on the wire (#92); devrig forwards it.
+                    projectName = "ide-key-$pid",
                     title = "window of $pid",
                     isActive = true,
                     isVisible = true,

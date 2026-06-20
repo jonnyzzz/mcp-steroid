@@ -73,14 +73,9 @@ data class ListedWindow(
     @SerialName("backend_name") val backendName: String? = null,
 )
 
-/**
- * Maps the wire [WindowInfo] to the MCP-only [ListedWindow], binding it to [backendName] and the
- * resolved [projectKey] (the within-IDE-unique `project_name` for this window's project, or null). The
- * project's raw name/path are intentionally NOT copied — they are looked up via `steroid_list_projects`
- * by [projectKey], keeping `project_name` the single project reference across the MCP surface (#92).
- */
-fun WindowInfo.listed(backendName: String?, projectKey: String?): ListedWindow = ListedWindow(
-    projectName = projectKey,
+/** Maps the wire [WindowInfo] to the MCP-only [ListedWindow], binding it to [backendName]. */
+fun WindowInfo.listed(backendName: String?): ListedWindow = ListedWindow(
+    projectName = projectName,
     title = title,
     isActive = isActive,
     isVisible = isVisible,
@@ -121,33 +116,30 @@ data class ListedBackgroundTask(
     @SerialName("backend_name") val backendName: String? = null,
 )
 
-/**
- * Maps the wire [ProgressTaskInfo] to the MCP-only [ListedBackgroundTask], binding it to [backendName]
- * and the resolved [projectKey] (the within-IDE-unique `project_name`, or null). The project's raw
- * name/path are not copied — look them up via `steroid_list_projects` by [projectKey] (#92).
- */
-fun ProgressTaskInfo.listed(backendName: String?, projectKey: String?): ListedBackgroundTask = ListedBackgroundTask(
+/** Maps the wire [ProgressTaskInfo] to the MCP-only [ListedBackgroundTask], binding it to [backendName]. */
+fun ProgressTaskInfo.listed(backendName: String?): ListedBackgroundTask = ListedBackgroundTask(
     title = title,
     text = text,
     text2 = text2,
     fraction = fraction,
     isIndeterminate = isIndeterminate,
     isCancellable = isCancellable,
-    projectName = projectKey,
+    projectName = projectName,
     backendName = backendName,
 )
 
 /**
- * The wire DTO carried inside [NpxBridgeWindowsResponse] (devrig<->IDE). The raw `projectName` (folder
- * name) + `projectPath` are the v1 fields. `backend_name` is an ADDITIVE OPTIONAL field (#92): a new IDE
- * populates it, an older one omits it, both decode — INFORMATIONAL/symmetry only. The unique routing key
- * is NOT carried here (no consumer): devrig recomputes it and the IDE-direct handler derives it from the
- * open-project list.
+ * The wire DTO carried inside [NpxBridgeWindowsResponse] (devrig<->IDE). `project_name` is the single
+ * project identifier — the within-IDE-unique routing key (#92) the IDE stamps; devrig and the IDE-direct
+ * handler use it verbatim (no raw name / path needed). `backend_name` names the owning IDE.
  */
 @Serializable
 data class WindowInfo(
-    val projectName: String?,
-    val projectPath: String?,
+    /**
+     * Within-IDE-unique project routing key (#92) — the same `project_name` steroid_list_projects reports;
+     * null for windows not tied to a project.
+     */
+    @SerialName("project_name") val projectName: String?,
     val title: String?,
     val isActive: Boolean,
     val isVisible: Boolean,
@@ -159,7 +151,7 @@ data class WindowInfo(
     val indexingInProgress: Boolean? = null,
     /** True if the project has been fully initialized */
     val projectInitialized: Boolean? = null,
-    /** This IDE's self `backend_name` (#92) — additive, optional, informational (devrig recomputes). */
+    /** Owning IDE's `backend_name` (#92). */
     @SerialName("backend_name") val backendName: String? = null,
 )
 
@@ -173,9 +165,8 @@ data class WindowBounds(
 
 /**
  * Information about a background task/progress indicator. Wire DTO carried inside
- * [NpxBridgeWindowsResponse] (devrig<->IDE). The raw `projectName` is the v1 field; `projectPath` and
- * `backend_name` are ADDITIVE OPTIONAL fields (#92, populated by new IDEs, omitted by old ones, both
- * decode) — `projectPath` lets devrig recompute the routing key by path, `backend_name` is informational.
+ * [NpxBridgeWindowsResponse] (devrig<->IDE). `project_name` is the within-IDE-unique routing key (#92)
+ * the IDE stamps; `backend_name` names the owning IDE.
  */
 @Serializable
 data class ProgressTaskInfo(
@@ -191,14 +182,11 @@ data class ProgressTaskInfo(
     val isIndeterminate: Boolean,
     /** True if the task can be canceled */
     val isCancellable: Boolean,
-    /** Raw `Project.name` this task belongs to (if known). */
-    val projectName: String?,
     /**
-     * Base path of the project this task belongs to (if known). Additive optional field (#92): lets devrig
-     * recompute the within-IDE-unique routing key by path, the same way windows do. Older peers that omit
-     * it still decode.
+     * Within-IDE-unique project routing key (#92) this task belongs to — the same `project_name`
+     * steroid_list_projects reports; null if the task isn't tied to a known open project.
      */
-    val projectPath: String? = null,
-    /** This IDE's self `backend_name` (#92) — additive, optional, informational (devrig recomputes). */
+    @SerialName("project_name") val projectName: String?,
+    /** Owning IDE's `backend_name` (#92). */
     @SerialName("backend_name") val backendName: String? = null,
 )

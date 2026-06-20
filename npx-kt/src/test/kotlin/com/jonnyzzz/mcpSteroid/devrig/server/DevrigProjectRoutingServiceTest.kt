@@ -9,9 +9,7 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
-import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
-import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import com.jonnyzzz.mcpSteroid.server.canonicalProjectHome
 import com.jonnyzzz.mcpSteroid.server.projectHash
 import java.nio.file.Files
@@ -21,7 +19,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.io.TempDir
 
@@ -164,187 +161,6 @@ class DevrigProjectRoutingServiceTest {
             "project_name 'missing-project-abcdefgh' is no longer present; call steroid_list_projects to refresh",
             error.message,
         )
-    }
-
-    @Test
-    fun `windowProjectKey resolves to the exposed project name`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
-            )
-        )
-
-        val window = WindowInfo(
-            projectName = "mcp-steroid",
-            projectPath = projectHome.toString(),
-            title = "MCP Steroid",
-            isActive = true,
-            isVisible = true,
-            bounds = null,
-            windowId = "frame-1",
-        )
-
-        val key = service.windowProjectKey(42, window)
-        val route = service.routes().values.single()
-
-        assertEquals(route.exposedProjectName, key)
-    }
-
-    @Test
-    fun `window routing uses project path to disambiguate duplicate original project names`() {
-        val sharedProject = Files.createDirectories(tempDir.resolve("shared-project"))
-        val otherProject = Files.createDirectories(tempDir.resolve("other-project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", sharedProject.toString())),
-            ),
-            state(
-                pid = 43,
-                projects = listOf(
-                    ProjectInfo("mcp-steroid", otherProject.toString()),
-                    ProjectInfo("mcp-steroid", sharedProject.toString()),
-                ),
-            ),
-        )
-
-        val key = service.windowProjectKey(
-            43,
-            WindowInfo(
-                projectName = "mcp-steroid",
-                projectPath = sharedProject.toString(),
-                title = "MCP Steroid",
-                isActive = true,
-                isVisible = true,
-                bounds = null,
-                windowId = "frame-1",
-            ),
-        )
-        val sharedRealProject = sharedProject.toRealPath()
-        val otherRealProject = otherProject.toRealPath()
-        val samePidOtherRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == otherRealProject }
-        val samePidPathRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == sharedRealProject }
-
-        // The window resolves to the same-pid route whose path matches.
-        assertEquals(samePidPathRoute.exposedProjectName, key)
-        assertNotEquals(samePidOtherRoute.exposedProjectName, key)
-    }
-
-    @Test
-    fun `windowProjectKey is null for a window without project name or path`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
-            )
-        )
-        val window = WindowInfo(
-            projectName = null,
-            projectPath = null,
-            title = "Welcome",
-            isActive = true,
-            isVisible = true,
-            bounds = null,
-            windowId = "welcome-frame",
-        )
-
-        val key = service.windowProjectKey(42, window)
-
-        assertNull(key)
-    }
-
-    @Test
-    fun `windowProjectKey is null when the raw name is ambiguous and no path is given`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a/dup"))
-        val projectB = Files.createDirectories(tempDir.resolve("b/dup"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(
-                    ProjectInfo("dup", projectA.toString()),
-                    ProjectInfo("dup", projectB.toString()),
-                ),
-            )
-        )
-        // Same raw name, two routes, and NO projectPath to disambiguate — must NOT first-match (#92);
-        // give up (null) rather than guess the wrong same-named project.
-        val window = WindowInfo(
-            projectName = "dup",
-            projectPath = null,
-            title = "dup",
-            isActive = true,
-            isVisible = true,
-            bounds = null,
-            windowId = "frame-1",
-        )
-
-        assertNull(service.windowProjectKey(42, window))
-    }
-
-    @Test
-    fun `taskProjectKey resolves to the exposed project name`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
-            )
-        )
-
-        val key = service.taskProjectKey(
-            42,
-            ProgressTaskInfo(
-                title = "Indexing",
-                text = "",
-                text2 = "",
-                fraction = null,
-                isIndeterminate = true,
-                isCancellable = false,
-                projectName = "mcp-steroid",
-            )
-        )
-
-        assertEquals(service.routes().values.single().exposedProjectName, key)
-    }
-
-    @Test
-    fun `taskProjectKey uses project path to disambiguate duplicate original project names`() {
-        val sharedProject = Files.createDirectories(tempDir.resolve("shared-project"))
-        val otherProject = Files.createDirectories(tempDir.resolve("other-project"))
-        val service = routingService(
-            state(
-                pid = 43,
-                projects = listOf(
-                    ProjectInfo("mcp-steroid", otherProject.toString()),
-                    ProjectInfo("mcp-steroid", sharedProject.toString()),
-                ),
-            ),
-        )
-
-        val key = service.taskProjectKey(
-            43,
-            ProgressTaskInfo(
-                title = "Indexing",
-                text = "",
-                text2 = "",
-                fraction = null,
-                isIndeterminate = true,
-                isCancellable = false,
-                projectName = "mcp-steroid",
-                projectPath = sharedProject.toString(),
-            )
-        )
-
-        val sharedRealProject = sharedProject.toRealPath()
-        val otherRealProject = otherProject.toRealPath()
-        val sharedRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == sharedRealProject }
-        val otherRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == otherRealProject }
-
-        assertEquals(sharedRoute.exposedProjectName, key)
-        assertNotEquals(otherRoute.exposedProjectName, key)
     }
 
     @Test

@@ -7,11 +7,9 @@ import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.devrig.compareBackendVersions
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
-import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.canonicalProjectHome
 import com.jonnyzzz.mcpSteroid.server.projectHash
-import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.time.Instant
@@ -47,19 +45,6 @@ class DevrigProjectRoutingService(
     fun requireProject(exposedProjectName: String): ProjectRoute =
         routeProject(exposedProjectName)
             ?: throw ProjectRouteNotFoundException(exposedProjectName)
-
-    /**
-     * The within-IDE-unique routing key (`exposedProjectName`) for a window's project, or null when the
-     * window isn't tied to a known routed project. Matches by canonical base path first (so two
-     * same-named projects disambiguate), then by raw name (#92). The raw name and window id are left for
-     * the MCP layer to carry verbatim — see [com.jonnyzzz.mcpSteroid.server.listed].
-     */
-    fun windowProjectKey(idePid: Long, window: WindowInfo): String? =
-        routeFor(idePid, window.projectPath, window.projectName)?.exposedProjectName
-
-    /** As [windowProjectKey], for a background task. */
-    fun taskProjectKey(idePid: Long, task: ProgressTaskInfo): String? =
-        routeFor(idePid, task.projectPath, task.projectName)?.exposedProjectName
 
     fun singleRouteOrNull(): ProjectRoute? {
         val routes = routes().values.toList()
@@ -162,20 +147,6 @@ class DevrigProjectRoutingService(
             ide = ide.marker.ide,
             plugin = ide.marker.plugin,
         )
-    }
-
-    private fun routeFor(idePid: Long, projectPath: String?, projectName: String?): ProjectRoute? {
-        val allRoutes = routes().values.filter { it.idePid == idePid }
-        if (projectPath != null) {
-            val realPath = canonicalProjectHome(projectPath)
-            allRoutes.firstOrNull { it.realProjectHome == realPath }?.let { return it }
-        }
-        if (projectName != null) {
-            // Raw-name fallback ONLY when it resolves to exactly one route — never first-match a
-            // same-named project, which would reintroduce the #92 mis-routing. Ambiguous → give up (null).
-            allRoutes.filter { it.originalProjectName == projectName }.singleOrNull()?.let { return it }
-        }
-        return null
     }
 
     companion object {
