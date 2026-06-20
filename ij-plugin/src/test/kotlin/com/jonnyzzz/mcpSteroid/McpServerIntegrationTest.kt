@@ -151,6 +151,25 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             "Execution output should include marker text, got: $execOutput",
             execOutput.contains("Integration test execution from MCP")
         )
+
+        // Backward compat (#92): a client that forwards the RAW Project.name (e.g. an older devrig that
+        // predates the project_name forwarding) must still resolve, because the raw name is unambiguous
+        // here (one open project). The unique key is the primary route; the raw-name fallback is
+        // unambiguous-only (singleOrNull), so two same-named projects still REQUIRE the unique key.
+        val rawNameExec = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody(buildExecuteCodeRequest(project.name))
+        }
+        assertEquals(HttpStatusCode.OK, rawNameExec.status)
+        val rawRpc = McpJson.decodeFromString<JsonRpcResponse>(rawNameExec.bodyAsText())
+        assertNull("execute_code by unambiguous raw name should not be a JSON-RPC error", rawRpc.error)
+        val rawResult = McpJson.decodeFromJsonElement<ToolCallResult>(rawRpc.result!!)
+        assertFalse(
+            "Backward compat: an unambiguous raw Project.name must still resolve for older-devrig clients",
+            rawResult.isError,
+        )
     }
 
     fun testListWindowsTool(): Unit = timeoutRunBlocking(30.seconds) {

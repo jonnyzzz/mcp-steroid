@@ -120,7 +120,7 @@ class CliCodexIntegrationTest : CliIntegrationTestBase() {
                 You are testing MCP integration. You MUST call steroid_execute_code exactly two times, in order.
                 Use only the MCP server named "intellij" for tool calls. Do not call list_mcp_resources.
                 Reason: codex cli session reset test.
-                First, call steroid_list_projects exactly once and take the first project's "name" as PROJECT_NAME.
+                First, call steroid_list_projects exactly once and take the first project's "project_name" as PROJECT_NAME.
                 For each steroid_execute_code call (#1 and #2), pass project_name=PROJECT_NAME.
                 IMPORTANT: "intellij" is the MCP server name, not a valid project_name value.
 
@@ -157,7 +157,7 @@ class CliCodexIntegrationTest : CliIntegrationTestBase() {
                 """
                 You are continuing an MCP session reset test after a previous connection break.
                 Use only the MCP server named "intellij" for tool calls. Do not call list_mcp_resources.
-                First, call steroid_list_projects exactly once and take the first project's "name" as PROJECT_NAME.
+                First, call steroid_list_projects exactly once and take the first project's "project_name" as PROJECT_NAME.
                 Then call steroid_execute_code exactly once with project_name=PROJECT_NAME and this code:
                 ```
                 val count = ${SteroidsMcpServer::class.java.name}.getInstance().getServer().sessionManager.getSessionCount()

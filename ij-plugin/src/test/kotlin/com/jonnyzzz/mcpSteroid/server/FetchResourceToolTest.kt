@@ -161,10 +161,11 @@ class FetchResourceToolTest : BasePlatformTestCase() {
     }
 
     /**
-     * #92: the routing key FetchResourceToolHandler requires is the within-IDE-unique `project_name`
-     * from steroid_list_projects (`<rawName>-<hash>`), NOT the raw `Project.name`. PromptsContextHandlerIJ
-     * resolves it via OpenProjectsService.resolveProject, which matches ONLY the unique name (no raw
-     * fallback). Obtain it the way a real agent would — call steroid_list_projects and read `project_name`.
+     * #92: the primary routing key is the within-IDE-unique `project_name` from steroid_list_projects
+     * (`<rawName>-<hash>`). PromptsContextHandlerIJ resolves it via OpenProjectsService.resolveProject,
+     * which matches the unique name first and falls back to the raw `Project.name` ONLY when it is
+     * unambiguous (backward compat for older clients). Obtain the unique key the way a real agent would —
+     * call steroid_list_projects and read `project_name`.
      */
     private suspend fun resolveUniqueProjectName(server: SteroidsMcpServer, sessionId: String): String {
         val response = client.post(server.mcpUrl) {

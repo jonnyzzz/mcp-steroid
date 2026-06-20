@@ -57,7 +57,7 @@ data class ListedWindow(
      * `steroid_list_projects` reports; look up the project's `name`/`path` there by this key. Null for
      * windows not tied to a project. Treat it as opaque.
      */
-    @SerialName("project_name") val projectName: String?,
+    @SerialName("project_name") val projectName: String? = null,
     val title: String?,
     val isActive: Boolean,
     val isVisible: Boolean,
@@ -115,7 +115,7 @@ data class ListedBackgroundTask(
      * reports as `project_name` (look up the project's `name`/`path` there). Null if the task isn't tied
      * to a known open project.
      */
-    @SerialName("project_name") val projectName: String?,
+    @SerialName("project_name") val projectName: String? = null,
     /** Owning backend's [BackendInfo.backendName]; null only when unknown. */
     @SerialName("backend_name") val backendName: String? = null,
 )
@@ -147,7 +147,7 @@ data class WindowInfo(
      * Within-IDE-unique project routing key (#92) — the same `project_name` steroid_list_projects reports;
      * null for windows not tied to a project.
      */
-    @SerialName("project_name") val projectName: String?,
+    @SerialName("project_name") val projectName: String? = null,
     val title: String?,
     val isActive: Boolean,
     val isVisible: Boolean,
@@ -194,7 +194,7 @@ data class ProgressTaskInfo(
      * Within-IDE-unique project routing key (#92) this task belongs to — the same `project_name`
      * steroid_list_projects reports; null if the task isn't tied to a known open project.
      */
-    @SerialName("project_name") val projectName: String?,
+    @SerialName("project_name") val projectName: String? = null,
     /** Owning IDE's `backend_name` (#92). */
     @SerialName("backend_name") val backendName: String? = null,
 )

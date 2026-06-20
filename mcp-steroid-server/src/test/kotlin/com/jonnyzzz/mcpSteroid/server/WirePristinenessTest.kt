@@ -131,6 +131,46 @@ class WirePristinenessTest {
     }
 
     @Test
+    fun `windows wire decodes a project-less window or task (null project_name) without error`() {
+        // A non-project window (welcome screen, etc.) has project_name = null → omitted by explicitNulls=false.
+        // The optional `= null` field must decode it back to null, never throw MissingFieldException.
+        val response = NpxBridgeWindowsResponse(
+            windows = listOf(
+                WindowInfo(
+                    projectName = null,
+                    title = "Welcome",
+                    isActive = true,
+                    isVisible = true,
+                    bounds = null,
+                    windowId = "welcome-1",
+                ),
+            ),
+            backgroundTasks = listOf(
+                ProgressTaskInfo(
+                    title = "Indexing",
+                    text = "",
+                    text2 = "",
+                    fraction = null,
+                    isIndeterminate = true,
+                    isCancellable = false,
+                    projectName = null,
+                ),
+            ),
+            pid = 1234,
+            mcpUrl = "http://127.0.0.1:0/mcp",
+            instanceId = "npx-1",
+            seq = 1,
+            schemaVersion = "1",
+            updatedAt = "2026-06-09T00:00:00Z",
+        )
+        val json = McpJson.encodeToString(NpxBridgeWindowsResponse.serializer(), response)
+        assertFalse(json.contains("project_name"), "null project_name must be omitted: $json")
+        val decoded = McpJson.decodeFromString(NpxBridgeWindowsResponse.serializer(), json)
+        assertNull(decoded.windows.single().projectName)
+        assertNull(decoded.backgroundTasks.single().projectName)
+    }
+
+    @Test
     fun `MCP-only ListedWindow carries project_name and backend_name`() {
         val listed = WindowInfo(
             projectName = "x-1a2b3c4d",
