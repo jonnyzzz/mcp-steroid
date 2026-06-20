@@ -52,6 +52,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
@@ -211,13 +212,55 @@ class DevrigToolBridgeClientTest {
         val arguments = McpJson.parseToJsonElement(receivedBody ?: error("missing request body"))
             .jsonObject["arguments"]?.jsonObject ?: error("missing arguments")
         assertEquals("steroid_execute_code", McpJson.parseToJsonElement(receivedBody!!).jsonObject["name"]?.jsonPrimitive?.content)
-        // #92: the handler forwards the within-IDE-unique name (route.exposedProjectName), not the bare one.
-        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
+        // #92: the handler forwards route.ideProjectName (the IDE's own reported project_name, or the raw
+        // name for an older IDE that didn't stamp one) — never recombined `?: name` at the call site.
+        assertEquals(route.ideProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("println(1)", arguments["code"]?.jsonPrimitive?.content)
         assertEquals("ec-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("verify contract", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals(42, arguments["timeout"]?.jsonPrimitive?.content?.toInt())
         assertEquals("unleashed", arguments["modal"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `execute_code forwards the IDE-reported project_name when the IDE stamps one (new IDE, #92)`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        // A NEW IDE stamps its own within-IDE-unique project_name on the wire; it differs from both the raw
+        // folder name and devrig's exposedProjectName hash. devrig must echo THAT value back so the IDE
+        // re-resolves the exact project — never the first same-named one (#92).
+        val ideStampedName = "original-project-ide777"
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 7, projectHome = projectHome),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString(), projectName = ideStampedName)),
+            )
+        )
+        val route = routing.routes().values.single()
+        // The route still keys the agent-facing namespace by its own computed hash.
+        assertEquals(ideStampedName, route.ideProjectName)
+        assertNotEquals(route.exposedProjectName, route.ideProjectName)
+        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(routing, httpClient), testBeacon(tempDir))
+
+        val result = handler.executeCode(
+            projectName = route.exposedProjectName,
+            execCodeParams = ExecCodeParams(
+                taskId = "ec-task",
+                code = "println(1)",
+                reason = "verify #92 forwarding",
+                timeout = 42,
+                modal = ModalMode.UNLEASHED,
+            ),
+            callProgress = object : McpProgressReporter { override fun report(message: String) = Unit },
+        )
+
+        assertEquals(false, result.isError)
+        val arguments = McpJson.parseToJsonElement(receivedBody ?: error("missing request body"))
+            .jsonObject["arguments"]?.jsonObject ?: error("missing arguments")
+        // The forwarded project_name is the IDE's own reported key, not devrig's exposed hash nor the raw name.
+        assertEquals(ideStampedName, arguments["project_name"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -250,7 +293,7 @@ class DevrigToolBridgeClientTest {
         assertEquals("steroid_execute_feedback", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
         // #92: the handler forwards the within-IDE-unique name (route.exposedProjectName), not the bare one.
-        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals(route.ideProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("feedback-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("0.75", arguments["success_rating"]?.jsonPrimitive?.content)
         assertEquals("worked", arguments["explanation"]?.jsonPrimitive?.content)
@@ -288,7 +331,7 @@ class DevrigToolBridgeClientTest {
         assertEquals("steroid_take_screenshot", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
         // #92: the handler forwards the within-IDE-unique name (route.exposedProjectName), not the bare one.
-        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals(route.ideProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("screenshot-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("capture state", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals(null, arguments["window_id"])
@@ -331,7 +374,7 @@ class DevrigToolBridgeClientTest {
         assertEquals("steroid_input", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
         // #92: forwarded as the within-IDE-unique name, not the bare "project-b".
-        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals(route.ideProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("input-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("press key", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals("frame-b", arguments["window_id"]?.jsonPrimitive?.content)
@@ -711,7 +754,7 @@ class DevrigToolBridgeClientTest {
         assertEquals("steroid_execute_code", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
         // #92: the handler forwards the within-IDE-unique name (route.exposedProjectName), not the bare one.
-        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals(route.ideProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("exec-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("17", arguments["timeout"]?.jsonPrimitive?.content)
         assertEquals("smart_non_modal", arguments["modal"]?.jsonPrimitive?.content)
@@ -954,12 +997,17 @@ class DevrigToolBridgeClientTest {
             ),
         )
 
-    private fun route(tempDir: Path, token: String = "secret-token"): ProjectRoute =
+    private fun route(
+        tempDir: Path,
+        token: String = "secret-token",
+        ideReportedProjectName: String? = "original-project-abcdefgh",
+    ): ProjectRoute =
         ProjectRoute(
             idePid = 42,
             bridgeBaseUrl = "http://127.0.0.1:$port/api/jonnyzzz/mcp-steroid/v1",
             headers = mapOf("Authorization" to "Bearer $token"),
             originalProjectName = "original-project",
+            ideReportedProjectName = ideReportedProjectName,
             exposedProjectName = "original-project-abcdefgh",
             projectPath = tempDir.toString(),
             realProjectHome = tempDir.toRealPath(),

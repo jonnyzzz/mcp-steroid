@@ -80,8 +80,9 @@ class DevrigListWindowsToolHandler(
         ListWindowsResponse(
             windows = responses.flatMap { (state, response) ->
                 val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
-                // Relabel each window into devrig's namespace using its known projects for this IDE (#92):
-                // a window whose project isn't a current route maps to null.
+                // Reverse-map each window into devrig's agent-facing namespace: the window carries the IDE's
+                // own project_name, which equals the route's exposedProjectName (shared scheme), so look it
+                // up there (#92). A window whose project isn't a current route maps to null.
                 response.windows.map { w ->
                     val mapped = routes.firstOrNull { it.idePid == state.ide.pid && it.exposedProjectName == w.projectName }?.exposedProjectName
                     w.listed(backendName, mapped)
@@ -112,9 +113,9 @@ class DevrigExecuteCodeToolHandler(
         // Version-base skew check on every routed exec_code call (devrig scenario only; stderr).
         BackendVersionSkew.warnOnExecCode(pid = route.idePid, pluginVersion = route.plugin.version)
         val result = bridge.callTool(route, "steroid_execute_code", callProgress) {
-            // Forward the within-IDE-unique name (== the IDE's own, shared scheme) so the IDE re-derives
-            // + matches the exact project, never the first same-named one (issue #92).
-            put("project_name", route.exposedProjectName)
+            // Forward the IDE's own reported project_name (or the raw name for an older IDE that didn't
+            // stamp one) so the IDE re-resolves the exact project, never the first same-named one (#92).
+            put("project_name", route.ideProjectName)
             put("code", execCodeParams.code)
             put("task_id", execCodeParams.taskId)
             put("reason", execCodeParams.reason)
@@ -133,9 +134,9 @@ class DevrigExecuteFeedbackToolHandler(
     override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
         val result = bridge.callTool(route, "steroid_execute_feedback") {
-            // Forward the within-IDE-unique name (== the IDE's own, shared scheme) so the IDE re-derives
-            // + matches the exact project, never the first same-named one (issue #92).
-            put("project_name", route.exposedProjectName)
+            // Forward the IDE's own reported project_name (or the raw name for an older IDE that didn't
+            // stamp one) so the IDE re-resolves the exact project, never the first same-named one (#92).
+            put("project_name", route.ideProjectName)
             put("task_id", params.taskId)
             put("success_rating", params.successRating)
             params.explanation?.let { put("explanation", it) }
@@ -157,9 +158,9 @@ class DevrigVisionScreenshotToolHandler(
     ): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
         return bridge.callTool(route, "steroid_take_screenshot", mcpProgressReporter) {
-            // Forward the within-IDE-unique name (== the IDE's own, shared scheme) so the IDE re-derives
-            // + matches the exact project, never the first same-named one (issue #92).
-            put("project_name", route.exposedProjectName)
+            // Forward the IDE's own reported project_name (or the raw name for an older IDE that didn't
+            // stamp one) so the IDE re-resolves the exact project, never the first same-named one (#92).
+            put("project_name", route.ideProjectName)
             put("task_id", screenshotParams.taskId)
             put("reason", screenshotParams.reason)
             // window_id is unique within the IDE resolved by project_name; forward it as-is.
@@ -176,9 +177,9 @@ class DevrigVisionInputToolHandler(
         val rawSequence = inputParams.rawSequence
             ?: return ToolCallResult.errorResult("Input sequence cannot be forwarded without the original sequence string")
         return bridge.callTool(route, "steroid_input") {
-            // Forward the within-IDE-unique name (== the IDE's own, shared scheme) so the IDE re-derives
-            // + matches the exact project, never the first same-named one (issue #92).
-            put("project_name", route.exposedProjectName)
+            // Forward the IDE's own reported project_name (or the raw name for an older IDE that didn't
+            // stamp one) so the IDE re-resolves the exact project, never the first same-named one (#92).
+            put("project_name", route.ideProjectName)
             put("task_id", inputParams.taskId)
             put("reason", inputParams.reason)
             // window_id is unique within the IDE resolved by project_name; forward it as-is.
@@ -232,6 +233,7 @@ class DevrigOpenProjectToolHandler(
             bridgeBaseUrl = ide.rpcBaseUrl,
             headers = ide.bridgeHeaders,
             originalProjectName = "",
+            ideReportedProjectName = null,
             exposedProjectName = "",
             projectPath = "",
             realProjectHome = java.nio.file.Path.of(".").toAbsolutePath().normalize(),

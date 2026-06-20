@@ -450,16 +450,22 @@ to** (and vice-versa). The wire surface is: the **JSON-RPC tool-call params** de
     `project_name` here is **not** additive — an old devrig reading a new IDE's `/windows` breaks, so
     devrig + plugin must ship together for this surface.
 
-- **devrig — cross-IDE uniqueness, computed directly, IDE's name hidden.** `DevrigProjectRoutingService`
-  builds `ProjectRoute.exposedProjectName = "<name>-<hash(canonicalHome, idePid)>"` straight from the wire
-  `{name, path}` + the discovered IDE's pid; it does **not** read the IDE-stamped `project_name`. Because
-  this is the *same* shared `uniqueProjectName` formula over the *same* pid, devrig's `exposedProjectName`
-  equals the IDE's key — so devrig **forwards `route.exposedProjectName`** to the bridge and the IDE
-  resolves it. Cross-IDE uniqueness is guaranteed by the pid salt (no explicit dedup — collisions need
-  same name+home+pid, structurally impossible across distinct IDEs). For `list_windows`, devrig **relabels**
-  each window/task into its own namespace via `routing.routes()` (match `idePid` + `exposedProjectName ==
-  entry.project_name`), so a window's `project_name` always equals what `list_projects` reports; an entry
-  whose project isn't a current route maps to null.
+- **devrig — cross-IDE uniqueness for the agent key, IDE-reported name for forwarding.**
+  `DevrigProjectRoutingService` builds `ProjectRoute.exposedProjectName = "<name>-<hash(canonicalHome,
+  idePid)>"` straight from the wire `{name, path}` + the discovered IDE's pid. This is the **agent-facing
+  key** — the `routes()` map key and the value `list_projects` / `list_windows` surface. Cross-IDE
+  uniqueness is guaranteed by the pid salt (no explicit dedup — collisions need same name+home+pid,
+  structurally impossible across distinct IDEs). The route ALSO captures the IDE's own reported
+  `project_name` (`ProjectInfo.project_name`, null for an older IDE). When devrig **forwards** a routed call
+  to the bridge it sends `route.ideProjectName` — a single getter that encapsulates `ideReportedProjectName
+  ?: name`: a new IDE re-resolves its own within-IDE-unique key (fixes #92), an older IDE that didn't stamp
+  one gets the raw folder name it still understands. devrig echoes back exactly what the IDE reported rather
+  than its own `exposedProjectName` (the two happen to be equal for a new IDE under the shared formula, but
+  forwarding never relies on that). Call sites never recombine `?: name` themselves — they use the getter.
+  For `list_windows`, devrig **relabels** each window/task into its agent-facing namespace via
+  `routing.routes()` (match `idePid` + `exposedProjectName == entry.project_name`), so a window's
+  `project_name` always equals what `list_projects` reports; an entry whose project isn't a current route
+  maps to null.
 
 `WirePristinenessTest` (`mcp-steroid-server`) pins this: `ProjectInfo` additive project_name/backend_name
 (serialize + round-trip + optional), windows/tasks wire carries `project_name` (key) + optional

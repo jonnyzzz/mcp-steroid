@@ -138,8 +138,12 @@ class DevrigProjectRoutingService(
             bridgeBaseUrl = ide.rpcBaseUrl,
             headers = ide.bridgeHeaders,
             originalProjectName = project.name,
-            // devrig computes its own within-IDE-unique name directly (== uniqueProjectName(name, path, pid));
-            // the IDE re-derives the same value by the shared scheme, so devrig forwards exactly this (#92).
+            // What the IDE reported as its own project_name (null for an older IDE). The [ProjectRoute.ideProjectName]
+            // getter applies the `?: name` fallback when devrig forwards it back to that IDE (#92).
+            ideReportedProjectName = project.projectName,
+            // devrig's own agent-facing key, computed from the IDE-reported {name, path, pid}. Cross-IDE
+            // unique (pid salt); equals a new IDE's own key by the shared scheme, but devrig owns this
+            // namespace and maps it back to `ideProjectName ?: name` when forwarding.
             exposedProjectName = "${project.name}-$projectHash",
             projectPath = project.path,
             realProjectHome = realHome,
@@ -187,16 +191,29 @@ data class ProjectRoute(
     val idePid: Long,
     val bridgeBaseUrl: String,
     val headers: Map<String, String>,
-    /** Raw IntelliJ `Project.name` (the folder name). */
+    /** Raw IntelliJ `Project.name` (the folder name). Internal — prefer [ideProjectName]. */
     val originalProjectName: String,
-    /** devrig's globally-unique agent-facing `project_name` (cross-IDE-unique; may be disambiguated). */
+    /**
+     * The IDE's OWN `project_name` as reported on the wire (`ProjectInfo.project_name`), or null for an
+     * older IDE that doesn't stamp one. Internal — callers must use the [ideProjectName] getter rather than
+     * recombining this with the raw name.
+     */
+    val ideReportedProjectName: String?,
+    /** devrig-computed agent-facing `project_name` (`<name>-<hash(home,pid)>`) — the map key + list value. */
     val exposedProjectName: String,
     val projectPath: String,
     val realProjectHome: Path,
     val projectHash: String,
     val ide: IdeInfo,
     val plugin: PluginInfo,
-)
+) {
+    /**
+     * The `project_name` to forward to the IDE bridge: the IDE's own reported name, or the raw folder name
+     * for an older IDE that didn't report one. Encapsulates the `project_name ?: name` rule (#92) so call
+     * sites never recombine the parts — a new IDE re-resolves its own key; an older IDE gets the raw name.
+     */
+    val ideProjectName: String get() = ideReportedProjectName ?: originalProjectName
+}
 
 class ProjectRouteNotFoundException(projectName: String) : IllegalArgumentException(
     "project_name '$projectName' is no longer present; call steroid_list_projects to refresh"
