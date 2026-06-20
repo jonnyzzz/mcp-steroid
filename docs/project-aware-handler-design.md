@@ -275,6 +275,12 @@ The bespoke ApplyPatch decoding (tolerant `hunks: JsonArray | string`, strict
 
 ## 5. Per-side instantiation
 
+> **Superseded by #92.** The `ProjectResolverIJ.resolve` sketch below matches on the raw
+> `it.name == projectName`. The shipped resolver (`OpenProjectsService.resolveProject` /
+> `ProjectNameService`) instead matches the **within-IDE-unique** `project_name` (`<name>-<hash>`)
+> with **no raw-name fallback**, so two same-named projects (a checkout + its worktree) route
+> correctly. Treat the raw-name matching here as historical.
+
 ### 5.1 IJ-plugin
 
 ```kotlin

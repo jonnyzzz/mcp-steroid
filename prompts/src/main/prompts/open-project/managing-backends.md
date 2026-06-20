@@ -136,8 +136,10 @@ To pick a value:
    `managed` backend, else any listed backend.
 3. Pass the chosen `backend_name` to `steroid_open_project`.
 
-Each `projects[]` entry also carries `project_name`, the raw folder
-`name`, `path`, and a `backend_name` naming its owning backend.
+Each `projects[]` entry also carries `project_name` (the unique, opaque
+routing KEY you pass to project-scoped tools), the human-readable folder
+`name` (informational only), `path`, and a `backend_name` naming its
+owning backend.
 
 **Only routable backends are valid — but `backends[]` lists ALL
 backends.** The list includes marker IDEs (even with zero open

@@ -130,12 +130,14 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             "Current project should be discoverable via the MCP tool",
             projects.projects.any { it.name == project.name }
         )
+        // #92: route by the unique project_name (the `<name>-<hash>` key), not the raw folder name.
+        val uniqueProjectName = projects.projects.single { it.name == project.name }.projectName
 
         val execResponse = client.post(server.mcpUrl) {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
             header(McpHttpTransport.SESSION_HEADER, sessionId)
-            setBody(buildExecuteCodeRequest(project.name))
+            setBody(buildExecuteCodeRequest(uniqueProjectName))
         }
 
         assertEquals(HttpStatusCode.OK, execResponse.status)
@@ -268,8 +270,9 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
 
     /**
      * R3.6 — the direct in-IDE surface self-describes with the SAME shape devrig emits: exactly one
-     * routable backend (this IDE), and every project's `project_name == name` and `backend_name` points
-     * at that single backend. Replaces the round-2 "direct surface stays empty" guard.
+     * routable backend (this IDE), and every project's `project_name` is the within-IDE-unique routing
+     * key `<name>-<hash>` (#92; never equal to the raw `name`) with `backend_name` pointing at that single
+     * backend. Replaces the round-2 "direct surface stays empty" guard.
      */
     fun testDirectIdeListProjectsSelfDescribes(): Unit = timeoutRunBlocking(30.seconds) {
         val server = SteroidsMcpServer.getInstance()
@@ -315,16 +318,26 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             "The self backend must report the MCP Steroid plugin installed",
             selfBackend.hasMcpSteroid()
         )
-        response.projects.forEach { project ->
+        response.projects.forEach { listed ->
             assertEquals(
-                "Direct-IDE project_name must equal the real name",
+                "Direct-IDE project `name` must stay the raw project folder name",
                 project.name,
-                project.projectName
+                listed.name
+            )
+            assertFalse(
+                "Direct-IDE project_name (the unique routing key) must NOT equal the raw name (#92)",
+                listed.projectName == listed.name
+            )
+            // project_name = `<rawName>-<8 base62 chars>` (see uniqueProjectName/projectHash).
+            assertTrue(
+                "Direct-IDE project_name must be the unique `<name>-<hash>` form, got: ${listed.projectName}",
+                listed.projectName.startsWith("${listed.name}-")
+                        && listed.projectName.removePrefix("${listed.name}-").matches(Regex("[0-9A-Za-z]{8}"))
             )
             assertEquals(
                 "Direct-IDE project must point at the single self backend",
                 selfBackend.backendName,
-                project.backendName
+                listed.backendName
             )
         }
     }
@@ -358,6 +371,31 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
 
     private fun HttpRequestBuilder.npxBridgeAuthorization() {
         header(HttpHeaders.Authorization, "Bearer ${NpxBridgeService.getInstance().token}")
+    }
+
+    /**
+     * #92: the routing key a tool call must carry is the within-IDE-unique `project_name` from
+     * steroid_list_projects (always `<rawName>-<hash>`), NOT the raw `Project.name`. This is the central
+     * helper every test uses to obtain it — call steroid_list_projects, then pick the entry whose raw
+     * `name` is the fixture project's name and return its `project_name`.
+     */
+    private suspend fun resolveUniqueProjectName(server: SteroidsMcpServer, sessionId: String): String {
+        val listProjectsResponse = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody("""{"jsonrpc":"2.0","id":"resolve-project-name","method":"tools/call","params":{"name":"steroid_list_projects"}}""")
+        }
+        assertEquals(HttpStatusCode.OK, listProjectsResponse.status)
+        val rpc = McpJson.decodeFromString<JsonRpcResponse>(listProjectsResponse.bodyAsText())
+        assertNull("steroid_list_projects should not return JSON-RPC error", rpc.error)
+        val result = McpJson.decodeFromJsonElement<ToolCallResult>(rpc.result!!)
+        assertFalse("steroid_list_projects should succeed", result.isError)
+        val payload = (result.content.single() as ContentItem.Text).text
+        val response = McpJson.decodeFromString<ListProjectsResponse>(payload)
+        val entry = response.projects.firstOrNull { it.name == project.name }
+            ?: error("Fixture project '${project.name}' not found in steroid_list_projects: ${response.projects.map { it.name }}")
+        return entry.projectName
     }
 
     private fun buildExecuteCodeRequest(projectName: String) = buildJsonObject {
@@ -699,14 +737,14 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             accept(ContentType.Application.Json)
             setBody(buildInitializeRequest())
         }
-        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]!!
 
-        // Execute code
+        // Execute code — route by the unique project_name (#92)
         val execResponse = client.post(server.mcpUrl) {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
             header(McpHttpTransport.SESSION_HEADER, sessionId)
-            setBody(buildExecuteCodeRequest(project.name))
+            setBody(buildExecuteCodeRequest(resolveUniqueProjectName(server, sessionId)))
         }
 
         assertEquals(HttpStatusCode.OK, execResponse.status)
@@ -775,7 +813,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             accept(ContentType.Application.Json)
             setBody(buildInitializeRequest())
         }
-        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]!!
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         // Execute code with syntax error - missing closing brace
         val execRequest = buildJsonObject {
@@ -785,7 +824,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", """
                             val x = 42
                             // Missing closing brace - syntax error!
@@ -847,7 +886,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             accept(ContentType.Application.Json)
             setBody(buildInitializeRequest())
         }
-        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]!!
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         // Execute code with type error - assigning String to Int
         val execRequest = buildJsonObject {
@@ -857,7 +897,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", """
                             val number: Int = "this is not a number"
                             println(number)
@@ -920,6 +960,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
         val sessionId = startSession(server)
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         // Smallest practical script timeout (2 seconds). Script body delays for
         // 5 minutes — well beyond the timeout — and would otherwise pin the
@@ -931,7 +972,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("timeout", 2)
                     put("reason", "Timeout regression test (#46)")
                     put("task_id", "timeout-test")
@@ -1008,7 +1049,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         // result and prove `!isError`, otherwise a server stuck in a
         // degraded `isError=true on every call` state would pass an
         // HTTP-200-only check.
-        val nextRequest = buildExecuteCodeRequest(project.name)
+        val nextRequest = buildExecuteCodeRequest(uniqueProjectName)
         val nextResponse = client.post(server.mcpUrl) {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
@@ -1056,7 +1097,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             accept(ContentType.Application.Json)
             setBody(buildInitializeRequest())
         }
-        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]!!
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         // Execute code that reports progress multiple times
         val execRequest = buildJsonObject {
@@ -1066,7 +1108,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", """
                             progress("Step 1: Initializing...")
                             progress("Step 2: Processing data...")
@@ -1131,7 +1173,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             accept(ContentType.Application.Json)
             setBody(buildInitializeRequest())
         }
-        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]!!
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         // Create a unique progress token
         val progressToken = "progress-token-${UUID.randomUUID()}"
@@ -1144,7 +1187,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", """
                             progress("Starting with progress token...")
                             progress("Middle step...")
@@ -1198,7 +1241,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         )
 
         // Verify progress notifications were sent to the session's notification channel
-        val mcpSession = server.getServer().sessionManager.getSession(sessionId!!)
+        val mcpSession = server.getServer().sessionManager.getSession(sessionId)
         assertNotNull("Session should still exist", mcpSession)
         val notifications = mcpSession!!.drainNotifications()
         val progressNotifications = notifications.filter { it.method == McpMethods.PROGRESS }
@@ -1238,7 +1281,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             accept(ContentType.Application.Json)
             setBody(buildInitializeRequest())
         }
-        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]!!
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         // Execute code that simulates a longer operation with multiple progress updates
         // Note: Using Thread.sleep for simulation since delay() may not be in classpath
@@ -1261,7 +1305,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", code)
                     put("reason", "Test long-running progress")
                     put("task_id", "long-progress-test")
@@ -1322,7 +1366,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             accept(ContentType.Application.Json)
             setBody(buildInitializeRequest())
         }
-        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]!!
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         // Execute code with an unresolved reference
         val execRequest = buildJsonObject {
@@ -1332,7 +1377,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", """
                             // This class doesn't exist
                             val x = NonExistentClass.doSomething()
@@ -1397,7 +1442,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
                 accept(ContentType.Application.Json)
                 setBody(buildInitializeRequest())
             }
-            val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+            val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]!!
+            val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
             // Execute code that reads the system property
             val execRequest = buildJsonObject {
@@ -1407,7 +1453,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
                 putJsonObject("params") {
                     put("name", "steroid_execute_code")
                     putJsonObject("arguments") {
-                        put("project_name", project.name)
+                        put("project_name", uniqueProjectName)
                         put("code", $$"""
                                 val value = System.getProperty("$$propertyKey")
                                 println("SYSPROP_VALUE: $value")
@@ -1744,6 +1790,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
         val sessionId = startSession(server)
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         val execRequest = buildJsonObject {
             put("jsonrpc", "2.0")
@@ -1752,7 +1799,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", """
                         val x: String = 123
                         println(x)
@@ -1814,6 +1861,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
         val sessionId = startSession(server)
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         val progressToken = "progress-compile-error-${UUID.randomUUID()}"
 
@@ -1824,7 +1872,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", """
                         val x: String = 123
                         println(x)
@@ -1920,6 +1968,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
         val sessionId = startSession(server)
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         val progressToken = "progress-warnings-${UUID.randomUUID()}"
 
@@ -1930,7 +1979,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             putJsonObject("params") {
                 put("name", "steroid_execute_code")
                 putJsonObject("arguments") {
-                    put("project_name", project.name)
+                    put("project_name", uniqueProjectName)
                     put("code", """
                         val items: List<Any> = listOf("hello", "world")
                         @Suppress("NOTHING_TO_SUPPRESS")
@@ -2033,6 +2082,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
         val sessionId = startSession(server)
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
 
         val burstSize = 4
         val requests = (1..burstSize).map { idx ->
@@ -2046,7 +2096,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
                 putJsonObject("params") {
                     put("name", "steroid_execute_code")
                     putJsonObject("arguments") {
-                        put("project_name", project.name)
+                        put("project_name", uniqueProjectName)
                         put("code", """println("$marker")""")
                         put("reason", "Concurrent burst #$idx")
                         put("task_id", taskId)

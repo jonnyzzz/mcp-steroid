@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.intellij.codeInspection.redundantCast.RedundantCastInspection
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.service
@@ -366,6 +367,7 @@ class IdeExamplesExecutionTest : BasePlatformTestCase() {
         maxInspections: Int? = null,
         fileName: String? = null,
         fileExtension: String? = null,
+        inspectionShortName: String? = null,
         dryRun: Boolean? = null
     ): String {
         var updated = code
@@ -499,6 +501,12 @@ class IdeExamplesExecutionTest : BasePlatformTestCase() {
             updated = updated.replace(
                 Regex("val fileExtension = \".*?\""),
                 "val fileExtension = \"${escapeKotlinString(fileExtension)}\""
+            )
+        }
+        if (inspectionShortName != null) {
+            updated = updated.replace(
+                Regex("val inspectionShortName = \".*?\""),
+                "val inspectionShortName = \"${escapeKotlinString(inspectionShortName)}\""
             )
         }
         if (dryRun != null) {
@@ -697,10 +705,16 @@ class IdeExamplesExecutionTest : BasePlatformTestCase() {
     }
 
     fun testInspectAndFixExampleExecutes(): Unit = timeoutRunBlocking(60.seconds) {
+        // The InspectionSample is a redundant `(String) null` cast; drive RedundantCast (a
+        // LocalInspectionTool) rather than the prompt's SpellCheckingInspection default. The recipe
+        // resolves the tool from the current profile by short-name, so it must be enabled there — a
+        // bare BasePlatformTestCase profile has no inspections enabled.
+        myFixture.enableInspections(RedundantCastInspection())
         val raw = index.inspectAndFixMd.ktBlock000.readPrompt()
         val code = configureExample(
             raw,
             filePath = inspectionSamplePath,
+            inspectionShortName = "RedundantCast",
             dryRun = false
         )
 

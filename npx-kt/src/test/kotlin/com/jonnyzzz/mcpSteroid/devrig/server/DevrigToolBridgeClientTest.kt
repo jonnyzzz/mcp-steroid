@@ -211,7 +211,8 @@ class DevrigToolBridgeClientTest {
         val arguments = McpJson.parseToJsonElement(receivedBody ?: error("missing request body"))
             .jsonObject["arguments"]?.jsonObject ?: error("missing arguments")
         assertEquals("steroid_execute_code", McpJson.parseToJsonElement(receivedBody!!).jsonObject["name"]?.jsonPrimitive?.content)
-        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        // #92: the handler forwards the within-IDE-unique name (route.exposedProjectName), not the bare one.
+        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("println(1)", arguments["code"]?.jsonPrimitive?.content)
         assertEquals("ec-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("verify contract", arguments["reason"]?.jsonPrimitive?.content)
@@ -248,7 +249,8 @@ class DevrigToolBridgeClientTest {
         val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
         assertEquals("steroid_execute_feedback", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
-        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        // #92: the handler forwards the within-IDE-unique name (route.exposedProjectName), not the bare one.
+        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("feedback-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("0.75", arguments["success_rating"]?.jsonPrimitive?.content)
         assertEquals("worked", arguments["explanation"]?.jsonPrimitive?.content)
@@ -285,7 +287,8 @@ class DevrigToolBridgeClientTest {
         val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
         assertEquals("steroid_take_screenshot", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
-        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        // #92: the handler forwards the within-IDE-unique name (route.exposedProjectName), not the bare one.
+        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("screenshot-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("capture state", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals(null, arguments["window_id"])
@@ -327,7 +330,8 @@ class DevrigToolBridgeClientTest {
         val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
         assertEquals("steroid_input", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
-        assertEquals("project-b", arguments["project_name"]?.jsonPrimitive?.content)
+        // #92: forwarded as the within-IDE-unique name, not the bare "project-b".
+        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("input-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("press key", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals("frame-b", arguments["window_id"]?.jsonPrimitive?.content)
@@ -706,7 +710,8 @@ class DevrigToolBridgeClientTest {
         val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
         assertEquals("steroid_execute_code", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
-        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        // #92: the handler forwards the within-IDE-unique name (route.exposedProjectName), not the bare one.
+        assertEquals(route.exposedProjectName, arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("exec-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("17", arguments["timeout"]?.jsonPrimitive?.content)
         assertEquals("smart_non_modal", arguments["modal"]?.jsonPrimitive?.content)

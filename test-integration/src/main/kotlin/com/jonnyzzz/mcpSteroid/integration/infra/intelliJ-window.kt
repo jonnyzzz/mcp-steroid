@@ -63,7 +63,17 @@ fun IntelliJContainer.waitForIdeWindow(
             Thread.sleep(pollIntervalMillis)
             continue
         }
-        val projectWindows = windows.filter { it.projectPath == guestProjectDir || it.projectName != null }
+        // #92: window entries reference their project only by `project_name` (the routing key). Resolve
+        // the guest project's key from its path via list_projects; during early startup list_projects may
+        // momentarily be empty (project not yet registered) — fall back to "any project window" then.
+        val guestProjectName = try {
+            mcpSteroid.mcpListProjects().firstOrNull { it.path == guestProjectDir }?.projectName
+        } catch (e: Exception) {
+            null
+        }
+        val projectWindows = windows.filter {
+            if (guestProjectName != null) it.projectName == guestProjectName else it.projectName != null
+        }
 
         if (projectWindows.isEmpty()) {
             lastStatus = "no project windows found"

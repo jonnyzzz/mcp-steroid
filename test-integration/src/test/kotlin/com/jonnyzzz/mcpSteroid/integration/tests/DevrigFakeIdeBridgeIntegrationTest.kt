@@ -150,7 +150,11 @@ class DevrigFakeIdeBridgeIntegrationTest {
         assertEquals("Bearer fake-token", receivedProjectsStreamAuth)
         assertEquals("Bearer fake-token", receivedToolAuth)
         assertEquals("steroid_execute_code", receivedToolCall?.name)
-        assertEquals("sample", receivedToolCall?.arguments?.get("project_name")?.jsonPrimitive?.content)
+        assertEquals(
+            projectName,
+            receivedToolCall?.arguments?.get("project_name")?.jsonPrimitive?.content,
+            "devrig forwards the recomputed unique project_name (the hash-suffixed key) to the bridge",
+        )
         assertEquals(1L, bridgeToolCallCount.get(), "steroid_execute_code should have routed to the bridge")
 
         val windowsResult = toolCall(process, "steroid_list_windows", buildJsonObject {})
@@ -158,10 +162,9 @@ class DevrigFakeIdeBridgeIntegrationTest {
         val windowsText = textContent(windowsResult)
         val window = McpJson.parseToJsonElement(windowsText).jsonObject["windows"]?.jsonArray?.single()?.jsonObject
             ?: error("list_windows result missing windows: $windowsText")
-        // devrig rewrites only the window's projectName to the routed (hash-suffixed) name; windowId is
-        // forwarded as-is (DevrigProjectRoutingService.rewriteWindow — "window_id is unique within the IDE
-        // resolved by project_name; forward it as-is").
-        assertEquals(projectName, window["projectName"]?.jsonPrimitive?.content)
+        // The MCP ListedWindow carries the recomputed unique routing key as `project_name` (devrig's
+        // windowProjectKey resolves the fake window by path); windowId is forwarded as-is.
+        assertEquals(projectName, window["project_name"]?.jsonPrimitive?.content)
         assertEquals("fake-window", window["windowId"]?.jsonPrimitive?.content, "windowId must be forwarded as-is: $window")
     }
 
@@ -171,8 +174,9 @@ class DevrigFakeIdeBridgeIntegrationTest {
             val projects = McpJson.parseToJsonElement(textContent(result)).jsonObject["projects"]?.jsonArray
                 ?: error("list_projects result missing projects: $result")
             if (projects.isNotEmpty()) {
-                return projects.single().jsonObject["name"]?.jsonPrimitive?.content
-                    ?: error("project missing name: ${projects.single()}")
+                // #92: route by the unique project_name (the hash-suffixed key), not the raw folder name.
+                return projects.single().jsonObject["project_name"]?.jsonPrimitive?.content
+                    ?: error("project missing project_name: ${projects.single()}")
             }
             Thread.sleep(250)
         }

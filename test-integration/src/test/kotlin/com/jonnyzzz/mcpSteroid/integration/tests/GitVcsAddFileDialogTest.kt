@@ -160,9 +160,12 @@ class GitVcsAddFileDialogTest {
         val startedAt = System.currentTimeMillis()
         var lastStatus = "not polled"
 
+        // #92: window entries carry only `project_name`; resolve the project's routing key from its path.
+        val projectName = session.mcpSteroid.mcpListProjects().firstOrNull { it.path == projectPath }?.projectName
+
         while (System.currentTimeMillis() - startedAt < timeoutMillis) {
             val windows = session.mcpSteroid.mcpListWindows(timeoutSeconds = 30)
-            val projectWindows = windows.filter { it.projectPath == projectPath }
+            val projectWindows = windows.filter { it.projectName == projectName }
             if (projectWindows.any { it.modalDialogShowing }) {
                 println("[VCS-ADD-DIALOG] Modal dialog detected: ${describe(projectWindows)}")
                 return true
@@ -177,7 +180,7 @@ class GitVcsAddFileDialogTest {
 
     private fun describe(windows: List<McpWindowInfo>): String =
         windows.joinToString(prefix = "[", postfix = "]") { window ->
-            "name=${window.projectName}, path=${window.projectPath}, modal=${window.modalDialogShowing}, " +
+            "project_name=${window.projectName}, modal=${window.modalDialogShowing}, " +
                     "indexing=${window.indexingInProgress}, initialized=${window.projectInitialized}"
         }
 }

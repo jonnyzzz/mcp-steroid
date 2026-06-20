@@ -7,7 +7,7 @@ import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 
 class PromptsContextHandlerIJ : PromptsContextHandler {
     override suspend fun buildPromptsContext(projectName: String): PromptsContext {
-        service<ProjectScopedToolHandler>().resolveProject(projectName)
+        service<OpenProjectsService>().resolveProject(projectName)
         return idePromptsContext()
     }
 }

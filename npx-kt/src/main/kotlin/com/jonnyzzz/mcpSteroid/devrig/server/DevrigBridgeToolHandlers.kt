@@ -79,11 +79,11 @@ class DevrigListWindowsToolHandler(
         ListWindowsResponse(
             windows = responses.flatMap { (state, response) ->
                 val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
-                response.windows.map { routing.rewriteWindow(state.ide.pid, it).listed(backendName) }
+                response.windows.map { it.listed(backendName, routing.windowProjectKey(state.ide.pid, it)) }
             },
             backgroundTasks = responses.flatMap { (state, response) ->
                 val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
-                response.backgroundTasks.map { routing.rewriteBackgroundTask(state.ide.pid, it).listed(backendName) }
+                response.backgroundTasks.map { it.listed(backendName, routing.taskProjectKey(state.ide.pid, it)) }
             },
             backends = inventory.collectBackendInfos(),
         )
@@ -103,7 +103,9 @@ class DevrigExecuteCodeToolHandler(
         // Version-base skew check on every routed exec_code call (devrig scenario only; stderr).
         BackendVersionSkew.warnOnExecCode(pid = route.idePid, pluginVersion = route.plugin.version)
         val result = bridge.callTool(route, "steroid_execute_code", callProgress) {
-            put("project_name", route.originalProjectName)
+            // Forward the within-IDE-unique name (== the IDE's own, shared scheme) so the IDE re-derives
+            // + matches the exact project, never the first same-named one (issue #92).
+            put("project_name", route.exposedProjectName)
             put("code", execCodeParams.code)
             put("task_id", execCodeParams.taskId)
             put("reason", execCodeParams.reason)
@@ -122,7 +124,9 @@ class DevrigExecuteFeedbackToolHandler(
     override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
         val result = bridge.callTool(route, "steroid_execute_feedback") {
-            put("project_name", route.originalProjectName)
+            // Forward the within-IDE-unique name (== the IDE's own, shared scheme) so the IDE re-derives
+            // + matches the exact project, never the first same-named one (issue #92).
+            put("project_name", route.exposedProjectName)
             put("task_id", params.taskId)
             put("success_rating", params.successRating)
             params.explanation?.let { put("explanation", it) }
@@ -144,7 +148,9 @@ class DevrigVisionScreenshotToolHandler(
     ): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
         return bridge.callTool(route, "steroid_take_screenshot", mcpProgressReporter) {
-            put("project_name", route.originalProjectName)
+            // Forward the within-IDE-unique name (== the IDE's own, shared scheme) so the IDE re-derives
+            // + matches the exact project, never the first same-named one (issue #92).
+            put("project_name", route.exposedProjectName)
             put("task_id", screenshotParams.taskId)
             put("reason", screenshotParams.reason)
             // window_id is unique within the IDE resolved by project_name; forward it as-is.
@@ -161,7 +167,9 @@ class DevrigVisionInputToolHandler(
         val rawSequence = inputParams.rawSequence
             ?: return ToolCallResult.errorResult("Input sequence cannot be forwarded without the original sequence string")
         return bridge.callTool(route, "steroid_input") {
-            put("project_name", route.originalProjectName)
+            // Forward the within-IDE-unique name (== the IDE's own, shared scheme) so the IDE re-derives
+            // + matches the exact project, never the first same-named one (issue #92).
+            put("project_name", route.exposedProjectName)
             put("task_id", inputParams.taskId)
             put("reason", inputParams.reason)
             // window_id is unique within the IDE resolved by project_name; forward it as-is.

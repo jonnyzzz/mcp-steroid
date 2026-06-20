@@ -714,8 +714,8 @@ private fun listedProjectsForRow(backendName: String, row: BackendRow): List<Lis
  */
 private fun exposedProjectName(project: ProjectInfo, idePid: Long): String {
     val hash = try {
-        val realHome = com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService.canonicalProjectHome(project.path)
-        com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService.projectHash(realHome, idePid)
+        val realHome = com.jonnyzzz.mcpSteroid.server.canonicalProjectHome(project.path)
+        com.jonnyzzz.mcpSteroid.server.projectHash(realHome, idePid)
     } catch (e: Exception) {
         backendCommandLog.debug("Cannot compute project hash for {} (pid {}): {}", project.path, idePid, e.message)
         return project.name

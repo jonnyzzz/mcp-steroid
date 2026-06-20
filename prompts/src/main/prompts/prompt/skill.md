@@ -38,20 +38,26 @@ The full index is in the "MCP Resources (Use Them)" section below.
 
 ```
 1. steroid_list_projects → get list of open projects
-2. Pick a project_name from the list
-3. steroid_execute_code → run Kotlin code with that project
+2. Pick the `project_name` of the one you want (the unique routing key — NOT the human-readable `name`)
+3. steroid_execute_code → run Kotlin code with that project_name
 4. steroid_execute_feedback → report success/failure for tracking
 ```
+
+Each `steroid_list_projects` entry has TWO name fields: `project_name` (the within-IDE-unique,
+opaque routing KEY you pass back to every project-scoped tool) and `name` (the human-readable
+folder name, informational/display only). Always route by `project_name`. To find the right
+project for a file or directory path, pick the project whose `path` is the longest prefix of your
+target path (this disambiguates nested checkouts and git worktrees).
 
 **Example session:**
 ```
 → steroid_list_projects
-← {"ide":{"name":"IntelliJ IDEA","version":"2025.3.2","build":"IU-253.30387.160"},"projects":[{"name":"my-app","path":"/path/to/my-app"}]}
+← {"projects":[{"project_name":"my-app-3f9a1c7e","name":"my-app","path":"/path/to/my-app","backend_name":"iu-9fk2a0xQ"}]}
 
-→ steroid_execute_code(project_name="my-app", code="println(project.name)", ...)
+→ steroid_execute_code(project_name="my-app-3f9a1c7e", code="println(project.name)", ...)
 ← "my-app"
 
-→ steroid_execute_feedback(project_name="my-app", task_id="...", execution_id="...", success_rating=1.0, explanation="Got project name")
+→ steroid_execute_feedback(project_name="my-app-3f9a1c7e", task_id="...", execution_id="...", success_rating=1.0, explanation="Got project name")
 ```
 
 ## When to Use This Skill
@@ -70,11 +76,17 @@ The IDE has indexed everything. It knows the code better than any file search.
 ## Available Tools
 
 ### `steroid_list_projects`
-List all open projects. Returns IDE metadata and project names for use with `steroid_execute_code`.
+List all open projects. Each entry has `project_name` (the unique routing key to pass to
+`steroid_execute_code` and the other project-scoped tools), `name` (the human-readable folder
+name, informational only), and `path`. To map a file/dir path to a project, pick the project whose
+`path` is the longest prefix of your target path.
 
 ### `steroid_list_windows`
-List open IDE windows and their associated projects. Some windows may not be tied to a project and a project can have multiple windows.
-Use this in multi-window setups to pick the correct `project_name` and `window_id` for screenshot/input tools.
+List open IDE windows (and background tasks) and their associated projects. Some windows may not be tied to a project and a project can have multiple windows.
+Use this in multi-window setups to pick the correct `window_id` for screenshot/input tools. Each
+window and task entry references its project by `project_name` — the single routing key. Look up that
+project's human-readable `name` and `path` via `steroid_list_projects` by that key (they are not
+duplicated on window/task entries).
 
 ### `steroid_take_screenshot`
 Capture a screenshot of the IDE frame and return image content.
@@ -82,7 +94,7 @@ Capture a screenshot of the IDE frame and return image content.
 **HEAVY ENDPOINT**: Use only for debugging and tricky configuration. Prefer `steroid_execute_code` for regular automation.
 
 **Parameters:**
-- `project_name` (required): Target project name
+- `project_name` (required): the `project_name` from `steroid_list_projects` (a unique routing key, NOT the raw folder name)
 - `task_id` (required): Task identifier for logging
 - `reason` (required): Why the screenshot is needed
 - `window_id` (optional): Window id from `steroid_list_windows` to target a specific window
@@ -100,7 +112,7 @@ Send input events (keyboard + mouse) using a sequence string.
 **HEAVY ENDPOINT**: Use only for debugging and tricky configuration. Prefer `steroid_execute_code` for regular automation.
 
 **Parameters:**
-- `project_name` (required): Target project name
+- `project_name` (required): the `project_name` from `steroid_list_projects` (a unique routing key, NOT the raw folder name)
 - `task_id` (required): Task identifier for logging
 - `reason` (required): Why the input is needed
 - `window_id` (required): Window id from `steroid_list_windows` (also returned by `steroid_take_screenshot`)

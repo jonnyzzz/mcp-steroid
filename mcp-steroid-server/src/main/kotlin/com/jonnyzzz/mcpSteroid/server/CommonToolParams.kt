@@ -15,7 +15,11 @@ object CommonToolParams {
     /** Required `project_name` used to dispatch a tool call to an already-open IDE project. */
     fun projectName() =
         InputSchemaElement.param("project_name")
-            .description("Project name (from steroid_list_projects)")
+            .description(
+                "the `project_name` from steroid_list_projects (a unique routing key, NOT the raw " +
+                        "folder name). steroid_list_projects returns both `project_name` (the unique key " +
+                        "to pass here) and `name` (the raw folder name, informational only); they are not equal."
+            )
             .string()
             .required()
 

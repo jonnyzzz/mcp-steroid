@@ -9,11 +9,11 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
-import com.jonnyzzz.mcpSteroid.server.base62FixedWidth
+import com.jonnyzzz.mcpSteroid.server.canonicalProjectHome
+import com.jonnyzzz.mcpSteroid.server.projectHash
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.time.Instant
 
 class DevrigProjectRoutingService(
@@ -49,24 +49,17 @@ class DevrigProjectRoutingService(
             ?: throw ProjectRouteNotFoundException(exposedProjectName)
 
     /**
-     * Rewrites only the project name to its exposed form. The window id is left untouched:
-     * it is unique within a single IDE and always travels together with project_name, so the
-     * IDE is resolved via project_name and the original window_id is forwarded as-is.
+     * The within-IDE-unique routing key (`exposedProjectName`) for a window's project, or null when the
+     * window isn't tied to a known routed project. Matches by canonical base path first (so two
+     * same-named projects disambiguate), then by raw name (#92). The raw name and window id are left for
+     * the MCP layer to carry verbatim — see [com.jonnyzzz.mcpSteroid.server.listed].
      */
-    fun rewriteWindow(idePid: Long, window: WindowInfo): WindowInfo {
-        val route = routeForWindow(idePid, window) ?: return window
-        return window.copy(
-            projectName = window.projectName?.let { route.exposedProjectName },
-        )
-    }
+    fun windowProjectKey(idePid: Long, window: WindowInfo): String? =
+        routeFor(idePid, window.projectPath, window.projectName)?.exposedProjectName
 
-    fun rewriteBackgroundTask(idePid: Long, task: ProgressTaskInfo): ProgressTaskInfo {
-        val projectName = task.projectName ?: return task
-        val route = routes().values.firstOrNull {
-            it.idePid == idePid && it.originalProjectName == projectName
-        } ?: return task
-        return task.copy(projectName = route.exposedProjectName)
-    }
+    /** As [windowProjectKey], for a background task. */
+    fun taskProjectKey(idePid: Long, task: ProgressTaskInfo): String? =
+        routeFor(idePid, task.projectPath, task.projectName)?.exposedProjectName
 
     fun singleRouteOrNull(): ProjectRoute? {
         val routes = routes().values.toList()
@@ -160,6 +153,8 @@ class DevrigProjectRoutingService(
             bridgeBaseUrl = ide.rpcBaseUrl,
             headers = ide.bridgeHeaders,
             originalProjectName = project.name,
+            // exposedProjectName == uniqueProjectName(name, path, pid): the within-IDE-unique name the
+            // IDE re-derives by the same shared scheme, so devrig forwards exactly this (#92).
             exposedProjectName = "${project.name}-$projectHash",
             projectPath = project.path,
             realProjectHome = realHome,
@@ -169,15 +164,18 @@ class DevrigProjectRoutingService(
         )
     }
 
-    private fun routeForWindow(idePid: Long, window: WindowInfo): ProjectRoute? {
+    private fun routeFor(idePid: Long, projectPath: String?, projectName: String?): ProjectRoute? {
         val allRoutes = routes().values.filter { it.idePid == idePid }
-        val projectPath = window.projectPath
         if (projectPath != null) {
             val realPath = canonicalProjectHome(projectPath)
             allRoutes.firstOrNull { it.realProjectHome == realPath }?.let { return it }
         }
-        val projectName = window.projectName ?: return null
-        return allRoutes.firstOrNull { it.originalProjectName == projectName }
+        if (projectName != null) {
+            // Raw-name fallback ONLY when it resolves to exactly one route — never first-match a
+            // same-named project, which would reintroduce the #92 mis-routing. Ambiguous → give up (null).
+            allRoutes.filter { it.originalProjectName == projectName }.singleOrNull()?.let { return it }
+        }
+        return null
     }
 
     companion object {
@@ -209,32 +207,8 @@ class DevrigProjectRoutingService(
                 Instant.MIN
             }
 
-        /**
-         * Canonicalizes a project home for routing/hash purposes. `toRealPath()` resolves symlinks but
-         * THROWS when the directory no longer exists — and a single vanished project (e.g. a test
-         * project deleted while its IDE snapshot is still cached) must not break routing for every
-         * other project. Fall back to the lexically-normalized absolute path in that case.
-         */
-        fun canonicalProjectHome(projectHome: String): Path {
-            val path = Path.of(projectHome)
-            return try {
-                path.toRealPath()
-            } catch (e: java.io.IOException) {
-                path.toAbsolutePath().normalize()
-            }
-        }
-
-        fun projectHash(realProjectHome: Path, idePid: Long): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            digest.update(realProjectHome.toString().encodeToByteArray())
-            digest.update(0.toByte())
-            digest.update(idePid.toString().encodeToByteArray())
-            // base62 (alphanumeric) over the full salted digest, fixed 8 chars. Unlike URL-safe
-            // Base64 the alphabet has no '-'/'_', so the suffix can never contain or end with '-';
-            // the whole 256-bit digest feeds the result, nothing is truncated before hashing. The
-            // (home, pid) salting stays local; only the base62 rendering is shared (base62FixedWidth).
-            return base62FixedWidth(digest.digest(), 8)
-        }
+        // canonicalProjectHome + projectHash moved to mcp-steroid-server (shared with the IDE plugin so
+        // both compute the same `<name>-<hash>` — see com.jonnyzzz.mcpSteroid.server.ProjectNaming).
     }
 }
 

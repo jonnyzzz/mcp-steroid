@@ -9,6 +9,7 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectCloseListener
 import com.intellij.openapi.project.ProjectManager
+import com.jonnyzzz.mcpSteroid.IdeInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,11 +61,17 @@ class ProjectsStreamService : Disposable {
      * open and internally from the close listener.
      */
     fun refresh() {
+        // Additive, informational (#92): the IDE stamps its own within-IDE-unique key + self backend id
+        // onto the wire so the protocol is symmetric with the MCP surface. devrig still recomputes these
+        // and does not depend on the wire values.
+        val selfBackendName = backendNameForMarker(pid = idePid, build = IdeInfo.ofApplication().build)
         val snapshot = ApplicationManager.getApplication().runReadAction<List<ProjectInfo>> {
             ProjectManager.getInstance().openProjects.map { project ->
                 ProjectInfo(
                     name = project.name,
                     path = project.basePath ?: "",
+                    projectName = project.service<ProjectNameService>().projectName,
+                    backendName = selfBackendName,
                 )
             }
         }

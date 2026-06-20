@@ -72,7 +72,7 @@ Each step should be a separate `steroid_execute_code` call. Do NOT combine steps
 
 ## Tips
 
-- If `steroid_execute_code` returns `Project not found`, call `steroid_list_projects` and reuse the exact `project_name`.
+- If `steroid_execute_code` returns `Project not found`, call `steroid_list_projects` and reuse the exact `project_name` (the unique routing key, NOT the raw folder `name`).
 - Do not hardcode line numbers; locate the target statement by text (for example, the `sortedByDescending` call) before placing breakpoints.
 - **Pick the right stopping primitive.** A line breakpoint on a specific statement *inside the method body* is the cheapest and most reliable. Avoid method (entry/exit) breakpoints — IntelliJ implements those via JDI `MethodEntryRequest`/`MethodExitRequest`, which fire on every method entry/exit in the JVM and are post-filtered; the IDE warns *"Method breakpoints may dramatically slow down debugging"*. For multi-statement lines like `collection.map { it.someMethod().plus(42) }` use `mcp-steroid://debugger/add-inline-breakpoint` to pick the lambda-body variant instead of the default whole-line position.
 - **Breakpoints**: Use the idempotent `findBreakpointsAtLine` + `addLineBreakpoint` pattern from `mcp-steroid://debugger/set-line-breakpoint`. Do NOT use `toggleLineBreakpoint` for "ensure breakpoint exists" — it REMOVES an existing breakpoint (toggle semantics).

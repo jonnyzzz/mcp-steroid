@@ -190,6 +190,12 @@ The **only** forward/backward-compat contract is the **devrig↔IDE wire**: `/pr
 - **Delete the dead `NpxBridgeService.buildProjects()/buildSummary()` + `NpxBridgeProjectsResponse`/`NpxBridgeSummaryResponse`** (no route serves `/projects` or `/summary` per `NpxBridgeRoutes.kt`). They reference `List<ProjectInfo>` and would otherwise break when `ListProjectsResponse.projects` changes type — and they must never expose `project_name`/`backend_name` on the wire.
 - `BackendInfo`/`ListedProject` are **MCP/CLI-surface only**; a **mechanical guard test** asserts `NpxStreamEnvelope` (on `/projects/stream`) and `NpxBridgeWindowsResponse` (on `/windows`) never serialize `backend_name`/`project_name`/`BackendInfo`/`ListedProject` keys.
 
+> **Superseded by #92.** R3.6/R3.8 below specify `project_name == name` for the in-IDE self-describe.
+> That equality was later removed: the IDE now emits a within-IDE-unique `project_name` (`<name>-<hash>`,
+> via `ProjectNameService`/`OpenProjectsService`), never equal to `name`, so same-named projects (a
+> checkout + its worktree) stay individually addressable. Read the `project_name==name` lines below as
+> historical.
+
 ### R3.6 — IDE-direct surface emits the same shape (see R3.1/R3.2)
 
 `ListProjectsToolHandlerIJ` now self-describes: computes its own `backend_name` (R3.3 over its own pid), emits one `BackendInfo` for itself (`source="marker"`, `routable=true`, `mcpSteroidPluginInstalled=true`, `pid`=self, `plugin`=current plugin info, `ide`=`IdeInfo.ofApplication()`), and sets each project's `project_name == name`, `backend_name` = its self-id. The round-2 ij guard tests that asserted `backends==[]`/`backend==null` are **replaced** by tests asserting the single self-backend and `project_name==name`.

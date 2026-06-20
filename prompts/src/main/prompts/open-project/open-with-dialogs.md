@@ -29,7 +29,8 @@ println(openProjectJson)
 
 ### Step 2: Take a Screenshot
 
-Use `steroid_take_screenshot` to see the current IDE state:
+Use `steroid_take_screenshot` to see the current IDE state. The `project_name` placeholders below are
+the unique, opaque routing key from `steroid_list_projects`, NOT the human-readable folder name:
 
 ```kotlin
 val takeScreenshotJson = """
@@ -102,11 +103,11 @@ The Trust Project dialog has these buttons:
 → steroid_open_project(project_path="/path/to/untrusted-project", trust_project=false, ...)
 ← Project opening initiated...
 
-→ steroid_take_screenshot(project_name="other-project", task_id="check", reason="Check for dialogs")
+→ steroid_take_screenshot(project_name="other-project-7c1b9d2a", task_id="check", reason="Check for dialogs")
 ← [Image showing Trust Project dialog with buttons at coordinates]
 
 → steroid_input(
-    project_name="other-project",
+    project_name="other-project-7c1b9d2a",
     task_id="click-trust",
     reason="Click Trust Project button",
     window_id="...",
@@ -115,8 +116,11 @@ The Trust Project dialog has these buttons:
 ← Input delivered
 
 → steroid_list_projects()
-← {"ide":{"name":"IntelliJ IDEA","version":"2025.3.2","build":"IU-253.30387.160"},"projects":[{"name":"untrusted-project","path":"/path/to/untrusted-project"}, ...]}
+← {"projects":[{"project_name":"untrusted-project-1a2b3c4d","name":"untrusted-project","path":"/path/to/untrusted-project","backend_name":"iu-9fk2a0xQ"}, ...]}
 ```
+
+The `project_name` passed to the screenshot/input tools is the unique, opaque routing key from
+`steroid_list_projects`, not the human-readable folder `name`.
 
 ## When to Use This Approach
 

@@ -18,7 +18,7 @@ class ExecuteCodeToolHandlerIJ : ExecuteCodeToolHandler {
         execCodeParams: ExecCodeParams,
         callProgress: McpProgressReporter,
     ) : ToolCallResult {
-        val project = service<ProjectScopedToolHandler>().resolveProject(projectName)
+        val project = service<OpenProjectsService>().resolveProject(projectName)
 
         val result = project
             .service<ExecutionManager>()

@@ -20,7 +20,7 @@ class ExecuteFeedbackToolHandlerIJ : ExecuteFeedbackToolHandler {
     override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
         log.info("Feedback is submitted: " + json.encodeToString(params))
 
-        val project = service<ProjectScopedToolHandler>().resolveProject(projectName)
+        val project = service<OpenProjectsService>().resolveProject(projectName)
 
         try {
             val executionStorage = project.executionStorage

@@ -43,11 +43,17 @@ enum class ModalMode(val wire: String) {
 data class McpProjectInfo(
     val name: String,
     val path: String,
+    /** Disambiguated `project_name` from list_projects — the IDE's within-IDE-unique routing key (#92). */
+    val projectName: String? = null,
 )
 
 data class McpWindowInfo(
+    /**
+     * The single project key across the whole MCP API (#92): the within-IDE-unique routing key for the
+     * window's project, or null for non-project windows. The raw name and path are NOT on window entries
+     * anymore — resolve them from [McpSteroidDriver.mcpListProjects] by this `project_name`.
+     */
     val projectName: String?,
-    val projectPath: String?,
     val modalDialogShowing: Boolean,
     val indexingInProgress: Boolean?,
     val projectInitialized: Boolean?,
@@ -132,6 +138,7 @@ class McpSteroidDriver(
                 McpProjectInfo(
                     name = it.jsonObject["name"]!!.jsonPrimitive.content,
                     path = it.jsonObject["path"]!!.jsonPrimitive.content,
+                    projectName = it.jsonObject["project_name"]?.jsonPrimitive?.contentOrNull,
                 )
             }
             ?: error("steroid_list_projects returned no projects: $text")
@@ -177,8 +184,7 @@ class McpSteroidDriver(
             ?.map {
                 val window = it.jsonObject
                 McpWindowInfo(
-                    projectName = window["projectName"]?.jsonPrimitive?.contentOrNull,
-                    projectPath = window["projectPath"]?.jsonPrimitive?.contentOrNull,
+                    projectName = window["project_name"]?.jsonPrimitive?.contentOrNull,
                     modalDialogShowing = window["modalDialogShowing"]?.jsonPrimitive?.booleanOrNull ?: false,
                     indexingInProgress = window["indexingInProgress"]?.jsonPrimitive?.booleanOrNull,
                     projectInitialized = window["projectInitialized"]?.jsonPrimitive?.booleanOrNull,
@@ -220,7 +226,9 @@ class McpSteroidDriver(
     }
 
     private fun resolveProjectName(projectPath: String): String? {
-        return mcpListProjects().firstOrNull { it.path == projectPath }?.name
+        // The routing key is the disambiguated `project_name` (#92) — the IDE resolves only that (no
+        // raw-name fallback). Fall back to the raw `name` only if the IDE didn't emit a `project_name`.
+        return mcpListProjects().firstOrNull { it.path == projectPath }?.let { it.projectName ?: it.name }
     }
 
     /**

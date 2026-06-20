@@ -15,7 +15,7 @@ import kotlinx.serialization.Serializable
  */
 class ListProjectsToolSpec(val handler: () -> ListProjectsToolHandler) : McpToolBase() {
     override val name = "steroid_list_projects"
-    override val description = "List all open projects in the IDE. Returns project names that can be used with steroid_execute_code and steroid_open_project."
+    override val description = "List all open projects in the IDE. Each entry has `project_name` (a unique routing key — pass it to steroid_execute_code and the other project-scoped tools) and `name` (the raw folder name, informational only); they are not equal."
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val response = handler().collectListProjectsResponse()
@@ -39,9 +39,10 @@ interface ListProjectsToolHandler {
 @Serializable
 data class ListProjectsResponse(
     /**
-     * Projects reachable through this connection. On a direct in-IDE connection `project_name == name`
-     * and `backend_name` is this IDE's self-id; on devrig `project_name` is the disambiguated exposed
-     * name and `backend_name` is the owning discovered IDE.
+     * Projects reachable through this connection. Each entry's `project_name` is the within-IDE-unique
+     * routing KEY an agent passes back to the project-scoped tools — opaque (do not parse or rely on its
+     * format), never equal to the raw `name`; `name` is the raw folder name and is informational only. On
+     * a direct in-IDE connection `backend_name` is this IDE's self-id; on devrig the owning discovered IDE.
      */
     val projects: List<ListedProject>,
     /**
@@ -53,13 +54,19 @@ data class ListProjectsResponse(
 )
 
 /**
- * The wire DTO carried over `/projects/stream` (devrig<->IDE). Pristine `{name, path}` — the per-project
- * backend reference lives on the MCP-only [ListedProject], never here.
+ * The wire DTO carried over `/projects/stream` (devrig<->IDE). Carries the raw `{name, path}` PLUS the
+ * IDE-computed `project_name` (its own within-IDE-unique key) and `backend_name` (this IDE's self id) as
+ * ADDITIVE OPTIONAL fields (#92): a new IDE populates them, an older one omits them, and both decode —
+ * so the protocol supports old and new peers together. They are INFORMATIONAL/symmetry only: devrig still
+ * recomputes `project_name`/`backend_name` itself via the shared `uniqueProjectName` scheme and does not
+ * depend on the wire values for routing.
  */
 @Serializable
 data class ProjectInfo(
     val name: String,
     val path: String,
+    @SerialName("project_name") val projectName: String? = null,
+    @SerialName("backend_name") val backendName: String? = null,
 )
 
 /**
@@ -238,9 +245,17 @@ data class ManagedBackendDetail(
 
 @Serializable
 data class ListedProject(
-    /** devrig: exposed disambiguated name; IDE-direct: the real project name. */
+    /**
+     * The within-IDE-unique routing KEY an agent passes back to every project-scoped tool
+     * (`steroid_execute_code`, `steroid_input`, `steroid_take_screenshot`, …). Opaque — do not parse or
+     * construct it (computed by the shared `uniqueProjectName` scheme); never equal to [name]. devrig and
+     * IDE-direct compute the same key for the same project (#92).
+     */
     @SerialName("project_name") val projectName: String,
-    /** Raw folder name (R3.7) — kept so existing `jq '.projects[].name'` consumers do not break. */
+    /**
+     * Raw IntelliJ `Project.name` (the folder name) — INFORMATIONAL ONLY (display / `jq`), NOT a routing
+     * key. Kept so existing `jq '.projects[].name'` consumers do not break. Use [projectName] to address a project.
+     */
     val name: String,
     val path: String,
     /** Owning backend's [BackendInfo.backendName]; null only when unknown. */

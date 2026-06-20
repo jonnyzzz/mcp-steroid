@@ -4,12 +4,14 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressModel
 import com.intellij.openapi.progress.TaskInfo
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.wm.WindowManager
+import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.intellij.openapi.wm.ex.StatusBarEx
 import com.jonnyzzz.mcpSteroid.execution.dialogWindowsLookup
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
@@ -30,9 +32,15 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
     override suspend fun collectListWindowsResponse(): ListWindowsResponse {
         val snapshot = IdeWindowsCollector.collect()
         val self = describeSelfBackend()
+        // Resolve each window/task to its project's within-IDE-unique routing key by exact base-path match
+        // against the open-project list — the same `project_name` steroid_list_projects reports (#92).
+        val keyByPath = service<OpenProjectsService>().listOpenProjects()
+            .filter { it.path.isNotEmpty() }
+            .associate { it.path to it.projectName }
+        fun keyFor(path: String?): String? = path?.let { keyByPath[it] }
         return ListWindowsResponse(
-            windows = snapshot.windows.map { it.listed(self.backendName) },
-            backgroundTasks = snapshot.backgroundTasks.map { it.listed(self.backendName) },
+            windows = snapshot.windows.map { it.listed(self.backendName, keyFor(it.projectPath)) },
+            backgroundTasks = snapshot.backgroundTasks.map { it.listed(self.backendName, keyFor(it.projectPath)) },
             backends = listOf(self.backend),
         )
     }
@@ -57,6 +65,10 @@ object IdeWindowsCollector {
         // Use DialogWindowsLookup for reliable modal detection:
         // fast negative path (canPumpEdtNonModal), then EDT check if needed.
         val lookup = dialogWindowsLookup()
+
+        // Additive, informational (#92): stamp each wire window/task with this IDE's self `backend_name`
+        // for symmetric backend attribution. devrig recomputes routing keys and does not depend on it.
+        val selfBackendName = backendNameForMarker(pid = ProcessHandle.current().pid(), build = IdeInfo.ofApplication().build)
         val (windowInfos, progressTasks) = lookup.withModalityCheck { isModalShowing ->
             // Window enumeration runs on EDT with ModalityState.any() so it works
             // even when a modal dialog is blocking the normal EDT dispatcher.
@@ -112,7 +124,9 @@ object IdeWindowsCollector {
                                     fraction = if (progressModel.isIndeterminate()) null else progressModel.getFraction(),
                                     isIndeterminate = progressModel.isIndeterminate(),
                                     isCancellable = progressModel.isCancellable(),
-                                    projectName = project?.name
+                                    projectName = project?.name,
+                                    projectPath = project?.basePath,
+                                    backendName = selfBackendName,
                                 )
                             )
                         }
@@ -129,6 +143,7 @@ object IdeWindowsCollector {
                         modalDialogShowing = isModalShowing,
                         indexingInProgress = project?.let { DumbService.isDumb(it) },
                         projectInitialized = project?.isInitialized,
+                        backendName = selfBackendName,
                     )
                 }
 
@@ -148,6 +163,7 @@ object IdeWindowsCollector {
                             bounds = WindowBounds(bounds.x, bounds.y, bounds.width, bounds.height),
                             windowId = windowId,
                             modalDialogShowing = isModalShowing,
+                            backendName = selfBackendName,
                         )
                     }
 

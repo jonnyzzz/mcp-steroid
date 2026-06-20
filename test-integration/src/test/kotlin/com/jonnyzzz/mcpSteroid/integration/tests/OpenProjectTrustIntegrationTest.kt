@@ -91,7 +91,10 @@ class OpenProjectTrustIntegrationTest {
                 "Unexpected modal dialog while opening $projectPath. Windows: $windows",
             )
 
-            val projectWindows = windows.filter { it.projectPath == projectPath }
+            // #92: window entries carry only `project_name`; resolve the project's routing key from its path.
+            val projectName = session.mcpSteroid.mcpListProjects()
+                .firstOrNull { it.path == projectPath }?.projectName
+            val projectWindows = windows.filter { it.projectName == projectName }
             if (projectWindows.any { it.projectInitialized == true && it.indexingInProgress == false }) {
                 return
             }
@@ -107,7 +110,7 @@ class OpenProjectTrustIntegrationTest {
 
     private fun describe(windows: List<McpWindowInfo>): String =
         windows.joinToString(prefix = "[", postfix = "]") { window ->
-            "name=${window.projectName}, path=${window.projectPath}, modal=${window.modalDialogShowing}, " +
+            "project_name=${window.projectName}, modal=${window.modalDialogShowing}, " +
                     "indexing=${window.indexingInProgress}, initialized=${window.projectInitialized}"
         }
 }

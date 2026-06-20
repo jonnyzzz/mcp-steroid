@@ -135,9 +135,9 @@ resolve this way in Rider.
 
 # Inspect a file in ANOTHER open project
 
-The script context's `project` is resolved from the `project_name` tool argument and is
-normally already the project you want — prefer passing the right `project_name` over
-switching projects in code. When you genuinely need to inspect a file that belongs to a
+The script context's `project` is resolved from the `project_name` tool argument (the unique
+routing key from `steroid_list_projects`, NOT the raw folder name) and is normally already the
+project you want — prefer passing the right `project_name` over switching projects in code. When you genuinely need to inspect a file that belongs to a
 *different* open project, select it explicitly and pass it to every project-parameterized
 call (`PsiManager`, the profile manager, `smartReadAction`):
 

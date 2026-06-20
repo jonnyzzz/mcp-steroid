@@ -155,9 +155,10 @@ data class OpenProjectParams(
     val projectPath: String,
     val trustProject: Boolean,
     /**
-     * Optional devrig-only routing hint: the stable backend id (from steroid_list_projects
-     * `backend` field or `devrig backend --json` `id`) that should receive this open request.
-     * Null/absent everywhere except a devrig connection. Ignored (logged) by the in-IDE plugin.
+     * Optional devrig-only routing hint: the stable backend id — the `backend_name` from
+     * steroid_list_projects (each project's `backend_name`, and each `backends[]` entry's `backend_name`;
+     * also shown by `devrig backend --json`) — that should receive this open request. Null/absent
+     * everywhere except a devrig connection. Ignored (logged) by the in-IDE plugin.
      */
     val backendName: String? = null,
 )

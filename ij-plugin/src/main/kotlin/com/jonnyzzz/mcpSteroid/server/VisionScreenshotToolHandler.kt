@@ -23,7 +23,7 @@ class VisionScreenshotToolHandlerIJ : VisionScreenshotToolHandler {
         val taskId = screenshotParams.taskId
         val reason = screenshotParams.reason
 
-        val project = service<ProjectScopedToolHandler>().resolveProject(projectName)
+        val project = service<OpenProjectsService>().resolveProject(projectName)
 
         val executionId = project.executionStorage.writeToolCall(
             toolName = "steroid_take_screenshot",

@@ -47,11 +47,12 @@ After calling `steroid_open_project`, follow this workflow:
 
 | Field | Description |
 |-------|-------------|
-| `projectName` | Project name (null if not a project window) |
-| `projectPath` | Project base path |
+| `project_name` | The single routing key for the window's project (null if not a project window). Look up that project's human-readable `name` and `path` via `steroid_list_projects` by this key. |
 | `modalDialogShowing` | True if any modal dialog is showing in IDE |
 | `indexingInProgress` | True if project is indexing (dumb mode) |
 | `projectInitialized` | True if project is fully initialized |
+
+To find the right project for a file or directory path, pick the project (from `steroid_list_projects`) whose `path` is the longest prefix of your target path — this disambiguates nested checkouts and git worktrees.
 
 ## Workflows
 

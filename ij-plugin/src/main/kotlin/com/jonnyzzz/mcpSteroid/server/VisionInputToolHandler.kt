@@ -13,7 +13,7 @@ class VisionInputToolHandlerIJ : VisionInputToolHandler {
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun handleInputSequence(projectName: String, inputParams: InputParams): ToolCallResult {
-        val project = service<ProjectScopedToolHandler>().resolveProject(projectName)
+        val project = service<OpenProjectsService>().resolveProject(projectName)
 
         val executionId = project.executionStorage.writeToolCall(
             toolName = "steroid_input",

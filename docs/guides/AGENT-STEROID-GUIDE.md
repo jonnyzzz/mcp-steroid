@@ -16,17 +16,24 @@ The IDE has indexed everything. It knows the code better than any file search. *
 
 ## Available MCP Tools
 
-> **Project / backend naming contract:** if you reach this guide via
-> the **devrig stdio MCP server** (`devrig mcp`), the `project_name`
-> values returned by `steroid_list_projects` follow the
-> [`docs/devrig-naming.md`](../devrig-naming.md) spec — they include a
-> hash suffix (`<slug(name)>-<hash8>`) and are routed through an
-> on-demand snapshot per call. The in-IDE MCP Steroid endpoint exposes
-> the raw IntelliJ `Project.name` instead; pick one transport and
-> stick to its naming.
+> **Project naming contract — `project_name` is THE routing key:**
+> `project_name` is the single project routing key across the entire MCP
+> API — every project-scoped tool (`steroid_execute_code`,
+> `steroid_take_screenshot`, `steroid_input`, `steroid_execute_feedback`,
+> `steroid_fetch_resource`) takes it. `steroid_list_projects` returns, per
+> project, a `project_name` (the **unique, opaque routing key**), a `name`
+> (the human-readable IntelliJ `Project.name`, **informational only**), and
+> a `path`. The key is opaque — do not parse or construct it. A checkout
+> and its git worktree (same folder `name`) stay individually addressable
+> by their distinct `project_name` (#92). Always route by `project_name`,
+> never by `name`. To map a file/dir path to a project, pick the one whose
+> `path` is the longest prefix of your target path.
 
 ### `steroid_list_projects`
-List all open projects in the IDE. Use this to get project names for `steroid_execute_code`.
+List all open projects in the IDE. Each entry carries the `project_name` (the unique, opaque routing
+key) you pass to `steroid_execute_code` and the other project-scoped tools, plus `name` (human-readable
+folder name, informational only) and `path`. Route by `project_name`, not `name`; to map a file/dir
+path to a project, pick the one whose `path` is the longest prefix of your target path.
 
 There is **no top-level `ide`/`plugin`/`pid` header** in the response.
 Instead the response carries `backends[]` (one entry per discovered
@@ -36,7 +43,10 @@ shape.
 
 ### `steroid_list_windows`
 List open IDE windows and their associated projects. Some windows may not be tied to a project and a project can have multiple windows.
-Use this in multi-window setups to pick the right `project_name` and `window_id` for screenshot/input tools.
+Use this in multi-window setups to pick the right `window_id` for screenshot/input tools. **Each window
+and background-task entry references its project by `project_name` — the single routing key. Look up that
+project's human-readable `name` and `path` via `steroid_list_projects` by that key; they are not
+duplicated on window/task entries.**
 
 Like `steroid_list_projects`, the response has **no top-level
 `ide`/`plugin`/`pid` header**: it carries `backends[]` (same shape as in
@@ -46,8 +56,7 @@ entry names its owning backend via `backend_name`.
 **Response Fields (per window):**
 | Field | Description |
 |-------|-------------|
-| `projectName` | Project name (null if not a project window) |
-| `projectPath` | Project base path |
+| `project_name` | The single routing key for the window's project (null if not a project window). Look up its human-readable `name` and `path` via `steroid_list_projects` by this key |
 | `windowId` | Unique window identifier for screenshot/input targeting |
 | `modalDialogShowing` | **True if any modal dialog is showing in IDE** |
 | `indexingInProgress` | **True if project is indexing (dumb mode)** |
@@ -63,7 +72,7 @@ entry names its owning backend via `backend_name`.
 | `text` | Current status text |
 | `fraction` | Progress 0.0-1.0 (null if indeterminate) |
 | `isIndeterminate` | True if no percentage available |
-| `projectName` | Associated project name |
+| `project_name` | The routing key for the task's project — look up its human-readable `name`/`path` via `steroid_list_projects` |
 | `backend_name` | The backend (IDE) this task runs in — matches a `backends[]` entry |
 
 Use the modality/indexing fields and `backgroundTasks` to poll for project readiness after `steroid_open_project`.

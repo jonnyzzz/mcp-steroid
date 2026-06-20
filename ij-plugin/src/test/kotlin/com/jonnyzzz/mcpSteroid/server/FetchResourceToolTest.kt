@@ -160,11 +160,40 @@ class FetchResourceToolTest : BasePlatformTestCase() {
         return sessionId!!
     }
 
+    /**
+     * #92: the routing key FetchResourceToolHandler requires is the within-IDE-unique `project_name`
+     * from steroid_list_projects (`<rawName>-<hash>`), NOT the raw `Project.name`. PromptsContextHandlerIJ
+     * resolves it via OpenProjectsService.resolveProject, which matches ONLY the unique name (no raw
+     * fallback). Obtain it the way a real agent would — call steroid_list_projects and read `project_name`.
+     */
+    private suspend fun resolveUniqueProjectName(server: SteroidsMcpServer, sessionId: String): String {
+        val response = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody("""{"jsonrpc":"2.0","id":"resolve-project-name","method":"tools/call","params":{"name":"steroid_list_projects"}}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val rpc = McpJson.decodeFromString<JsonRpcResponse>(response.bodyAsText())
+        assertNull("steroid_list_projects should not return JSON-RPC error", rpc.error)
+        val result = McpJson.decodeFromJsonElement<ToolCallResult>(rpc.result!!)
+        assertFalse("steroid_list_projects should succeed", result.isError)
+        val payload = (result.content.single() as ContentItem.Text).text
+        val projects = McpJson.decodeFromString<ListProjectsResponse>(payload)
+        val entry = projects.projects.firstOrNull { it.name == project.name }
+            ?: error("Fixture project '${project.name}' not found in steroid_list_projects: ${projects.projects.map { it.name }}")
+        return entry.projectName
+    }
+
     private suspend fun callFetchResource(
         server: SteroidsMcpServer,
         sessionId: String,
         uri: String,
     ): ToolCallResult {
+        // `project_name` is required by FetchResourceToolHandler and resolved via
+        // OpenProjectsService.resolveProject — pass the unique routing key (#92), exactly
+        // like a real agent that read it from steroid_list_projects.
+        val uniqueProjectName = resolveUniqueProjectName(server, sessionId)
         val response = client.post(server.mcpUrl) {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
@@ -177,11 +206,7 @@ class FetchResourceToolTest : BasePlatformTestCase() {
                     put("name", "steroid_fetch_resource")
                     putJsonObject("arguments") {
                         put("uri", uri)
-                        // `project_name` is required by FetchResourceToolHandler — even
-                        // though PromptsContextHandlerIJ doesn't read it (it builds the
-                        // context purely from ApplicationInfo). Pass the test fixture's
-                        // project name so the call shape matches what a real agent sends.
-                        put("project_name", project.name)
+                        put("project_name", uniqueProjectName)
                     }
                 }
             }.toString())
