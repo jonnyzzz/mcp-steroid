@@ -247,6 +247,7 @@ val nonPluginTestSubprojects = setOf(
     "test-experiments",
     "npx",
     "npx-kt",
+    "claude-plugin" // no test task, validated via :claude-plugin:check
 )
 
 /**
@@ -340,6 +341,22 @@ val ciBuildPluginTests by tasks.registering {
     dependsOn("ij-plugin:verifyPlugin")
     dependsOn("ij-plugin:verifyBundledLibraries")
     dependsOn("ij-plugin:verifyBundledKotlinCompatibility")
+}
+
+/**
+ * Aggregator for distribution-artifact subprojects that use `:check` instead of `:test`
+ * (no compiled code, just file-structure and script-content validation).
+ *
+ * Currently covers:
+ * * `claude-plugin` — validates plugin.json, .mcp.json, and wrapper scripts.
+ *
+ * These modules are excluded from [ciBuildPluginTests] (they have no `:test` task) and
+ * run here instead on a lightweight CI step.
+ */
+val ciDistributionChecks by tasks.registering {
+    group = "ci"
+    description = "Run :check for distribution-artifact subprojects (claude-plugin, ...)."
+    dependsOn(":claude-plugin:check")
 }
 
 /**
