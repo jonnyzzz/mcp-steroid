@@ -24,10 +24,15 @@ fun printHelp(out: PrintStream) : Int {
                                          `--json` emits a single machine-readable
                                          object on stdout; default is human text.
 
-          devrig install claude|codex|gemini
+          devrig install claude|codex|gemini [--check]
                                          register this devrig binary as the
                                          mcp-steroid stdio MCP server in the
-                                         selected coding agent.
+                                         selected coding agent. `--check` is a
+                                         read-only dry-run: it reports the current
+                                         registration, the changes install would
+                                         apply, and how many IDE backends with the
+                                         MCP Steroid plugin are reachable; exits 1
+                                         when install would change anything.
 
           devrig backend download [<id>] [--version <v>] [--json]
                                          no id → list IDEs available for download.
@@ -61,8 +66,6 @@ fun printHelp(out: PrintStream) : Int {
           --debug                        enable verbose stderr logging (DEBUG)
 
         Environment variables:
-          DEVRIG_JAVA_HOME               JDK/JRE home used to launch devrig — devrig needs Java 25.
-                                         Overrides JAVA_HOME for the devrig process only (not the caller's).
           DEVRIG_JVM_OPTS                extra JVM options for the devrig launch (for example "-Xmx512m").
 
 

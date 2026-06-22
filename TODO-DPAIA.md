@@ -1,7 +1,8 @@
 # TODO DPAIA
 
-- [ ] Keep `TASKS.md` as the active DPAIA/autoresearch task list.
-- [ ] Keep `MEMORY.md` as the short factual handoff for the current DPAIA optimization thread.
+- [ ] Keep `TASKS.md` as the active task list (open tasks only).
+- [ ] Record durable DPAIA findings in `docs/autoresearch-findings.md` (synthesized takeaways) — the old
+  repo-root `MEMORY.md` running handoff was distilled into the docs + `git log` and removed.
 - [ ] After each measured DPAIA iteration, record the hypothesis, changed files, validation command, and metric delta.
 - [x] Measure the corrected `steroid_apply_patch` prompt on `DpaiaPetclinicRest37Test.claude with mcp` and compare native Edit count against the 2026-04-26 baseline of 2.
 - [x] Tighten DPAIA verification guidance to reduce duplicate Maven/Bash runs while preserving 184/184 pass behavior.

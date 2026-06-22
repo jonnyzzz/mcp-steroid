@@ -216,3 +216,12 @@ Strict sequential — each commit's merge gate depends on prior commits:
 Each commit message uses the existing repo style (`<scope>: <action>` —
 see `git log --oneline | head`). Author email
 `eugene.petrenko@jetbrains.com`. No AI co-author.
+
+## Gotcha: an IC release URL can serve an Ultimate binary
+
+When JetBrains has not shipped a Community build for a version, the products-API feed still lists an
+`idea-<v>.tar.gz` URL that returns **HTTP 200 with the same Content-Length as the IU binary** (while the
+correctly-named `ideaIC-<v>-*` returns 404). The resolver defends with `IdeProduct.acceptsDownloadFilename`
+(the URL filename must contain a Community token, e.g. `ideaIC-`/`IC-`) and `LocalIdeProvisioner` asserts
+the unpacked `product-info.json` `productCode` matches the requested product. Never relax either check —
+together they stop a silent IU-for-IC swap.

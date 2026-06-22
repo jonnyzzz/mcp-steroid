@@ -55,7 +55,13 @@ For a quick release without the full Docker build matrix, use Claude Code agents
 7. **Update website homepage**: In `website/website/hugo.toml`, update `params.version` to the new version and add a `[[params.whatsnew]]` entry at the top. Commit and push in `website/`.
 8. **Update website release page**: Create `website/website/content/releases/<version>.md`, run `cd website/website && make build`. **Note:** `make build` downloads the release ZIP to extract the plugin version, so step 4 must complete first.
 9. **Mark older releases obsolete**: `gh release edit <old-version> --repo jonnyzzz/mcp-steroid --notes-file <updated-body-with-obsolete-banner>`.
-10. **Publish website**: `cd website && git add -A && git commit -m "release: <version> website" && git push`
+10. **Publish website** — advance the `website` deploy branch (this is what GitHub Pages builds from; a push to `main` does NOT deploy):
+    ```bash
+    git checkout website && git merge main --ff-only && git push origin website && git checkout main
+    ```
+    The `website` branch is origin-only (never pushed to `jb`). See `release-instructions.md` →
+    "The `website` deploy branch" + "Stage 7c" for the full rationale (it lets website changes that
+    depend on an unreleased binary stay off the live site until the matching release exists).
 
 Steps 2+3 can run in parallel. Steps 7–10 require step 4 (GitHub release must exist for website build). The `CLAUDECODE` env var must be unset for nested Claude Code invocations via `run-agent.sh`.
 

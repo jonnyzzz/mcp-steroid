@@ -2,24 +2,18 @@
 package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
-import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendInfo
 import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendState
-import com.jonnyzzz.mcpSteroid.devrig.backendNameForRow
-import com.jonnyzzz.mcpSteroid.devrig.backendNameForPort
+import com.jonnyzzz.mcpSteroid.devrig.collectBackendInfos
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
-import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import io.ktor.client.HttpClient
@@ -43,10 +37,11 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.io.TempDir
 
 /**
- * W2 (#89) — devrig MCP handlers over the shared [BackendInventory]:
- *  - `steroid_list_projects` backends[] carries ALL inventory rows (markers + port-only + managed);
- *  - a managed row with a dead pid degrades to not-running with NO HTTP involved;
- *  - every `steroid_list_windows` window/background-task carries the backend_name of its source pid.
+ * devrig MCP list handlers ([DevrigListProjectsToolHandler] / [DevrigListWindowsToolHandler]):
+ *  - `backends[]` is exactly the routing-discovered backends — port-only and managed backends are a CLI
+ *    concern (`devrig backend`) and never leak onto the MCP surface;
+ *  - every `steroid_list_windows` window/background-task carries the backend_name of its source IDE;
+ *  - the inventory's own dead-pid liveness downgrade is asserted on the rich CLI [BackendInventory] surface.
  */
 class DevrigListToolHandlersTest {
     private var server: EmbeddedServer<*, *>? = null
@@ -58,82 +53,58 @@ class DevrigListToolHandlersTest {
     }
 
     @Test
-    fun `list_projects backends include port and managed inventory rows as non routable entries`(
+    fun `list_projects backends are exactly the routing-discovered backends (no port or managed leak)`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val projectHome = Files.createDirectories(tempDir.resolve("alpha"))
-        val state = IdeMonitorState(
-            ide = discoveredIde(pid = 42, build = "IU-261.1", projectHome = projectHome),
-            status = IdeMonitorStatus.CONNECTED,
-            lastSnapshot = listOf(ProjectInfo("alpha", projectHome.toString())),
+        val homeA = Files.createDirectories(tempDir.resolve("alpha"))
+        val withProject = IdeMonitorState(
+            ide = discoveredIde(pid = 42, build = "IU-261.1"),
+            projects = listOf(IdeProjectState("alpha", homeA.toString())),
         )
-        val portIde = DiscoveredIdeByPort(
-            port = 63342,
-            baseUrl = "http://127.0.0.1:63342",
-            productName = "PyCharm",
-            productFullName = "PyCharm 2026.1",
-            edition = "Professional",
-            baselineVersion = 261,
-            buildNumber = "261.5555.1",
-        )
-        val managed = managedBackendInfo(tempDir, runningPid = null, state = ManagedBackendState.INSTALLED)
-        val routing = DevrigProjectRoutingService { mapOf(42L to state) }
-        val inventory = BackendInventory(
-            markerRows = { listOf(BackendRow.FromMarker(ide = state.ide, projects = state.lastSnapshot)) },
-            portIdes = { setOf(portIde) },
-            managedBackends = { listOf(managed) },
-            isProcessAlive = { true },
-        )
+        // A discovered IDE with NO open project is still a routable backend, so it must appear in backends[].
+        val idle = IdeMonitorState(ide = discoveredIde(pid = 43, build = "IU-253.9"))
+        val routing = DevrigProjectRoutingService { listOf(withProject, idle) }
 
-        val response = DevrigListProjectsToolHandler(routing, inventory).collectListProjectsResponse()
+        val response = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
 
-        val markerName = backendNameForMarker(42L, "IU-261.1")
-        val portName = backendNameForPort(63342, "261.5555.1")
-        // Derive via the production rule (re-attaches productCode to the bare managed buildNumber).
-        val managedName = backendNameForRow(BackendRow.FromManaged(managed))
-        assertEquals(
-            setOf(markerName, portName, managedName),
-            response.backends.map { it.backendName }.toSet(),
-        )
+        val name42 = backendNameForMarker(42L, "IU-261.1")
+        val name43 = backendNameForMarker(43L, "IU-253.9")
 
-        val markerBackend = response.backends.single { it.backendName == markerName }
-        assertEquals(true, markerBackend.routable)
-        assertEquals("marker", markerBackend.source)
-        assertEquals(response.projects.map { it.path }.toSet(), markerBackend.openProjects.map { it.path }.toSet())
+        // backends[] = every discovered IDE (incl. the idle one), and nothing else — these are all marker
+        // backend_names (`iu-…`); no port/managed entry is ever synthesized onto this surface.
+        assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
+        assertTrue(response.backends.all { it.backendName.startsWith("iu-") }, "$response")
 
-        val portBackend = response.backends.single { it.backendName == portName }
-        assertEquals(false, portBackend.routable)
-        assertEquals("port", portBackend.source)
-        assertTrue(portBackend.openProjects.isEmpty(), "port rows own no projects: $portBackend")
+        // Identity fields are carried from the IDE.
+        val b42 = response.backends.single { it.backendName == name42 }
+        assertEquals("IntelliJ IDEA", b42.displayName)
+        assertEquals("IU-261.1", b42.build)
+        assertEquals("2026.1", b42.version)
 
-        val managedBackend = response.backends.single { it.backendName == managedName }
-        assertEquals(false, managedBackend.routable)
-        assertEquals("managed", managedBackend.source)
-        assertTrue(managedBackend.openProjects.isEmpty(), "managed rows own no projects: $managedBackend")
-
-        // projects[] stays marker-routed only — the extra inventory rows never leak phantom projects.
-        assertEquals(listOf(markerName), response.projects.map { it.backendName })
+        // projects[] only lists the IDE that actually has a project open, tagged with its own backend_name.
+        assertEquals(listOf(name42), response.projects.map { it.backendName })
+        assertEquals(listOf("alpha"), response.projects.map { it.name })
     }
 
     @Test
-    fun `managed backend with dead pid is listed as not running without any http fetch`(
+    fun `managed backend with a dead pid degrades to unreachable without any http fetch`(
         @TempDir tempDir: Path,
-    ) = runBlocking {
+    ): Unit = runBlocking {
         // RUNNING per its (stale) pid file, but the process is dead. The liveness check must settle this
-        // before any HTTP — here neither the marker nor the port source can do HTTP at all, so the only
-        // way to a green assertion is the inventory's own ProcessHandle-style liveness downgrade.
+        // BEFORE any HTTP — there is no marker or port source to fetch from, so the only path to a
+        // not-running verdict is the inventory's own ProcessHandle-style liveness downgrade. Managed
+        // backends are CLI-only, so this is asserted on the inventory's rich BackendInfo (the
+        // `devrig backend --json` surface), not on the routing-backed MCP `steroid_list_projects`.
         val managed = managedBackendInfo(tempDir, runningPid = 99999L, state = ManagedBackendState.RUNNING)
-        val routing = DevrigProjectRoutingService { emptyMap() }
         val inventory = BackendInventory(
-            markerRows = { emptyList() },
-            portIdes = { emptySet() },
+            routing = DevrigProjectRoutingService { emptyList() },
+            portDiscovery = { emptySet() },
             managedBackends = { listOf(managed) },
             isProcessAlive = { false },
         )
 
-        val response = DevrigListProjectsToolHandler(routing, inventory).collectListProjectsResponse()
+        val backend = inventory.collectBackendInfos().single()
 
-        val backend = response.backends.single()
         assertEquals("managed", backend.source)
         assertEquals(false, backend.reachable)
         assertEquals(false, backend.routable)
@@ -169,23 +140,15 @@ class DevrigListToolHandlersTest {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
         val stateA = IdeMonitorState(
-            ide = discoveredIde(pid = 42, build = "IU-261.1", projectHome = homeA, port = port, token = "token-42"),
-            status = IdeMonitorStatus.CONNECTED,
-            lastSnapshot = listOf(ProjectInfo("project-42", homeA.toString())),
+            ide = discoveredIde(pid = 42, build = "IU-261.1", port = port, token = "token-42"),
+            projects = listOf(IdeProjectState("project-42", homeA.toString())),
         )
         val stateB = IdeMonitorState(
-            ide = discoveredIde(pid = 43, build = "IU-253.9", projectHome = homeB, port = port, token = "token-43"),
-            status = IdeMonitorStatus.CONNECTED,
-            lastSnapshot = listOf(ProjectInfo("project-43", homeB.toString())),
+            ide = discoveredIde(pid = 43, build = "IU-253.9", port = port, token = "token-43"),
+            projects = listOf(IdeProjectState("project-43", homeB.toString())),
         )
         val states = listOf(stateA, stateB)
-        val routing = DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
-        val inventory = BackendInventory(
-            markerRows = { states.map { BackendRow.FromMarker(ide = it.ide, projects = it.lastSnapshot) } },
-            portIdes = { emptySet() },
-            managedBackends = { emptyList() },
-            isProcessAlive = { true },
-        )
+        val routing = DevrigProjectRoutingService { states }
 
         val httpClient = HttpClient(CIO) {
             install(HttpTimeout) {
@@ -198,10 +161,8 @@ class DevrigListToolHandlersTest {
         val response = httpClient.use {
             runBlocking {
                 DevrigListWindowsToolHandler(
-                    states = { states },
-                    httpClient = it,
+                    bridge = DevrigToolBridgeClient(it),
                     routing = routing,
-                    inventory = inventory,
                 ).collectListWindowsResponse()
             }
         }
@@ -220,10 +181,10 @@ class DevrigListToolHandlersTest {
         // Each window's project name is rewritten to the devrig-exposed form of ITS OWN backend's route.
         for (window in response.windows) {
             val pid = if (window.backendName == name42) 42L else 43L
-            val route = routing.routes().values.single { it.idePid == pid }
+            val route = routing.routes().single { it.route.pid == pid }
             assertEquals(route.exposedProjectName, window.projectName)
         }
-        // backends[] joins by the same names.
+        // backends[] = the routing-discovered backends, joined by the same names.
         assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
     }
 
@@ -280,28 +241,15 @@ class DevrigListToolHandlersTest {
     private fun discoveredIde(
         pid: Long,
         build: String,
-        projectHome: Path,
         port: Int = 0,
         token: String = "token-$pid",
     ): DiscoveredIde = DiscoveredIde(
         pid = pid,
         rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:$port/mcp").rpcBaseUrl,
         bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
-        markerPath = projectHome.resolve("$pid.mcp-steroid").toString(),
-        marker = PidMarker(
-            schema = PidMarker.SCHEMA_VERSION,
-            pid = pid,
-            mcpSteroidServer = McpSteroidServerInfo(
-                mcpUrl = "http://127.0.0.1:$port/mcp",
-                headers = mapOf("Authorization" to "Bearer $token"),
-            ),
-            devrigEndpoint = testDevrigEndpoint("http://127.0.0.1:$port/mcp", mapOf("Authorization" to "Bearer $token")),
-            ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
-            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-            createdAt = "2026-05-17T00:00:00Z",
-            intellijWebServer = null,
-            intellijMcpServer = null,
-        ),
+        ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
+        plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+        backendName = backendNameForMarker(pid, build),
     )
 }
 

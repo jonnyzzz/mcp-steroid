@@ -61,6 +61,9 @@ class CliInstallIntegrationTest {
         val result = container.startProcessInContainer {
             this
                 .args("/tmp/${installDir.name}/bin/devrig", "install", agent.cliName)
+                // This dist is a SNAPSHOT, so the bin/devrig self-heal is OFF by default; opt in so
+                // `devrig install` writes ~/.mcp-steroid/bin/devrig and registers THAT stable wrapper.
+                .addEnv("DEVRIG_BIN_NO_AUTO_REGISTER", "false")
                 .description("devrig install ${agent.cliName}")
                 .timeoutSeconds(120)
                 .quietly()
@@ -69,9 +72,20 @@ class CliInstallIntegrationTest {
         val combined = result.stdout + "\n" + result.stderr
         // The install narrates what it did and confirms the registration (idempotent upsert).
         assertTrue(combined.contains("'mcp-steroid' is registered for ${agent.displayName}."), combined)
-        assertTrue(combined.contains("JAVA_HOME"), combined)
-        assertTrue(combined.contains("/tmp/${installDir.name}/bin/devrig mcp"), combined)
+        // It registers the STABLE user-facing wrapper (~/.mcp-steroid/bin/devrig), NOT the install tree,
+        // with no JAVA_HOME mentioned to the user.
+        assertTrue(combined.contains(".mcp-steroid/bin/devrig mcp"), combined)
+        assertTrue(!combined.contains("/tmp/${installDir.name}/bin/devrig mcp"), combined)
+        assertTrue(!combined.contains("JAVA_HOME"), "install output must not mention JAVA_HOME:\n$combined")
         assertTrue(combined.contains("${agent.cliName} mcp list"), combined)
+
+        // The wrapper it registered must actually exist (install calls ensureBinLauncher first).
+        val wrapper = container.startProcessInContainer {
+            this.args("sh", "-c", "test -x \"\$HOME/.mcp-steroid/bin/devrig\" && cat \"\$HOME/.mcp-steroid/bin/devrig\"")
+                .description("inspect wrapper").timeoutSeconds(30).quietly()
+        }.awaitForProcessFinish().assertExitCode(0, "wrapper must be written by install")
+        assertTrue(wrapper.stdout.contains("DEVRIG_JAVA_HOME="), wrapper.stdout)
+        assertTrue(wrapper.stdout.contains("exec \"/tmp/${installDir.name}/bin/devrig\""), wrapper.stdout)
     }
 
     private data class InstallAgentCase(

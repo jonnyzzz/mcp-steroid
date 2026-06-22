@@ -17,6 +17,12 @@ languageCode = 'en-us'
 title = 'MCP Steroid - Reliable code changes for your AI Agent'
 disableKinds = ['taxonomy', 'term']
 
+# Two static roots, merged by Hugo: checked-in assets (static/) + the generator output
+# (build/generated-static/, written by `:website-gen:generateWebsite` — version.json, updatePlugins.xml,
+# install.sh, install.ps1, EULA, LICENSE). The build/ dir is gitignored, so generated files never land in
+# the tracked source tree and adding a new one needs no .gitignore edit.
+staticDir = ['static', 'build/generated-static']
+
 [markup]
   [markup.goldmark]
     [markup.goldmark.renderer]

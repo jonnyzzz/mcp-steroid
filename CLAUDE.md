@@ -55,6 +55,8 @@ When changing files across multiple sub-folders, read the guides for each.
 | `test-experiments/` | [test-experiments/CLAUDE.md](test-experiments/CLAUDE.md) | DPAIA arena suite, debugger demos, prompt-quality comparisons, IMPROVEMENTS.md harness |
 | `docs/` | [docs/CLAUDE.md](docs/CLAUDE.md) | Autoresearch / prompt-optimization working notes, DPAIA history |
 | `website/` | [website/CLAUDE.md](website/CLAUDE.md) | Hugo site sources, GitHub Pages deployment |
+| `installer-gen/` | [installer-gen/CLAUDE.md](installer-gen/CLAUDE.md) | Build-tooling: computed JDK data model (Corretto/Azul, PGP-verified, pinned fingerprints), on-disk download cache, install.sh/install.ps1 generation |
+| `website-gen/` | [website-gen/CLAUDE.md](website-gen/CLAUDE.md) | Build-tooling generator: version.json + updatePlugins.xml (depends on `:installer-gen` for shared HTTP) |
 
 ## MUST DO
 
@@ -211,6 +213,14 @@ generate→edit→regenerate→commit workflow. The TC VCS root pulls from `jb`,
 GitHub Pages. Plugin tests are intentionally NOT mirrored — full coverage stays on TC (3–5× faster
 internal agents). Trigger PR builds via `workflow_dispatch` on the PR's head branch.
 
+**Website deploys from the `website` branch, NOT `main`.** GitHub Pages builds on a push to the
+long-lived **`website`** branch (`github-pages.yml`). `website` tracks `main` (advance via
+`git merge main → website`, normally often) but can deliberately lag it so website changes that depend
+on an **unreleased** devrig binary — e.g. a new `install.sh`/`install.ps1` CLI contract — stay off the
+live site until a matching GitHub release exists. The release process advances `website` AFTER
+publishing the release (`release/release-instructions.md` → "Stage 7c"). `website` is **origin-only**
+(never synced to `jb`, which runs TeamCity only). A push to `main` no longer deploys the website.
+
 ## Git Remotes: `origin` vs `jb`
 
 | Remote | URL | Role |
@@ -234,6 +244,14 @@ git checkout main && git branch -D jb-merge
 `--no-ff` preserves `jb/main`'s existing head as the merge's first parent so jb-only history stays
 reachable. **Why this matters for CI:** TC pulls from `jb`. If your commit isn't on `jb/main`, TC builds
 stale code.
+
+**No GitHub Actions on `jb`.** The JetBrains-org mirror runs **TeamCity only** — it must carry **no**
+`.github/workflows/` at all (those are origin/jonnyzzz-only: the GitHub Pages website deploy, PR compile
+gate, etc.). `jb/main` intentionally **deletes** every workflow file (e.g. commit "Delete
+.github/workflows/github-pages.yml"); that deletion is org-specific history to preserve. So during
+`jb-merge`, a **modify/delete conflict on any `.github/workflows/*` file is expected** whenever origin
+edits a workflow — **always resolve by keeping it deleted on `jb`** (`git rm .github/workflows/<file>`
+then commit the merge). Never resurrect a workflow onto `jb`.
 
 ## IntelliJ Source Research
 

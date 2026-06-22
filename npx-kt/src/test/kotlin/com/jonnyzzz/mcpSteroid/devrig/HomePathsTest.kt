@@ -47,7 +47,7 @@ class HomePathsTest {
         paths.mkdirsAll()
         paths.mkdirsAll()
 
-        listOf(paths.logsDir, paths.backendsDir, paths.cachesDir, paths.downloadsDir, paths.stateDir).forEach { dir ->
+        listOf(paths.logsDir, paths.backendsDir, paths.cachesDir, paths.downloadsDir, paths.stateDir, paths.binDir).forEach { dir ->
             assertTrue(dir.isDirectory(), "$dir should be a directory")
         }
         assertTrue(!Files.exists(paths.executionStorageDir), "execution-storage is reserved and not created yet")

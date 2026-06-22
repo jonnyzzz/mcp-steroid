@@ -132,6 +132,11 @@ not compiled. Do NOT use ` ```text``` ` or any other language tag:
 `MarkdownArticleContractTest.testNoNonKotlinFences` rejects every annotated fence except
 ` ```kotlin ` (with optional `[FILTER]` annotations).
 
+**Escaping `${...}` inside `steroid_execute_code` script strings.** A `${...}` in an `applyPatch { }`
+`newString` (or any nested Kotlin string literal in an exec_code example) is interpolated by the OUTER
+script, not emitted literally. Break the template with a `val dollar = "$"` indirection — e.g.
+`"${dollar}{expr}"` — so the literal `${...}` reaches the patched file.
+
 ## IDE-Conditional Content
 
 ### Fence-Level Targeting

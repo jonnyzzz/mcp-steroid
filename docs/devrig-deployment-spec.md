@@ -2,6 +2,13 @@
 
 Author: Eugene Petrenko · Status: design ready for implementation
 
+> **Implementation note (2026-06, PR #117):** the Windows user launcher is
+> **CMD-only** (`~/.mcp-steroid/bin/devrig.cmd`); PowerShell is used only by the
+> install script, never the launcher. The devrig binary (re)writes the launcher
+> on every start and owns the user-PATH entry — so the v7 staged-`.new`
+> self-update mechanism below is illustrative; the implementation rewrites the
+> launcher atomically on each start instead.
+
 > **Iteration history**: v1 in-session restart via exit 239 → v2 dropped
 > after quorum review (MCP spec) → v3 devrig.dev pattern → v4 bundled JDK +
 > curl-bootstrap + two-key sigs → v5 Corretto + binaries/ + agent wizard +
@@ -16,11 +23,26 @@ Author: Eugene Petrenko · Status: design ready for implementation
 curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh -s install
 ```
 
-A self-updating launcher at `~/.mcp-steroid/bin/devrig` (or `devrig.ps1`
+A self-updating launcher at `~/.mcp-steroid/bin/devrig` (or `devrig.cmd`
 on Windows) registered with whichever of Claude / Codex / Gemini are on
 PATH. The mcp-steroid Java binary + a matching Amazon Corretto JDK are
 cached under `~/.mcp-steroid/binaries/`. After install, **zero network
 calls** unless `devrig upgrade` is run or a cache directory is missing.
+
+> **Implementation note (PR #117/#124):** the install script no longer writes
+> `bin/devrig` itself (the "bootstrap mode → write the script's own bytes →
+> bin/devrig" step below is stale on this point). After unpack it delegates to
+> the register-only subcommand `devrig install devrig --install-script=<launcher>
+> --jdk-home=<jdk>`; the **devrig binary owns the wrapper + PATH** (atomic
+> self-heal on every start, gated by `DEVRIG_BIN_NO_AUTO_REGISTER`). Motto: the
+> install script passes ALL non-trivial params to the binary — no env-derived
+> magic.
+>
+> **Windows PATH:** the launcher only CHECKS user-PATH membership at startup
+> (pure Java can't persist user PATH; no PowerShell on the start/MCP hot path)
+> and prints a one-time manual hint if absent. Persisting the entry is done via
+> the **HKCU user-PATH registry** on the install/register path only. Agents
+> always launch the wrapper by ABSOLUTE path, so MCP works regardless of PATH.
 
 ## Filesystem layout
 
@@ -31,8 +53,8 @@ calls** unless `devrig upgrade` is run or a cache directory is missing.
 ├── allowed_signers                 ← OpenSSH allowed_signers (pins both pubkeys)
 ├── bin/
 │   ├── devrig                      ← POSIX shell wrapper
-│   ├── devrig.ps1                  ← PowerShell wrapper
-│   ├── devrig.new, devrig.ps1.new  ← staged updates, promoted on next launch
+│   ├── devrig.cmd                  ← Windows CMD wrapper
+│   ├── devrig.new, devrig.cmd.new  ← staged updates, promoted on next launch
 ├── binaries/                       ← hardcoded; downloads + unpacked trees
 │   ├── devrig-<os>-<cpu>-<sha>/    ← unpacked devrig archive (verbatim — no stripping)
 │   ├── jdk-<os>-<cpu>-<sha>/       ← unpacked Corretto JDK (verbatim)
@@ -112,8 +134,8 @@ binaries.windows-x86_64.jdk.javaHomeSubpath=jdk25.0.x_x
 scripts.posix.url=https://mcp-steroid.jonnyzzz.com/dl/0.96.20003/devrig
 scripts.posix.sha512=f00d…
 
-scripts.powershell.url=https://mcp-steroid.jonnyzzz.com/dl/0.96.20003/devrig.ps1
-scripts.powershell.sha512=cafe…
+scripts.windows.url=https://mcp-steroid.jonnyzzz.com/dl/0.96.20003/devrig.cmd
+scripts.windows.sha512=cafe…
 ```
 
 ### Key fields
@@ -253,6 +275,8 @@ See git history of this file for the full snippets.)
 | Var | Behavior |
 |---|---|
 | `DEVRIG_JDK_HOME` | If set, skip JDK download; set JAVA_HOME to this path |
+| `DEVRIG_JAVA_HOME` | Set by the launcher to pin the JDK devrig runs under (its supported runtime). Distinct from `DEVRIG_JDK_HOME` (download opt-out). |
+| `DEVRIG_BIN_NO_AUTO_REGISTER` | Gates the on-every-start launcher self-heal + register. `yes/true/1/on` = OFF; `no/false/0/off` = ON. Unset default = ON for release, **OFF for SNAPSHOT/dev/test** builds (so a dev build never clobbers the real launcher). |
 | `DEVRIG_OS` | Override platform-detect (testing only) |
 | `DEVRIG_CPU` | Override architecture-detect |
 | `DEVRIG_DEBUG_NO_EXEC=1` | Stop after cache resolution, print resolved exec path to stderr, exit 45 |
@@ -269,7 +293,7 @@ Same script doubles as installer. When invoked NOT from
 1. mkdir -p ~/.mcp-steroid/{bin,binaries}
 2. Fetch https://mcp-steroid.jonnyzzz.com/version.properties → ~/.mcp-steroid/
 3. Fetch .signatures + allowed_signers → ~/.mcp-steroid/   (stored; not verified by wrapper)
-4. Write the running script's own bytes → ~/.mcp-steroid/bin/devrig (or .ps1)
+4. Write the running script's own bytes → ~/.mcp-steroid/bin/devrig (or .cmd)
 5. Run standard cache resolution: download devrig + JDK, verify SHAs, unpack into binaries/.
 6. exec  ~/.mcp-steroid/binaries/devrig-<os>-<cpu>-<sha>/<binSubpath>  install ${@:2}
 ```
@@ -309,12 +333,8 @@ POSIX (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`):
 Windows:
 
 ```json
-{ "command": "powershell.exe",
-  "args": [
-    "-NoProfile", "-ExecutionPolicy", "Bypass",
-    "-File", "C:\\Users\\<u>\\.mcp-steroid\\bin\\devrig.ps1",
-    "mcp"
-  ],
+{ "command": "cmd.exe",
+  "args": ["/d", "/c", "\"C:\\Users\\<u>\\.mcp-steroid\\bin\\devrig.cmd\" mcp"],
   "env": {} }
 ```
 
@@ -331,7 +351,7 @@ Windows:
 5. write version.properties.new → atomic rename → version.properties
    write .signatures.new → atomic rename
 6. For each scripts.<x> in manifest: if remote SHA differs from on-disk, fetch +
-   verify + write to bin/devrig.new or .ps1.new. Do NOT touch the running wrappers.
+   verify + write to bin/devrig.new or .cmd.new. Do NOT touch the running wrappers.
 7. Print summary to stderr; exit 0.
 ```
 

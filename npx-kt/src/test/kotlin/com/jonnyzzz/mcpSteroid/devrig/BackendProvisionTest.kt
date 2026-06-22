@@ -2,8 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
 import com.jonnyzzz.mcpSteroid.devrig.monitor.AboutResponse
@@ -181,7 +179,7 @@ class BackendProvisionTest {
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
                 ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, productFullName = "GoLand 2026.1", productName = "GoLand", buildNumber = "GO-261.1")),
             ),
-            markers = setOf(markerIde(build = "IU-261.23567.138")),
+            markers = listOf(markerIde(build = "IU-261.23567.138")),
         )
 
         assertFalse(text.contains("port-63342"), text)
@@ -196,7 +194,7 @@ class BackendProvisionTest {
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
                 ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, buildNumber = "GO-261.1")),
             ),
-            markers = setOf(
+            markers = listOf(
                 markerIde(pid = 11, build = "IU-261.23567.138"),
                 markerIde(pid = 12, name = "GoLand", build = "GO-261.1"),
             ),
@@ -215,7 +213,7 @@ class BackendProvisionTest {
             targets = listOf(
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
             ),
-            markers = setOf(markerIde(name = "GoLand", build = "GO-261.1")),
+            markers = listOf(markerIde(name = "GoLand", build = "GO-261.1")),
         )
 
         assertTrue(text.contains("port-63342"), text)
@@ -230,7 +228,7 @@ class BackendProvisionTest {
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
                 ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, buildNumber = "GO-261.1")),
             ),
-            markers = setOf(markerIde(build = "IU-261.23567.138")),
+            markers = listOf(markerIde(build = "IU-261.23567.138")),
         )
 
         val targets = root["targets"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
@@ -247,7 +245,7 @@ class BackendProvisionTest {
             targets = listOf(
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
             ),
-            markers = setOf(markerIde(name = "GoLand", build = "GO-261.1")),
+            markers = listOf(markerIde(name = "GoLand", build = "GO-261.1")),
         )
 
         val targets = root["targets"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
@@ -385,7 +383,7 @@ class BackendProvisionTest {
 
     private fun renderProvisionCommandText(
         targets: List<ProvisionTarget>,
-        markers: Set<DiscoveredIde> = emptySet(),
+        markers: List<DiscoveredIde> = emptyList(),
     ): String {
         val buf = ByteArrayOutputStream()
         runBackendProvisionListCommand(
@@ -399,7 +397,7 @@ class BackendProvisionTest {
 
     private fun renderProvisionCommandJson(
         targets: List<ProvisionTarget>,
-        markers: Set<DiscoveredIde> = emptySet(),
+        markers: List<DiscoveredIde> = emptyList(),
     ) = parser.parseToJsonElement(
         ByteArrayOutputStream().also { buf ->
             runBackendProvisionListCommand(
@@ -418,26 +416,13 @@ class BackendProvisionTest {
         build: String = "IU-261.23567.138",
         mcpUrl: String = "http://localhost:6315/mcp",
     ): DiscoveredIde {
-        val marker = PidMarker(
-            schema = PidMarker.SCHEMA_VERSION,
-            pid = pid,
-            mcpSteroidServer = McpSteroidServerInfo(
-                mcpUrl = mcpUrl,
-                headers = emptyMap(),
-            ),
-            devrigEndpoint = testDevrigEndpoint(mcpUrl),
-            ide = IdeInfo(name = name, version = version, build = build),
-            plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test"),
-            createdAt = "1970-01-01T00:00:00Z",
-            intellijWebServer = null,
-            intellijMcpServer = null,
-        )
         return DiscoveredIde(
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = emptyMap(),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = marker,
+            ide = IdeInfo(name = name, version = version, build = build),
+            plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test"),
+            backendName = "mock-backend-name",
         )
     }
 

@@ -25,19 +25,13 @@ class ListProjectsToolHandlerIJ : ListProjectsToolHandler {
     }
 }
 
-/**
- * The in-IDE self-describe: this IDE's R3.3 `backend_name`, its open projects as [ListedProject]s
- * bound to that name, and the single self [BackendInfo] (built via the shared [markerBackendInfo]
- * assembler so the in-IDE and devrig sides never re-implement the marker shape). Shared by
- * [ListProjectsToolHandlerIJ] and [ListWindowsToolHandlerIJ].
- */
 class SelfBackendDescription(
     /** This IDE's own `backend_name` ([backendNameForMarker] over its pid + build). */
     val backendName: String,
     /** Open projects, each with `project_name == name` and `backend_name == `[backendName]. */
     val projects: List<ListedProject>,
     /** The single self [BackendInfo] (`source=marker`, `routable=true`, `openProjects=`[projects]). */
-    val backend: BackendInfo,
+    val backend: ListedBackendInfo,
 )
 
 suspend fun describeSelfBackend(): SelfBackendDescription {
@@ -60,12 +54,9 @@ suspend fun describeSelfBackend(): SelfBackendDescription {
         )
     }
 
-    val selfBackend = markerBackendInfo(
+    val selfBackend = markerBackendInfo2(
         backendName = selfBackendName,
-        pid = pid,
         ide = ide,
-        plugins = mcpSteroidPlugins(plugin),
-        openProjects = listedProjects,
     )
 
     return SelfBackendDescription(

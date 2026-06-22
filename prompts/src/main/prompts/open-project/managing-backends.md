@@ -30,16 +30,9 @@ server, invoked with a `backend` subcommand:
 The `<id>` values come from `devrig backend --json` (the
 `backends[].backend_name` field — see Step 1).
 
-**Launcher path.** On **macOS / Linux** run `devrig` (or, if it is not on
-`PATH`, `<install>/bin/devrig`). On **Windows** the launcher is
-`devrig.bat`; run it through `cmd.exe` — e.g.
-`cmd.exe /c devrig.bat backend --json` or
-`cmd.exe /c devrig.bat backend download idea-ultimate --json`.
-
-**Java 25 is required.** devrig launches on Java 25. If the `java` on
-`PATH` or `JAVA_HOME` points at an older JDK, set `DEVRIG_JAVA_HOME` to a
-JDK/JRE 25 home for the devrig process (it takes precedence over
-`JAVA_HOME` for devrig) before invoking any `devrig backend` command.
+**Launcher.** Run `devrig` — the stable launcher the devrig binary installs and
+keeps current on your `PATH` (it lives under `~/.mcp-steroid/bin`). E.g.
+`devrig backend --json` or `devrig backend download idea-ultimate --json`.
 
 ## Step 1 — See what IDEs are available
 

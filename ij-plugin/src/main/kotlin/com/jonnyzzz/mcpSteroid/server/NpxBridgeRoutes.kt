@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.intellij.openapi.components.service
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 import io.ktor.http.ContentType
@@ -15,7 +16,27 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import java.time.Instant.now
+import java.time.format.DateTimeFormatter.ISO_INSTANT
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+
+private fun JsonObjectBuilder.buildResponses(payload: ListProjectsResponse) {
+    putJsonArray("projects") {
+        payload.projects.forEach { project ->
+            addJsonObject {
+                put("name", project.name)
+                put("path", project.path)
+                put("project_name", project.projectName)
+                put("backend_name", project.backendName)
+            }
+        }
+    }
+}
 
 fun Route.installNpxBridgeRoutes(
     serverCoreProvider: () -> McpServerCore,
@@ -27,20 +48,36 @@ fun Route.installNpxBridgeRoutes(
     route(DEVRIG_RPC_PATH_PREFIX) {
         post("/projects/stream") {
             if (!call.requireNpxBridgeAuthorization()) return@post
-            val service = ProjectsStreamService.getInstance()
-            service.refresh()
-            call.streamProjectsNdjson(
-                projectsFlow = service.projects,
-                instanceId = service.ideInstanceId,
-                pid = service.idePid,
-                nextSeq = { service.nextSeq() },
-                onClientInfo = { service.clientConnected(it) },
-            )
+            val payload = service<ListProjectsToolHandler>().collectListProjectsResponse()
+            val response = buildJsonObject {
+                put("type", "snapshot")
+                put("seq", "System.currentTimeMillis()")
+                put("sentAt", ISO_INSTANT.format(now()))
+                put("instanceId", "ide-not-used")
+                put("pid", ProcessHandle.current().pid())
+                buildResponses(payload)
+            }
+
+            call.respondTextWriter(contentType = NDJSON_CONTENT_TYPE) {
+                write(NpxStreamJson.encodeJsonObject(response))
+                write("\n")
+                flush()
+            }
+        }
+
+        get("projects") {
+            if (!call.requireNpxBridgeAuthorization()) return@get
+            //TODO: use specific payload
+            val payload = service<ListProjectsToolHandler>().collectListProjectsResponse()
+            call.respondJson {
+                buildResponses(payload)
+            }
         }
 
         get("/windows") {
             if (!call.requireNpxBridgeAuthorization()) return@get
             val bridge = NpxBridgeService.getInstance()
+            //TODO: rework data objects
             val payload = bridge.buildWindows(mcpUrlProvider())
             call.respondJson(payload, NpxBridgeWindowsResponse.serializer())
         }
@@ -77,6 +114,15 @@ private suspend inline fun <reified T> ApplicationCall.respondJson(
     )
 }
 
+private suspend fun ApplicationCall.respondJson(
+    payload: JsonObjectBuilder.() -> Unit,
+) {
+    respondText(
+        text = NpxStreamJson.encodeJsonObject(buildJsonObject(payload)),
+        contentType = ContentType.Application.Json
+    )
+}
+
 private suspend fun ApplicationCall.parseToolCallRequestOrRespondBadRequest(): NpxBridgeToolCallRequest? {
     val body = receiveText()
     return try {
@@ -86,3 +132,5 @@ private suspend fun ApplicationCall.parseToolCallRequestOrRespondBadRequest(): N
         null
     }
 }
+
+private val NDJSON_CONTENT_TYPE: ContentType = ContentType.parse(NPX_NDJSON_MIME_TYPE)

@@ -4,6 +4,8 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressModel
@@ -18,21 +20,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.swing.SwingUtilities
 
-/**
- * Direct in-IDE `steroid_list_windows`. Wraps the WIRE-shaped [IdeWindowsCollector] snapshot into the
- * MCP-only [ListWindowsResponse]: every [ListedWindow]/[ListedBackgroundTask] is bound to this IDE's
- * own `backend_name` and `backends[]` carries exactly the self [BackendInfo] (shared
- * [describeSelfBackend] assembler, same as [ListProjectsToolHandlerIJ]). The `/windows` bridge takes
- * the raw [IdeWindowsCollector.collect] output instead — see [NpxBridgeService.buildWindows] — so the
- * devrig<->IDE wire stays pristine [WindowInfo]/[ProgressTaskInfo].
- */
 class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
     override suspend fun collectListWindowsResponse(): ListWindowsResponse {
-        val snapshot = IdeWindowsCollector.collect()
+        val snapshot = service<IdeWindowsCollector>().collect()
         val self = describeSelfBackend()
         return ListWindowsResponse(
-            windows = snapshot.windows.map { it.listed(self.backendName) },
-            backgroundTasks = snapshot.backgroundTasks.map { it.listed(self.backendName) },
+            windows = snapshot.windows.map { it.listed(it.projectName, self.backendName) },
+            backgroundTasks = snapshot.backgroundTasks.map { it.listed(it.projectName, self.backendName) },
             backends = listOf(self.backend),
         )
     }
@@ -50,7 +44,8 @@ data class IdeWindowsSnapshot(
 )
 
 /** Collects the [IdeWindowsSnapshot] from the running IDE (EDT enumeration, modality-aware). */
-object IdeWindowsCollector {
+@Service(Service.Level.APP)
+class IdeWindowsCollector {
     private val log = logger<IdeWindowsCollector>()
 
     suspend fun collect(): IdeWindowsSnapshot {

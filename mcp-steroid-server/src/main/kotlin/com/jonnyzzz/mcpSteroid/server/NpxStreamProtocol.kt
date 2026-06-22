@@ -31,20 +31,6 @@ data class NpxStreamEnvelope(
 )
 
 /**
- * Client-side identification sent in the POST body of `/npx/v1/projects/stream`.
- * Logged on the IDE for debugging / monitoring.
- */
-@Serializable
-data class NpxStreamClientInfo(
-    val client: String = "unknown",
-    val clientPid: Long? = null,
-    val clientVersion: String? = null,
-    val clientInstanceId: String? = null,
-    val platform: String? = null,
-    val arch: String? = null,
-)
-
-/**
  * Tolerant codec for the wire protocol — `ignoreUnknownKeys = true` is the
  * forward-compat hook used on both ends of the stream.
  */
@@ -55,6 +41,12 @@ object NpxStreamJson {
         encodeDefaults = true
     }
 
+    fun encodeJsonObject(obj: JsonObject): String =
+        json.encodeToString(JsonObject.serializer(), obj)
+
+    fun decodeJsonObject(text: String): JsonObject =
+        json.decodeFromString(JsonObject.serializer(), text)
+
     fun encodeEnvelope(envelope: NpxStreamEnvelope): String =
         json.encodeToString(NpxStreamEnvelope.serializer(), envelope)
 
@@ -63,12 +55,6 @@ object NpxStreamJson {
 
     fun encodeObject(obj: JsonObject): String =
         json.encodeToString(JsonObject.serializer(), obj)
-
-    fun encodeClientInfo(info: NpxStreamClientInfo): String =
-        json.encodeToString(NpxStreamClientInfo.serializer(), info)
-
-    fun decodeClientInfo(body: String): NpxStreamClientInfo =
-        json.decodeFromString(NpxStreamClientInfo.serializer(), body)
 }
 
 /**
@@ -79,9 +65,6 @@ object NpxStreamJson {
  * know or hardcode this prefix; it lives here only for the plugin's own route + URL construction.
  */
 const val DEVRIG_RPC_PATH_PREFIX: String = "/api/jonnyzzz/mcp-steroid/v1"
-
-/** HTTP path served by the IDE for NDJSON project-stream subscribers. */
-const val NPX_PROJECTS_STREAM_PATH: String = "$DEVRIG_RPC_PATH_PREFIX/projects/stream"
 
 /** MIME type the IDE responds with on the projects-stream endpoint. */
 const val NPX_NDJSON_MIME_TYPE: String = "application/x-ndjson"

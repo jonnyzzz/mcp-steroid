@@ -15,7 +15,6 @@ import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.DEVRIG_RPC_PATH_PREFIX
 import com.jonnyzzz.mcpSteroid.server.NPX_NDJSON_MIME_TYPE
-import com.jonnyzzz.mcpSteroid.server.NPX_PROJECTS_STREAM_PATH
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeToolCallRequest
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.NpxStreamEnvelope
@@ -205,7 +204,7 @@ class DevrigFakeIdeBridgeIntegrationTest {
         srv.executor = Executors.newCachedThreadPool()
         port = srv.address.port
 
-        srv.createContext(NPX_PROJECTS_STREAM_PATH) { ex ->
+        srv.createContext("$DEVRIG_RPC_PATH_PREFIX/projects/stream") { ex ->
             receivedProjectsStreamAuth = ex.requestHeaders.getFirst("Authorization")
             ex.requestBody.use { it.readBytes() }
             ex.responseHeaders.add("Content-Type", NPX_NDJSON_MIME_TYPE)

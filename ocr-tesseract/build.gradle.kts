@@ -1,3 +1,4 @@
+import com.jonnyzzz.mcpSteroid.gradle.configurePathingJarClasspath
 import de.undercouch.gradle.tasks.download.Download
 import org.gradle.kotlin.dsl.register
 
@@ -37,6 +38,10 @@ application {
     applicationName = "ocr-tesseract"
     mainClass.set("com.jonnyzzz.mcpSteroid.ocr.app.OcrCliKt")
 }
+
+// Pathing JAR for the launcher classpath (shared buildSrc logic) — keeps the Windows `set CLASSPATH=…`
+// line short regardless of install-path depth, the same way devrig does.
+configurePathingJarClasspath()
 
 kotlin {
     jvmToolchain(25)

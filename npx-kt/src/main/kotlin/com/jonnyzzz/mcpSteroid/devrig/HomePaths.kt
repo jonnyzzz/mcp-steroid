@@ -15,6 +15,14 @@ class HomePaths(val home: Path) {
     val executionStorageDir: Path get() = home.resolve("execution-storage")
 
     /**
+     * Directory holding the stable, user-facing devrig launcher (`bin/devrig` on POSIX, `bin/devrig.cmd`
+     * on Windows). The devrig binary OWNS this directory: it (re)writes the launcher on every start (see
+     * [ensureBinLauncher]) and points agent MCP registrations + the user-PATH symlink at `bin/devrig`,
+     * never at the content-addressed install tree (which changes on every upgrade).
+     */
+    val binDir: Path get() = home.resolve("bin")
+
+    /**
      * Directory where the IDE plugin writes per-pid markers and devrig reads them from — always
      * `~/.mcp-steroid/markers`, the same fixed location [home] resolves to. This is the plugin↔devrig
      * contract for marker discovery, so it must never be relocated.
@@ -26,7 +34,7 @@ class HomePaths(val home: Path) {
     fun pidFile(id: String): Path = stateDir.resolve("$id.pid")
 
     fun mkdirsAll() {
-        listOf(logsDir, backendsDir, cachesDir, downloadsDir, stateDir).forEach { Files.createDirectories(it) }
+        listOf(logsDir, backendsDir, cachesDir, downloadsDir, stateDir, binDir).forEach { Files.createDirectories(it) }
     }
 }
 

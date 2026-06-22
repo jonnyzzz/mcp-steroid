@@ -5,8 +5,27 @@
 There is **one repository**: `jonnyzzz/mcp-steroid` (at `/Users/jonnyzzz/Work/mcp-steroid`).
 It contains both the plugin source and the website source (under `website/`).
 The website is built and deployed automatically by the **GitHub Actions** workflow
-(`.github/workflows/github-pages.yml`) on every push to `main` that touches `website/**`
-or `VERSION`. There is no separate website repo and no need to commit generated files.
+(`.github/workflows/github-pages.yml`) on every push to the **`website` branch** that touches
+`website/**` or `VERSION`. There is no separate website repo and no need to commit generated files.
+
+### The `website` deploy branch
+
+The live site deploys from a long-lived **`website` branch**, NOT from `main`. `website` tracks
+`main` (advance it by merging `main → website`, normally often) but can deliberately **lag** `main`
+so website changes that depend on an **unreleased** devrig binary — e.g. a new `install.sh` /
+`install.ps1` contract that calls a CLI command only present in the next release — stay OFF the live
+site until a matching GitHub release exists. **A push to `main` no longer deploys the website; you
+advance `website` to publish.** This is done as a release step, AFTER the GitHub release is published
+(see "Stage 7c: Advance the `website` branch"), because the generated `install.sh` / `updatePlugins.xml`
+resolve the just-published release.
+
+The `website` branch is **origin-only** — `jb` runs TeamCity only and carries no GitHub Actions, so
+`website` is never synced to `jb`.
+
+> **One-time GitHub setup:** the GitHub Pages **environment** ("Settings → Environments →
+> github-pages → Deployment branches") must allow the **`website`** branch. If it still lists only
+> `main`, the deploy job is blocked with "… is not allowed to deploy to github-pages due to
+> environment protection rules."
 
 ## Commit-Then-Build Principle
 
@@ -22,13 +41,14 @@ Correct order:
 4. Create tags on both remotes
 5. Create the GitHub release (attaches to existing tag) — plugin zip + devrig zip + EULA
 6. Upload to JetBrains Marketplace
-7. **Explicitly trigger the website build** and verify it's live
+7. **Advance the `website` branch** (merge `main → website`, push `origin website`) — this is what
+   deploys the website; then verify it's live
 
-**Critical:** Steps 1-2 must complete before step 3. The website content (release page,
-`hugo.toml`) must be on `origin/main` before the GitHub release is created, so the
-Pages workflow can find the content when it runs. The push in step 2 will trigger a
-Pages build that fails (release doesn't exist yet) — this is expected. The explicit
-trigger in step 7 is what actually deploys the website.
+**Critical:** Steps 1-2 must complete before step 3. **The push to `main` in step 2 does NOT trigger a
+website deploy** — the Pages workflow only fires on the `website` branch. The website is published in
+step 7 by advancing `website` to `main`, which must happen AFTER the GitHub release exists (step 5) so
+the build can resolve the released ZIP URL + the released devrig binary that the new `install.sh`
+expects.
 
 ## Release Stages
 
@@ -226,11 +246,10 @@ git push origin main
 All release commits (notes, version bump, website page, hugo.toml) must be pushed
 **before** building the plugin and creating the GitHub release.
 
-This push triggers the GitHub Pages workflow on `push:` to `main`. **It will fail by design**
-because the website's `make build` step queries the GitHub release for the plugin ZIP URL,
-and the release does not exist yet (Stage 7b creates it). This failure is harmless and is
-fixed by the explicit `workflow_dispatch` in Stage 9. Do not investigate the failure —
-just confirm Stage 9's run succeeds.
+**This push does NOT trigger a website deploy** — the Pages workflow fires only on the `website`
+branch, not `main`. The website is published later, in Stage 7c, by advancing `website` to `main`
+(after the GitHub release exists). So there is no "expected failing Pages build" on the `main` push
+anymore.
 
 Then sync to the `jb` remote (TeamCity pulls from `jb/main`):
 ```bash
@@ -313,6 +332,27 @@ filename as the asset name — it appears as `EULA` on the release page.
 **Immutable**: Once created, releases cannot have assets added. If a fix is needed,
 delete and recreate the release.
 
+**7c. Advance the `website` branch (this publishes the website):**
+
+The live site deploys from the `website` branch, and the generated `install.sh` / `install.ps1` /
+`updatePlugins.xml` resolve the **just-published** release (Stage 7b) — its plugin ZIP URL and the
+devrig binary whose CLI contract the new install scripts expect. So advance `website` to `main`
+**only now**, after the release exists:
+
+```bash
+git fetch origin
+git checkout website
+git merge main --ff-only        # website normally trails main by exactly the held commits
+git push origin website          # ← this push is what triggers the GitHub Pages deploy
+git checkout main
+```
+
+If `--ff-only` is rejected (website has diverged), use a normal merge:
+`git merge main -m "website: advance to <version> release"`. The push to `origin website` triggers
+the Pages workflow; the deploy + verification happen in Stage 9.
+
+> `website` is **origin-only** — do NOT push it to `jb` (jb has no GitHub Actions).
+
 ### Stage 8: Upload to JetBrains Marketplace
 
 ```bash
@@ -327,32 +367,25 @@ Plugin page: https://plugins.jetbrains.com/plugin/30019-mcp-steroid
 
 The plugin enters the JetBrains review queue and will be listed once approved.
 
-### Stage 9: Trigger Website Build and Verify
+### Stage 9: Verify the Website is Live
 
-The website build (`make build`) queries the GitHub release for the plugin ZIP download
-URL to generate `updatePlugins.xml`. The website content (release page, `hugo.toml`)
-was committed and pushed in Stages 4-5, **before** the release was created.
+The website deploy was triggered by the `git push origin website` in **Stage 7c**. The build
+(`make build`) queries the GitHub release for the plugin ZIP URL + the released devrig binary that
+the generated `install.sh` expects — both exist by now (Stage 7b).
 
-By the time you reach this stage, expect **two prior failed Pages workflow runs** on
-this branch — both are harmless:
+You may see **one harmless prior run**: the `release: published` event from Stage 7b's
+`gh release create` triggers a build from the **tag ref**, whose `deploy` job is blocked by the Pages
+environment ("Deployment branches" allows `website`, not tag refs) — error `Tag "v<version>" is not
+allowed to deploy to github-pages due to environment protection rules.` The `build` job usually
+succeeds; only `deploy` is blocked. Do not weaken the environment rule — the `website`-branch push
+from Stage 7c is what actually deploys.
 
-1. The `push`-triggered run from Stage 5 fails because the GitHub release does not exist
-   yet (`make build` cannot resolve the ZIP URL).
-2. The `release: published`-triggered run from Stage 7b's `gh release create` fails because
-   the GitHub Pages environment is configured to deploy only from `main`, not from tag refs.
-   The error reads `Tag "v<version>" is not allowed to deploy to github-pages due to
-   environment protection rules.` The `build` job on this run usually succeeds; only the
-   `deploy` job is blocked. Do not weaken the environment protection rule — the
-   `workflow_dispatch` from `main` below is what actually deploys.
-
-Explicitly trigger the website build:
+If the Stage 7c push didn't fire a run (e.g. it was a no-op fast-forward with no `website/**` change),
+trigger it explicitly against the **`website`** branch:
 
 ```bash
-gh workflow run "Deploy to GitHub Pages" --repo jonnyzzz/mcp-steroid --ref main
+gh workflow run "Deploy to GitHub Pages" --repo jonnyzzz/mcp-steroid --ref website
 ```
-
-The `release: published` event from Stage 7b may also trigger a run automatically.
-Either way, the explicit trigger ensures the build happens.
 
 **Monitor the deployment:**
 

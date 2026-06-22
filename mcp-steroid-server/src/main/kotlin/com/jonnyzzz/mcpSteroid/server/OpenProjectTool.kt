@@ -145,9 +145,8 @@ Managing backends from the agent:
 To list/provision/run backends, call the devrig CLI (the same devrig you run as your MCP server):
 `devrig backend` (list), `devrig backend download <id>`, `devrig backend start <id>`, `devrig backend
 stop <id>`, `devrig backend provision <id>`. Backend ids come from `devrig backend --json` /
-backends[].backend_name. Launcher path — macOS/Linux: `devrig` (or `<install>/bin/devrig`); Windows:
-`cmd.exe /c devrig.bat backend ...`. devrig needs Java 25: if `java`/`JAVA_HOME` is not 25, set
-DEVRIG_JAVA_HOME to a JDK/JRE 25 home for the devrig process. See mcp-steroid://open-project/managing-backends."""
+backends[].backend_name. devrig is on your PATH as `devrig` (the stable launcher the devrig binary keeps
+current) — just run it. See mcp-steroid://open-project/managing-backends."""
     }
 }
 

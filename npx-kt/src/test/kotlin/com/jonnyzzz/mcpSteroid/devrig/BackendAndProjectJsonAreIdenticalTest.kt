@@ -7,7 +7,8 @@ import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
@@ -66,8 +67,9 @@ class BackendAndProjectJsonAreIdenticalTest {
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = emptyMap(),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = marker,
+            ide = ideInfo,
+            plugin = pluginInfo,
+            backendName = "mock-backend-name"
         )
     }
 
@@ -90,10 +92,24 @@ class BackendAndProjectJsonAreIdenticalTest {
 
     @Test
     fun `backend and project json renderers emit byte-for-byte identical documents`() {
+        val firstMarkerIde = markerIde(name = "IntelliJ IDEA", pid = 1L, mcpUrl = "http://localhost:6315/mcp")
         val rows = listOf(
             BackendRow.FromMarker(
-                ide = markerIde(name = "IntelliJ IDEA", pid = 1L, mcpUrl = "http://localhost:6315/mcp"),
-                projects = listOf(ProjectInfo("alpha", "/work/alpha"), ProjectInfo("bravo", "/work/bravo")),
+                ide = firstMarkerIde,
+                projects = listOf(
+                    ProjectRoute(
+                        route = firstMarkerIde,
+                        projectInfo = IdeProjectState("alpha", "/work/alpha"),
+                        exposedProjectName = "alpha",
+                        projectPath = "/work/alpha",
+                    ),
+                    ProjectRoute(
+                        route = firstMarkerIde,
+                        projectInfo = IdeProjectState("bravo", "/work/bravo"),
+                        exposedProjectName = "bravo",
+                        projectPath = "/work/bravo",
+                    ),
+                ),
             ),
             BackendRow.FromMarker(
                 ide = markerIde(name = "PyCharm", version = "2025.3.1", pid = 2L, build = "PC-253.99"),

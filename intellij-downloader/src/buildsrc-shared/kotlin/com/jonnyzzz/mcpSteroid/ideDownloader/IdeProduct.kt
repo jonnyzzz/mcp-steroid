@@ -52,9 +52,6 @@ sealed interface IdeProduct {
     /** Top-level `productCode` expected in the unpacked bundle's product-info.json. */
     val installedProductCode: String get() = code
 
-    /** Convenience alias kept for back-compat with earlier code. */
-    val jetbrainsProductCode: String get() = code
-
     // ---- IntelliJ IDEA ----
 
     /** IntelliJ IDEA Ultimate (paid). Kept as `IntelliJIdea` to preserve existing call sites. */

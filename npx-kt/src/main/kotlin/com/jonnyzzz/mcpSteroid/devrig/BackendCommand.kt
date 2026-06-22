@@ -3,37 +3,20 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeDiscoveryService
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IntelliJPortDiscovery
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdePidDiscoveryService
+import com.jonnyzzz.mcpSteroid.devrig.monitor.PortDiscovery
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import com.jonnyzzz.mcpSteroid.server.BackendInfo
 import com.jonnyzzz.mcpSteroid.server.ListedProject
-import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
-import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
-import io.ktor.client.HttpClient
-import io.ktor.client.request.headers
-import io.ktor.client.request.preparePost
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.HttpHeaders
-import io.ktor.utils.io.readUTF8Line
 import java.io.OutputStream
 import java.io.PrintStream
-import java.util.UUID
 import kotlin.system.measureTimeMillis
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 import org.slf4j.LoggerFactory
 
@@ -69,7 +52,12 @@ sealed interface BackendRow {
 
     data class FromMarker(
         val ide: DiscoveredIde,
-        val projects: List<ProjectInfo>?,
+        /**
+         * The backend's open projects, or `null` when the marker is **unreachable** (its bridge did not
+         * answer). `null` and an empty list are distinct: `emptyList()` is a reachable IDE with nothing
+         * open; `null` drives `reachable=false` in [backendInfoForRow] and the `(unreachable: …)` render.
+         */
+        val projects: List<ProjectRoute>? = null,
         val errorMessage: String? = null,
         override val managed: Boolean = false,
     ) : BackendRow {
@@ -108,12 +96,8 @@ sealed interface BackendRow {
  *     reachable through their built-in HTTP server, including older ones
  *     that never wrote a marker.
  *
- * Renders one block per IDE on [out]. Exit status is always 0: "no IDE was
+ * Renders one block per IDE on out. Exit status is always 0: "no IDE was
  * running" is a steady state on most machines, not a CLI error.
- *
- * @param json `true` ⇒ emit a single machine-readable JSON object instead of
- *  the human-readable list. The JSON is pretty-printed so a human can
- *  still read it without `jq`; `jq` accepts both forms equally.
  */
 fun DevrigServices.runBackendCommand(command: DevrigCommand.DevrigCommandBackend): Int {
     val rows = collectBackendRows()
@@ -132,25 +116,23 @@ fun DevrigServices.runBackendCommand(command: DevrigCommand.DevrigCommandBackend
  */
 fun DevrigServices.collectBackendRows(): List<BackendRow> =
     runBlocking(Dispatchers.IO) {
-        cliBackendInventory(this@collectBackendRows).collectRows()
+        backendInventory.collectRows()
     }
 
 fun scanMarkersOnce(
     homePaths: HomePaths = resolveHomePaths(),
-): Set<DiscoveredIde> {
-    val discovery = createIdeDiscoveryService(homePaths)
-    discovery.scanOnce()
-    return discovery.ides.value
+): List<DiscoveredIde> {
+    //TODO: use services
+    return createIdeDiscoveryService(homePaths).stateSnapshot()
 }
 
-fun DevrigServices.scanMarkersOnce(): Set<DiscoveredIde> {
-    ideDiscovery.scanOnce()
-    return ideDiscovery.ides.value
+fun DevrigServices.scanMarkersOnce(): List<DiscoveredIde> {
+    return ideDiscovery.stateSnapshot()
 }
 
-fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
+fun createIdeDiscoveryService(homePaths: HomePaths): IdePidDiscoveryService {
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
-    return IdeDiscoveryService(
+    return IdePidDiscoveryService(
         markersDir = homePaths.markersDir,
         allowHosts = allowHosts,
     )
@@ -388,15 +370,12 @@ private fun isKnownProductKey(raw: String): Boolean =
     com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct.knownProducts.any { it.id == raw }
 
 /**
- * One-shot port scan. Wraps [IntelliJPortDiscovery.scanOnce] + reads the
+ * One-shot port scan. Wraps [PortDiscovery.stateSnapshot] + reads the
  * resulting set. Separate function so tests can drive it independently.
  */
 suspend fun collectPortDiscoveredIdes(
-    portDiscovery: IntelliJPortDiscovery,
-): Set<DiscoveredIdeByPort> {
-    portDiscovery.scanOnce()
-    return portDiscovery.detected.value
-}
+    portDiscovery: PortDiscovery,
+): Set<DiscoveredIdeByPort> = portDiscovery.stateSnapshot()
 
 /**
  * Merge marker rows (rich, with projects) and port-discovered IDEs (basic,
@@ -418,7 +397,7 @@ fun mergeRows(
     // Normalise both ends to the same shape before comparing — otherwise the
     // same running IDE is never deduplicated.
     val markerBuilds: Set<String> = markerRows
-        .mapNotNull { normaliseBuildForDedup(it.ide.marker.ide.build) }
+        .mapNotNull { normaliseBuildForDedup(it.ide.ide.build) }
         .toSet()
     val markerManagedIds = markerRows.associateWith { row -> matchingManagedIds(row, managedBackends) }
     val annotatedMarkerRows = markerRows.map { row ->
@@ -485,97 +464,6 @@ private fun matchingManagedIds(
 }
 
 /**
- * Connect to each marker-discovered IDE in parallel, await the first
- * `type=snapshot` envelope, then close. Returns one row per input IDE in
- * the same order.
- *
- * Per-IDE timeout is enforced inside the helper so one slow IDE doesn't
- * block the others. A timeout / error is recorded on the row's
- * [BackendRow.FromMarker.projects] = `null` so the renderer can flag the
- * IDE without taking down the whole list.
- */
-suspend fun collectMarkerSnapshots(
-    httpClient: HttpClient,
-    ides: List<DiscoveredIde>,
-    perIdeTimeout: Duration,
-    clientInfo: NpxStreamClientInfo = backendCommandClientInfo(),
-): List<BackendRow.FromMarker> = coroutineScope {
-    ides.map { ide ->
-        async { fetchSnapshotForIde(httpClient, ide, perIdeTimeout, clientInfo) }
-    }.awaitAll()
-}
-
-private suspend fun fetchSnapshotForIde(
-    httpClient: HttpClient,
-    ide: DiscoveredIde,
-    timeout: Duration,
-    clientInfo: NpxStreamClientInfo,
-): BackendRow.FromMarker {
-    val snapshot = try {
-        withTimeoutOrNull(timeout) { fetchFirstSnapshot(httpClient, ide, clientInfo) }
-    } catch (e: Exception) {
-        return BackendRow.FromMarker(ide, projects = null, errorMessage = e.message ?: e::class.simpleName)
-    }
-    return when (snapshot) {
-        null -> BackendRow.FromMarker(ide, projects = null, errorMessage = "timed out after $timeout")
-        else -> BackendRow.FromMarker(ide, projects = snapshot)
-    }
-}
-
-/**
- * Open the bridge's `…/projects/stream`, drain envelopes until the first `snapshot`,
- * return its `projects` list (empty list if the IDE has nothing open). The
- * caller's `withTimeoutOrNull` bounds total time including the connect.
- */
-private suspend fun fetchFirstSnapshot(
-    httpClient: HttpClient,
-    ide: DiscoveredIde,
-    clientInfo: NpxStreamClientInfo,
-): List<ProjectInfo> {
-    val url = ide.rpcBaseUrl + "/projects/stream"
-    val body = NpxStreamJson.encodeClientInfo(clientInfo)
-
-    return httpClient.preparePost(url) {
-        headers {
-            append(HttpHeaders.ContentType, "application/json")
-            for ((name, value) in ide.bridgeHeaders) {
-                append(name, value)
-            }
-        }
-        setBody(body)
-    }.execute { response ->
-        if (response.status.value !in 200..299) {
-            error("HTTP ${response.status.value}")
-        }
-        val channel = response.bodyAsChannel()
-        while (!channel.isClosedForRead) {
-            val line = channel.readUTF8Line() ?: break
-            if (line.isBlank()) continue
-            val env = try {
-                NpxStreamJson.decodeEnvelope(line)
-            } catch (e: Exception) {
-                // Skip malformed envelopes; the snapshot is on a later line.
-                continue
-            }
-            if (env.type == "snapshot") {
-                return@execute env.projects ?: emptyList()
-            }
-        }
-        error("stream closed before a snapshot envelope arrived")
-    }
-}
-
-private fun backendCommandClientInfo(): NpxStreamClientInfo =
-    NpxStreamClientInfo(
-        client = "devrig (backend)",
-        clientPid = ProcessHandle.current().pid(),
-        clientVersion = DevrigVersionMetadata.getDevrigVersion(),
-        clientInstanceId = "backend-${UUID.randomUUID()}",
-        platform = System.getProperty("os.name"),
-        arch = System.getProperty("os.arch"),
-    )
-
-/**
  * Pure renderer — separated from [runBackendCommand] so a unit test can
  * exercise every formatting branch without touching the network.
  *
@@ -593,7 +481,7 @@ private fun backendCommandClientInfo(): NpxStreamClientInfo =
  *         (project list unavailable)
  *
  * ```
- * The list uses `[N]` index markers so it visibly is a list, and the trailing
+ * The list uses `N` index markers so it visibly is a list, and the trailing
  * blank line gives shells a clean separator.
  */
 fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
@@ -667,7 +555,7 @@ fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
 
 /**
  * Pairs every row with its R3.3 `backend_name`, de-duplicating by keep-first + WARN. Shared by
- * `backend/project --json` and the MCP handlers' `backends[]` (via `collectBackendInfos`).
+ * `backend/project --json` and the MCP handlers' `backends[]` (via `collectListedBackends`).
  */
 fun backendRowsWithStableIds(rows: List<BackendRow>): List<Pair<String, BackendRow>> {
     val rowsWithIds = rows.map { row -> backendNameForRow(row) to row }
@@ -695,52 +583,39 @@ fun backendRowsWithStableIds(rows: List<BackendRow>): List<Pair<String, BackendR
  */
 private fun listedProjectsForRow(backendName: String, row: BackendRow): List<ListedProject> {
     if (row !is BackendRow.FromMarker) return emptyList()
-    val projects = row.projects ?: return emptyList()
-    return projects.map { project ->
+    // The exposed `project_name` and the salted hash are computed once, in DevrigProjectRoutingService,
+    // and carried on each ProjectRoute. Here we only project that route onto the serializable schema —
+    // no hashing is recomputed. The raw folder name is preserved in `name` for `jq '.projects[].name'`.
+    // An unreachable marker (projects == null) contributes no project rows.
+    return row.projects.orEmpty().map { route ->
         ListedProject(
-            projectName = exposedProjectName(project, row.ide.pid),
-            name = project.name,
-            path = project.path,
+            projectName = route.exposedProjectName,
+            name = route.originalProjectName,
+            path = route.projectPath,
             backendName = backendName,
         )
     }
 }
 
-/**
- * Devrig-exposed disambiguated project name = `<name>-<projectHash>`, where `projectHash` salts on the
- * canonical project home + the owning IDE pid (same scheme as [DevrigProjectRoutingService]). Falls back
- * to the raw folder name when the path cannot be canonicalized (e.g. an already-closed project), so the
- * CLI never crashes mid-render.
- */
-private fun exposedProjectName(project: ProjectInfo, idePid: Long): String {
-    val hash = try {
-        val realHome = com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService.canonicalProjectHome(project.path)
-        com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService.projectHash(realHome, idePid)
-    } catch (e: Exception) {
-        backendCommandLog.debug("Cannot compute project hash for {} (pid {}): {}", project.path, idePid, e.message)
-        return project.name
-    }
-    return "${project.name}-$hash"
-}
-
 private fun renderMarkerProjects(row: BackendRow.FromMarker, out: PrintStream) {
+    val projects = row.projects
     when {
-        row.projects == null -> {
+        // null == the bridge never answered: flag it as unreachable with the captured reason, so the
+        // operator can tell "IDE is up but idle" (empty list, below) from "IDE didn't respond".
+        projects == null -> {
             val reason = row.errorMessage ?: "unreachable"
             out.println("        (unreachable: $reason)")
         }
-        row.projects.isEmpty() -> {
-            out.println("        (no open projects)")
-        }
+        projects.isEmpty() -> out.println("        (no open projects)")
         else -> {
             // Right-pad project names so `→` arrows line up — turns the inner
             // list into a small two-column table when more than one project
             // is open. Cap the pad so a single unusually long name doesn't
             // push every other row's path off the screen.
-            val padWidth = row.projects.maxOf { it.name.codePointWidth() }.coerceAtMost(40)
-            for (p in row.projects) {
-                val paddedName = p.name.padEndCodePoints(padWidth)
-                out.println("        $paddedName  →  ${p.path}")
+            val padWidth = projects.maxOf { it.originalProjectName.codePointWidth() }.coerceAtMost(40)
+            for (p in projects) {
+                val paddedName = p.originalProjectName.padEndCodePoints(padWidth)
+                out.println("        $paddedName  →  ${p.projectPath}")
             }
         }
     }

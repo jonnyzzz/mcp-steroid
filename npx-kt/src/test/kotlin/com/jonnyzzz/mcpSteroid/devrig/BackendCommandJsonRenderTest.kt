@@ -6,12 +6,11 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -83,26 +82,13 @@ class BackendCommandJsonRenderTest {
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
         val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
-        val marker = PidMarker(
-            schema = PidMarker.SCHEMA_VERSION,
-            pid = pid,
-            mcpSteroidServer = McpSteroidServerInfo(
-                mcpUrl = mcpUrl,
-                headers = mapOf("Authorization" to "Bearer $token"),
-            ),
-            devrigEndpoint = testDevrigEndpoint(mcpUrl, mapOf("Authorization" to "Bearer $token")),
-            ide = ideInfo,
-            plugin = pluginInfo,
-            createdAt = "1970-01-01T00:00:00Z",
-            intellijWebServer = null,
-            intellijMcpServer = null,
-        )
         return DiscoveredIde(
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = marker,
+            ide = ideInfo,
+            plugin = pluginInfo,
+            backendName = "mock-backend-name",
         )
     }
 
@@ -138,6 +124,21 @@ class BackendCommandJsonRenderTest {
         runningPid = runningPid,
         state = state,
     )
+
+    /**
+     * A single routed project for a marker row. The JSON renderer projects each
+     * [ProjectRoute] onto [com.jonnyzzz.mcpSteroid.server.ListedProject]:
+     * `name = originalProjectName` (= [IdeProjectState.ideProjectName]),
+     * `path = projectPath`, `project_name = exposedProjectName`. The embedded
+     * [DiscoveredIde] is not read here, so a throwaway one keeps the fixture minimal.
+     */
+    private fun route(name: String, path: String): ProjectRoute =
+        ProjectRoute(
+            route = markerIde(),
+            projectInfo = IdeProjectState(name = name, projectPath = path),
+            exposedProjectName = "$name-jsonrtst",
+            projectPath = path,
+        )
 
     // ----------------------------- top-level shape -------------------------
 
@@ -179,7 +180,7 @@ class BackendCommandJsonRenderTest {
     fun `marker row serialises shared fields plus ide identity, plugin and flat projects`() {
         val row = BackendRow.FromMarker(
             ide = markerIde(pid = 1234, mcpUrl = "http://localhost:6315/mcp"),
-            projects = listOf(ProjectInfo("my-app", "/Users/x/my-app")),
+            projects = listOf(route("my-app", "/Users/x/my-app")),
         )
         val root = render(listOf(row))
         val backend = root["backends"]!!.jsonArray.single().jsonObject
@@ -197,7 +198,7 @@ class BackendCommandJsonRenderTest {
 
         // The marker's IdeInfo type stays on the disk/wire side: the agent schema carries the
         // identity only as displayName/build/ideProductCode — no embedded `ide` object.
-        assertNull(backend["ide"], "agent schema must not embed the marker IdeInfo: " + backend)
+        assertNull(backend["ide"], "agent schema must not embed the marker IdeInfo: $backend")
 
         // plugins[] carries one entry tagged kind=mcp-steroid (replaces the old `plugin` block + flag).
         val plugin = backend["plugins"]!!.jsonArray.single().jsonObject
@@ -342,9 +343,9 @@ class BackendCommandJsonRenderTest {
     @Test
     fun `top-level projects reference valid backend names`() {
         val rows = listOf(
-            BackendRow.FromMarker(markerIde(pid = 1L), listOf(ProjectInfo("a", "/a"), ProjectInfo("b", "/b"))),
+            BackendRow.FromMarker(markerIde(pid = 1L), listOf(route("a", "/a"), route("b", "/b"))),
             BackendRow.FromPort(portIde(port = 63342)),
-            BackendRow.FromMarker(markerIde(pid = 2L), listOf(ProjectInfo("c", "/c"))),
+            BackendRow.FromMarker(markerIde(pid = 2L), listOf(route("c", "/c"))),
         )
         val root = render(rows)
         val names = root["backends"]!!.jsonArray.map { it.jsonObject["backend_name"]!!.jsonPrimitive.content }.toSet()
@@ -376,10 +377,10 @@ class BackendCommandJsonRenderTest {
     @Test
     fun `duplicate backend names log warning and keep first row`() {
         // Same pid + same build => same backend_name. Keep-first de-dup, WARN logged.
-        val first = BackendRow.FromMarker(markerIde(pid = 777L), listOf(ProjectInfo("first", "/first")))
+        val first = BackendRow.FromMarker(markerIde(pid = 777L), listOf(route("first", "/first")))
         val second = BackendRow.FromMarker(
             markerIde(pid = 777L, mcpUrl = "http://localhost:7778/mcp"),
-            listOf(ProjectInfo("second", "/second")),
+            listOf(route("second", "/second")),
         )
         val expectedName = backendNameForRow(first)
 

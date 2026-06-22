@@ -228,8 +228,6 @@ val promptsSubprojects = setOf(
  * runtime infrastructure. Changes here force TeamCity to pick them up on every agent OS.
  *
  * * `ij-plugin` — the IntelliJ plugin itself (execution, vision, review, storage…).
- * * `jdk-downloader` — placeholder for Corretto JDK download/extract infrastructure.
- * * `pgp-verifier` — standalone OpenPGP detached-signature verifier used by JDK downloads.
  * * `mcp-core` — MCP protocol types, session manager, tool/resource/prompt registries.
  * * `mcp-http` — Ktor HTTP transport implementing MCP Streamable HTTP.
  * * `ai-agents` — agent CLI configuration helpers consumed by the plugin.
@@ -240,8 +238,6 @@ val promptsSubprojects = setOf(
  */
 val pluginCoreSubprojects = setOf(
     "ij-plugin",
-    "jdk-downloader",
-    "pgp-verifier",
     "mcp-core",
     "mcp-http",
     "mcp-stdio",
@@ -282,6 +278,21 @@ val ciBuildPluginTests by tasks.registering {
             "${missingCore.joinToString { ":$it" }}. Either add them to settings.gradle.kts " +
             "or drop them from pluginCoreSubprojects."
     }
+
+    // :installer-gen + :website-gen are build-tooling (JDK detection, install-script generation, website
+    // artifacts; no IntelliJ deps), so they are not "plugin core". But :installer-gen's on-disk Cache
+    // exercises atomic file moves / path handling that genuinely benefit from the per-OS matrix, so they
+    // ride this aggregator (swept in by auto-discovery — neither is in an exclusion set) rather than
+    // getting a dedicated config. Assert it explicitly so a future refactor of the exclusion sets cannot
+    // silently drop their :test from CI. (The Docker installerIntegrationTest is a separate source set,
+    // NOT swept in here.)
+    listOf(":installer-gen:test", ":website-gen:test").forEach { required ->
+        require(required in testTaskPaths) {
+            "ciBuildPluginTests no longer includes $required. If that module was intentionally excluded, " +
+                "give it dedicated CI coverage; otherwise keep it out of nonPluginTestSubprojects."
+        }
+    }
+
     dependsOn(testTaskPaths)
 
     dependsOn("ij-plugin:verifyPlugin")
@@ -333,6 +344,7 @@ val ciBuildPromptsTests by tasks.registering {
  */
 val ciIntegrationTestTaskPaths = listOf(
     ":test-helper:test",
+    ":installer-gen:installerIntegrationTest", // Docker (nginx + ubuntu), light — runs the generated install.sh
     ":ij-plugin:integrationTest",
     ":test-integration:test",
 )
@@ -402,7 +414,7 @@ val ciDevrigTests by tasks.registering {
  * instead of a green build that compiled nothing.
  */
 val compileAllClasses by tasks.registering {
-    group = "build"
+    group = "ci"
     description = "Compile every source set (classes / testClasses / extra source sets) across all modules — no tests, no packaging."
 }
 

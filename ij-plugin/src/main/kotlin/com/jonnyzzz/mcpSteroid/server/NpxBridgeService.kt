@@ -4,17 +4,31 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
-import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.PluginInfo
-import com.jonnyzzz.mcpSteroid.mcp.*
-import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.*
+import com.jonnyzzz.mcpSteroid.mcp.McpJson
+import com.jonnyzzz.mcpSteroid.mcp.McpMethods
+import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
+import com.jonnyzzz.mcpSteroid.mcp.ProgressParams
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 @Service(Service.Level.APP)
 class NpxBridgeService {
@@ -35,43 +49,6 @@ class NpxBridgeService {
 
     private fun nowIso(): String = java.time.Instant.now().toString()
 
-    fun buildMetadata(mcpUrl: String): NpxBridgeMetadataResponse {
-        val seq = nextSeq()
-        val paths = ServerPathInfo.current()
-        val scriptName = com.intellij.openapi.application.ApplicationNamesInfo.getInstance().scriptName
-        val executable = ServerExecutableInfo.detect(scriptName, paths)
-
-        return NpxBridgeMetadataResponse(
-            pid = ProcessHandle.current().pid(),
-            mcpUrl = mcpUrl,
-            ide = IdeInfo.ofApplication(),
-            plugin = PluginInfo.ofCurrentPlugin(),
-            paths = paths,
-            executable = executable,
-            instanceId = instanceId,
-            seq = seq,
-            schemaVersion = schemaVersion,
-            updatedAt = nowIso()
-        )
-    }
-
-    fun buildServerMetadata(mcpUrl: String): ServerMetadataResponse {
-        val paths = ServerPathInfo.current()
-        val scriptName = com.intellij.openapi.application.ApplicationNamesInfo.getInstance().scriptName
-        return ServerMetadataResponse(
-            pid = ProcessHandle.current().pid(),
-            ide = IdeInfo.ofApplication(),
-            plugin = PluginInfo.ofCurrentPlugin(),
-            mcpUrl = mcpUrl,
-            paths = paths,
-            executable = ServerExecutableInfo.detect(scriptName, paths)
-        )
-    }
-
-    fun buildProducts(): ListProductsResponse = ListProductsResponse(
-        products = listOf(ProductInfo())
-    )
-
     /**
      * The `/windows` WIRE response (devrig<->IDE) — built from the raw [IdeWindowsCollector] snapshot
      * (pristine [WindowInfo]/[ProgressTaskInfo] + this IDE's own pid), NOT from the MCP
@@ -79,7 +56,7 @@ class NpxBridgeService {
      */
     suspend fun buildWindows(mcpUrl: String): NpxBridgeWindowsResponse {
         val seq = nextSeq()
-        val snapshot = IdeWindowsCollector.collect()
+        val snapshot = service<IdeWindowsCollector>().collect()
         return NpxBridgeWindowsResponse(
             windows = snapshot.windows,
             backgroundTasks = snapshot.backgroundTasks,
@@ -90,24 +67,6 @@ class NpxBridgeService {
             schemaVersion = schemaVersion,
             updatedAt = nowIso()
         )
-    }
-
-    fun buildResources(serverCore: McpServerCore): NpxBridgeResourcesResponse {
-        val seq = nextSeq()
-        val resources = serverCore.resourceRegistry.listResources()
-        return NpxBridgeResourcesResponse(
-            resources = resources,
-            instanceId = instanceId,
-            seq = seq,
-            schemaVersion = schemaVersion,
-            updatedAt = nowIso()
-        )
-    }
-
-    fun readResource(serverCore: McpServerCore, uri: String): ResourceReadResult? {
-        val uriPrefix = "mcp-steroid" + "://"
-        if (!uri.startsWith(uriPrefix)) return null
-        return serverCore.resourceRegistry.readResource(uri)
     }
 
     suspend fun streamToolCall(
@@ -251,25 +210,3 @@ class NpxBridgeService {
     }
 }
 
-@Serializable
-data class NpxBridgeMetadataResponse(
-    val pid: Long,
-    val mcpUrl: String,
-    val ide: IdeInfo,
-    val plugin: PluginInfo,
-    val paths: ServerPathInfo,
-    val executable: ServerExecutableInfo,
-    val instanceId: String,
-    val seq: Long,
-    val schemaVersion: String,
-    val updatedAt: String
-)
-
-@Serializable
-data class NpxBridgeResourcesResponse(
-    val resources: List<Resource>,
-    val instanceId: String,
-    val seq: Long,
-    val schemaVersion: String,
-    val updatedAt: String
-)

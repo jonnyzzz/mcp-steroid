@@ -35,6 +35,13 @@ surface.
 with `project_name="intellij"` to research APIs directly via PSI — this is faster and more
 accurate than file-based search.
 
+**Avoid full Kotlin reference resolution on the IntelliJ monorepo.** `ReferencesSearch.search(target, scope)`
+over `~/Work/intellij` works but emits severe Kotlin FIR logs (`KaFirReferenceResolver`,
+`Expected FirResolvedContractDescription but FirLazyContractDescriptionImpl`). For usage/reference counts at
+monorepo scale, narrow candidates with `CacheManager.getVirtualFilesWithWord(name, UsageSearchContext.IN_CODE,
+scope, true)` + `KtCallExpression`/PSI filtering inside `smartReadAction` (no full resolve, no FIR severe
+logs) — see `IntelliJThisLoggerLookupTest`.
+
 **Use the debugger instead of reading code** — when you need to understand runtime behavior
 (e.g., what `UnknownSdkTracker` actually does, how `MavenRunConfigurationType` launches a process),
 set a breakpoint and step through. This is significantly more effective than reading source:

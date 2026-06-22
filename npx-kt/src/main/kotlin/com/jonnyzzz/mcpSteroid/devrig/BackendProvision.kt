@@ -93,14 +93,11 @@ suspend fun detectProvisionTargets(
     httpClient: HttpClient,
     portRanges: List<IntRange> = IntelliJPortDiscovery.DEFAULT_PORT_RANGES,
 ): List<ProvisionTarget> {
-    return IntelliJPortDiscovery(httpClient = httpClient, portRanges = portRanges).use { discovery ->
-        detectProvisionTargets(discovery)
-    }
+    return detectProvisionTargets(IntelliJPortDiscovery(httpClient = httpClient, portRanges = portRanges))
 }
 
 suspend fun detectProvisionTargets(portDiscovery: IntelliJPortDiscovery): List<ProvisionTarget> {
-    portDiscovery.scanOnce()
-    return portDiscovery.detected.value
+    return portDiscovery.stateSnapshot()
         .sortedBy { it.port }
         .map { ProvisionTarget(id = provisionTargetId(it.port), ide = it) }
 }

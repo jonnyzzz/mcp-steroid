@@ -202,7 +202,7 @@ fun startStdioMcpProcess(
     // built with jvmToolchain(25), so forward the test JVM's own java.home (the JDK 25
     // the build runs under) — otherwise the launcher falls back to an older agent JDK
     // on PATH and dies with UnsupportedClassVersionError. Mirrors the JAVA_HOME forward
-    // in pgp-verifier CliTest / OcrCliSmokeTest. A caller-supplied JAVA_HOME still wins.
+    // in OcrCliSmokeTest. A caller-supplied JAVA_HOME still wins.
     val effectiveEnvironment = buildMap {
         put("JAVA_HOME", System.getProperty("java.home"))
         putAll(environment)

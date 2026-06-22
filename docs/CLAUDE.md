@@ -78,8 +78,9 @@ Findings, comparison tables, and the Karpathy-style optimization loop prompts:
 
 ## Active DPAIA working notes
 
-- Repo-root `../TASKS.md` is the active DPAIA/autoresearch task list; repo-root `../MEMORY.md` holds
-  factual handoff notes.
+- Repo-root `../TASKS.md` is the active task list (open tasks only). The former repo-root `MEMORY.md`
+  DPAIA handoff log was distilled into the docs below + `git log` and removed — durable findings now live
+  in `autoresearch-findings.md` / `arena-3pass-results.md`, not a running scratch file.
 - New DPAIA ideas must also be logged in `../TODO-DPAIA.md` (or sibling).
 - **Direction changes require 3 `run-agent.sh` reviews and consensus** before selecting the next
   low-hanging fruit.
@@ -92,13 +93,14 @@ Findings, comparison tables, and the Karpathy-style optimization loop prompts:
 Full chronological run-by-run history is intentionally NOT mirrored here — it churned weekly during
 active iteration and lives in:
 
-- `../MEMORY.md` (auto-memory) — recent facts.
 - `arena-3pass-results.md` — measured tables.
 - `autoresearch-findings.md` — synthesized takeaways.
-- `git log` per file — diff per change (see anchors below).
+- `git log` per file — diff per change (see anchors below). The former repo-root `MEMORY.md` running
+  log (which once held the day-to-day "recent facts" + next-step consensus) was distilled into these
+  docs and removed; recover any specific run note from `git log -- MEMORY.md`.
 
 When picking up the autoresearch track:
-1. Read `../MEMORY.md` for the current next-step consensus.
+1. Read `autoresearch-findings.md` (+ `git log -- MEMORY.md` for the last next-step consensus, if needed).
 2. Confirm the consensus is still load-bearing by checking `git log` since that note was written.
 3. Run the most recent baseline scenario before changing prompts so you have a fresh comparison point.
 

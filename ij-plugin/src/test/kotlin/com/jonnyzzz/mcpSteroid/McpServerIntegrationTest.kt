@@ -7,7 +7,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import com.jonnyzzz.mcpSteroid.mcp.*
-import com.jonnyzzz.mcpSteroid.server.hasMcpSteroid
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeService
@@ -26,6 +25,8 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
@@ -125,7 +126,6 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val projectsSelfBackend = projects.backends.single()
         assertTrue("IDE display name should be reported on the self backend", projectsSelfBackend.displayName.isNotBlank())
         assertTrue("IDE build should be reported on the self backend", projectsSelfBackend.build.orEmpty().isNotBlank())
-        assertTrue("MCP Steroid plugin should be reported on the self backend", projectsSelfBackend.hasMcpSteroid())
         assertTrue(
             "Current project should be discoverable via the MCP tool",
             projects.projects.any { it.name == project.name }
@@ -197,7 +197,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             windows.backends.size
         )
         val selfBackend = windows.backends.single()
-        assertTrue("The self backend must report the MCP Steroid plugin installed", selfBackend.hasMcpSteroid())
+        assertTrue("The self backend must carry a backend_name", selfBackend.backendName.isNotBlank())
         windows.windows.forEach { window ->
             assertEquals(
                 "Every window must be bound to the single self backend",
@@ -234,6 +234,54 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             header(HttpHeaders.Authorization, "Bearer wrong-token")
         }
         assertEquals(HttpStatusCode.Unauthorized, wrongTokenResponse.status)
+    }
+
+    /**
+     * Pins the devrig bridge `GET /projects` response shape — the endpoint the devrig monitor polls to
+     * build its routing snapshot. Each project object must carry exactly the keys
+     * `IdeProjectMonitorService.collectProjectsImpl` parses by name (`name`, `path`, `project_name`,
+     * `backend_name`); a missing/renamed key silently drops the project from devrig's view. Asserts the
+     * current open project is present and every field is a non-blank string — locking the fields the
+     * endpoint returns today so an accidental rename (e.g. the `backed_name` typo) fails the build.
+     */
+    fun testProjectsBridgeEndpointReturnsExpectedFields(): Unit = timeoutRunBlocking(30.seconds) {
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+        val projectsUrl = "http://localhost:${server.port}/api/jonnyzzz/mcp-steroid/v1/projects"
+
+        val unauthorized = client.get(projectsUrl)
+        assertEquals(
+            "GET /projects must require the bridge token",
+            HttpStatusCode.Unauthorized,
+            unauthorized.status,
+        )
+
+        val response = client.get(projectsUrl) { npxBridgeAuthorization() }
+        assertEquals(HttpStatusCode.OK, response.status)
+
+        val root = McpJson.parseToJsonElement(response.bodyAsText()).jsonObject
+        val projects = root["projects"]?.jsonArray ?: error("GET /projects must return a 'projects' array: $root")
+        assertTrue("the open project must be discoverable via /projects, got: $root", projects.isNotEmpty())
+
+        val expectedFields = setOf("name", "path", "project_name", "backend_name")
+        val projectObjects = projects.map { it.jsonObject }
+        for (p in projectObjects) {
+            assertEquals(
+                "each /projects entry exposes exactly the fields the devrig monitor parses",
+                expectedFields,
+                p.keys,
+            )
+            for (key in expectedFields) {
+                assertTrue(
+                    "field '$key' must be a non-blank string in /projects entry: $p",
+                    p[key]!!.jsonPrimitive.content.isNotBlank(),
+                )
+            }
+        }
+        assertTrue(
+            "the current project must appear in /projects, got: $projectObjects",
+            projectObjects.any { it["name"]!!.jsonPrimitive.content == project.name },
+        )
     }
 
     /**
@@ -308,12 +356,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         )
         val selfBackend = response.backends.single()
         assertTrue(
-            "The self backend must be routable",
-            selfBackend.routable
-        )
-        assertTrue(
-            "The self backend must report the MCP Steroid plugin installed",
-            selfBackend.hasMcpSteroid()
+            "The self backend must carry a backend_name and display name",
+            selfBackend.backendName.isNotBlank() && selfBackend.displayName.isNotBlank()
         )
         response.projects.forEach { project ->
             assertEquals(

@@ -42,7 +42,7 @@ data class ListWindowsResponse(
      * IDE); on devrig one entry per discovered backend. Each window/background-task entry references its
      * owning backend via `backend_name`.
      */
-    val backends: List<BackendInfo> = emptyList(),
+    val backends: List<ListedBackendInfo> = emptyList(),
 )
 
 /**
@@ -69,7 +69,7 @@ data class ListedWindow(
 )
 
 /** Maps the wire [WindowInfo] to the MCP-only [ListedWindow], binding it to [backendName]. */
-fun WindowInfo.listed(backendName: String?): ListedWindow = ListedWindow(
+fun WindowInfo.listed(projectName: String?, backendName: String?): ListedWindow = ListedWindow(
     projectName = projectName,
     projectPath = projectPath,
     title = title,
@@ -109,7 +109,7 @@ data class ListedBackgroundTask(
 )
 
 /** Maps the wire [ProgressTaskInfo] to the MCP-only [ListedBackgroundTask], binding it to [backendName]. */
-fun ProgressTaskInfo.listed(backendName: String?): ListedBackgroundTask = ListedBackgroundTask(
+fun ProgressTaskInfo.listed(projectName: String?, backendName: String?): ListedBackgroundTask = ListedBackgroundTask(
     title = title,
     text = text,
     text2 = text2,

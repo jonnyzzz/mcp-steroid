@@ -49,7 +49,17 @@ data class ListProjectsResponse(
      * IDE); on devrig one entry per discovered IDE. The `backend_name` of any routable entry is a valid
      * argument for steroid_open_project.
      */
-    val backends: List<BackendInfo> = emptyList(),
+    val backends: List<ListedBackendInfo> = emptyList(),
+)
+
+@Serializable
+data class ListedBackendInfo(
+    @SerialName("backend_name")
+    val backendName: String,
+
+    val displayName: String,
+    val version: String?,
+    val build: String?,
 )
 
 /**
@@ -154,17 +164,6 @@ fun mcpSteroidPlugins(plugin: PluginInfo): List<BackendPlugin> = listOf(
     ),
 )
 
-/**
- * Shared marker display name — the `"<name> <version>"` rule used by both the in-IDE self-describe and
- * devrig's discovery. Trims; drops the version when blank or already a suffix of the name.
- */
-fun markerDisplayName(ide: IdeInfo): String {
-    val trimmedName = ide.name.trim()
-    val trimmedVersion = ide.version.trim()
-    if (trimmedVersion.isEmpty()) return trimmedName
-    if (trimmedName == trimmedVersion || trimmedName.endsWith(" $trimmedVersion")) return trimmedName
-    return "$trimmedName $trimmedVersion".trim()
-}
 
 /**
  * Shared marker locator — `"build <build>, pid <pid>"`, with the `build ` segment omitted when [build] is
@@ -176,6 +175,16 @@ fun markerLocator(build: String?, pid: Long): String = buildString {
     }
     append("pid ").append(pid)
 }
+
+fun markerBackendInfo2(
+    backendName: String,
+    ide: IdeInfo,
+): ListedBackendInfo = ListedBackendInfo(
+    backendName = backendName,
+    displayName = ide.displayName,
+    version = ide.version,
+    build = ide.build,
+)
 
 /**
  * The ONE marker-row -> [BackendInfo] assembler, shared by the in-IDE `steroid_list_projects`
@@ -200,7 +209,7 @@ fun markerBackendInfo(
     backendName = backendName,
     type = "intellij",
     source = "marker",
-    displayName = markerDisplayName(ide),
+    displayName = ide.displayName,
     locator = locator,
     routable = routable,
     reachable = reachable,
@@ -212,6 +221,7 @@ fun markerBackendInfo(
     error = error,
     openProjects = openProjects,
 )
+
 
 @Serializable
 data class PortBackendDetail(

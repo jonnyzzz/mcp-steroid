@@ -2,8 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
@@ -153,26 +151,13 @@ class BackendListTest {
     )
 
     private fun markerIde(pid: Long, build: String): DiscoveredIde {
-        val marker = PidMarker(
-            schema = PidMarker.SCHEMA_VERSION,
-            pid = pid,
-            mcpSteroidServer = McpSteroidServerInfo(
-                mcpUrl = "http://127.0.0.1:6315/mcp",
-                headers = emptyMap(),
-            ),
-            devrigEndpoint = testDevrigEndpoint("http://127.0.0.1:6315/mcp"),
-            ide = IdeInfo(name = "IntelliJ IDEA", version = "2025.3.3", build = build),
-            plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0"),
-            createdAt = "2026-05-14T21:00:00Z",
-            intellijWebServer = null,
-            intellijMcpServer = null,
-        )
         return DiscoveredIde(
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:6315/mcp").rpcBaseUrl,
             bridgeHeaders = emptyMap(),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = marker,
+            ide = IdeInfo(name = "IntelliJ IDEA", version = "2025.3.3", build = build),
+            plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0"),
+            backendName = "mock-backend-name",
         )
     }
 

@@ -28,11 +28,6 @@ class SteroidsMcpServerStartupActivity : ProjectActivity {
         ServerUrlWriter.getInstance().writeServerUrlToUserHome(server.mcpUrl)
         IdeaDescriptionWriter.getInstance().writeDescriptionFile(project, server.mcpUrl)
 
-        // Notify the projects-stream service that a new project has opened.
-        // Close events are wired via ProjectCloseListener.TOPIC inside the
-        // service itself, so this single hook is enough for full coverage.
-        ProjectsStreamService.getInstance().refresh()
-
         UpdateChecker.getInstance().startUpdates()
 
         DemoModeService.getInstance(project).startDemoNotifications()

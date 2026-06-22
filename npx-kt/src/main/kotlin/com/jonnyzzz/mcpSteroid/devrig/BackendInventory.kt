@@ -2,7 +2,8 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IntelliJPortDiscovery
+import com.jonnyzzz.mcpSteroid.devrig.monitor.PortDiscovery
+import com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService
 import com.jonnyzzz.mcpSteroid.server.BackendInfo
 import com.jonnyzzz.mcpSteroid.server.ListedProject
 import kotlin.time.Duration
@@ -16,11 +17,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * + managed), shared by the CLI (`devrig backend` / `devrig project` via [collectBackendRows]) and the
  * MCP `steroid_list_projects` / `steroid_list_windows` handlers.
  *
- * The marker-row source is a strategy so the two modes differ ONLY in where marker rows come from:
- *  - CLI mode ([cliBackendInventory]): one-shot marker scan + per-IDE snapshot fetch over HTTP
- *    (today's `backend` command behavior).
- *  - MCP mode ([monitorBackendInventory]): the monitor's cached state — NO network re-fetch on a tool
- *    call; the monitor's streaming connection keeps snapshots fresh.
+ * Consumes its discovery services directly — marker rows are derived from [routing] (the same
+ * [DevrigProjectRoutingService] the MCP handlers use, so discovery can never diverge), port-only rows
+ * from a bounded scan of [portDiscovery], and managed rows from [managedBackends].
  *
  * Shared across both modes:
  *  - managed rows come from `backendManager.list()`; a managed row claiming a `runningPid` is verified
@@ -30,8 +29,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *  - [mergeRows] de-duplicates (a managed-running IDE surfaces as its marker row, never twice).
  */
 class BackendInventory(
-    private val markerRows: suspend () -> List<BackendRow.FromMarker>,
-    private val portIdes: suspend () -> Set<DiscoveredIdeByPort>,
+    private val routing: DevrigProjectRoutingService,
+    private val portDiscovery: PortDiscovery,
     private val managedBackends: () -> List<ManagedBackendInfo>,
     private val isProcessAlive: (Long) -> Boolean = { pid -> DefaultManagedProcessInspector.isAlive(pid) },
 ) {
@@ -42,9 +41,21 @@ class BackendInventory(
         return coroutineScope {
             // Marker fetch and port scan are independent localhost operations — run them concurrently.
             val markerRowsAsync = async { markerRows() }
-            val portIdesAsync = async { portIdes() }
+            val portIdesAsync = async { boundedPortScan(portDiscovery) }
             mergeRows(markerRowsAsync.await(), portIdesAsync.await(), managed)
         }
+    }
+
+    /**
+     * Marker-discovered IDEs as rich [BackendRow.FromMarker]s, each carrying its owned project routes.
+     * Sorted by IDE name then backend_name for a stable listing. Derived from [routing] so the rows
+     * match exactly what `steroid_list_projects` routes against.
+     */
+    private fun markerRows(): List<BackendRow.FromMarker> {
+        val routesByBackend = routing.routes().groupBy { it.route.backendName }
+        return routing.discoveredBackends()
+            .sortedWith(compareBy({ it.ide.name }, { it.backendName }))
+            .map { ide -> BackendRow.FromMarker(ide = ide, projects = routesByBackend[ide.backendName].orEmpty()) }
     }
 
     /**
@@ -65,46 +76,11 @@ class BackendInventory(
  * last completed scan's result is returned (empty on a first-ever scan) — the listing degrades to
  * "no port-only rows" instead of stalling the whole response behind a slow probe.
  */
-suspend fun boundedPortScan(
-    portDiscovery: IntelliJPortDiscovery,
+private suspend fun boundedPortScan(
+    portDiscovery: PortDiscovery,
     budget: Duration = 1.seconds,
 ): Set<DiscoveredIdeByPort> =
-    withTimeoutOrNull(budget) { collectPortDiscoveredIdes(portDiscovery) }
-        ?: portDiscovery.detected.value
-
-/**
- * CLI-mode inventory: today's `devrig backend` discovery — one-shot marker scan, then a per-IDE
- * `/projects/stream` snapshot fetch (8 s per IDE, parallel).
- */
-fun cliBackendInventory(services: DevrigServices): BackendInventory = BackendInventory(
-    markerRows = {
-        services.ideDiscovery.scanOnce()
-        val ides = services.ideDiscovery.ides.value
-            .sortedWith(compareBy({ it.marker.ide.name }, { it.pid }))
-        collectMarkerSnapshots(
-            httpClient = services.commandHttpClient,
-            ides = ides,
-            perIdeTimeout = 8.seconds,
-            clientInfo = services.clientInfo,
-        )
-    },
-    portIdes = { boundedPortScan(services.portDiscovery) },
-    managedBackends = { services.backendManager.list() },
-)
-
-/**
- * MCP-mode inventory: marker rows come from the IDE monitor's cached state (the streaming connection
- * keeps `lastSnapshot` fresh) — a tool call never re-fetches project snapshots over HTTP.
- */
-fun monitorBackendInventory(services: DevrigServices): BackendInventory = BackendInventory(
-    markerRows = {
-        services.ideMonitor.states.value.values
-            .sortedWith(compareBy({ it.ide.marker.ide.name }, { it.ide.pid }))
-            .map { state -> BackendRow.FromMarker(ide = state.ide, projects = state.lastSnapshot) }
-    },
-    portIdes = { boundedPortScan(services.portDiscovery) },
-    managedBackends = { services.backendManager.list() },
-)
+    withTimeoutOrNull(budget) { collectPortDiscoveredIdes(portDiscovery) } ?: emptySet()
 
 /**
  * Maps the whole inventory to the shared MCP/CLI `backends[]` schema: stable de-duplicated

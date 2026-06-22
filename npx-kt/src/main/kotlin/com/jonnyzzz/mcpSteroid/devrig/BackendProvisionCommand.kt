@@ -20,7 +20,7 @@ fun runBackendProvisionListCommand(
     out: PrintStream,
     json: Boolean,
     targets: suspend (HttpClient) -> List<ProvisionTarget> = { httpClient -> detectProvisionTargets(httpClient) },
-    markers: () -> Set<DiscoveredIde> = { scanMarkersOnce() },
+    markers: () -> List<DiscoveredIde> = { scanMarkersOnce() },
     httpClientFactory: () -> HttpClient = ::createProvisionHttpClient,
     closeHttpClient: Boolean = true,
 ) {
@@ -46,7 +46,7 @@ fun runBackendProvisionCommand(
             ?: error("backend provision id is required")
         provisionBackend(id, httpClient)
     },
-    markers: () -> Set<DiscoveredIde> = { scanMarkersOnce() },
+    markers: () -> List<DiscoveredIde> = { scanMarkersOnce() },
     httpClientFactory: () -> HttpClient = ::createProvisionHttpClient,
     closeHttpClient: Boolean = true,
 ): Int {
@@ -107,7 +107,7 @@ fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\d{1,5}""
 fun renderBackendProvisionListText(
     rows: List<ProvisionTarget>,
     out: PrintStream,
-    markerRows: Set<DiscoveredIde> = emptySet(),
+    markerRows: List<DiscoveredIde> = emptyList(),
 ) {
     if (rows.isEmpty()) {
         if (markerRows.isNotEmpty()) {
@@ -153,10 +153,10 @@ fun renderBackendProvisionListJson(
 
 fun filterAlreadyProvisionedTargets(
     targets: List<ProvisionTarget>,
-    markerRows: Set<DiscoveredIde>,
+    markerRows: List<DiscoveredIde>,
 ): List<ProvisionTarget> {
     val markerBuilds = markerRows
-        .mapNotNull { normaliseBuildForDedup(it.marker.ide.build) }
+        .mapNotNull { normaliseBuildForDedup(it.ide.build) }
         .toSet()
     return targets.filter { target ->
         val build = normaliseBuildForDedup(target.ide.buildNumber)
@@ -167,7 +167,7 @@ fun filterAlreadyProvisionedTargets(
 private fun provisionDiscoveryNote(
     rawTargets: List<ProvisionTarget>,
     rows: List<ProvisionTarget>,
-    discoveredMarkers: Set<DiscoveredIde>,
+    discoveredMarkers: List<DiscoveredIde>,
 ): String? {
     if (discoveredMarkers.isNotEmpty() && rawTargets.isNotEmpty() && rows.size < rawTargets.size) {
         return "Filtered ${rawTargets.size - rows.size} entries already provisioned. " +

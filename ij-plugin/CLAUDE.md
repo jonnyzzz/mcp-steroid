@@ -357,11 +357,11 @@ rm -rf ij-plugin/build/idea-sandbox/                            # corrupted inde
 |---------|-------------|-----|
 | `PersistentEnumerator storage corrupted` | Corrupted index files | `rm -rf ij-plugin/build/idea-sandbox/` |
 | 500+ failures in <30s | Stale Gradle test cache | `./gradlew :ij-plugin:test --rerun-tasks` |
-| `KtCompilationTest` fails with `-Werror` | Deprecated API used in `.kt` section | Replace deprecated call (see repo-root `MEMORY.md`) |
+| `KtCompilationTest` fails with `-Werror` | Deprecated API used in `.kt` section | Replace the deprecated call with the non-deprecated API (no `@Suppress("DEPRECATION")` — see root `CLAUDE.md`) |
 | `KtBlocksCompilationTest` fails | Non-compilable code in ` ```kotlin ``` ` fence | Change fence to ` ```text ``` ` in `.md` |
 | `MarkdownArticleContractTest` fails | Title >80 chars, desc >200 chars, or bare code outside fences | Fix the article header/body |
 | `NoHardcodedMcpSteroidUriUsageTest` fails | Hardcoded `mcp-steroid://...` URI in production Kotlin | Replace with `XxxPromptArticle().uri` |
-| `:test-integration` hangs with `Blocking modal dialog detected` | Stale `test-integration/src/test/docker/test-project/.idea/` pins `project-jdk-name`/`gradleJvm` to a name not in `ProjectJdkTable` | Sanitize `.idea/` (gitignored) or add the name to `mcpRegisterJdks` aliases — see repo-root `MEMORY.md` |
+| `:test-integration` hangs with `Blocking modal dialog detected` | Stale `test-integration/src/test/docker/test-project/.idea/` pins `project-jdk-name`/`gradleJvm` to a name not in `ProjectJdkTable` | Sanitize `.idea/` (gitignored) or add the name to `mcpRegisterJdks` aliases — see `test-integration/AGENTS.md` ("Configuring the IDE") |
 | `:test-integration` hangs with `MODAL DIALOG DETECTED — Resolving SDKs…` during `ProjectTaskManager.build()` | Missing `-Dunknown.sdk.modal.jps=false` (gates `CompilerDriverUnknownSdkTracker.fixSdkSettings`) | Add to `test-integration/src/main/kotlin/com/jonnyzzz/mcpSteroid/integration/infra/intelliJ.kt` `generateVmOptions()` — see `test-integration/AGENTS.md` |
 | `unresolved reference 'JavaSdk'` in PyCharm/GoLand/WebStorm/Rider tests | Factory's early-JDK hook fires for IDEs without `com.intellij.java` on script classpath | Verify `IdeProduct.hasJavaSdk` is true only for `IntelliJIdea` (see `test-integration/AGENTS.md` → "Non-Java IDEs skip JDK setup") |
 | `ContentModuleClasspathTest` fails with "JAR(s) on filesystem but not in classpath" after IDE upgrade | New unloaded content module bundled (e.g. `tailwindcss.ruby.jar` in 2026.1.1) | Add JAR path to `UNLOADED_CONTENT_MODULES_IU_261` |
@@ -376,6 +376,16 @@ rm -rf ij-plugin/build/idea-sandbox/                            # corrupted inde
   `ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/execution/McpScriptContext.kt` for the
   current surface — not enumerated here on purpose, since growing the surface is gated by Tenet 3
   in `docs/PHILOSOPHY.md`.
+
+### Inspections from `steroid_execute_code`: only the per-file driver works
+
+`runInspectionsDirectly` (per-file `InspectionEngine.inspectEx`, the `mcp-steroid://ide/inspect-and-fix`
+recipe) is the ONLY inspection driver that runs from `steroid_execute_code`. The whole-project drivers do
+NOT: `InspectionEngine.runInspectionOnFile`, `DaemonCodeAnalyzerImpl.runMainPasses` (fails
+`assertUnderDaemonProgress()` — no `DaemonProgressIndicator`), and `MainPassesRunner.runMainPasses` (pumps
+the EDT internally while the suspend script holds resources that block forward progress — timed out at 240s
+on 3 small files). For full-project inspection coverage, use the IDE's **Code → Inspect Code…** UI, not a
+script.
 
 ## Configuration
 

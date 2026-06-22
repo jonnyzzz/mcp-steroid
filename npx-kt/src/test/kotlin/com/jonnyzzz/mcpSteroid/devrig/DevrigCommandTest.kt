@@ -105,6 +105,19 @@ class DevrigCommandTest {
         assertIs<DevrigCommand.DevrigCommandParseError>(command("--home", "/tmp/devrig-home"))
     }
 
+    @Test
+    fun `install --check selects the read-only check for an agent and is rejected for devrig`() {
+        // --check sets the read-only flag on an agent install…
+        val checked = assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "claude", "--check"))
+        assertEquals(AiAgentCli.CLAUDE, checked.agent)
+        assertTrue(checked.check)
+        // …and is OFF by default, and works for every agent.
+        assertFalse(assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "codex")).check)
+        assertTrue(assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "gemini", "--check")).check)
+        // 'install devrig' is launcher self-registration, not an agent — --check is rejected there.
+        assertIs<DevrigCommand.DevrigCommandParseError>(command("install", "devrig", "--check"))
+    }
+
     private fun command(vararg args: String): DevrigCommand =
         parseDevrigCommand(args.toList().toTypedArray())
 }

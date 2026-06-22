@@ -25,7 +25,7 @@ fun backendNameForManaged(managedId: String, build: String?): String =
 
 /** The R3.3 backend_name for any discovery row. */
 fun backendNameForRow(row: BackendRow): String = when (row) {
-    is BackendRow.FromMarker -> backendNameForMarker(row.ide.pid, row.ide.marker.ide.build)
+    is BackendRow.FromMarker -> backendNameForMarker(row.ide.pid, row.ide.ide.build)
     is BackendRow.FromPort -> backendNameForPort(row.ide.port, row.ide.buildNumber)
     // Managed buildNumbers come without the product prefix ("261.x"); re-attach the known productCode
     // so the backend_name carries the product hint ("pc-...") instead of the "ide-" fallback.
@@ -54,13 +54,15 @@ fun backendInfoForRow(
         markerBackendInfo(
             backendName = backendName,
             pid = ide.pid,
-            ide = ide.marker.ide,
-            plugins = mcpSteroidPlugins(ide.marker.plugin),
+            ide = ide.ide,
+            plugins = mcpSteroidPlugins(ide.plugin),
             openProjects = openProjects,
             managed = managed,
             routable = reachable,
             reachable = reachable,
-            error = if (!reachable) (row.errorMessage ?: "unreachable") else null,
+            // An unreachable marker (projects == null) must carry a non-null reason; fall back when the
+            // fetch failure left no message. A reachable marker has no error.
+            error = if (reachable) null else (row.errorMessage ?: "unreachable"),
             locator = backendLocatorLabel(row),
         )
     }
