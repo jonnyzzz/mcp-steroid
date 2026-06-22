@@ -20,7 +20,7 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
     inputs.property("pluginVersion", pluginVersion)
     inputs.dir(sourceDir.resolve(".claude-plugin"))
     inputs.file(sourceDir.resolve(".mcp.json"))
-    inputs.dir(sourceDir.resolve("plugin-bin"))
+    inputs.dir(sourceDir.resolve("bin"))
     outputs.dir(outputDir)
 
     doLast {
@@ -38,8 +38,8 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
         sourceDir.resolve(".mcp.json").copyTo(out.resolve(".mcp.json"), overwrite = true)
 
         // plugin-bin/ -- copy scripts, preserve execute permission on shell script
-        val binOut = out.resolve("plugin-bin").also { it.mkdirs() }
-        sourceDir.resolve("plugin-bin").listFiles()?.forEach { f ->
+        val binOut = out.resolve("bin").also { it.mkdirs() }
+        sourceDir.resolve("bin").listFiles()?.forEach { f ->
             val dest = binOut.resolve(f.name)
             f.copyTo(dest, overwrite = true)
             if (!f.name.endsWith(".cmd")) dest.setExecutable(true)
@@ -80,8 +80,8 @@ val verifyPluginFiles = tasks.register("verifyPluginFiles") {
             "LICENSE",
             ".claude-plugin/plugin.json",
             ".mcp.json",
-            "plugin-bin/devrig-start",
-            "plugin-bin/devrig-start.cmd",
+            "bin/devrig-start",
+            "bin/devrig-start.cmd",
         )
 
         if (allFiles != expectedFiles) {
@@ -155,7 +155,7 @@ val validateShellScript = tasks.register("validateShellScript") {
     group = "verification"
     description = "Validate plugin-bin/devrig-start correctness"
 
-    val script = projectDir.resolve("plugin-bin/devrig-start")
+    val script = projectDir.resolve("bin/devrig-start")
     inputs.file(script)
 
     doLast {
@@ -192,7 +192,7 @@ val validateCmdScript = tasks.register("validateCmdScript") {
     group = "verification"
     description = "Validate plugin-bin/devrig-start.cmd correctness"
 
-    val script = projectDir.resolve("plugin-bin/devrig-start.cmd")
+    val script = projectDir.resolve("bin/devrig-start.cmd")
     inputs.file(script)
 
     doLast {
