@@ -7,7 +7,7 @@ set DEVRIG=%USERPROFILE%\.mcp-steroid\bin\devrig.cmd
 
 if not exist "%DEVRIG%" (
   echo mcp-steroid: devrig not found at %DEVRIG% 1>&2
-  echo mcp-steroid: install devrig first — see https://mcp-steroid.jonnyzzz.com/docs/devrig/ 1>&2
+  echo mcp-steroid: run /mcp-steroid:setup in Claude to install it 1>&2
   exit /b 1
 )
 
