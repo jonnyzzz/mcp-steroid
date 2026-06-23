@@ -21,6 +21,7 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
     inputs.dir(sourceDir.resolve(".claude-plugin"))
     inputs.file(sourceDir.resolve(".mcp.json"))
     inputs.dir(sourceDir.resolve("bin"))
+    inputs.dir(sourceDir.resolve("commands"))
     outputs.dir(outputDir)
 
     doLast {
@@ -37,12 +38,18 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
         // .mcp.json -- copy as-is
         sourceDir.resolve(".mcp.json").copyTo(out.resolve(".mcp.json"), overwrite = true)
 
-        // plugin-bin/ -- copy scripts, preserve execute permission on shell script
+        // bin/ -- copy scripts; mark POSIX scripts executable (.cmd/.ps1 are Windows-only, no x-bit)
         val binOut = out.resolve("bin").also { it.mkdirs() }
         sourceDir.resolve("bin").listFiles()?.forEach { f ->
             val dest = binOut.resolve(f.name)
             f.copyTo(dest, overwrite = true)
-            if (!f.name.endsWith(".cmd")) dest.setExecutable(true)
+            if (!f.name.endsWith(".cmd") && !f.name.endsWith(".ps1")) dest.setExecutable(true)
+        }
+
+        // commands/ -- slash commands, copied as-is
+        val commandsOut = out.resolve("commands").also { it.mkdirs() }
+        sourceDir.resolve("commands").listFiles()?.forEach { f ->
+            f.copyTo(commandsOut.resolve(f.name), overwrite = true)
         }
     }
 }
@@ -82,6 +89,9 @@ val verifyPluginFiles = tasks.register("verifyPluginFiles") {
             ".mcp.json",
             "bin/devrig-start",
             "bin/devrig-start.cmd",
+            "bin/install-devrig",
+            "bin/install-devrig.ps1",
+            "commands/setup.md",
         )
 
         if (allFiles != expectedFiles) {
@@ -184,6 +194,11 @@ val validateShellScript = tasks.register("validateShellScript") {
         if (!hasDevrigPath) {
             throw GradleException("devrig-start: does not reference ~/.mcp-steroid devrig path")
         }
+
+        // When devrig is missing, the user must be pointed at the setup command (#137)
+        if (!script.readText().contains("/mcp-steroid:setup")) {
+            throw GradleException("devrig-start: missing-devrig message must point at /mcp-steroid:setup")
+        }
     }
 }
 
@@ -230,6 +245,114 @@ val validateCmdScript = tasks.register("validateCmdScript") {
         if (!content.contains("devrig.cmd")) {
             throw GradleException("devrig-start.cmd: must reference the 'devrig.cmd' launcher under ~/.mcp-steroid/bin")
         }
+
+        // When devrig is missing, the user must be pointed at the setup command (#137)
+        if (!content.contains("/mcp-steroid:setup")) {
+            throw GradleException("devrig-start.cmd: missing-devrig message must point at /mcp-steroid:setup")
+        }
+    }
+}
+
+// Validates the POSIX install wrapper delegates to the canonical installer and stays stderr-only
+val validateInstallScript = tasks.register("validateInstallScript") {
+    group = "verification"
+    description = "Validate bin/install-devrig correctness"
+
+    val script = projectDir.resolve("bin/install-devrig")
+    inputs.file(script)
+
+    doLast {
+        val lines = script.readLines()
+        val content = lines.joinToString("\n")
+
+        // Diagnostics must not leak onto stdout (kept consistent with the MCP stdio discipline)
+        val bareEcho = lines.filter { line ->
+            val trimmed = line.trim()
+            trimmed.startsWith("echo") && !trimmed.contains(">&2") && !trimmed.startsWith("#")
+        }
+        if (bareEcho.isNotEmpty()) {
+            throw GradleException(
+                "install-devrig: echo without >&2 would write to stdout:\n" +
+                    bareEcho.joinToString("\n") { "  $it" }
+            )
+        }
+
+        // Must delegate to the canonical installer, never reimplement download/checksum/JDK logic
+        if (!content.contains("install.sh")) {
+            throw GradleException("install-devrig: must delegate to the canonical install.sh")
+        }
+        if (!content.contains("curl") && !content.contains("wget")) {
+            throw GradleException("install-devrig: must fetch via curl or wget")
+        }
+
+        // Must fail loudly if the install did not produce the launcher (no silent success)
+        if (!content.contains(".mcp-steroid")) {
+            throw GradleException("install-devrig: must verify ~/.mcp-steroid devrig launcher after install")
+        }
+        if (!content.contains("/mcp-steroid:setup")) {
+            throw GradleException("install-devrig: failure message must point at /mcp-steroid:setup")
+        }
+    }
+}
+
+// Validates the Windows install wrapper delegates to the canonical installer and stays stderr-only
+val validateInstallPs1 = tasks.register("validateInstallPs1") {
+    group = "verification"
+    description = "Validate bin/install-devrig.ps1 correctness"
+
+    val script = projectDir.resolve("bin/install-devrig.ps1")
+    inputs.file(script)
+
+    doLast {
+        val content = script.readText()
+
+        // Must delegate to the canonical Windows installer
+        if (!content.contains("install.ps1")) {
+            throw GradleException("install-devrig.ps1: must delegate to the canonical install.ps1")
+        }
+        // Diagnostics go to stderr via [Console]::Error (PowerShell Write-Host would hit stdout)
+        if (!content.contains("[Console]::Error")) {
+            throw GradleException("install-devrig.ps1: diagnostics must go to stderr via [Console]::Error.WriteLine")
+        }
+        // Must verify the Windows launcher (devrig.cmd) and fail loudly, pointing at the setup command
+        if (!content.contains("devrig.cmd")) {
+            throw GradleException("install-devrig.ps1: must verify the devrig.cmd launcher after install")
+        }
+        if (!content.contains("/mcp-steroid:setup")) {
+            throw GradleException("install-devrig.ps1: failure message must point at /mcp-steroid:setup")
+        }
+    }
+}
+
+// Validates the /mcp-steroid:setup slash command runs the bundled wrapper and handles outcomes
+val validateSetupCommand = tasks.register("validateSetupCommand") {
+    group = "verification"
+    description = "Validate commands/setup.md structure"
+
+    val command = projectDir.resolve("commands/setup.md")
+    inputs.file(command)
+
+    doLast {
+        val content = command.readText()
+
+        // Must have YAML frontmatter with a description (model-discoverable metadata)
+        if (!content.startsWith("---")) {
+            throw GradleException("setup.md: must start with YAML frontmatter")
+        }
+        if (!content.contains("description:")) {
+            throw GradleException("setup.md: frontmatter must include a description")
+        }
+        // Must run the bundled wrapper via the plugin root, not reimplement the install
+        if (!content.contains("\${CLAUDE_PLUGIN_ROOT}")) {
+            throw GradleException("setup.md: must reference \${CLAUDE_PLUGIN_ROOT} to locate the wrapper")
+        }
+        if (!content.contains("install-devrig")) {
+            throw GradleException("setup.md: must run the bundled install-devrig wrapper")
+        }
+        // Must tell the user to re-run on failure (the install is resumable)
+        if (!content.contains("/mcp-steroid:setup")) {
+            throw GradleException("setup.md: must tell the user to re-run /mcp-steroid:setup on failure")
+        }
     }
 }
 
@@ -242,4 +365,7 @@ tasks.named("check") {
     dependsOn(validateMcpJson)
     dependsOn(validateShellScript)
     dependsOn(validateCmdScript)
+    dependsOn(validateInstallScript)
+    dependsOn(validateInstallPs1)
+    dependsOn(validateSetupCommand)
 }
