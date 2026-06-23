@@ -1,0 +1,25 @@
+#!/bin/sh
+# MCP Steroid -- SessionStart hook. The MCP server fails silently when devrig is not
+# installed, so this nudges the user to run /mcp-steroid:setup. Stays silent once devrig
+# is present. Runs on every session start, so it must be fast: a single file test.
+#
+# Unlike the MCP launcher scripts, a hook's STDOUT is its data channel: Claude Code parses
+# the JSON below. systemMessage is a top-level field shown to the user; additionalContext
+# is nested under hookSpecificOutput and seen only by Claude (see the Claude Code hooks ref).
+
+DEVRIG="$HOME/.mcp-steroid/bin/devrig"
+
+if [ -x "$DEVRIG" ]; then
+  exit 0
+fi
+
+cat <<'EOF'
+{
+  "systemMessage": "mcp-steroid: devrig is not installed yet. Run /mcp-steroid:setup to install it, then reconnect the server from /mcp.",
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "The mcp-steroid plugin's MCP server cannot start until devrig is installed at ~/.mcp-steroid/bin/devrig. If the user asks why mcp-steroid tools are unavailable, tell them to run the /mcp-steroid:setup slash command."
+  }
+}
+EOF
+exit 0
