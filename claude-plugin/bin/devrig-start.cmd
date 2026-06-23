@@ -3,7 +3,7 @@
 :: stdout is the MCP JSON-RPC channel: nothing must be written to it before exec.
 :: All diagnostic output goes to stderr.
 
-set DEVRIG=%USERPROFILE%\.mcp-steroid\bin\devrig.bat
+set DEVRIG=%USERPROFILE%\.mcp-steroid\bin\devrig.cmd
 
 if not exist "%DEVRIG%" (
   echo mcp-steroid: devrig not found at %DEVRIG% 1>&2

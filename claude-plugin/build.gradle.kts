@@ -222,6 +222,14 @@ val validateCmdScript = tasks.register("validateCmdScript") {
         if (!content.contains("devrig")) {
             throw GradleException("devrig-start.cmd: does not reference devrig binary")
         }
+
+        // The Windows launcher devrig writes is `devrig.cmd` (see DevrigUserLauncher.path()), never .bat
+        if (content.contains("devrig.bat")) {
+            throw GradleException("devrig-start.cmd: references 'devrig.bat', the Windows launcher is 'devrig.cmd'")
+        }
+        if (!content.contains("devrig.cmd")) {
+            throw GradleException("devrig-start.cmd: must reference the 'devrig.cmd' launcher under ~/.mcp-steroid/bin")
+        }
     }
 }
 
