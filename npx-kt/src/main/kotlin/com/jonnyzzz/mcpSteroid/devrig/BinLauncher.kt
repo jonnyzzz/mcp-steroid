@@ -7,6 +7,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
+import java.util.concurrent.TimeUnit
+import org.slf4j.LoggerFactory
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
@@ -278,6 +280,8 @@ internal fun ensurePosixPathSymlink(binDir: Path, binDevrig: Path, userHome: Pat
     )
 }
 
+private val log = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.devrig.BinLauncher")
+
 /**
  * Register `bin/devrig.cmd` on the **user** PATH so `devrig` is runnable directly from a terminal
  * (the POSIX side does the equivalent with a symlink). The JDK cannot persist the user environment in
@@ -303,27 +307,50 @@ internal fun ensureWindowsPathEntry(binDir: Path) {
             "\$new = (\$parts + \$d) -join ';'; " +
             "[Environment]::SetEnvironmentVariable('Path', \$new, 'User'); " +
             "[Console]::Error.WriteLine('[mcp-steroid] registered ' + \$d + ' on the user PATH (1 entry; open a new terminal to use it)')"
+    // Capture BOTH PowerShell streams ourselves — never INHERIT (it would leak onto the console /
+    // risk the JSON-RPC stdout) and never DISCARD. Reading a pipe inline would re-introduce a hang
+    // on a stuck child, so redirect into our own file and read it after the bounded wait.
+    val regLog = Files.createTempFile("mcp-steroid-user-path", ".log")
     try {
-        val exit = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-            .redirectErrorStream(false)
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD) // keep the MCP JSON-RPC channel clean
-            .redirectError(ProcessBuilder.Redirect.INHERIT)
+        val process = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+            .redirectErrorStream(true)
+            .redirectOutput(regLog.toFile())
             .start()
-            .waitFor()
-        if (exit == 0) {
-            try {
-                Files.writeString(marker, bin)
-            } catch (e: Exception) {
-                System.err.println("[mcp-steroid] could not write the user-PATH marker $marker: $e")
-            }
-        } else {
-            System.err.println("[mcp-steroid] PowerShell PATH registration exited $exit; will retry next start")
+        // Close the child's stdin (our write end) right away: a left-open stdin pipe can make
+        // PowerShell block, hanging waitFor() indefinitely (#150). Closing it hands an immediate EOF.
+        process.outputStream.close()
+        // Bounded wait — PATH registration is best-effort and must never block devrig startup.
+        val finished = process.waitFor(2, TimeUnit.SECONDS)
+        if (!finished) process.destroyForcibly()
+        val output = Files.readString(regLog).trim()
+        when {
+            !finished ->
+                log.warn("PowerShell PATH registration timed out after 2s; skipping (add {} to PATH manually). {}", bin, output)
+            process.exitValue() != 0 ->
+                log.warn("PowerShell PATH registration exited {}; skipping (add {} to PATH manually). {}", process.exitValue(), bin, output)
+            output.isNotEmpty() ->
+                log.info(output)
         }
     } catch (e: Exception) {
-        System.err.println(
-            "[mcp-steroid] could not register $bin on the user PATH ($e); add it manually via " +
-                "System Properties -> Environment Variables (User PATH), or run devrig by full path",
+        log.warn(
+            "could not register {} on the user PATH; add it manually via System Properties -> " +
+                "Environment Variables (User PATH), or run devrig by full path",
+            bin,
+            e,
         )
+    } finally {
+        try {
+            Files.deleteIfExists(regLog)
+        } catch (e: Exception) {
+            log.debug("could not delete temp file {}", regLog, e)
+        }
+    }
+    // Write the marker regardless of success / failure / timeout: registration is best-effort and
+    // must never re-run (and risk re-hanging) on every subsequent devrig start.
+    try {
+        Files.writeString(marker, bin)
+    } catch (e: Exception) {
+        log.warn("could not write the user-PATH marker {}", marker, e)
     }
 }
 
