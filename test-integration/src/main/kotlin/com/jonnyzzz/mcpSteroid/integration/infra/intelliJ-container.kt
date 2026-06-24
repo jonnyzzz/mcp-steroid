@@ -8,7 +8,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.RunningContainerProcess
 import com.jonnyzzz.mcpSteroid.testHelper.docker.commitContainerToImage
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.process.ProcessResult
 import java.io.File
 

@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.infra
 
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 
 /**
  * Builds a trimmed, TC-ready artifact tree at `<runDir>/publish/` inside the

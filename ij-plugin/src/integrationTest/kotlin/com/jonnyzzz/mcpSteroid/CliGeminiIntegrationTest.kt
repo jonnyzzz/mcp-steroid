@@ -7,8 +7,8 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
 import com.jonnyzzz.mcpSteroid.testHelper.DockerGeminiSession
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.process.assertOutputContains
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import org.junit.Assert
 import kotlin.time.Duration.Companion.seconds
 

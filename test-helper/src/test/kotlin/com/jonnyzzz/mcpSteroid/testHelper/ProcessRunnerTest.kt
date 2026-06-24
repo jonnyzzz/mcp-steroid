@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.testHelper
 
 import com.jonnyzzz.mcpSteroid.process.ProcessRunner
 import com.jonnyzzz.mcpSteroid.process.RunProcessRequest
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir

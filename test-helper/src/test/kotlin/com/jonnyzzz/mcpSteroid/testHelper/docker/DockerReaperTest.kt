@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.testHelper.docker
 
 import com.jonnyzzz.mcpSteroid.process.ProcessRunner
 import com.jonnyzzz.mcpSteroid.process.RunProcessRequest
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.process.startProcess
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach

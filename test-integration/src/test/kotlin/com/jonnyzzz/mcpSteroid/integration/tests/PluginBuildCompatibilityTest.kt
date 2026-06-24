@@ -9,8 +9,8 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.buildDockerImage
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.process.assertOutputContains
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test

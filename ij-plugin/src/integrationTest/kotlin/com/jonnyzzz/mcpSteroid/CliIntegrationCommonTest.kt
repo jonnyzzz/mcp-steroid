@@ -7,9 +7,9 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
 import com.jonnyzzz.mcpSteroid.testHelper.docker.*
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.process.assertNoErrorsInOutput
-import com.jonnyzzz.mcpSteroid.process.assertOutputContains
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoErrorsInOutput
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import kotlin.time.Duration.Companion.seconds
 
 class CliIntegrationCommonTest : BasePlatformTestCase() {

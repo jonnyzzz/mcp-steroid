@@ -6,7 +6,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 
 /** Holds the devrig MCP stdio command used by AI agents in Docker tests. */
 class DevrigSteroidDriver(

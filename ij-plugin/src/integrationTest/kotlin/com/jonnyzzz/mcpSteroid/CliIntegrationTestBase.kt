@@ -7,9 +7,9 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import com.jonnyzzz.mcpSteroid.testHelper.*
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.process.assertNoErrorsInOutput
-import com.jonnyzzz.mcpSteroid.process.assertOutputContains
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoErrorsInOutput
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import kotlinx.serialization.json.*
 import java.util.*
 import kotlin.time.Duration.Companion.seconds

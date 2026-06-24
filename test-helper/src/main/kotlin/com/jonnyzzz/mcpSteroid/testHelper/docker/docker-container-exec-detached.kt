@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.testHelper.docker
 
 import com.jonnyzzz.mcpSteroid.testHelper.escapeShellArgs
 import com.jonnyzzz.mcpSteroid.process.ProcessResult
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import java.time.Duration
 import java.time.LocalDateTime.now
 import java.time.format.DateTimeFormatter

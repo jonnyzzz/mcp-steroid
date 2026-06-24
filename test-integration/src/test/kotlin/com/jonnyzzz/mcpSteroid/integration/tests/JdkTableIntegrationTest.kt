@@ -6,8 +6,8 @@ import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.integration.infra.generateJdkTableXml
 import com.jonnyzzz.mcpSteroid.integration.infra.mcpRegisterJdks
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.process.assertOutputContains
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
 import org.jdom2.Element
 import org.jdom2.input.SAXBuilder

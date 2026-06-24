@@ -4,7 +4,7 @@ package com.jonnyzzz.mcpSteroid.devrig.cli
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.StdoutCleanlinessHarness
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 

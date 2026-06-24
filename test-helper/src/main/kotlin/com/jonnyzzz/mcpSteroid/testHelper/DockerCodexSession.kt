@@ -8,8 +8,8 @@ import com.jonnyzzz.mcpSteroid.filter.CodexOutputFilter
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.process.StartedProcess
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.process.assertNoErrorsInOutput
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoErrorsInOutput
 import java.io.File
 
 /**

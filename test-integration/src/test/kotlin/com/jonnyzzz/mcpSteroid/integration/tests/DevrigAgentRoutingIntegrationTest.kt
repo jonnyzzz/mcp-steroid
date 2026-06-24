@@ -8,9 +8,9 @@ import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.integration.infra.waitForProjectReady
 import com.jonnyzzz.mcpSteroid.testHelper.McpRegistrationTransport
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.process.assertNoErrorsInOutput
-import com.jonnyzzz.mcpSteroid.process.assertOutputContains
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoErrorsInOutput
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray

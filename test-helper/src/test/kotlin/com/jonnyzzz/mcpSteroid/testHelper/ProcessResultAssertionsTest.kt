@@ -2,10 +2,10 @@
 package com.jonnyzzz.mcpSteroid.testHelper
 
 import com.jonnyzzz.mcpSteroid.process.ProcessResultValue
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.process.assertNoErrorsInOutput
-import com.jonnyzzz.mcpSteroid.process.assertNoMessageInOutput
-import com.jonnyzzz.mcpSteroid.process.assertOutputContains
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoErrorsInOutput
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoMessageInOutput
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 

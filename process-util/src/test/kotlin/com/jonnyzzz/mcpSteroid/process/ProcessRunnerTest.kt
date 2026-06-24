@@ -7,6 +7,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import java.io.File
 import java.time.Duration
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -49,7 +50,7 @@ class ProcessRunnerTest {
     @Timeout(60)
     fun `stdout and stderr are both captured to memory`() {
         val result = childRequest("both").startProcess(runner).awaitForProcessFinish()
-        result.assertExitCode(0) { "child should exit 0" }
+        assertEquals(0, result.exitCode) { "child should exit 0" }
         assertTrue(
             result.stdout.contains(ProcessUtilTestMain.STDOUT_MARKER),
             "stdout must be captured, got: ${result.stdout}",
@@ -69,14 +70,14 @@ class ProcessRunnerTest {
     @Timeout(60)
     fun `exit code zero is captured on success`() {
         val result = childRequest("exit", "0").startProcess(runner).awaitForProcessFinish()
-        result.assertExitCode(0) { "child 'exit 0' should report 0" }
+        assertEquals(0, result.exitCode) { "child 'exit 0' should report 0" }
     }
 
     @Test
     @Timeout(60)
     fun `non-zero exit code is captured`() {
         val result = childRequest("exit", "37").startProcess(runner).awaitForProcessFinish()
-        result.assertExitCode(37) { "child 'exit 37' should report 37" }
+        assertEquals(37, result.exitCode) { "child 'exit 37' should report 37" }
     }
 
     @Test
@@ -86,7 +87,7 @@ class ProcessRunnerTest {
         // stdin forever. With the default empty stdin Flow the runner closes the pipe, the child
         // reads EOF immediately and exits. The @Timeout makes a regression fail fast instead of hanging.
         val result = childRequest("readline").startProcess(runner).awaitForProcessFinish()
-        result.assertExitCode(0) { "child reading closed stdin should still finish, got: $this" }
+        assertEquals(0, result.exitCode) { "child reading closed stdin should still finish, got: $result" }
         assertTrue(
             result.stdout.contains(ProcessUtilTestMain.NO_STDIN_MARKER),
             "child should have seen EOF on stdin, got: ${result.stdout}",
@@ -100,7 +101,7 @@ class ProcessRunnerTest {
             .stdin("hello-from-stdin\n")
             .startProcess(runner)
             .awaitForProcessFinish()
-        result.assertExitCode(0) { "child should finish, got: $this" }
+        assertEquals(0, result.exitCode) { "child should finish, got: $result" }
         assertTrue(
             result.stdout.contains("child-read:hello-from-stdin"),
             "child should echo the stdin line, got: ${result.stdout}",
@@ -119,7 +120,7 @@ class ProcessRunnerTest {
             .awaitForProcessFinish()
         val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
 
-        result.assertExitCode(-1) { "timed-out process should report -1, got: $this" }
+        assertEquals(-1, result.exitCode) { "timed-out process should report -1, got: $result" }
         assertTrue(
             result.stderr.contains("Terminated by timeout"),
             "stderr should mention the timeout, got: ${result.stderr}",
@@ -152,7 +153,7 @@ class ProcessRunnerTest {
                 .startProcess(childRequest("readline").stdin("$secret\n"))
                 .awaitForProcessFinish()
 
-            result.assertExitCode(0) { "child should finish, got: $this" }
+            assertEquals(0, result.exitCode) { "child should finish, got: $result" }
 
             // 1) The returned ProcessResult preserves the secret verbatim (filtering is log-only).
             assertTrue(
@@ -181,7 +182,7 @@ class ProcessRunnerTest {
     fun `blank secret patterns are ignored`() {
         val secretRunner = ProcessRunner("PROCESS-UTIL-TEST", secretPatterns = listOf("", "   "))
         val result = secretRunner.startProcess(childRequest("both")).awaitForProcessFinish()
-        result.assertExitCode(0) { "blank secret patterns must not break the run, got: $this" }
+        assertEquals(0, result.exitCode) { "blank secret patterns must not break the run, got: $result" }
         assertNotEquals("", result.stdout)
     }
 }

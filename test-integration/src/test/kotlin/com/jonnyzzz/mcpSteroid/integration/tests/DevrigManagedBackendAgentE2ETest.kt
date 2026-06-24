@@ -10,7 +10,7 @@ import com.jonnyzzz.mcpSteroid.integration.infra.streamDevrigLogsToConsole
 import com.jonnyzzz.mcpSteroid.testHelper.DockerClaudeSession
 import com.jonnyzzz.mcpSteroid.testHelper.git.BareRepoCache
 import com.jonnyzzz.mcpSteroid.testHelper.git.GitDriver
-import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
 import java.io.File
 import java.util.concurrent.TimeUnit

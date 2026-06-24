@@ -34,9 +34,6 @@ interface StartedProcess {
     fun destroyForcibly()
 }
 
-fun StartedProcess.assertExitCode(expectedExitCode: Int, message: ProcessResult.() -> String) =
-    awaitForProcessFinish().assertExitCode(expectedExitCode, message)
-
 /** Wraps a [ProcessResult] as a [StartedProcess] that has already finished. */
 fun ProcessResult.asStartedProcess(): StartedProcess = object : StartedProcess {
     override val messagesFlow = emptyFlow<ProcessStreamLine>()
