@@ -1,9 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.testHelper.docker
 
-import com.jonnyzzz.mcpSteroid.testHelper.process.RunProcessRequest
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
+import com.jonnyzzz.mcpSteroid.process.RunProcessRequest
+import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.process.startProcess
 import java.time.Duration
 import kotlin.collections.component1
 import kotlin.collections.component2

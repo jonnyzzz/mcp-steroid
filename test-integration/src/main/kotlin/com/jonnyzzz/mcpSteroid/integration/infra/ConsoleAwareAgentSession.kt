@@ -5,7 +5,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.filter.filterText
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
 import com.jonnyzzz.mcpSteroid.testHelper.AiStartedProcess
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
+import com.jonnyzzz.mcpSteroid.process.ProcessStreamType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

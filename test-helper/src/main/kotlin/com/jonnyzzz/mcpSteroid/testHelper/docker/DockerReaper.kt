@@ -2,8 +2,8 @@
 package com.jonnyzzz.mcpSteroid.testHelper.docker
 
 import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
-import com.jonnyzzz.mcpSteroid.testHelper.process.RunProcessRequest
-import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
+import com.jonnyzzz.mcpSteroid.process.RunProcessRequest
+import com.jonnyzzz.mcpSteroid.process.startProcess
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch

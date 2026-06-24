@@ -5,9 +5,9 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResultValue
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.process.ProcessResult
+import com.jonnyzzz.mcpSteroid.process.ProcessResultValue
+import com.jonnyzzz.mcpSteroid.process.assertExitCode
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.json.*
 

@@ -15,7 +15,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.mkdirs
 import com.jonnyzzz.mcpSteroid.testHelper.docker.runInContainerDetached
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyFromContainer
 import org.jdom2.Document
 import org.jdom2.Element

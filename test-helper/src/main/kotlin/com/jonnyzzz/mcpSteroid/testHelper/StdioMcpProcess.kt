@@ -1,10 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.testHelper
 
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
-import com.jonnyzzz.mcpSteroid.testHelper.process.RunProcessRequest
-import com.jonnyzzz.mcpSteroid.testHelper.process.StartedProcess
-import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
+import com.jonnyzzz.mcpSteroid.process.ProcessStreamType
+import com.jonnyzzz.mcpSteroid.process.RunProcessRequest
+import com.jonnyzzz.mcpSteroid.process.StartedProcess
+import com.jonnyzzz.mcpSteroid.process.startProcess
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.time.Duration

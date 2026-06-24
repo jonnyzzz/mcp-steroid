@@ -1,7 +1,6 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
-package com.jonnyzzz.mcpSteroid.testHelper.process
+package com.jonnyzzz.mcpSteroid.process
 
-import com.jonnyzzz.mcpSteroid.testHelper.truncate
 import java.io.InputStream
 import java.util.Collections
 import java.util.concurrent.TimeUnit
@@ -10,6 +9,13 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
+
+private val log = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.process.ProcessRunner")
+
+private fun String.truncate(maxLength: Int, ellipsis: String = "..."): String =
+    if (length <= maxLength) this
+    else take(maxLength - ellipsis.length) + ellipsis
 
 //TODO: hide this class
 data class ProcessResultValue(
@@ -29,7 +35,7 @@ fun RunProcessRequest.startProcess(processRunner: ProcessRunner): StartedProcess
 
 /**
  * Utility for running processes with consistent logging.
- * All output is logged to stdout with prefixes for easy debugging.
+ * All output is logged via SLF4J with prefixes for easy debugging.
  * Supports filtering secrets from log output.
  */
 class ProcessRunner(
@@ -73,8 +79,8 @@ private fun startProcessImpl(request: RunProcessRequest): StartedProcessImpl {
     run {
         val filteredCommand = request.args.map { request.filterSecrets(it) }
         val filteredDescription = request.filterSecrets(request.description ?: request.args.joinToString(" ") { it.truncate(20) })
-        println("[$logPrefix] $filteredDescription")
-        println("[$logPrefix] $filteredCommand")
+        log.debug("[{}] {}", logPrefix, filteredDescription)
+        log.debug("[{}] {}", logPrefix, filteredCommand)
     }
 
     val processBuilder = ProcessBuilder(request.args)
@@ -94,13 +100,13 @@ private fun startProcessImpl(request: RunProcessRequest): StartedProcessImpl {
                 reader.forEachLine { line ->
                     val filterSecrets = request.filterSecrets(line)
                     if (!request.quietly) {
-                        println("[$prefix] $filterSecrets")
+                        log.debug("[{}] {}", prefix, filterSecrets)
                     }
                     messagesChannel.add(ProcessStreamLine(type, line))
                 }
             }
         } catch (e: Exception) {
-            println("[$prefix] Error reading output: ${e.message}")
+            log.debug("[{}] Error reading output: {}", prefix, e.message)
         }
     }
 
@@ -117,7 +123,7 @@ private fun startProcessImpl(request: RunProcessRequest): StartedProcessImpl {
                 }
             }
         } catch (e: Exception) {
-            println("[$logPrefix] stdin copy error: ${e.message}")
+            log.debug("[{}] stdin copy error: {}", logPrefix, e.message)
             messagesChannel.add(
                 ProcessStreamLine(
                     ProcessStreamType.INFO,
@@ -201,11 +207,11 @@ private class StartedProcessImpl(
             runCatching {
                 it.join(3_000)
                 if (it.isAlive) {
-                    println("[$logPrefix] Waiting for process thread ${it.name}")
+                    log.debug("[{}] Waiting for process thread {}", logPrefix, it.name)
                     it.interrupt()
                     it.join(10_000)
                     if (it.isAlive) {
-                        println("[$logPrefix] Thread ${it.name} still alive after interrupt — giving up")
+                        log.warn("[{}] Thread {} still alive after interrupt — giving up", logPrefix, it.name)
                     }
                 }
             }
@@ -223,12 +229,12 @@ private class StartedProcessImpl(
             closeStreamAfterTimeout("stdin", process.outputStream)
             waitForThreads()
 
-            println("[${logPrefix}] Process is terminated by timeout after ${request.timeout}")
+            log.debug("[{}] Process is terminated by timeout after {}", logPrefix, request.timeout)
             return ProcessResultValue(-1, stdout, "Terminated by timeout\n${stderr}\n\n ERROR: Terminated by timeout")
         } else {
             waitForThreads()
             val exitCode = process.exitValue()
-            println("[$logPrefix] Process exited with code: $exitCode")
+            log.debug("[{}] Process exited with code: {}", logPrefix, exitCode)
             return ProcessResultValue(exitCode, stdout, stderr)
         }
     }
@@ -237,7 +243,7 @@ private class StartedProcessImpl(
         try {
             stream.close()
         } catch (e: Exception) {
-            System.err.println("[$logPrefix] Failed to close process $name stream after timeout: ${e.message}")
+            log.warn("[{}] Failed to close process {} stream after timeout: {}", logPrefix, name, e.message)
         }
     }
 }

@@ -51,6 +51,11 @@ dependencies {
     implementation(project(":closeable-stack"))
     implementation(project(":ai-agents"))
 
+    // Robust process runner (closed stdin, captured stdout+stderr, bounded timeout +
+    // destroyForcibly). Used by ensureWindowsPathEntry so the best-effort PATH
+    // registration can never block devrig startup. See #150.
+    implementation(project(":process-util"))
+
     // MCP transport: framed/NDJSON parser + McpStdioServer (replaces the old
     // StdioServer in this module — kept compiled but no longer wired into main()).
     implementation(project(":mcp-stdio"))
@@ -505,6 +510,7 @@ val verifyBundledLibraries by tasks.registering {
             "lib/mcp-core-$devrigVersion.jar",
             "lib/mcp-steroid-server-$devrigVersion.jar",
             "lib/mcp-stdio-$devrigVersion.jar",
+            "lib/process-util-$devrigVersion.jar",
             "lib/prompts-$devrigVersion.jar",
             "lib/prompts-api-$devrigVersion.jar",
 

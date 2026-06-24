@@ -20,6 +20,7 @@ if (System.getProperty("os.name").lowercase().contains("win")) {
 include(":ai-agents")
 include(":agent-output-filter")
 include(":closeable-stack")
+include(":process-util")
 
 include(":prompt-generator")
 include(":kotlin-cli")

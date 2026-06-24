@@ -1,14 +1,20 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.process.RunProcessRequest
+import com.jonnyzzz.mcpSteroid.process.startProcess
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
+import java.time.Duration
 import kotlin.io.path.exists
 import kotlin.io.path.readText
+import org.slf4j.LoggerFactory
+
+private val binLauncherLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.devrig.BinLauncher")
 
 internal fun isWindows(): Boolean =
     System.getProperty("os.name").lowercase().contains("windows")
@@ -286,9 +292,12 @@ internal fun ensurePosixPathSymlink(binDir: Path, binDevrig: Path, userHome: Pat
  * (the bin dir is stable across upgrades, so one registration lasts). The PowerShell **deduplicates**:
  * it strips every existing entry equal to the bin dir and appends exactly one, so re-runs (or a stale
  * entry from an earlier install) never accumulate duplicates. No `setx` (it truncates PATH at 1024
- * chars). stdout is discarded (the MCP JSON-RPC channel); it narrates to stderr. Agents launch the
- * wrapper by ABSOLUTE path (see [DevrigUserLauncher.invocation]), so MCP works even before a new shell
- * picks up the updated PATH. Best-effort: a missing marker re-runs it; any failure is logged and ignored.
+ * chars). The spawn goes through the shared process runner so stdin is closed (never an open pipe),
+ * stdout+stderr are captured to memory and routed to the SLF4J logger (NOT inherited — devrig's stdout
+ * is the MCP JSON-RPC channel), and a 2s timeout destroyForcibly-kills a hung PowerShell. Agents launch
+ * the wrapper by ABSOLUTE path (see [DevrigUserLauncher.invocation]), so MCP works even before a new shell
+ * picks up the updated PATH. Best-effort: the marker is written regardless of success, failure, or
+ * timeout, so a slow/failing PowerShell never re-runs (and re-hangs) on every subsequent start (#150).
  */
 internal fun ensureWindowsPathEntry(binDir: Path) {
     val binDirNorm = binDir.toAbsolutePath().normalize()
@@ -304,26 +313,46 @@ internal fun ensureWindowsPathEntry(binDir: Path) {
             "[Environment]::SetEnvironmentVariable('Path', \$new, 'User'); " +
             "[Console]::Error.WriteLine('[mcp-steroid] registered ' + \$d + ' on the user PATH (1 entry; open a new terminal to use it)')"
     try {
-        val exit = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-            .redirectErrorStream(false)
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD) // keep the MCP JSON-RPC channel clean
-            .redirectError(ProcessBuilder.Redirect.INHERIT)
-            .start()
-            .waitFor()
-        if (exit == 0) {
-            try {
-                Files.writeString(marker, bin)
-            } catch (e: Exception) {
-                System.err.println("[mcp-steroid] could not write the user-PATH marker $marker: $e")
-            }
-        } else {
-            System.err.println("[mcp-steroid] PowerShell PATH registration exited $exit; will retry next start")
+        // Run PowerShell through the shared process runner: stdin is closed (empty
+        // Flow — never an open pipe, the #150 hang), stdout+stderr are captured to
+        // memory (NOT inherited — devrig's stdout is the MCP JSON-RPC channel) and a
+        // hard 2s timeout destroyForcibly-kills a slow/hung PowerShell so PATH
+        // registration can never block devrig startup.
+        val result = RunProcessRequest()
+            .logPrefix("mcp-steroid-winpath")
+            .quietly()
+            .withTimeout(Duration.ofSeconds(2))
+            .command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+            .startProcess()
+            .awaitForProcessFinish()
+
+        if (result.stdout.isNotBlank()) binLauncherLog.debug("PowerShell PATH registration stdout: {}", result.stdout.trim())
+        if (result.stderr.isNotBlank()) binLauncherLog.info("PowerShell PATH registration: {}", result.stderr.trim())
+
+        if (result.exitCode != 0) {
+            // Best-effort: log the failure but still drop the marker below so a
+            // slow/failing PowerShell never re-runs (and re-hangs) on every start.
+            binLauncherLog.warn(
+                "PowerShell PATH registration for {} did not succeed (exit={}); add it manually via " +
+                    "System Properties -> Environment Variables (User PATH), or run devrig by full path",
+                bin, result.exitCode,
+            )
         }
     } catch (e: Exception) {
-        System.err.println(
-            "[mcp-steroid] could not register $bin on the user PATH ($e); add it manually via " +
+        binLauncherLog.warn(
+            "could not register {} on the user PATH; add it manually via " +
                 "System Properties -> Environment Variables (User PATH), or run devrig by full path",
+            bin, e,
         )
+    }
+
+    // Write the marker regardless of success/failure/timeout: PATH registration is
+    // strictly best-effort, and re-running PowerShell on every subsequent devrig
+    // start is exactly the hang we are avoiding (#150).
+    try {
+        Files.writeString(marker, bin)
+    } catch (e: Exception) {
+        binLauncherLog.warn("could not write the user-PATH marker {}", marker, e)
     }
 }
 

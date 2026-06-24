@@ -2,7 +2,7 @@
 package com.jonnyzzz.mcpSteroid.testHelper.docker
 
 import com.jonnyzzz.mcpSteroid.testHelper.escapeShellArgs
-import com.jonnyzzz.mcpSteroid.testHelper.process.*
+import com.jonnyzzz.mcpSteroid.process.*
 import java.io.File
 
 class DockerDriver(

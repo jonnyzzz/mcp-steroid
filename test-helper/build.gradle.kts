@@ -9,6 +9,10 @@ repositories {
 
 dependencies {
     api(project(":closeable-stack"))
+    // api so test-helper consumers (test-integration, test-experiments, ij-plugin
+    // integrationTest, prompts, installer-gen) keep seeing the process-runner types
+    // they previously imported from this module.
+    api(project(":process-util"))
     implementation(project(":ai-agents"))
     implementation(project(":agent-output-filter"))
     implementation(project(":prompts"))

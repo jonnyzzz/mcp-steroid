@@ -1,11 +1,11 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.testHelper
 
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResultValue
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoErrorsInOutput
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoMessageInOutput
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
+import com.jonnyzzz.mcpSteroid.process.ProcessResultValue
+import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.process.assertNoErrorsInOutput
+import com.jonnyzzz.mcpSteroid.process.assertNoMessageInOutput
+import com.jonnyzzz.mcpSteroid.process.assertOutputContains
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 

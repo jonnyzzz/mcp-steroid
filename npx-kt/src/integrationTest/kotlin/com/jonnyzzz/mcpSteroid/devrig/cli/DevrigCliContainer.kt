@@ -11,7 +11,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.buildDockerImage
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
+import com.jonnyzzz.mcpSteroid.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.startStdioMcpProcess
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf

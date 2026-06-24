@@ -1,7 +1,7 @@
 package com.jonnyzzz.mcpSteroid.integration.infra
 
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.process.assertExitCode
 
 /**
  * Discover every Temurin JDK under `/usr/lib/jvm/` in the container and register it

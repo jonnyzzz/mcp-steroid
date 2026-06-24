@@ -7,9 +7,9 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.deployZipAndUnpack
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.process.ProcessResult
+import com.jonnyzzz.mcpSteroid.process.ProcessStreamType
+import com.jonnyzzz.mcpSteroid.process.assertExitCode
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger

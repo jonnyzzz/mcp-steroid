@@ -2,8 +2,8 @@
 package com.jonnyzzz.mcpSteroid.testHelper.docker
 
 import com.jonnyzzz.mcpSteroid.testHelper.escapeShellArgs
-import com.jonnyzzz.mcpSteroid.testHelper.process.StartedProcess
-import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
+import com.jonnyzzz.mcpSteroid.process.StartedProcess
+import com.jonnyzzz.mcpSteroid.process.startProcess
 
 fun ContainerDriver.startProcessInContainer(args : ExecContainerProcessRequest.() -> ExecContainerProcessRequest) =
     startProcessInContainer(newExecInContainer().run(args))

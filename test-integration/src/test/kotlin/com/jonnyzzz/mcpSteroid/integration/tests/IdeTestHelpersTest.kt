@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 import com.jonnyzzz.mcpSteroid.integration.infra.parseDockerHostPathMappings
 import com.jonnyzzz.mcpSteroid.integration.infra.remapPathForDockerHost
 import com.jonnyzzz.mcpSteroid.integration.infra.resolveJavaHomeLookup
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResultValue
+import com.jonnyzzz.mcpSteroid.process.ProcessResultValue
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import java.io.File

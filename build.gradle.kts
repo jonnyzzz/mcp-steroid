@@ -283,10 +283,12 @@ val ciBuildPluginTests by tasks.registering {
     // artifacts; no IntelliJ deps), so they are not "plugin core". But :installer-gen's on-disk Cache
     // exercises atomic file moves / path handling that genuinely benefit from the per-OS matrix, so they
     // ride this aggregator (swept in by auto-discovery — neither is in an exclusion set) rather than
-    // getting a dedicated config. Assert it explicitly so a future refactor of the exclusion sets cannot
-    // silently drop their :test from CI. (The Docker installerIntegrationTest is a separate source set,
-    // NOT swept in here.)
-    listOf(":installer-gen:test", ":website-gen:test").forEach { required ->
+    // getting a dedicated config. :process-util is the leaf process runner (closed stdin, captured
+    // output, bounded timeout + destroyForcibly); its ProcessRunnerTest spawns the current JVM, so it
+    // must pass on every OS in the matrix and rides this aggregator the same way. Assert all three
+    // explicitly so a future refactor of the exclusion sets cannot silently drop their :test from CI.
+    // (The Docker installerIntegrationTest is a separate source set, NOT swept in here.)
+    listOf(":installer-gen:test", ":website-gen:test", ":process-util:test").forEach { required ->
         require(required in testTaskPaths) {
             "ciBuildPluginTests no longer includes $required. If that module was intentionally excluded, " +
                 "give it dedicated CI coverage; otherwise keep it out of nonPluginTestSubprojects."

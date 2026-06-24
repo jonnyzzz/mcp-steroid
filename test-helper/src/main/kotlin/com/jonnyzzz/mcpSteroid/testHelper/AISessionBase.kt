@@ -7,8 +7,9 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.buildDockerImage
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
-import com.jonnyzzz.mcpSteroid.testHelper.process.StartedProcess
+import com.jonnyzzz.mcpSteroid.process.ProcessResult
+import com.jonnyzzz.mcpSteroid.process.StartedProcess
+import com.jonnyzzz.mcpSteroid.process.assertExitCode
 import java.io.File
 
 /**
@@ -25,6 +26,13 @@ class AiProcessResult(
     override fun toString(): String =
         "AiProcessResult(exitCode=$exitCode, stdout=${stdout.take(500)}, stderr=${stderr.take(500)})"
 }
+
+/**
+ * AI-specific overload of [com.jonnyzzz.mcpSteroid.process.assertExitCode]: narrows the
+ * return type to [AiProcessResult] so callers keep access to the filtered/raw output.
+ */
+fun AiStartedProcess.assertExitCode(expectedExitCode: Int, message: ProcessResult.() -> String): AiProcessResult =
+    awaitForProcessFinish().assertExitCode(expectedExitCode, message)
 
 abstract class AIContainerBase(
     private val session: ContainerDriver,

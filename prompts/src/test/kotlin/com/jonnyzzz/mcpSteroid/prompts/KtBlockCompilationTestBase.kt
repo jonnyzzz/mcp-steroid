@@ -4,9 +4,9 @@ package com.jonnyzzz.mcpSteroid.prompts
 import com.jonnyzzz.mcpSteroid.koltinc.CodeWrapperForCompilation
 import com.jonnyzzz.mcpSteroid.koltinc.KotlincCommandLineBuilder
 import com.jonnyzzz.mcpSteroid.koltinc.toArgFile
-import com.jonnyzzz.mcpSteroid.testHelper.process.RunProcessRequest
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
+import com.jonnyzzz.mcpSteroid.process.RunProcessRequest
+import com.jonnyzzz.mcpSteroid.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.process.startProcess
 import org.junit.jupiter.api.Assertions
 import java.io.File
 import java.nio.charset.StandardCharsets
