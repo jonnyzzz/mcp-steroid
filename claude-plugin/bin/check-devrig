@@ -1,7 +1,10 @@
 #!/bin/sh
-# MCP Steroid -- SessionStart hook. The MCP server fails silently when devrig is not
-# installed, so this nudges the user to run /mcp-steroid:setup. Stays silent once devrig
-# is present. Runs on every session start, so it must be fast: a single file test.
+# MCP Steroid -- SessionStart hook. The plugin does not ship its own MCP server; devrig
+# registers the 'mcp-steroid' server itself once installed. Until devrig is present, the
+# mcp-steroid tools are unavailable, so this nudges the user to run /mcp-steroid:setup.
+# Stays silent once devrig is present. Runs on every session start, so it must be fast:
+# a single file test (NOT `devrig install --check`, which shells out to `claude mcp list`
+# and probes IDEs -- far too slow for every session start).
 #
 # Unlike the MCP launcher scripts, a hook's STDOUT is its data channel: Claude Code parses
 # the JSON below. systemMessage is a top-level field shown to the user; additionalContext
@@ -15,10 +18,10 @@ fi
 
 cat <<'EOF'
 {
-  "systemMessage": "mcp-steroid: devrig is not installed yet. Run /mcp-steroid:setup to install it, then reconnect the server from /mcp.",
+  "systemMessage": "mcp-steroid: devrig is not installed yet. Run /mcp-steroid:setup to install and register it, then restart Claude.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "The mcp-steroid plugin's MCP server cannot start until devrig is installed at ~/.mcp-steroid/bin/devrig. If the user asks why mcp-steroid tools are unavailable, tell them to run the /mcp-steroid:setup slash command."
+    "additionalContext": "The mcp-steroid tools are unavailable until devrig is installed at ~/.mcp-steroid/bin/devrig and registered with Claude. /mcp-steroid:setup does both (install + 'devrig install claude'). If the user asks why mcp-steroid tools are unavailable, tell them to run the /mcp-steroid:setup slash command."
   }
 }
 EOF

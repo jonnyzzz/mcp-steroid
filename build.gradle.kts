@@ -306,7 +306,7 @@ val ciBuildPluginTests by tasks.registering {
  * (no compiled code, just file-structure and script-content validation).
  *
  * Currently covers:
- * * `claude-plugin` — validates plugin.json, .mcp.json, and wrapper scripts.
+ * * `claude-plugin` — validates plugin.json, the install/hook wrapper scripts, and the setup command.
  *
  * These modules are excluded from [ciBuildPluginTests] (they have no `:test` task) and
  * run here instead on a lightweight CI step.

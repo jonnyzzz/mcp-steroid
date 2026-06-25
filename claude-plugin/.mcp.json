@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "mcp-steroid": {
-      "type": "stdio",
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin/devrig-start"
-    }
-  }
-}
