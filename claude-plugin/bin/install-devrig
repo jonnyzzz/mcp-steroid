@@ -1,6 +1,6 @@
 #!/bin/sh
-# MCP Steroid -- one-time devrig installer wrapper (macOS/Linux).
-# Run by the /mcp-steroid:setup slash command. Delegates to the canonical, signed
+# devrig -- one-time installer wrapper (macOS/Linux).
+# Run by the /devrig:setup slash command. Delegates to the canonical, signed
 # installer; we deliberately do NOT re-implement platform detection, checksum, or
 # JDK download (all owned by :installer-gen + the devrig binary)
 # All diagnostic output goes to stderr
@@ -11,24 +11,24 @@ set -eu
 INSTALL_URL="https://mcp-steroid.jonnyzzz.com/install.sh"
 DEVRIG="$HOME/.mcp-steroid/bin/devrig"
 
-echo "mcp-steroid: installing devrig via $INSTALL_URL" >&2
+echo "devrig: installing devrig via $INSTALL_URL" >&2
 
 if command -v curl >/dev/null 2>&1; then
   curl -fsSL "$INSTALL_URL" | sh >&2
 elif command -v wget >/dev/null 2>&1; then
   wget -qO- "$INSTALL_URL" | sh >&2
 else
-  echo "mcp-steroid: need curl or wget to install devrig" >&2
+  echo "devrig: need curl or wget to install devrig" >&2
   exit 1
 fi
 
 # The canonical installer is idempotent; verify it actually produced the launcher so a
 # truncated download or interrupted run fails loudly instead of looking successful
 if [ ! -x "$DEVRIG" ]; then
-  echo "mcp-steroid: install finished but devrig was not found at $DEVRIG" >&2
-  echo "mcp-steroid: the install may have been interrupted -- run /mcp-steroid:setup again" >&2
+  echo "devrig: install finished but devrig was not found at $DEVRIG" >&2
+  echo "devrig: the install may have been interrupted -- run /devrig:setup again" >&2
   exit 1
 fi
 
-echo "mcp-steroid: devrig installed at $DEVRIG" >&2
-echo "mcp-steroid: restart Claude so the mcp-steroid MCP server can start" >&2
+echo "devrig: devrig installed at $DEVRIG" >&2
+echo "devrig: restart Claude so the devrig MCP server can start" >&2

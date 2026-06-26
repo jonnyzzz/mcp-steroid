@@ -1,5 +1,5 @@
 {
-  "description": "Nudge the user to run /mcp-steroid:setup when devrig is not yet installed.",
+  "description": "Nudge the user to run /devrig:setup when devrig is not yet installed or registered.",
   "hooks": {
     "SessionStart": [
       {

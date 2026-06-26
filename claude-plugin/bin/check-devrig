@@ -1,28 +1,48 @@
 #!/bin/sh
-# MCP Steroid -- SessionStart hook. The plugin does not ship its own MCP server; devrig
-# registers the 'mcp-steroid' server itself once installed. Until devrig is present, the
-# mcp-steroid tools are unavailable, so this nudges the user to run /mcp-steroid:setup.
-# Stays silent once devrig is present. Runs on every session start, so it must be fast:
-# a single file test (NOT `devrig install --check`, which shells out to `claude mcp list`
-# and probes IDEs -- far too slow for every session start).
+# devrig -- SessionStart hook. The plugin does not ship its own MCP server; the devrig binary
+# registers the 'devrig' MCP server itself once installed (`devrig install claude`). Until that
+# happens the devrig tools are unavailable, so this nudges the user to run /devrig:setup.
+# Stays silent once devrig is installed AND registered. Runs on every session start, so it must
+# be fast: a single file test plus one cheap grep of ~/.claude.json (NOT `devrig install --check`,
+# which shells out to `claude mcp list` and probes IDEs -- far too slow for every session start).
 #
-# Unlike the MCP launcher scripts, a hook's STDOUT is its data channel: Claude Code parses
-# the JSON below. systemMessage is a top-level field shown to the user; additionalContext
-# is nested under hookSpecificOutput and seen only by Claude (see the Claude Code hooks ref).
+# Unlike the MCP launcher scripts, a hook's STDOUT is its data channel: Claude Code parses the
+# JSON below. systemMessage is a top-level field shown to the user; additionalContext is nested
+# under hookSpecificOutput and seen only by Claude (see the Claude Code hooks ref).
 
 DEVRIG="$HOME/.mcp-steroid/bin/devrig"
+CLAUDE_CONFIG="$HOME/.claude.json"
 
-if [ -x "$DEVRIG" ]; then
-  exit 0
-fi
-
-cat <<'EOF'
+# 1. devrig binary not installed yet -- the dominant fresh-machine case.
+if [ ! -x "$DEVRIG" ]; then
+  cat <<'EOF'
 {
-  "systemMessage": "mcp-steroid: devrig is not installed yet. Run /mcp-steroid:setup to install and register it, then restart Claude.",
+  "systemMessage": "devrig is not installed yet. Run /devrig:setup to install and register it, then restart Claude.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "The mcp-steroid tools are unavailable until devrig is installed at ~/.mcp-steroid/bin/devrig and registered with Claude. /mcp-steroid:setup does both (install + 'devrig install claude'). If the user asks why mcp-steroid tools are unavailable, tell them to run the /mcp-steroid:setup slash command."
+    "additionalContext": "The devrig tools are unavailable until the devrig binary is installed at ~/.mcp-steroid/bin/devrig and registered with Claude. /devrig:setup does both (install + 'devrig install claude'). If the user asks why the devrig tools are unavailable, tell them to run the /devrig:setup slash command."
   }
 }
 EOF
+  exit 0
+fi
+
+# 2. devrig installed but not registered with Claude -- cheap heuristic: the user-scope MCP server
+# entry (named 'devrig', or the legacy 'mcp-steroid') is absent from ~/.claude.json. A devrig
+# registration always references the ~/.mcp-steroid/bin launcher, so matching either name here is a
+# low-false-negative check; we err toward staying silent rather than nagging.
+if [ ! -f "$CLAUDE_CONFIG" ] || ! grep -Eq '"devrig"|"mcp-steroid"' "$CLAUDE_CONFIG"; then
+  cat <<'EOF'
+{
+  "systemMessage": "devrig is installed but not registered with Claude yet. Run /devrig:setup (or /devrig:status to check), then restart Claude.",
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "The devrig binary is present at ~/.mcp-steroid/bin/devrig but no 'devrig' MCP server is registered in ~/.claude.json. /devrig:setup re-runs 'devrig install claude' to register it (idempotent); /devrig:status reports the registration state without changing anything. After either, the user must restart Claude."
+  }
+}
+EOF
+  exit 0
+fi
+
+# 3. installed and registered -- nothing to say.
 exit 0

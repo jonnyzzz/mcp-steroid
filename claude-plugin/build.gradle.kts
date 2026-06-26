@@ -93,6 +93,8 @@ val verifyPluginFiles = tasks.register("verifyPluginFiles") {
             "bin/install-devrig.ps1",
             "bin/check-devrig",
             "commands/setup.md",
+            "commands/status.md",
+            "commands/uninstall.md",
             "hooks/hooks.json",
         )
 
@@ -127,8 +129,8 @@ val validatePluginJson = tasks.register("validatePluginJson") {
             throw GradleException("plugin.json is missing required fields: $missing")
         }
         val name = json["name"].toString()
-        if (name != "mcp-steroid") {
-            throw GradleException("plugin.json: expected name 'mcp-steroid', got '$name'")
+        if (name != "devrig") {
+            throw GradleException("plugin.json: expected name 'devrig', got '$name'")
         }
     }
 }
@@ -169,8 +171,8 @@ val validateInstallScript = tasks.register("validateInstallScript") {
         if (!content.contains(".mcp-steroid")) {
             throw GradleException("install-devrig: must verify ~/.mcp-steroid devrig launcher after install")
         }
-        if (!content.contains("/mcp-steroid:setup")) {
-            throw GradleException("install-devrig: failure message must point at /mcp-steroid:setup")
+        if (!content.contains("/devrig:setup")) {
+            throw GradleException("install-devrig: failure message must point at /devrig:setup")
         }
     }
 }
@@ -198,13 +200,13 @@ val validateInstallPs1 = tasks.register("validateInstallPs1") {
         if (!content.contains("devrig.cmd")) {
             throw GradleException("install-devrig.ps1: must verify the devrig.cmd launcher after install")
         }
-        if (!content.contains("/mcp-steroid:setup")) {
-            throw GradleException("install-devrig.ps1: failure message must point at /mcp-steroid:setup")
+        if (!content.contains("/devrig:setup")) {
+            throw GradleException("install-devrig.ps1: failure message must point at /devrig:setup")
         }
     }
 }
 
-// Validates the /mcp-steroid:setup slash command runs the bundled wrapper and handles outcomes
+// Validates the /devrig:setup slash command runs the bundled wrapper and handles outcomes
 val validateSetupCommand = tasks.register("validateSetupCommand") {
     group = "verification"
     description = "Validate commands/setup.md structure"
@@ -234,8 +236,8 @@ val validateSetupCommand = tasks.register("validateSetupCommand") {
             throw GradleException("setup.md: must run 'devrig install claude' to register the MCP server")
         }
         // Must tell the user to re-run on failure (the install is resumable)
-        if (!content.contains("/mcp-steroid:setup")) {
-            throw GradleException("setup.md: must tell the user to re-run /mcp-steroid:setup on failure")
+        if (!content.contains("/devrig:setup")) {
+            throw GradleException("setup.md: must tell the user to re-run /devrig:setup on failure")
         }
     }
 }
@@ -299,8 +301,89 @@ val validateCheckDevrig = tasks.register("validateCheckDevrig") {
         if (!content.contains("systemMessage")) {
             throw GradleException("check-devrig: must emit a top-level systemMessage for the user")
         }
-        if (!content.contains("/mcp-steroid:setup")) {
-            throw GradleException("check-devrig: systemMessage must point at /mcp-steroid:setup")
+        if (!content.contains("/devrig:setup")) {
+            throw GradleException("check-devrig: systemMessage must point at /devrig:setup")
+        }
+    }
+}
+
+// Validates the /devrig:status slash command runs the read-only doctor and never mutates
+val validateStatusCommand = tasks.register("validateStatusCommand") {
+    group = "verification"
+    description = "Validate commands/status.md structure"
+
+    val command = projectDir.resolve("commands/status.md")
+    inputs.file(command)
+
+    doLast {
+        val content = command.readText()
+        if (!content.startsWith("---")) {
+            throw GradleException("status.md: must start with YAML frontmatter")
+        }
+        if (!content.contains("description:")) {
+            throw GradleException("status.md: frontmatter must include a description")
+        }
+        // Must run the read-only doctor — never a mutating install/registration.
+        if (!content.contains("install claude --check")) {
+            throw GradleException("status.md: must run 'devrig install claude --check' (read-only)")
+        }
+        if (!content.contains(".mcp-steroid")) {
+            throw GradleException("status.md: must reference the ~/.mcp-steroid devrig launcher")
+        }
+    }
+}
+
+// Validates the /devrig:uninstall slash command confirms first and only removes devrig's own state
+val validateUninstallCommand = tasks.register("validateUninstallCommand") {
+    group = "verification"
+    description = "Validate commands/uninstall.md structure"
+
+    val command = projectDir.resolve("commands/uninstall.md")
+    inputs.file(command)
+
+    doLast {
+        val content = command.readText()
+        if (!content.startsWith("---")) {
+            throw GradleException("uninstall.md: must start with YAML frontmatter")
+        }
+        if (!content.contains("description:")) {
+            throw GradleException("uninstall.md: frontmatter must include a description")
+        }
+        // Destructive: must require explicit confirmation before removing anything.
+        if (!content.contains("Confirm", ignoreCase = true)) {
+            throw GradleException("uninstall.md: must require explicit user confirmation before removing anything")
+        }
+        // Must unregister from Claude and remove only the devrig install dir.
+        if (!content.contains("claude mcp remove")) {
+            throw GradleException("uninstall.md: must unregister via 'claude mcp remove'")
+        }
+        if (!content.contains(".mcp-steroid")) {
+            throw GradleException("uninstall.md: must remove the ~/.mcp-steroid install directory")
+        }
+    }
+}
+
+// Validates the repo-root marketplace.json that lists this plugin under the 'devrig' name
+val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
+    group = "verification"
+    description = "Validate .claude-plugin/marketplace.json structure"
+
+    val marketplaceFile = rootProject.projectDir.resolve(".claude-plugin/marketplace.json")
+    inputs.file(marketplaceFile)
+
+    doLast {
+        @Suppress("UNCHECKED_CAST")
+        val json = JsonSlurper().parse(marketplaceFile) as Map<String, Any?>
+        listOf("name", "owner", "plugins").forEach { field ->
+            if (json[field] == null) throw GradleException("marketplace.json: missing required field '$field'")
+        }
+        val plugins = json["plugins"] as? List<*>
+            ?: throw GradleException("marketplace.json: 'plugins' must be an array")
+        @Suppress("UNCHECKED_CAST")
+        val devrig = plugins.filterIsInstance<Map<String, Any?>>().singleOrNull { it["name"] == "devrig" }
+            ?: throw GradleException("marketplace.json: must list exactly one plugin named 'devrig'")
+        if (devrig["source"] != "./claude-plugin") {
+            throw GradleException("marketplace.json: the 'devrig' plugin source must be './claude-plugin', got '${devrig["source"]}'")
         }
     }
 }
@@ -314,6 +397,9 @@ tasks.named("check") {
     dependsOn(validateInstallScript)
     dependsOn(validateInstallPs1)
     dependsOn(validateSetupCommand)
+    dependsOn(validateStatusCommand)
+    dependsOn(validateUninstallCommand)
     dependsOn(validateHooksJson)
     dependsOn(validateCheckDevrig)
+    dependsOn(validateMarketplaceJson)
 }

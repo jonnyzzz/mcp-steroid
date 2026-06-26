@@ -37,19 +37,19 @@ class InstallCommandTest {
         ]
     """.trimIndent()
 
-    // A CANONICAL claude listing: exactly one 'mcp-steroid' entry whose command is the stable wrapper
+    // A CANONICAL claude listing: exactly one 'devrig' entry whose command is the stable wrapper
     // install would register ("$launcherPath mcp"). Re-running install would change nothing.
     private val claudeCanonicalList = """
         Checking MCP server health…
 
-        mcp-steroid: $launcherPath mcp - ✓ Connected
+        devrig: $launcherPath mcp - ✓ Connected
         playwright: npx @playwright/mcp@latest - ✓ Connected
     """.trimIndent()
 
     // The codex (--json) analog: command + args reconstruct to the exact canonical "$launcherPath mcp".
     private val codexCanonicalJson = """
         [
-          {"name":"mcp-steroid","transport":{"type":"stdio","command":"$launcherPath","args":["mcp"]}},
+          {"name":"devrig","transport":{"type":"stdio","command":"$launcherPath","args":["mcp"]}},
           {"name":"playwright","transport":{"type":"stdio","command":"npx","args":["@playwright/mcp@latest"]}}
         ]
     """.trimIndent()
@@ -68,7 +68,7 @@ class InstallCommandTest {
         val result = runInstall(AiAgentCli.CLAUDE, RecordingRunner())
         assertEquals(0, result.exitCode)
         assertEquals(
-            listOf("mcp", "add", "--scope", "user", "mcp-steroid", "--", launcherPath, "mcp"),
+            listOf("mcp", "add", "--scope", "user", "devrig", "--", launcherPath, "mcp"),
             result.addInvocation.args,
         )
     }
@@ -77,14 +77,14 @@ class InstallCommandTest {
     fun `install add invocation per agent (codex, gemini)`() {
         val codex = runInstall(AiAgentCli.CODEX, RecordingRunner())
         assertEquals(
-            listOf("mcp", "add", "mcp-steroid", "--", launcherPath, "mcp"),
+            listOf("mcp", "add", "devrig", "--", launcherPath, "mcp"),
             codex.addInvocation.args,
         )
 
         val gemini = runInstall(AiAgentCli.GEMINI, RecordingRunner())
         assertEquals(
             listOf(
-                "mcp", "add", "--type", "stdio", "--scope", "user", "--trust", "mcp-steroid",
+                "mcp", "add", "--type", "stdio", "--scope", "user", "--trust", "devrig",
                 launcherPath, "mcp",
             ),
             gemini.addInvocation.args,
@@ -261,7 +261,7 @@ class InstallCommandTest {
         // Detected by its command (not name) → removed WITHOUT the "if present" qualifier.
         assertContains(r.stdout, "remove 'old-steroid'")
         assertFalse(r.stdout.contains("remove 'old-steroid', if present"), r.stdout)
-        assertContains(r.stdout, "add 'mcp-steroid'")
+        assertContains(r.stdout, "add 'devrig'")
     }
 
     @Test
@@ -296,7 +296,7 @@ class InstallCommandTest {
         assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
         assertContains(r.stdout, "Drift detected")
         assertContains(r.stdout, "remove 'mcp-steroid'")
-        assertContains(r.stdout, "add 'mcp-steroid' → $launcherPath mcp")
+        assertContains(r.stdout, "add 'devrig' → $launcherPath mcp")
     }
 
     @Test
@@ -307,7 +307,7 @@ class InstallCommandTest {
         )
         assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
         assertTrue(r.stdout.contains("no existing", ignoreCase = true), r.stdout)
-        assertContains(r.stdout, "add 'mcp-steroid'")
+        assertContains(r.stdout, "add 'devrig'")
     }
 
     @Test
@@ -318,8 +318,8 @@ class InstallCommandTest {
         )
         assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
         assertTrue(r.stdout.contains("could not read", ignoreCase = true), r.stdout)
-        // Unreadable → install would defensively clear the legacy 'devrig' name too (shared installRemovalNames).
-        assertContains(r.stdout, "remove 'devrig'")
+        // Unreadable → install would defensively clear the legacy 'mcp-steroid' name too (shared installRemovalNames).
+        assertContains(r.stdout, "remove 'mcp-steroid'")
     }
 
     @Test
