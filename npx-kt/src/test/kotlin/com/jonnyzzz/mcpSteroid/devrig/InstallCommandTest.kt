@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliResult
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliRunner
+import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Path
@@ -245,6 +246,31 @@ class InstallCommandTest {
     }
 
     @Test
+    fun `check treats the Windows cmd-exe launcher as canonical despite mcp list dropping the path quotes`() {
+        // On Windows the launcher path is double-quoted so cmd.exe survives a path with spaces
+        // (DevrigUserLauncher.invocation), but `claude mcp list` echoes the stored command back WITHOUT
+        // those quotes. An exact string compare then reports permanent false "drift" that re-running
+        // install can never fix — the real Windows bug. The canonical check must tolerate the quoting.
+        val winCommand = DevrigUserLauncher.invocation(home, listOf("mcp"), windows = true)
+        val winLauncher = "/home/user/.mcp-steroid/bin/devrig.cmd"
+        val claudeWinList = """
+            Checking MCP server health…
+
+            devrig: cmd.exe /d /c $winLauncher mcp - ✓ Connected
+            playwright: npx @playwright/mcp@latest - ✓ Connected
+        """.trimIndent()
+
+        val r = runCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, claudeWinList)),
+            mcpCommand = winCommand,
+        )
+        assertEquals(0, r.exitCode)
+        assertContains(r.stdout, "already canonical")
+        assertContains(r.stdout, "No drift")
+    }
+
+    @Test
     fun `check reports no drift for a canonical codex (--json) registration and exits 0`() {
         val r = runCheck(AiAgentCli.CODEX, RecordingRunner(listResult = AiAgentCliResult(0, codexCanonicalJson)))
         assertEquals(0, r.exitCode)
@@ -350,6 +376,7 @@ class InstallCommandTest {
         reachability: IdeReachabilityReport = IdeReachabilityReport(reachable = 0, discovered = 0),
         reachabilityThrows: Boolean = false,
         missingLauncherPath: Path? = null,
+        mcpCommand: StdioMcpCommand = this.mcpCommand,
     ): CheckRunResult {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()

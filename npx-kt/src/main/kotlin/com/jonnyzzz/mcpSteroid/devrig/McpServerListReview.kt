@@ -40,6 +40,23 @@ fun McpServerRef.devrigMatchReason(): String = when {
 }
 
 /**
+ * True when two rendered launch command lines are equivalent for canonical-registration purposes —
+ * tolerant of differences that do not change what is executed.
+ *
+ * The motivating case (Windows): [DevrigUserLauncher.invocation] double-quotes the `cmd.exe` launcher
+ * path so it survives a `%USERPROFILE%` with spaces, so the command devrig REGISTERS (and the canonical
+ * form it compares against) is `cmd.exe /d /c "<path>" mcp`. But `claude mcp list` echoes the stored
+ * command back WITHOUT those quotes (`cmd.exe /d /c <path> mcp`). An exact string compare then reports
+ * permanent false "drift" that re-running install can never fix. Normalizing away the quotes — and
+ * collapsing runs of whitespace — makes the compare reflect the actual launch, not its cosmetic quoting.
+ */
+fun mcpCommandLinesEquivalent(a: String, b: String): Boolean =
+    normalizeMcpCommandLine(a) == normalizeMcpCommandLine(b)
+
+private fun normalizeMcpCommandLine(commandLine: String): String =
+    commandLine.replace("\"", "").trim().replace(Regex("\\s+"), " ")
+
+/**
  * Parse the output of `<agent> mcp list` into the registered servers. codex emits a JSON array
  * (`--json`); claude and gemini emit a line-oriented `name: <command> - <status>` listing. Parsing is
  * best-effort: a format we can't read yields an empty list (the caller falls back to reconciling the
