@@ -10,11 +10,16 @@
 # JSON below. systemMessage is a top-level field shown to the user; additionalContext is nested
 # under hookSpecificOutput and seen only by Claude (see the Claude Code hooks ref).
 
+# The user-facing launcher differs by OS: POSIX `devrig`, Windows `devrig.cmd` (single source of truth
+# is DevrigUserLauncher.path in npx-kt). This hook may run under sh on Windows too (e.g. Git Bash), where
+# only `devrig.cmd` exists -- testing just `devrig` falsely reported "not installed" every session.
 DEVRIG="$HOME/.mcp-steroid/bin/devrig"
+DEVRIG_WIN="$HOME/.mcp-steroid/bin/devrig.cmd"
 CLAUDE_CONFIG="$HOME/.claude.json"
 
-# 1. devrig binary not installed yet -- the dominant fresh-machine case.
-if [ ! -x "$DEVRIG" ]; then
+# 1. devrig binary not installed yet -- the dominant fresh-machine case. Accept either launcher; use -f
+# (not -x) for the Windows .cmd, whose executable bit is meaningless on that filesystem.
+if [ ! -x "$DEVRIG" ] && [ ! -f "$DEVRIG_WIN" ]; then
   cat <<'EOF'
 {
   "systemMessage": "devrig is not installed yet. Run /devrig:setup to install and register it, then restart Claude.",
