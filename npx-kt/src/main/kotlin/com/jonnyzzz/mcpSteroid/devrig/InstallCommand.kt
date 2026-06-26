@@ -12,8 +12,8 @@ import java.io.PrintStream
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
 
-private const val DEVRIG_MCP_SERVER_NAME = "mcp-steroid"
-private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
+private const val DEVRIG_MCP_SERVER_NAME = "devrig"
+private const val DEVRIG_LEGACY_SERVER_NAME = "mcp-steroid"
 
 /** Exit code of `devrig install <agent> --check` when install would change anything (drift detected). */
 const val INSTALL_CHECK_DRIFT_EXIT_CODE = 1
@@ -38,7 +38,7 @@ const val INSTALL_CHECK_DRIFT_EXIT_CODE = 1
 fun DevrigServices.runInstallDevrigCommand(command: DevrigCommand.DevrigCommandInstallDevrig): Int {
     val installScript = command.installScript
     if (installScript.isNullOrBlank()) {
-        System.err.println("[mcp-steroid] 'devrig install devrig' requires --install-script=<full path>")
+        System.err.println("[devrig] 'devrig install devrig' requires --install-script=<full path>")
         return 64
     }
     // --jdk-home is what the wrapper pins as DEVRIG_JAVA_HOME; fall back to the JDK we run under.
@@ -49,12 +49,12 @@ fun DevrigServices.runInstallDevrigCommand(command: DevrigCommand.DevrigCommandI
     val launcher = DevrigUserLauncher.path(homePaths)
     if (!launcher.isRegularFile()) {
         System.err.println(
-            "[mcp-steroid] ERROR: 'devrig install devrig' did not create the launcher $launcher " +
+            "[devrig] ERROR: 'devrig install devrig' did not create the launcher $launcher " +
                 "(DEVRIG_BIN_NO_AUTO_REGISTER may opt out of writing it).",
         )
         return 64
     }
-    System.err.println("[mcp-steroid] devrig is on PATH via $launcher")
+    System.err.println("[devrig] devrig is on PATH via $launcher")
     return 0
 }
 
@@ -85,7 +85,7 @@ fun DevrigServices.runInstallCommand(
     val launcher = DevrigUserLauncher.path(homePaths)
     if (!launcher.isRegularFile()) {
         System.err.println(
-            "[mcp-steroid] ERROR: cannot register the MCP server — the launcher $launcher was not created.",
+            "[devrig] ERROR: cannot register the MCP server — the launcher $launcher was not created.",
         )
         System.err.println(
             "  This usually means DEVRIG_BIN_NO_AUTO_REGISTER opts out of writing it. Unset that " +
@@ -103,14 +103,14 @@ fun DevrigServices.runInstallCommand(
 }
 
 /**
- * Registers devrig as the `mcp-steroid` stdio MCP server in [command]'s agent, narrating each step so
+ * Registers devrig as the `devrig` stdio MCP server in [command]'s agent, narrating each step so
  * the user understands exactly what is being changed.
  *
  * The registration is an **idempotent, consolidating upsert**:
  *  1. it reviews the agent's currently registered MCP servers;
  *  2. it removes every devrig-owned entry it finds — any named `mcp-steroid` or `devrig`, or whose
  *     launch command runs the devrig binary — collapsing duplicates/stale variants into one;
- *  3. it adds a single canonical `mcp-steroid` entry.
+ *  3. it adds a single canonical `devrig` entry.
  *
  * That is what makes re-running `devrig install` safe and self-healing: it repairs a stale entry (old
  * launcher path or subcommand) and merges stray duplicates instead of failing with "already exists",
