@@ -1,0 +1,12 @@
+{
+  "name": "mcp-steroid",
+  "description": "Give AI the whole IntelliJ, not just the files. Connects Claude to all running JetBrains IDEs via the devrig MCP bridge.",
+  "version": "0.0.0-dev",
+  "author": {
+    "name": "Eugene Petrenko",
+    "email": "mcp@jonnyzzz.com"
+  },
+  "homepage": "https://mcp-steroid.jonnyzzz.com",
+  "repository": "https://github.com/jonnyzzz/mcp-steroid",
+  "license": "Apache-2.0"
+}

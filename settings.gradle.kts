@@ -43,6 +43,7 @@ include(":test-experiments")
 
 include(":npx")
 include(":npx-kt")
+include(":claude-plugin")
 
 include(":installer-gen")
 include(":website-gen")
