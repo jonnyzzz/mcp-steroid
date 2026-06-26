@@ -1,6 +1,6 @@
 {
-  "name": "mcp-steroid",
-  "description": "Give AI the whole IntelliJ, not just the files. Connects Claude to all running JetBrains IDEs via the devrig MCP bridge.",
+  "name": "devrig",
+  "description": "Give AI the whole JetBrains IDE, not just the files — run code, debug, refactor, and inspect any running IntelliJ-based IDE from Claude via the devrig bridge.",
   "version": "0.0.0-dev",
   "author": {
     "name": "Eugene Petrenko",
