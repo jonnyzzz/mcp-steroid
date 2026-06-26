@@ -307,6 +307,73 @@ val validateCheckDevrig = tasks.register("validateCheckDevrig") {
     }
 }
 
+// Behaviorally runs bin/check-devrig against synthetic HOMEs to prove it recognizes BOTH the POSIX
+// (`devrig`) and Windows (`devrig.cmd`) launchers. Content-only checks missed the Windows case: the
+// launcher devrig writes on Windows is `~/.mcp-steroid/bin/devrig.cmd` (DevrigUserLauncher), so a hook
+// that only tested `bin/devrig` nagged "not installed" on every working Windows session.
+// The script is POSIX sh; on a Windows build agent `sh` is absent, so the task disables itself there
+// (Gradle-task-level skip for a structurally incompatible platform -- the only sanctioned skip).
+val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
+    group = "verification"
+    description = "Run bin/check-devrig against synthetic installs (POSIX + Windows launchers)"
+
+    enabled = !System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+
+    val script = projectDir.resolve("bin/check-devrig")
+    inputs.file(script)
+    val work = layout.buildDirectory.dir("check-devrig-test")
+    outputs.dir(work)
+
+    doLast {
+        fun runHook(home: java.io.File): String {
+            val proc = ProcessBuilder("sh", script.absolutePath)
+                .directory(home)
+                .also { it.environment()["HOME"] = home.absolutePath }
+                .redirectErrorStream(false)
+                .start()
+            val out = proc.inputStream.bufferedReader().readText()
+            proc.waitFor()
+            if (proc.exitValue() != 0) {
+                throw GradleException("check-devrig must exit 0; got ${proc.exitValue()} for HOME=$home")
+            }
+            return out
+        }
+
+        fun makeHome(name: String, launcher: String?): java.io.File {
+            val home = work.get().asFile.resolve(name)
+            home.deleteRecursively()
+            val bin = home.resolve(".mcp-steroid/bin").apply { mkdirs() }
+            if (launcher != null) {
+                bin.resolve(launcher).apply { writeText("#!/bin/sh\n"); setExecutable(true) }
+                // Registered with Claude (mirrors a working /mcp entry).
+                home.resolve(".claude.json").writeText("""{"mcpServers":{"devrig":{"command":"x"}}}""")
+            }
+            return home
+        }
+
+        // 1. Windows-style working install: launcher is devrig.cmd, registered -> hook must stay SILENT.
+        val winOut = runHook(makeHome("windows", "devrig.cmd"))
+        if (winOut.isNotBlank()) {
+            throw GradleException(
+                "check-devrig falsely nagged on a working WINDOWS install (launcher devrig.cmd present + " +
+                    "registered). It must recognize the .cmd launcher. Output:\n$winOut"
+            )
+        }
+
+        // 2. POSIX-style working install: launcher is devrig, registered -> hook must stay SILENT.
+        val posixOut = runHook(makeHome("posix", "devrig"))
+        if (posixOut.isNotBlank()) {
+            throw GradleException("check-devrig falsely nagged on a working POSIX install. Output:\n$posixOut")
+        }
+
+        // 3. Nothing installed -> hook MUST nag (regression guard that silence above is meaningful).
+        val emptyOut = runHook(makeHome("empty", null))
+        if (!emptyOut.contains("systemMessage") || !emptyOut.contains("/devrig:setup")) {
+            throw GradleException("check-devrig must nag when devrig is absent. Output:\n$emptyOut")
+        }
+    }
+}
+
 // Validates the /devrig:status slash command runs the read-only doctor and never mutates
 val validateStatusCommand = tasks.register("validateStatusCommand") {
     group = "verification"
@@ -401,5 +468,6 @@ tasks.named("check") {
     dependsOn(validateUninstallCommand)
     dependsOn(validateHooksJson)
     dependsOn(validateCheckDevrig)
+    dependsOn(validateCheckDevrigRuns)
     dependsOn(validateMarketplaceJson)
 }
