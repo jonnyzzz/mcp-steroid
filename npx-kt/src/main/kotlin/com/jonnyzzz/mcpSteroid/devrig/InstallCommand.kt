@@ -317,7 +317,9 @@ fun runInstallCheckCommand(
     // install would register. Anything else — stale launcher/subcommand, duplicates, a custom name, no
     // entry, or an unreadable list — is drift.
     val canonical = listReadable &&
-        detected.singleOrNull()?.let { it.name == DEVRIG_MCP_SERVER_NAME && it.commandLine == renderedCommand } == true
+        detected.singleOrNull()?.let {
+            it.name == DEVRIG_MCP_SERVER_NAME && mcpCommandLinesEquivalent(it.commandLine, renderedCommand)
+        } == true
 
     out.println("What 'devrig install ${agent.binary}' would change:")
     if (canonical) {
