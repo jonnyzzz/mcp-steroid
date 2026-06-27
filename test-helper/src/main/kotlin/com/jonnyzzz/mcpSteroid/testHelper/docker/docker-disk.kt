@@ -7,6 +7,13 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
 import java.io.File
 
 fun ContainerDriver.mkdirs(guestPath: String): ProcessResult {
+    // If the path is under a bind mount, create it on the HOST first so the directory is host-owned.
+    // Creating it only via in-container `mkdir` makes it container-owned, after which the host JVM
+    // cannot add subdirectories under it — which broke writeTrustedPaths with a FileNotFoundException
+    // on `ide-config/options/trusted-paths.xml` (the host-mapped copyToContainer write could not create
+    // the `options/` dir inside the container-owned `ide-config`). The in-container `mkdir -p` below then
+    // no-ops on the now-existing directory, leaving ownership with the host.
+    mapGuestPathToHostPathOrNull(guestPath)?.mkdirs()
     return startProcessInContainer {
         this
             .args("mkdir", "-p", guestPath)
