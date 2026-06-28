@@ -67,6 +67,12 @@ fun ContainerDriver.copyToContainer(localPath: File, containerPath: String) {
         // Make the parent dir(s) a+rwx so the uid-1000 container can write alongside the host-written file.
         hostPath.parentFile?.mkdirsWorldWritable()
         localPath.copyTo(hostPath, overwrite = true)
+        // The container runs as the image's uid (1000), the host as a different uid — so make the
+        // host-written file group/other-writable too. Otherwise a host-owned 0644 file the IDE needs to
+        // REWRITE on startup (e.g. options/*.xml it loads then persists) fails with EACCES inside the
+        // container, stalling IDE/plugin startup. a+rw matches the run-dir mount contract.
+        hostPath.setReadable(true, /* ownerOnly = */ false)
+        hostPath.setWritable(true, /* ownerOnly = */ false)
         return
     }
     newRunOnHost()

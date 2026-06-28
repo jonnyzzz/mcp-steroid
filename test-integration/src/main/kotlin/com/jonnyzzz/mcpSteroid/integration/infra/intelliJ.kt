@@ -198,6 +198,13 @@ class IntelliJDriver(
         //make sure the log file is here
         runCatching { logFile.parentFile.mkdirs() }
         runCatching { logFile.appendText("\n\nStarted MCP Steroid Integration test\n\n") }
+        // The IDE runs as the container's uid (1000), different from the host uid; this log file lives on
+        // the bind-mounted run dir and is created host-owned. Without a+rw the uid-1000 IDE cannot append
+        // to it, so idea.log stays a 4-line stub on Linux CI (no startup diagnostics) — make it writable.
+        runCatching {
+            logFile.setReadable(true, /* ownerOnly = */ false)
+            logFile.setWritable(true, /* ownerOnly = */ false)
+        }
 
         if (!idea.isRunning()) {
             idea.printProcessInfo()
