@@ -23,8 +23,12 @@ class EndToEndTest {
         val report = buildReport(dir.toFile(), "Test Dashboard", "2026-06-26T00:00:00Z")
         assertTrue(report.comparisons.isNotEmpty(), "found at least one comparison")
         val pet = report.comparisons.single { it.scenario == "dpaia__spring__petclinic-27" && it.agent == "claude" }
-        // both claimed a fix => neutral, but the MCP run was faster (521s vs 711s)
-        assertTrue(pet.verdict == Verdict.NEUTRAL)
+        // In this fixture the with-MCP run shows BUILD FAILURE (infra noise — 2 unrelated Postgres
+        // docker errors per its summary) while the without-MCP run shows BUILD SUCCESS. The heuristic
+        // follows the OBJECTIVE build outcome, so it reads as MCP_HURT here even though the agent claimed
+        // a fix — exactly the nuance the raw columns + a later RLM pass are there to surface. The MCP run
+        // was still faster (521s vs 711s).
+        assertTrue(pet.verdict == Verdict.MCP_HURT)
         assertTrue(pet.durationDeltaMs == -190_000L)
 
         val html = HtmlRenderer.render(report)

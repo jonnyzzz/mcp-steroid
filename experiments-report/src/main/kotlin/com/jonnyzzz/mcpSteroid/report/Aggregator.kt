@@ -57,5 +57,17 @@ object Aggregator {
             .sortedWith(compareBy({ it.scenario }, { it.agent }))
 }
 
-/** Best-available "did the agent solve the task" signal, or null when nothing tells us. */
-fun AgentRun.succeeded(): Boolean? = claimedFix ?: buildSuccess ?: testStatus?.let { it.equals("SUCCESS", ignoreCase = true) }
+/**
+ * Best-available "did the agent solve the task" signal, or null when nothing tells us.
+ *
+ * Precedence puts the OBJECTIVE sandbox build/test outcome ahead of the agent's own `claimedFix`:
+ * agents routinely claim success while the build actually failed (observed on Petclinic27 — the
+ * without-MCP run claimed a fix yet produced BUILD FAILURE with only 2 tests). A build counts as
+ * success only if it built AND no tests failed. Falls back to `claimedFix`, then the JUnit status.
+ */
+fun AgentRun.succeeded(): Boolean? = when {
+    buildSuccess != null -> buildSuccess && (testsFail ?: 0) == 0
+    claimedFix != null -> claimedFix
+    testStatus != null -> testStatus.equals("SUCCESS", ignoreCase = true)
+    else -> null
+}
