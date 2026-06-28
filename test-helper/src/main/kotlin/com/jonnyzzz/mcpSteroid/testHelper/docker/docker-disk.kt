@@ -6,14 +6,35 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
 import java.io.File
 
+/**
+ * Create this directory (and any missing parents) on the host, marking every newly created level
+ * world readable/writable/executable (a+rwx).
+ *
+ * The IDE container runs as the image's baked-in `agent` uid (1000) while the host (e.g. the CI agent,
+ * uid 999) is a DIFFERENT uid and `docker run` is deliberately invoked without `--user`. Per the run-dir
+ * bind-mount contract (see run-dir.kt and the notes in docker-container-start.kt), any directory under
+ * the run mount that the container must write into has to be a+rwx — otherwise a host-side `mkdir`
+ * leaves it host-owned with mode 755 and the uid-1000 IDE cannot write into it (which manifested as the
+ * MCP Steroid plugin never reaching ready: its config/log writes silently failed).
+ */
+private fun File.mkdirsWorldWritable() {
+    if (exists()) return
+    val createdLevels = generateSequence(this) { it.parentFile }.takeWhile { !it.exists() }.toList()
+    mkdirs()
+    for (dir in createdLevels) {
+        dir.setReadable(true, /* ownerOnly = */ false)
+        dir.setWritable(true, /* ownerOnly = */ false)
+        dir.setExecutable(true, /* ownerOnly = */ false)
+    }
+}
+
 fun ContainerDriver.mkdirs(guestPath: String): ProcessResult {
-    // If the path is under a bind mount, create it on the HOST first so the directory is host-owned.
-    // Creating it only via in-container `mkdir` makes it container-owned, after which the host JVM
-    // cannot add subdirectories under it — which broke writeTrustedPaths with a FileNotFoundException
-    // on `ide-config/options/trusted-paths.xml` (the host-mapped copyToContainer write could not create
-    // the `options/` dir inside the container-owned `ide-config`). The in-container `mkdir -p` below then
-    // no-ops on the now-existing directory, leaving ownership with the host.
-    mapGuestPathToHostPathOrNull(guestPath)?.mkdirs()
+    // If the path is under a bind mount, create it on the HOST first so the host JVM can later add
+    // subdirectories under it (an in-container `mkdir` would make it container-owned, after which a
+    // host-mapped write could not create child dirs — that broke writeTrustedPaths with a
+    // FileNotFoundException on `ide-config/options/trusted-paths.xml`). Created levels are made a+rwx so
+    // the uid-1000 container can still write into them; the in-container `mkdir -p` below then no-ops.
+    mapGuestPathToHostPathOrNull(guestPath)?.mkdirsWorldWritable()
     return startProcessInContainer {
         this
             .args("mkdir", "-p", guestPath)
@@ -43,7 +64,8 @@ fun ContainerDriver.copyToContainer(localPath: File, containerPath: String) {
     require(localPath.exists()) { "Local path does not exist: $localPath" }
     // Direct host access when the guest path is under a bind mount — no `docker cp` process.
     mapGuestPathToHostPathOrNull(containerPath)?.let { hostPath ->
-        hostPath.parentFile?.mkdirs()
+        // Make the parent dir(s) a+rwx so the uid-1000 container can write alongside the host-written file.
+        hostPath.parentFile?.mkdirsWorldWritable()
         localPath.copyTo(hostPath, overwrite = true)
         return
     }
