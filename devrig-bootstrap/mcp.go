@@ -53,11 +53,6 @@ func handle(req rpcRequest) (any, bool) {
 	}
 }
 
-// Temporary until Task 4
-func toolCall(_ json.RawMessage) any {
-	return map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}}
-}
-
 func Serve(in io.Reader, out io.Writer) error {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
