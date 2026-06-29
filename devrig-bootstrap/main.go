@@ -6,5 +6,8 @@ import (
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "devrig-bootstrap: stub")
+	if err := Serve(os.Stdin, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "devrig-bootstrap: %v\n", err)
+		os.Exit(1)
+	}
 }
