@@ -187,9 +187,9 @@ class DebuggerDemoTest {
         val score = scoreSortedByDescendingBug(output)
         console.writeInfo("Bug identified: ${score.bugFound}${if (score.reasons.isEmpty()) "" else " — misses: ${score.reasons}"}")
 
-        // Record a per-mode run summary so the dashboard pairs with-MCP vs without-MCP and shows
-        // helped/hurt/neutral. `agent_claimed_fix` carries the correctness verdict.
-        writeDebuggerRunSummary(
+        // Record a per-mode run so the dashboard pairs with-MCP vs without-MCP and shows
+        // helped/hurt/neutral. The verdict (`Claimed fix` / `agent_claimed_fix`) is correctness.
+        recordDebuggerRun(
             scenario = "debugger__sortedByDescending",
             agentName = agentName.name,
             modeLabel = modeLabel,
@@ -223,11 +223,16 @@ class DebuggerDemoTest {
     }
 
     /**
-     * Write a per-mode run summary (`dpaia-arena-run-<scenario>-<agent>-<mode>.json`) so the experiments
-     * dashboard pairs the with-MCP and without-MCP runs and computes helped/hurt/neutral. The verdict
-     * field is `agent_claimed_fix` = whether the agent correctly identified the bug.
+     * Record a per-mode run for the experiments dashboard. Two sinks:
+     *  1. An `[ARENA]` log block — the source the dashboard actually reads from the build log
+     *     (parsed by ArenaLogParser; identical format to DpaiaScenarioBaseTest). This is what makes the
+     *     with/without comparison and verdict appear. The em dash in the header is U+2014, as the parser
+     *     requires, and the agent token is a bare word (claude/codex).
+     *  2. A `dpaia-arena-run-*.json` summary (forward-compatible; not currently collected by fetch.sh).
+     *
+     * The verdict (`Claimed fix` / `agent_claimed_fix`) is whether the agent correctly identified the bug.
      */
-    private fun writeDebuggerRunSummary(
+    private fun recordDebuggerRun(
         scenario: String,
         agentName: String,
         modeLabel: String,
@@ -236,6 +241,14 @@ class DebuggerDemoTest {
         bugFound: Boolean,
         summaryText: String,
     ) {
+        // (1) [ARENA] block — read from the build log by the dashboard's ArenaLogParser.
+        println("[ARENA] $agentName+$modeLabel — $scenario")
+        println("[ARENA]   Claimed fix:    $bugFound")
+        println("[ARENA]   Used MCP:       $withMcp")
+        println("[ARENA]   Exit code:      ${exitCode ?: -1}")
+        println("[ARENA]   Summary:        ${summaryText.replace('\n', ' ').take(120)}")
+
+        // (2) JSON summary — forward-compatible.
         val json = buildJsonObject {
             put("instance_id", scenario)
             put("agent", agentName)
