@@ -4,7 +4,19 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 )
+
+const installLockStaleAfter = 1 * time.Hour
+
+// lockIsStale returns true if the lock file exists and its mtime is older than installLockStaleAfter.
+func lockIsStale(home string) bool {
+	info, err := os.Stat(lockPath(home))
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) > installLockStaleAfter
+}
 
 func homeDir() string {
 	if h := os.Getenv("HOME"); h != "" {
@@ -28,12 +40,18 @@ func launcherPresent(home string) bool {
 }
 
 // installState reports the current bootstrap-visible state.
+// Returns one of "installed", "installing", or "absent".
 // Order matters: an installed launcher always wins over a stale lock.
+// A lock that is older than installLockStaleAfter is treated as absent so
+// retries are unblocked after a crashed/killed install.
 func installState(home string) string {
 	if launcherPresent(home) {
 		return "installed"
 	}
 	if _, err := os.Stat(lockPath(home)); err == nil {
+		if lockIsStale(home) {
+			return "absent"
+		}
 		return "installing"
 	}
 	return "absent"

@@ -22,7 +22,8 @@ val buildBootstrapBinaries = tasks.register("buildBootstrapBinaries") {
         // Fail loudly if Go is absent — no silent fallback.
         val goExe = System.getenv("GOROOT")?.let { "$it/bin/go" }?.takeIf { file(it).exists() } ?: "go"
         val probe = ProcessBuilder(goExe, "version").redirectErrorStream(true).start()
-        if (probe.waitFor() != 0) error("Go toolchain not found on PATH (or GOROOT). Install Go ${"" /* see go.mod */}1.23+.")
+        val probeOut = probe.inputStream.bufferedReader().readText()
+        if (probe.waitFor() != 0) error("Go toolchain not found on PATH (or GOROOT). Install Go 1.23+. Probe output:\n$probeOut")
 
         val dest = outDir.get().asFile.apply { deleteRecursively(); mkdirs() }
         targets.forEach { (os, arch, suffix) ->

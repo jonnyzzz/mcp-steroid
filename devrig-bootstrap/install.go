@@ -22,6 +22,10 @@ func ensureInstall(home string, runner func() error) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(lp), 0o755); err != nil {
 		return false, err
 	}
+	// Reclaim a stale lock left by a crashed/killed install before the O_EXCL gate.
+	if lockIsStale(home) {
+		os.Remove(lp)
+	}
 	// O_EXCL makes lock creation the single-flight gate across concurrent bootstraps.
 	f, err := os.OpenFile(lp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
