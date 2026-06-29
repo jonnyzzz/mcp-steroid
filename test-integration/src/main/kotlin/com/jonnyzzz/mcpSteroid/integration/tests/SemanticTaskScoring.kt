@@ -49,3 +49,33 @@ fun scoreTypeHierarchy(output: String, required: Set<String>, minTotal: Int): Ty
         complete = missing.isEmpty() && reported.size >= minTotal,
     )
 }
+
+data class RenameSafetyScore(
+    val renameDone: Boolean,
+    /** The post-rename build/compile result the agent reported (null if it never reported one). */
+    val buildGreen: Boolean?,
+    /** A safe rename = it was performed AND the project still compiles afterwards. */
+    val safe: Boolean,
+)
+
+/**
+ * Score a project-wide rename for SAFETY. With MCP the agent uses the IDE's rename refactoring (updates
+ * every reference, build stays green); without MCP a sed/text rename over- or under-matches and breaks
+ * compilation. The verdict is whether the rename was performed AND the project still builds.
+ *
+ * Expected markers (the prompt asks the agent to compile after renaming and report):
+ *   RENAME_DONE: yes
+ *   BUILD_AFTER_RENAME: SUCCESS | FAILURE
+ */
+fun scoreRenameSafety(output: String): RenameSafetyScore {
+    val renameDone = findMarkerValue(output, "RENAME_DONE", "Rename done")?.equals("yes", ignoreCase = true) == true
+    val build = findMarkerValue(output, "BUILD_AFTER_RENAME", "Build after rename")
+    val buildGreen = build?.let {
+        when {
+            it.contains("SUCCESS", ignoreCase = true) || it.equals("pass", ignoreCase = true) || it.equals("green", ignoreCase = true) -> true
+            it.contains("FAIL", ignoreCase = true) || it.contains("error", ignoreCase = true) || it.contains("broke", ignoreCase = true) -> false
+            else -> null
+        }
+    }
+    return RenameSafetyScore(renameDone = renameDone, buildGreen = buildGreen, safe = renameDone && buildGreen == true)
+}
