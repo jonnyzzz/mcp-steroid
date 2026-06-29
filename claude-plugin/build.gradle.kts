@@ -485,7 +485,7 @@ val validateMcpJson = tasks.register("validateMcpJson") {
         val devrig = servers["devrig"] as? Map<*, *> ?: throw GradleException(".mcp.json: missing 'devrig' server")
         if (devrig["type"] != "stdio") throw GradleException(".mcp.json: devrig must be stdio")
         val cmd = devrig["command"]?.toString().orEmpty()
-        if (!cmd.contains("\${CLAUDE_PLUGIN_ROOT}") || !cmd.contains("devrig-mcp.cmd"))
+        if (!cmd.contains("\${CLAUDE_PLUGIN_ROOT}") || !cmd.contains("/bin/devrig-mcp.cmd"))
             throw GradleException(".mcp.json: command must be \${CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp.cmd, got '$cmd'")
     }
 }
@@ -530,7 +530,7 @@ val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRun
 
         fun run(home: java.io.File): Pair<String, String> {
             val launcher = work.get().asFile.resolve("plugin/bin/devrig-mcp.cmd")
-            val p = ProcessBuilder("sh", launcher.absolutePath)
+            val p = ProcessBuilder(launcher.absolutePath)
                 .also { it.environment()["HOME"] = home.absolutePath }
                 .also { it.environment()["CLAUDE_PLUGIN_ROOT"] = work.get().asFile.resolve("plugin").absolutePath }
                 .redirectErrorStream(false).start()
