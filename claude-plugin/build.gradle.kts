@@ -455,6 +455,53 @@ val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
     }
 }
 
+val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRuns") {
+    group = "verification"
+    description = "Run bin/devrig-mcp.cmd against synthetic HOMEs (POSIX routing + stdout silence)"
+    enabled = !System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+
+    val script = projectDir.resolve("bin/devrig-mcp.cmd")
+    val boot = projectDir.resolve("bin")
+    inputs.file(script)
+    val work = layout.buildDirectory.dir("devrig-mcp-test")
+    outputs.dir(work)
+
+    doLast {
+        // Routing-to-bootstrap requires a present, executable bootstrap for THIS os/arch.
+        // Provide a fake one so the launcher's exec target exists.
+        val os = System.getProperty("os.name").lowercase().let { if (it.contains("mac")) "darwin" else "linux" }
+        val arch = System.getProperty("os.arch").lowercase().let { if (it.contains("aarch64") || it.contains("arm")) "arm64" else "amd64" }
+        val fakeBoot = work.get().asFile.resolve("plugin/bin/bootstrap-$os-$arch")
+        fakeBoot.parentFile.mkdirs()
+        fakeBoot.writeText("#!/bin/sh\necho BOOTSTRAP_RAN\n"); fakeBoot.setExecutable(true)
+        script.copyTo(work.get().asFile.resolve("plugin/bin/devrig-mcp.cmd"), overwrite = true).setExecutable(true)
+
+        fun run(home: java.io.File): Pair<String, String> {
+            val launcher = work.get().asFile.resolve("plugin/bin/devrig-mcp.cmd")
+            val p = ProcessBuilder("sh", launcher.absolutePath)
+                .also { it.environment()["HOME"] = home.absolutePath }
+                .also { it.environment()["CLAUDE_PLUGIN_ROOT"] = work.get().asFile.resolve("plugin").absolutePath }
+                .redirectErrorStream(false).start()
+            val out = p.inputStream.bufferedReader().readText()
+            val err = p.errorStream.bufferedReader().readText()
+            p.waitFor()
+            return out to err
+        }
+
+        // 1. devrig absent -> routes to bootstrap (our fake prints BOOTSTRAP_RAN on stdout).
+        val absent = work.get().asFile.resolve("absent").apply { mkdirs() }
+        val (aout, _) = run(absent)
+        if (!aout.contains("BOOTSTRAP_RAN")) throw GradleException("absent HOME must route to bootstrap; stdout=$aout")
+
+        // 2. devrig present -> routes to installed launcher (prints INSTALLED_RAN).
+        val present = work.get().asFile.resolve("present").apply { mkdirs() }
+        present.resolve(".mcp-steroid/bin").mkdirs()
+        present.resolve(".mcp-steroid/bin/devrig").apply { writeText("#!/bin/sh\necho INSTALLED_RAN\n"); setExecutable(true) }
+        val (pout, _) = run(present)
+        if (!pout.contains("INSTALLED_RAN")) throw GradleException("present HOME must route to installed devrig; stdout=$pout")
+    }
+}
+
 claudePluginZip.configure { finalizedBy(verifyPluginFiles) }
 
 tasks.named("assemble") { dependsOn(claudePluginZip) }
