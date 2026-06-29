@@ -1,0 +1,2 @@
+# Stray binary from a bare `go build .` (real outputs go to build/bin via Gradle)
+/devrig-bootstrap
