@@ -27,11 +27,16 @@ object HtmlRenderer {
             .append("is measured separately and excluded from the agent comparison.</div></header>\n")
 
         renderSummary(sb, report)
+        renderOverview(sb, report)
         renderComparisons(sb, report)
         renderProblems(sb, report)
         renderCoverage(sb, report)
 
-        sb.append("<footer>MCP Steroid experiments dashboard · heuristic verdicts — see raw columns for nuance</footer>\n")
+        sb.append("<footer>This report is <strong>computed deterministically from</strong> the collected run data — ")
+            .append("every verdict, number, and graph segment is derived by the report code (")
+            .append("<code>:experiments-report</code>), <strong>not authored by an LLM/agent</strong>. The only free ")
+            .append("text is each agent's own run <em>summary</em>, shown verbatim. Verdicts are a heuristic over the ")
+            .append("objective build/test outcome — see the raw columns for nuance.</footer>\n")
         sb.append("</body>\n</html>\n")
         return sb.toString()
     }
@@ -49,6 +54,37 @@ object HtmlRenderer {
             sb.append("</div><div class=\"card-total\">").append(s.total).append(" tasks</div></div>\n")
         }
         sb.append("</div></section>\n")
+    }
+
+    // ── Overview graph: verdict mix per agent (inline SVG, computed from the data) ──
+    private fun renderOverview(sb: StringBuilder, report: Report) {
+        val summaries = agentSummaries(report.comparisons)
+        if (summaries.isEmpty()) return
+        sb.append("<section><h2>Overview</h2>\n")
+        sb.append("<p class=\"meta\">Verdict mix per agent — every segment width is computed from the collected ")
+            .append("runs (helped / hurt / neutral / incomplete). Hover a segment for its count.</p>\n")
+        val barW = 360
+        for (s in summaries) {
+            val total = if (s.total > 0) s.total else 1
+            sb.append("<div class=\"ov-row\"><span class=\"ov-label\">").append(esc(s.agent)).append("</span>")
+            sb.append("<svg class=\"ov-bar\" width=\"$barW\" height=\"18\" role=\"img\" aria-label=\"")
+                .append(esc(s.agent)).append(": ${s.helped} helped, ${s.hurt} hurt, ${s.neutral} neutral, ${s.incomplete} incomplete\">")
+            var x = 0
+            val segs = listOf("helped" to s.helped, "hurt" to s.hurt, "neutral" to s.neutral, "incomplete" to s.incomplete)
+            for ((i, seg) in segs.withIndex()) {
+                val (cls, count) = seg
+                if (count == 0) continue
+                // give the final non-empty segment the rounding remainder so the bar always fills exactly.
+                val w = if (i == segs.indexOfLast { it.second > 0 }) barW - x else count * barW / total
+                sb.append("<rect class=\"seg $cls\" x=\"$x\" y=\"0\" width=\"$w\" height=\"18\"><title>$cls: $count</title></rect>")
+                x += w
+            }
+            sb.append("</svg>")
+            sb.append("<span class=\"ov-counts\">")
+                .append("<span class=\"good\">${s.helped}</span>/<span class=\"bad\">${s.hurt}</span>/")
+                .append("${s.neutral}/${s.incomplete} <span class=\"subtle\">of ${s.total}</span></span></div>\n")
+        }
+        sb.append("</section>\n")
     }
 
     // ── Primary: per-agent with/without tables ──────────────────────────────────
@@ -242,6 +278,12 @@ object HtmlRenderer {
         .subtle { color:var(--mut); font-size:12px; margin-top:3px; }
         .tool { display:inline-block; background:#12151b; border:1px solid var(--line); border-radius:6px;
                 padding:1px 7px; margin:2px 3px 0 0; font-size:12px; }
+        .ov-row { display:flex; align-items:center; gap:10px; margin:5px 0; }
+        .ov-label { width:90px; font-weight:600; }
+        .ov-bar { border:1px solid var(--line); border-radius:3px; background:var(--panel); }
+        .ov-counts { font-size:12px; color:var(--fg); }
+        .seg.helped { fill:#2f9e44; } .seg.hurt { fill:#e03131; }
+        .seg.neutral { fill:#5c636e; } .seg.incomplete { fill:#e8950c; }
         .missing { color:var(--grey); font-style:italic; }
         .empty { color:var(--mut); }
         footer { padding:16px 28px; color:var(--mut); font-size:12px; }

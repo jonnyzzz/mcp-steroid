@@ -1,6 +1,7 @@
 package com.jonnyzzz.mcpSteroid.report
 
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -64,6 +65,31 @@ class HtmlRendererTest {
         // tool-call diff: a tool present in both modes, plus the delta
         assertTrue(html.contains("Read"), "tool name shown")
         assertTrue(html.contains("tool calls", ignoreCase = true) || html.contains("Tool calls"), "tool-call section present")
+    }
+
+    @Test
+    fun `renders an overview graph (inline svg) computed from the verdict counts`() {
+        val html = HtmlRenderer.render(sampleReport())
+        assertTrue(html.contains("<h2>Overview</h2>"), "has an Overview section")
+        assertTrue(html.contains("<svg"), "draws an inline SVG chart")
+        // the chart is built from the same verdict tallies as the cards (codex: 1 helped here)
+        assertTrue(html.contains("class=\"seg helped\"") || html.contains("seg-helped"), "has a helped segment")
+        // self-contained: SVG is inline, not an external image
+        assertFalse(html.contains("<img"), "no external image")
+    }
+
+    @Test
+    fun `is deterministic — identical input renders byte-for-byte identical output`() {
+        val report = sampleReport()
+        assertEquals(HtmlRenderer.render(report), HtmlRenderer.render(report))
+    }
+
+    @Test
+    fun `discloses that the report is computed from data, not authored by an agent`() {
+        val html = HtmlRenderer.render(sampleReport())
+        assertTrue(html.contains("computed") && html.contains("from"), "states it is computed from data")
+        // the only free text is the agent's own run summary, shown verbatim and labelled as such
+        assertTrue(html.contains("summary:"))
     }
 
     @Test
