@@ -316,20 +316,14 @@ val validateCheckDevrig = tasks.register("validateCheckDevrig") {
     doLast {
         val content = script.readText()
 
-        // Must test the canonical devrig path and exit cleanly so it never blocks a session.
-        if (!content.contains(".mcp-steroid")) {
+        if (!content.contains(".mcp-steroid"))
             throw GradleException("check-devrig: must test the ~/.mcp-steroid devrig launcher")
-        }
-        if (!content.contains("exit 0")) {
+        if (!content.contains("exit 0"))
             throw GradleException("check-devrig: must exit 0 (a non-blocking SessionStart hook)")
-        }
-        // The user-visible nudge must be carried by a top-level systemMessage and point at setup.
-        if (!content.contains("systemMessage")) {
-            throw GradleException("check-devrig: must emit a top-level systemMessage for the user")
-        }
-        if (!content.contains("/devrig:setup")) {
-            throw GradleException("check-devrig: systemMessage must point at /devrig:setup")
-        }
+        if (!content.contains("systemMessage"))
+            throw GradleException("check-devrig: must emit a top-level systemMessage when devrig is absent")
+        if (!content.contains("background"))
+            throw GradleException("check-devrig: message must describe the background download, not a registration nag")
     }
 }
 
@@ -371,31 +365,29 @@ val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
             val bin = home.resolve(".mcp-steroid/bin").apply { mkdirs() }
             if (launcher != null) {
                 bin.resolve(launcher).apply { writeText("#!/bin/sh\n"); setExecutable(true) }
-                // Registered with Claude (mirrors a working /mcp entry).
-                home.resolve(".claude.json").writeText("""{"mcpServers":{"devrig":{"command":"x"}}}""")
             }
             return home
         }
 
-        // 1. Windows-style working install: launcher is devrig.cmd, registered -> hook must stay SILENT.
+        // 1. Windows-style working install: launcher is devrig.cmd -> hook must stay SILENT.
         val winOut = runHook(makeHome("windows", "devrig.cmd"))
         if (winOut.isNotBlank()) {
             throw GradleException(
-                "check-devrig falsely nagged on a working WINDOWS install (launcher devrig.cmd present + " +
-                    "registered). It must recognize the .cmd launcher. Output:\n$winOut"
+                "check-devrig falsely nagged on a working WINDOWS install (launcher devrig.cmd present). " +
+                    "It must recognize the .cmd launcher. Output:\n$winOut"
             )
         }
 
-        // 2. POSIX-style working install: launcher is devrig, registered -> hook must stay SILENT.
+        // 2. POSIX-style working install: launcher is devrig -> hook must stay SILENT.
         val posixOut = runHook(makeHome("posix", "devrig"))
         if (posixOut.isNotBlank()) {
             throw GradleException("check-devrig falsely nagged on a working POSIX install. Output:\n$posixOut")
         }
 
-        // 3. Nothing installed -> hook MUST nag (regression guard that silence above is meaningful).
+        // 3. Nothing installed -> hook MUST report background download (regression guard that silence above is meaningful).
         val emptyOut = runHook(makeHome("empty", null))
-        if (!emptyOut.contains("systemMessage") || !emptyOut.contains("/devrig:setup")) {
-            throw GradleException("check-devrig must nag when devrig is absent. Output:\n$emptyOut")
+        if (!emptyOut.contains("systemMessage") || !emptyOut.contains("background")) {
+            throw GradleException("check-devrig must report the background download when devrig is absent. Output:\n$emptyOut")
         }
     }
 }
