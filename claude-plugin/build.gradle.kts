@@ -461,7 +461,6 @@ val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRun
     enabled = !System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
 
     val script = projectDir.resolve("bin/devrig-mcp.cmd")
-    val boot = projectDir.resolve("bin")
     inputs.file(script)
     val work = layout.buildDirectory.dir("devrig-mcp-test")
     outputs.dir(work)
@@ -491,14 +490,16 @@ val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRun
         // 1. devrig absent -> routes to bootstrap (our fake prints BOOTSTRAP_RAN on stdout).
         val absent = work.get().asFile.resolve("absent").apply { mkdirs() }
         val (aout, _) = run(absent)
-        if (!aout.contains("BOOTSTRAP_RAN")) throw GradleException("absent HOME must route to bootstrap; stdout=$aout")
+        if (aout.trimEnd('\n') != "BOOTSTRAP_RAN")
+            throw GradleException("absent HOME: stdout must be exactly BOOTSTRAP_RAN (launcher emitted extra stdout?); got: $aout")
 
         // 2. devrig present -> routes to installed launcher (prints INSTALLED_RAN).
         val present = work.get().asFile.resolve("present").apply { mkdirs() }
         present.resolve(".mcp-steroid/bin").mkdirs()
         present.resolve(".mcp-steroid/bin/devrig").apply { writeText("#!/bin/sh\necho INSTALLED_RAN\n"); setExecutable(true) }
         val (pout, _) = run(present)
-        if (!pout.contains("INSTALLED_RAN")) throw GradleException("present HOME must route to installed devrig; stdout=$pout")
+        if (pout.trimEnd('\n') != "INSTALLED_RAN")
+            throw GradleException("present HOME: stdout must be exactly INSTALLED_RAN (launcher emitted extra stdout?); got: $pout")
     }
 }
 
