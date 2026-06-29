@@ -24,7 +24,11 @@ func ensureInstall(home string, runner func() error) (bool, error) {
 	}
 	// Reclaim a stale lock left by a crashed/killed install before the O_EXCL gate.
 	if lockIsStale(home) {
-		os.Remove(lp)
+		// Log (never swallow) a reclaim failure; the O_EXCL open below then fails
+		// loudly with a distinct error, leaving the stale lock for diagnosis.
+		if rerr := os.Remove(lp); rerr != nil {
+			os.Stderr.WriteString("devrig-bootstrap: failed to remove stale lock: " + rerr.Error() + "\n")
+		}
 	}
 	// O_EXCL makes lock creation the single-flight gate across concurrent bootstraps.
 	f, err := os.OpenFile(lp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
