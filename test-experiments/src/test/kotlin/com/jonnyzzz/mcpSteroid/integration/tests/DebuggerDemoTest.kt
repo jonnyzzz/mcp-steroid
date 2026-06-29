@@ -2,11 +2,16 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.AiAgentDriver
+import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleDriver
+import com.jonnyzzz.mcpSteroid.integration.infra.IdeTestFolders
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
+import com.jonnyzzz.mcpSteroid.integration.infra.McpConnectionMode
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.integration.infra.waitForProjectReady
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -55,6 +60,16 @@ class DebuggerDemoTest {
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `gemini finds sortedByDescending bug via debugger`() = runDebuggerDemo(AiAgentDriver::gemini)
 
+    // ── Baselines: same task, no MCP / no debugger (Claude + Codex). Scored on correctness only,
+    //    so the dashboard can show whether the live debugger actually helps. ──
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.MINUTES)
+    fun `claude finds sortedByDescending bug without mcp`() = runDebuggerDemo(AiAgentDriver::claude, withMcp = false)
+
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.MINUTES)
+    fun `codex finds sortedByDescending bug without mcp`() = runDebuggerDemo(AiAgentDriver::codex, withMcp = false)
+
     @Test
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `test debugger finds null-default bug with Claude`() = runNullDefaultDemo(AiAgentDriver::claude)
@@ -83,18 +98,23 @@ class DebuggerDemoTest {
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `codex debugs JonnyzzzDebugTest via debugger`() = runJonnyzzzDebugDemo(AiAgentDriver::codex)
 
-    private fun runDebuggerDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
+    private fun runDebuggerDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>, withMcp: Boolean = true) {
+        val modeLabel = if (withMcp) "mcp" else "none"
         val session = IntelliJContainer.create(
             lifetime, IntelliJContainerOpts(
-                consoleTitle = "Debugger with ${agentName.name.titleCase()}",
+                // The mode goes in the console title so the published run-dir zip is mode-tagged
+                // (fetch.sh maps *-mcp* -> with, *-none* -> without) and the dashboard pairs the two.
+                consoleTitle = "Debugger-$modeLabel-${agentName.name.titleCase()}",
+                aiMode = if (withMcp) AiMode.AI_MCP else AiMode.NONE,
+                mcpConnectionMode = if (withMcp) null else McpConnectionMode.None,
             )
         ).waitForProjectReady()
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
-        console.writeStep("Building prompt for $agentName")
+        console.writeStep("Building prompt for $agentName (withMcp=$withMcp)")
 
-        val prompt = buildString {
+        val prompt = if (withMcp) buildString {
             appendLine("# Task: Debug DemoByJonnyzzz.kt to find the bug")
             appendLine()
             appendLine("You MUST use the IntelliJ debugger to investigate the bug.")
@@ -126,6 +146,29 @@ class DebuggerDemoTest {
             appendLine("- You MUST use the debugger (set breakpoints, evaluate variables, step through code)")
             appendLine("- Do NOT use screenshots or UI input tools")
             appendLine("- Read MCP debugger resources for API patterns -- do not invent API calls")
+        } else buildString {
+            // BASELINE (no MCP / no IDE): the agent has only the shell. It cannot use the IntelliJ
+            // debugger — so it must find the bug by reading the code and reasoning (and may add
+            // temporary logging / run the program via the build tool). Scored ONLY on whether it
+            // correctly identifies the bug — the same correctness check as the MCP run.
+            appendLine("# Task: Find the bug in DemoByJonnyzzz.kt")
+            appendLine()
+            appendLine("IntelliJ MCP tools are unavailable in this run. Use shell commands only")
+            appendLine("(`bash`, `cat`, `find`, `grep`, and the project's build tool). Do NOT call `steroid_*` tools.")
+            appendLine()
+            appendLine("## Instructions")
+            appendLine()
+            appendLine("1. Find `DemoByJonnyzzz.kt` in the project and read it.")
+            appendLine("2. Determine the bug by reasoning about the code. You may add temporary logging and run")
+            appendLine("   the program to confirm, but there is no interactive debugger available.")
+            appendLine("3. Identify the bug and its root cause.")
+            appendLine()
+            appendLine("## Required Output")
+            appendLine()
+            appendLine("Print these markers on separate lines:")
+            appendLine("BUG_FOUND: yes")
+            appendLine("BUG_LINE: <the exact buggy source line>")
+            appendLine("ROOT_CAUSE: <must explain what the bug is and why, mentioning both that sortedByDescending returns a new list AND that the return value is ignored/unused>")
         }
 
         console.writeStep("Running agent prompt")
@@ -136,98 +179,77 @@ class DebuggerDemoTest {
         // execution IDs in NDJSON tool_result events, not in the final extracted text.
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep( "Validating agent output")
-
-        // If CLI timed out but the agent already emitted required markers, keep validating the output.
-        val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
-                hasAnyMarkerLine(output, "ROOT_CAUSE", "Root cause")
-        if (result.exitCode != 0 && !hasFinalMarkers) {
-            console.writeError("Agent exited with code ${result.exitCode}")
-            result.assertExitCode(0, message = "debugger demo")
-        }
+        console.writeStep("Validating agent output (withMcp=$withMcp)")
         console.writeInfo("Agent exited with code ${result.exitCode ?: "?"}")
 
-        // Agent must show evidence of MCP Steroid execute_code usage
-        console.writeInfo("Checking: steroid_execute_code usage evidence")
-        assertUsedExecuteCodeEvidence(combined)
-        console.writeSuccess("execute_code evidence found")
+        // Correctness — the fair, mode-independent verdict scored identically for both modes
+        // (did the agent actually identify the bug, however it got there?). See scoreSortedByDescendingBug.
+        val score = scoreSortedByDescendingBug(output)
+        console.writeInfo("Bug identified: ${score.bugFound}${if (score.reasons.isEmpty()) "" else " — misses: ${score.reasons}"}")
 
-        console.writeInfo("Checking: BUG_LINE marker")
-        val bugLine = findMarkerValue(output, "BUG_LINE", "Buggy line", "Bug line")
-        check(bugLine != null) {
-            "Agent did not output required marker 'BUG_LINE:' (or equivalent).\nOutput:\n$combined"
-        }
-        check(bugLine.contains("sortedByDescending", ignoreCase = true)) {
-            "BUG_LINE must mention sortedByDescending.\nOutput:\n$combined"
-        }
-        val hasExactBugStatement = bugLine.contains("players.sortedByDescending", ignoreCase = true) &&
-                bugLine.contains("it.score", ignoreCase = true)
-        val hasSortedLineEvidence = Regex("""(?im)sortedByDescending line\s*\(1-based\)\s*:\s*7""")
-            .containsMatchIn(combined)
-        check(hasExactBugStatement || hasSortedLineEvidence) {
-            "BUG_LINE must identify the exact buggy statement, or execution logs must show line-number evidence " +
-                    "for the sortedByDescending line.\nOutput:\n$combined"
-        }
-        console.writeSuccess("BUG_LINE: $bugLine")
-
-        // Agent must mention sortedByDescending in its analysis
-        result.assertOutputContains("sortedByDescending", message = "agent must mention sortedByDescending")
-
-        // Agent must identify the root cause: sortedByDescending returns a new list
-        // but the return value is ignored
-        console.writeInfo("Checking: ROOT_CAUSE marker")
-        val rootCause = findMarkerValue(output, "ROOT_CAUSE", "Root cause")
-        check(rootCause != null) {
-            "Agent did not output required marker 'ROOT_CAUSE:' (or equivalent).\nOutput:\n$combined"
-        }
-        console.writeSuccess("ROOT_CAUSE: $rootCause")
-
-        console.writeInfo("Checking: BUG_FOUND marker")
-        val bugFound = findMarkerValue(output, "BUG_FOUND", "Bug found")
-        val hasExplicitYes = bugFound?.equals("yes", ignoreCase = true) == true
-        val inferredYes = bugFound == null && bugLine.isNotBlank() && rootCause.isNotBlank()
-        check(hasExplicitYes || inferredYes) {
-            "Agent did not confirm bug detection with 'BUG_FOUND: yes' and no valid fallback markers were found.\nOutput:\n$combined"
-        }
-        console.writeSuccess("BUG_FOUND: ${bugFound ?: "(inferred)"}")
-
-        console.writeInfo("Checking: ROOT_CAUSE quality")
-        val ignoredReturnPatterns = listOf(
-            "ignor", "unused", "discard", "return value", "not assigned", "not assigned back", "not used",
-            "isn't assigned", "ignored/not assigned", "not stored", "not captured", "thrown away", "result is lost",
-        )
-        val returnsNewListPatterns = listOf(
-            "new list", "returns new", "does not modify", "doesn't modify",
-            "not in place", "immutable", "original list", "original unsorted list",
-            "new sorted list", "sorted copy",
+        // Record a per-mode run summary so the dashboard pairs with-MCP vs without-MCP and shows
+        // helped/hurt/neutral. `agent_claimed_fix` carries the correctness verdict.
+        writeDebuggerRunSummary(
+            scenario = "debugger__sortedByDescending",
+            agentName = agentName.name,
+            modeLabel = modeLabel,
+            withMcp = withMcp,
+            exitCode = result.exitCode,
+            bugFound = score.bugFound,
+            summaryText = score.rootCause ?: score.reasons.joinToString("; "),
         )
 
-        val mentionsIgnoredReturn = ignoredReturnPatterns.any { pattern ->
-            rootCause.contains(pattern, ignoreCase = true)
+        if (withMcp) {
+            // With MCP we additionally require proof the IDE debugger was actually used — otherwise the
+            // "with mcp" run isn't exercising MCP. Correctness itself is a dashboard metric, NOT a hard
+            // gate, so a legitimate miss surfaces as a comparison result rather than a red build.
+            console.writeInfo("Checking: steroid_execute_code usage evidence")
+            assertUsedExecuteCodeEvidence(combined)
+            console.writeInfo("Checking: debugger evidence (suspension + evaluation)")
+            assertDebuggerEvidence(combined, console)
+            console.writeSuccess("MCP debugger evidence validated")
+        } else {
+            // Baseline: only require the agent actually ran to completion (exited cleanly or emitted its
+            // final markers). Whether it FOUND the bug is the comparison data point, not a pass gate.
+            val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
+                    hasAnyMarkerLine(output, "ROOT_CAUSE", "Root cause")
+            check(result.exitCode == 0 || hasFinalMarkers) {
+                "Baseline agent neither exited cleanly nor produced final markers.\nOutput:\n$combined"
+            }
         }
-        val mentionsNewListBehavior = returnsNewListPatterns.any { pattern ->
-            rootCause.contains(pattern, ignoreCase = true)
-        }
-        check(mentionsIgnoredReturn && mentionsNewListBehavior) {
-            "ROOT_CAUSE must explain that sortedByDescending returns a new list and its return value is ignored.\n" +
-                    "Expected ignored patterns: $ignoredReturnPatterns\n" +
-                    "Expected new-list patterns: $returnsNewListPatterns\nOutput:\n$combined"
-        }
-        check(!rootCause.contains("it.first", ignoreCase = true)) {
-            "ROOT_CAUSE should not claim a selector bug (`it.first` vs `it.score`).\nOutput:\n$combined"
-        }
-        console.writeSuccess("ROOT_CAUSE quality validated")
 
-        // Validate debugger evidence: the agent must have actually used the debugger,
-        // not just read source code and guessed the answer.
-        console.writeInfo("Checking: debugger evidence (suspension + evaluation)")
-        assertDebuggerEvidence(combined, console)
-        console.writeSuccess("Debugger evidence validated")
+        console.writeHeader(if (score.bugFound) "BUG IDENTIFIED" else "BUG NOT IDENTIFIED")
+        println("[TEST] Debugger demo [$agentName+$modeLabel] bugFound=${score.bugFound}")
+    }
 
-        console.writeSuccess("Agent '$agentName' identified the sortedByDescending bug")
-        console.writeHeader("PASSED")
-
-        println("[TEST] Agent '$agentName' successfully identified the sortedByDescending bug")
+    /**
+     * Write a per-mode run summary (`dpaia-arena-run-<scenario>-<agent>-<mode>.json`) so the experiments
+     * dashboard pairs the with-MCP and without-MCP runs and computes helped/hurt/neutral. The verdict
+     * field is `agent_claimed_fix` = whether the agent correctly identified the bug.
+     */
+    private fun writeDebuggerRunSummary(
+        scenario: String,
+        agentName: String,
+        modeLabel: String,
+        withMcp: Boolean,
+        exitCode: Int?,
+        bugFound: Boolean,
+        summaryText: String,
+    ) {
+        val json = buildJsonObject {
+            put("instance_id", scenario)
+            put("agent", agentName)
+            put("mode", modeLabel)
+            put("exit_code", exitCode ?: -1)
+            put("agent_claimed_fix", bugFound)
+            put("used_mcp_steroid", withMcp)
+            put("agent_summary", summaryText)
+            put("timestamp", java.time.Instant.now().toString())
+        }
+        val out = IdeTestFolders.testOutputDir.resolve("dpaia-arena-run-$scenario-$agentName-$modeLabel.json")
+        out.parentFile.mkdirs()
+        out.writeText(json.toString())
+        println("[TEST] Run summary written: ${out.absolutePath}")
     }
 
     /**
