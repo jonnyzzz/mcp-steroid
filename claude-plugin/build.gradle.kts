@@ -249,16 +249,17 @@ val validateSetupCommand = tasks.register("validateSetupCommand") {
         if (!content.contains("description:")) {
             throw GradleException("setup.md: frontmatter must include a description")
         }
-        // Must run the bundled wrapper via the plugin root, not reimplement the install
-        if (!content.contains("\${CLAUDE_PLUGIN_ROOT}")) {
-            throw GradleException("setup.md: must reference \${CLAUDE_PLUGIN_ROOT} to locate the wrapper")
-        }
+        // Must pre-download via the bundled wrapper (the plugin .mcp.json owns registration now)
         if (!content.contains("install-devrig")) {
             throw GradleException("setup.md: must run the bundled install-devrig wrapper")
         }
-        // After install, devrig must self-register the MCP server (the plugin no longer ships one).
-        if (!content.contains("install claude")) {
-            throw GradleException("setup.md: must run 'devrig install claude' to register the MCP server")
+        // Must NOT re-register: that would duplicate the plugin's own .mcp.json server
+        if (content.contains("install claude")) {
+            throw GradleException("setup.md: must NOT run 'devrig install claude' (plugin .mcp.json is the registration)")
+        }
+        // Must clean up any legacy user-scope duplicate
+        if (!content.contains("claude mcp remove devrig")) {
+            throw GradleException("setup.md: must remove a legacy user-scope 'devrig' entry to avoid duplicate servers")
         }
         // Must tell the user to re-run on failure (the install is resumable)
         if (!content.contains("/devrig:setup")) {
