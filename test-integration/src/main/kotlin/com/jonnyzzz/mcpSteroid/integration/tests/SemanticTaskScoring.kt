@@ -79,3 +79,37 @@ fun scoreRenameSafety(output: String): RenameSafetyScore {
     }
     return RenameSafetyScore(renameDone = renameDone, buildGreen = buildGreen, safe = renameDone && buildGreen == true)
 }
+
+data class InspectionScore(
+    val issuesFound: Int?,
+    val mentionsRedundantCast: Boolean,
+    val mentionsTargetFile: Boolean,
+    /** True when the agent detected a meaningful number of the (semantic) redundant-cast issues. */
+    val detected: Boolean,
+)
+
+/**
+ * Score an "run IDE inspections + report issues" answer. The target is the redundant casts after
+ * `instanceof` in Keycloak's `ValidatorConfig.java`. With MCP the agent runs IntelliJ's inspection
+ * (semantic type-narrowing → finds them exactly); grep/shell cannot determine a cast is redundant.
+ *
+ * Expected markers:
+ *   ISSUES_FOUND: <count>
+ *   ISSUE: <description>            (the redundant-cast lines; ideally mentioning the file)
+ *
+ * @param minIssues the lower bound of redundant casts that must be reported to count as detected.
+ */
+fun scoreInspections(output: String, minIssues: Int, targetFile: String): InspectionScore {
+    val count = findMarkerValue(output, "ISSUES_FOUND", "Issues found")
+        ?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }
+    val mentionsCast = output.contains("redundant cast", ignoreCase = true) ||
+        output.contains("redundant type cast", ignoreCase = true) ||
+        output.contains("unnecessary cast", ignoreCase = true)
+    val mentionsFile = output.contains(targetFile, ignoreCase = true)
+    return InspectionScore(
+        issuesFound = count,
+        mentionsRedundantCast = mentionsCast,
+        mentionsTargetFile = mentionsFile,
+        detected = mentionsCast && mentionsFile && (count ?: 0) >= minIssues,
+    )
+}
