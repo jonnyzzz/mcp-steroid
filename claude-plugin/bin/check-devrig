@@ -1,53 +1,24 @@
 #!/bin/sh
-# devrig -- SessionStart hook. The plugin does not ship its own MCP server; the devrig binary
-# registers the 'devrig' MCP server itself once installed (`devrig install claude`). Until that
-# happens the devrig tools are unavailable, so this nudges the user to run /devrig:setup.
-# Stays silent once devrig is installed AND registered. Runs on every session start, so it must
-# be fast: a single file test plus one cheap grep of ~/.claude.json (NOT `devrig install --check`,
-# which shells out to `claude mcp list` and probes IDEs -- far too slow for every session start).
-#
-# Unlike the MCP launcher scripts, a hook's STDOUT is its data channel: Claude Code parses the
-# JSON below. systemMessage is a top-level field shown to the user; additionalContext is nested
-# under hookSpecificOutput and seen only by Claude (see the Claude Code hooks ref).
-
-# The user-facing launcher differs by OS: POSIX `devrig`, Windows `devrig.cmd` (single source of truth
-# is DevrigUserLauncher.path in npx-kt). This hook may run under sh on Windows too (e.g. Git Bash), where
-# only `devrig.cmd` exists -- testing just `devrig` falsely reported "not installed" every session.
+# devrig -- SessionStart hook. The plugin registers its MCP server via .mcp.json and the bundled
+# bootstrap downloads devrig in the background. This hook ONLY surfaces download progress; it never
+# nags about registration (the .mcp.json guarantees it, and plugin-scoped registration does not
+# appear in ~/.claude.json). Stays silent once devrig is installed. Must be fast and exit 0.
 DEVRIG="$HOME/.mcp-steroid/bin/devrig"
 DEVRIG_WIN="$HOME/.mcp-steroid/bin/devrig.cmd"
-CLAUDE_CONFIG="$HOME/.claude.json"
 
-# 1. devrig binary not installed yet -- the dominant fresh-machine case. Accept either launcher; use -f
-# (not -x) for the Windows .cmd, whose executable bit is meaningless on that filesystem.
-if [ ! -x "$DEVRIG" ] && [ ! -f "$DEVRIG_WIN" ]; then
-  cat <<'EOF'
-{
-  "systemMessage": "devrig is not installed yet. Run /devrig:setup to install and register it, then restart Claude.",
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "The devrig tools are unavailable until the devrig binary is installed at ~/.mcp-steroid/bin/devrig and registered with Claude. /devrig:setup does both (install + 'devrig install claude'). If the user asks why the devrig tools are unavailable, tell them to run the /devrig:setup slash command."
-  }
-}
-EOF
+# Installed -> the launcher proxies the real server; nothing to say.
+if [ -x "$DEVRIG" ] || [ -f "$DEVRIG_WIN" ]; then
   exit 0
 fi
 
-# 2. devrig installed but not registered with Claude -- cheap heuristic: the user-scope MCP server
-# entry (named 'devrig', or the legacy 'mcp-steroid') is absent from ~/.claude.json. A devrig
-# registration always references the ~/.mcp-steroid/bin launcher, so matching either name here is a
-# low-false-negative check; we err toward staying silent rather than nagging.
-if [ ! -f "$CLAUDE_CONFIG" ] || ! grep -Eq '"devrig"|"mcp-steroid"' "$CLAUDE_CONFIG"; then
-  cat <<'EOF'
+# Not installed yet -> the bootstrap is serving a green server and downloading in the background.
+cat <<'EOF'
 {
-  "systemMessage": "devrig is installed but not registered with Claude yet. Run /devrig:setup (or /devrig:status to check), then restart Claude.",
+  "systemMessage": "devrig is downloading in the background (~300 MB). The bridge is in bootstrap mode now; restart Claude once it finishes to activate the full IDE. Run /devrig:setup to fetch it immediately.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "The devrig binary is present at ~/.mcp-steroid/bin/devrig but no 'devrig' MCP server is registered in ~/.claude.json. /devrig:setup re-runs 'devrig install claude' to register it (idempotent); /devrig:status reports the registration state without changing anything. After either, the user must restart Claude."
+    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~300 MB devrig binary downloads in the background. The agent can call the devrig_setup tool to check progress. Once installed, the user must restart Claude so the launcher routes to the full devrig server. /devrig:setup pre-downloads it immediately."
   }
 }
 EOF
-  exit 0
-fi
-
-# 3. installed and registered -- nothing to say.
 exit 0
