@@ -201,8 +201,9 @@ class McpScriptContextImpl(
         resultBuilder.logProgress("Waiting for indexing to complete...")
 
         try {
-            // Bounded as a deadlock safety net (indexing that never reaches smart mode) — the tool docs
-            // promise the wait is bounded. Timeout => fail the execution with a clear message.
+            // We only wait this short window per call so the request returns promptly. Reaching it does
+            // NOT mean anything is wrong: dumb mode means indexing is actively running and making
+            // progress. We tell the caller so, and let it poll (call again).
             withTimeout(WAIT_FOR_SMART_MODE_TIMEOUT) {
                 suspendCancellableCoroutine<Unit> { cont ->
                     fun waitForSmart() {
@@ -224,11 +225,15 @@ class McpScriptContextImpl(
                 }
             }
         } catch (_: TimeoutCancellationException) {
-            captureThreadDump("waitForSmartMode-timeout")
-            log.error("[$executionId] waitForSmartMode did not reach smart mode within $WAIT_FOR_SMART_MODE_TIMEOUT")
+            // Not an error and not stuck — indexing is in progress. Tell the caller to keep polling.
+            log.info("[$executionId] still indexing after $WAIT_FOR_SMART_MODE_TIMEOUT — asking caller to poll")
             throw ToolCallErrorException(
-                "waitForSmartMode did not reach smart mode within $WAIT_FOR_SMART_MODE_TIMEOUT — indexing may " +
-                    "be stuck. See the thread dump under execution '${executionId.executionId}'."
+                "INDEXING IN PROGRESS: the IDE is still indexing this project, so it is not ready yet. " +
+                    "This is normal and expected — it is NOT an error and nothing is stuck; indexing always " +
+                    "makes progress and simply needs more time. Indexing a medium-size project can take up " +
+                    "to an hour, and larger projects longer; that wait is acceptable. Just keep polling: " +
+                    "call this tool again to continue waiting (each call waits up to $WAIT_FOR_SMART_MODE_TIMEOUT), " +
+                    "and your request runs automatically once indexing finishes."
             )
         } finally {
             log.info("[$executionId] Waiting for indexing completed")

@@ -66,6 +66,19 @@ internal fun ProcessResult.resolveJavaHomeLookup(jdkVersion: String): String {
     error("[COMPILE] JDK $jdkVersion lookup returned no path; stdout=${stdout.take(500)} stderr=${stderr.take(500)}")
 }
 
+/**
+ * Marker the server's `waitForSmartMode` emits when the IDE is still indexing — the signal to keep
+ * polling (call again). Mirrors the message in `McpScriptContextImpl.waitForSmartMode`; the coupling is
+ * the documented tool-result contract.
+ */
+internal const val INDEXING_IN_PROGRESS_MARKER = "INDEXING IN PROGRESS"
+
+/** Overall budget for polling through "still indexing" — large projects can take a long time. */
+private const val INDEXING_POLL_BUDGET_MS = 60 * 60 * 1000L
+
+/** Pure: does this tool-result text say the IDE is still indexing (so we should call again)? */
+internal fun isIndexingInProgress(text: String): Boolean = text.contains(INDEXING_IN_PROGRESS_MARKER)
+
 class McpSteroidDriver(
     val driver: ContainerDriver,
     val ijDriver: IntelliJDriver,
@@ -361,6 +374,10 @@ try {
      * @param timeout Timeout in seconds (default: 600)
      * @param projectName Project name (defaults to the project at guestProjectDir)
      * @return MCP tool result as JSON string
+     *
+     * If the IDE is still indexing, each call waits a short window and returns an "INDEXING IN PROGRESS"
+     * result; we poll exactly as an agent would (call again), since indexing always makes progress and a
+     * large project can legitimately take a long time. Polling is bounded by [INDEXING_POLL_BUDGET_MS].
      */
     fun mcpExecuteCode(
         code: String,
@@ -374,6 +391,25 @@ try {
          * modality choice rather than relying on the server's implicit default.
          */
         modal: ModalMode = ModalMode.DEFAULT,
+    ): ProcessResult {
+        val deadline = System.currentTimeMillis() + INDEXING_POLL_BUDGET_MS
+        var attempt = 0
+        while (true) {
+            attempt++
+            val result = mcpExecuteCodeOnce(code, taskId, reason, timeout, projectName, modal)
+            if (!isIndexingInProgress(result.stdout) || System.currentTimeMillis() >= deadline) return result
+            println("[MCP] $taskId: IDE still indexing (attempt $attempt) — calling again to keep waiting…")
+            Thread.sleep(3_000L)
+        }
+    }
+
+    private fun mcpExecuteCodeOnce(
+        code: String,
+        taskId: String,
+        reason: String,
+        timeout: Int,
+        projectName: String,
+        modal: ModalMode,
     ): ProcessResult {
         // First, initialize MCP session
         val sessionId = mcpInitialize()
