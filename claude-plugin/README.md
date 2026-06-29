@@ -10,11 +10,12 @@ In Claude Code:
 ```
 /plugin marketplace add jonnyzzz/mcp-steroid
 /plugin install devrig@jonnyzzz
-/devrig:setup
 ```
 
-`/devrig:setup` installs the devrig binary and registers it with Claude.
-**Restart Claude** afterwards, then check with `/devrig:status`.
+The `devrig` MCP server registers automatically and downloads the devrig binary
+(~300 MB) in the background on first use. **Restart Claude** once the download
+finishes to activate the full IDE bridge. Check status anytime with
+`/devrig:status`, or run `/devrig:setup` to fetch the binary immediately.
 
 ## Run a locally built devrig (your code changes, not the release)
 
