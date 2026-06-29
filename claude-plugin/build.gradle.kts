@@ -8,6 +8,9 @@ plugins {
 
 val pluginVersion = version.toString()
 
+val bootstrapBins by configurations.creating { isCanBeResolved = true; isCanBeConsumed = false }
+dependencies { bootstrapBins(project(mapOf("path" to ":devrig-bootstrap", "configuration" to "bootstrapBinaries"))) }
+
 // Patches the version placeholder in plugin.json and copies all plugin files
 // into build/plugin/ so the Zip task has a clean, versioned staging area.
 val preparePluginFiles = tasks.register("preparePluginFiles") {
@@ -22,6 +25,8 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
     inputs.dir(sourceDir.resolve("bin"))
     inputs.dir(sourceDir.resolve("commands"))
     inputs.dir(sourceDir.resolve("hooks"))
+    inputs.file(sourceDir.resolve(".mcp.json"))
+    inputs.files(bootstrapBins)
     outputs.dir(outputDir)
 
     doLast {
@@ -35,12 +40,24 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
             pluginJson.replace(Regex(""""version"\s*:\s*"[^"]*""""), """"version": "$pluginVersion"""")
         )
 
-        // bin/ -- copy scripts; mark POSIX scripts executable (.cmd/.ps1 are Windows-only, no x-bit)
+        // bin/ -- copy scripts; mark POSIX scripts executable (.ps1 is Windows-only, no x-bit;
+        //         devrig-mcp.cmd is the polyglot MCP launcher and IS marked executable for POSIX exec)
         val binOut = out.resolve("bin").also { it.mkdirs() }
         sourceDir.resolve("bin").listFiles()?.forEach { f ->
             val dest = binOut.resolve(f.name)
             f.copyTo(dest, overwrite = true)
-            if (!f.name.endsWith(".cmd") && !f.name.endsWith(".ps1")) dest.setExecutable(true)
+            if (!f.name.endsWith(".ps1") && !f.name.endsWith(".cmd")) dest.setExecutable(true)
+            if (f.name == "devrig-mcp.cmd") dest.setExecutable(true)
+        }
+
+        // .mcp.json -- MCP server registration for Claude Code
+        out.resolve(".mcp.json").writeText(sourceDir.resolve(".mcp.json").readText())
+
+        // bootstrap binaries -- cross-compiled Go binaries for all platforms
+        bootstrapBins.singleFile.listFiles()?.forEach { f ->
+            val dest = binOut.resolve(f.name)
+            f.copyTo(dest, overwrite = true)
+            if (!f.name.endsWith(".exe")) dest.setExecutable(true)
         }
 
         // commands/ -- slash commands, copied as-is
@@ -89,9 +106,17 @@ val verifyPluginFiles = tasks.register("verifyPluginFiles") {
         val expectedFiles = sortedSetOf(
             "LICENSE",
             ".claude-plugin/plugin.json",
+            ".mcp.json",
             "bin/install-devrig",
             "bin/install-devrig.ps1",
             "bin/check-devrig",
+            "bin/devrig-mcp.cmd",
+            "bin/bootstrap-darwin-arm64",
+            "bin/bootstrap-darwin-amd64",
+            "bin/bootstrap-linux-amd64",
+            "bin/bootstrap-linux-arm64",
+            "bin/bootstrap-windows-amd64.exe",
+            "bin/bootstrap-windows-arm64.exe",
             "commands/setup.md",
             "commands/status.md",
             "commands/uninstall.md",
@@ -455,6 +480,41 @@ val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
     }
 }
 
+val validateMcpJson = tasks.register("validateMcpJson") {
+    group = "verification"
+    description = "Validate .mcp.json registers one devrig stdio server via the polyglot launcher"
+    val f = projectDir.resolve(".mcp.json")
+    inputs.file(f)
+    doLast {
+        @Suppress("UNCHECKED_CAST")
+        val json = groovy.json.JsonSlurper().parse(f) as Map<String, Any?>
+        val servers = json["mcpServers"] as? Map<*, *> ?: throw GradleException(".mcp.json: missing mcpServers")
+        val devrig = servers["devrig"] as? Map<*, *> ?: throw GradleException(".mcp.json: missing 'devrig' server")
+        if (devrig["type"] != "stdio") throw GradleException(".mcp.json: devrig must be stdio")
+        val cmd = devrig["command"]?.toString().orEmpty()
+        if (!cmd.contains("\${CLAUDE_PLUGIN_ROOT}") || !cmd.contains("devrig-mcp.cmd"))
+            throw GradleException(".mcp.json: command must be \${CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp.cmd, got '$cmd'")
+    }
+}
+
+val validateDevrigMcpLauncher = tasks.register("validateDevrigMcpLauncher") {
+    group = "verification"
+    description = "Validate bin/devrig-mcp.cmd routes correctly and writes nothing to stdout pre-exec"
+    val s = projectDir.resolve("bin/devrig-mcp.cmd")
+    inputs.file(s)
+    doLast {
+        val c = s.readText()
+        if (!c.contains(".mcp-steroid")) throw GradleException("devrig-mcp.cmd: must check the installed launcher path")
+        if (!c.contains("bootstrap-")) throw GradleException("devrig-mcp.cmd: must reference the bundled bootstrap")
+        // No bare `echo`/`Write-Host` to stdout: POSIX echoes must be >&2; cmd echoes must be 1>&2.
+        s.readLines().forEach { ln ->
+            val t = ln.trim().removePrefix(":;").trim()
+            if (t.startsWith("echo ") && !t.contains(">&2"))
+                throw GradleException("devrig-mcp.cmd: stdout echo would corrupt JSON-RPC: $ln")
+        }
+    }
+}
+
 val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRuns") {
     group = "verification"
     description = "Run bin/devrig-mcp.cmd against synthetic HOMEs (POSIX routing + stdout silence)"
@@ -518,4 +578,7 @@ tasks.named("check") {
     dependsOn(validateCheckDevrig)
     dependsOn(validateCheckDevrigRuns)
     dependsOn(validateMarketplaceJson)
+    dependsOn(validateMcpJson)
+    dependsOn(validateDevrigMcpLauncher)
+    dependsOn(validateDevrigMcpLauncherRuns)
 }
