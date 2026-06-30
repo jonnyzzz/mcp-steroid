@@ -58,19 +58,27 @@ class KeycloakRenameTest {
                 else -> error("Unknown agent: $agentName")
             }
 
+            val startedAt = System.currentTimeMillis()
             val result = agent.runPrompt(if (withMcp) withMcpPrompt() else baselinePrompt(), timeoutSeconds = 2400)
                 .awaitForProcessFinish()
+            val agentDurationMs = System.currentTimeMillis() - startedAt
             val combined = result.stdout + "\n" + result.stderr
 
             val score = scoreRenameSafety(combined)
             println("[TEST] keycloak rename [$agentName+$modeLabel] safe=${score.safe} " +
                     "renameDone=${score.renameDone} buildGreen=${score.buildGreen}")
 
-            println("[ARENA] $agentName+$modeLabel — $SCENARIO")
-            println("[ARENA]   Claimed fix:    ${score.safe}")
-            println("[ARENA]   Used MCP:       $withMcp")
-            println("[ARENA]   Exit code:      ${result.exitCode ?: -1}")
-            println("[ARENA]   Summary:        renameDone=${score.renameDone} buildGreen=${score.buildGreen}")
+            recordSemanticRun(
+                scenario = SCENARIO,
+                agentName = agentName,
+                withMcp = withMcp,
+                claimedFix = score.safe,
+                rawOutput = result.rawStdout,
+                exitCode = result.exitCode,
+                agentDurationMs = agentDurationMs,
+                runDir = session.runDirInContainer,
+                summary = "renameDone=${score.renameDone} buildGreen=${score.buildGreen}",
+            )
 
             if (withMcp) assertUsedExecuteCodeEvidence(combined)
         } finally {
