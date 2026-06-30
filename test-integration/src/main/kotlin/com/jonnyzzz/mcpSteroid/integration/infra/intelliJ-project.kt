@@ -129,7 +129,14 @@ sealed class IntelliJProject{
     )
 
     object BroadleafCommerceProject : ProjectFromRemoteGit("https://github.com/BroadleafCommerce/BroadleafCommerce.git")
-    object KeycloakProject : ProjectFromRemoteGit("https://github.com/keycloak/keycloak.git")
+    object KeycloakProject : ProjectFromRemoteGit(
+        "https://github.com/keycloak/keycloak.git",
+        // Pin a stable release tag. `main` is the 999.0.0-SNAPSHOT dev placeholder, whose internal reactor
+        // build plugins (keycloak-guides-maven-plugin, db-compatibility-verifier-maven-plugin, …) resolve
+        // from nowhere and fail the Maven import. Per docs/building.md the build needs JDK 17/21/25 — our
+        // jdkVersion "21" matches.
+        gitRef = "26.6.4",
+    )
     object KillBillProject : ProjectFromRemoteGit("https://github.com/killbill/killbill.git")
     object ThingsBoardProject : ProjectFromRemoteGit("https://github.com/thingsboard/thingsboard.git")
     object YouTrackDbProject : ProjectFromRemoteGit("https://github.com/JetBrains/youtrackdb.git")
@@ -187,7 +194,16 @@ sealed class IntelliJProject{
         }
     }
 
-    open class ProjectFromRemoteGit protected constructor(val repoUrl: String) : IntelliJProject() {
+    open class ProjectFromRemoteGit protected constructor(
+        val repoUrl: String,
+        /**
+         * Optional branch/tag to check out after cloning. Null = the repo's default branch. Pin a stable
+         * release tag for projects whose default branch (`main`) uses a dev-placeholder version that breaks
+         * the build — e.g. Keycloak `main` is `999.0.0-SNAPSHOT`, whose internal reactor plugins resolve
+         * from nowhere and fail the Maven import.
+         */
+        val gitRef: String? = null,
+    ) : IntelliJProject() {
         override fun getRepoUrlForCache(): String = repoUrl
 
         override fun IntelliJProjectDriver.deploy() {
@@ -205,6 +221,11 @@ sealed class IntelliJProject{
             if (!clonedFromCache) {
                 console.writeInfo("Cache miss for $ownerAndRepo — cloning from $repoUrl ...")
                 git.clone(repoUrl, guestProjectDir)
+            }
+
+            if (gitRef != null) {
+                console.writeInfo("Checking out $ownerAndRepo @ $gitRef ...")
+                git.checkout(guestProjectDir, gitRef)
             }
         }
     }
