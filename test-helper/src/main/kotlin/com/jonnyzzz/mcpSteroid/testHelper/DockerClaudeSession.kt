@@ -153,7 +153,7 @@ class DockerClaudeSession(
 
     companion object : AIAgentCompanion<DockerClaudeSession>("claude-cli") {
         /** Default Claude model for all test runs. Override via system property `claude.model`. */
-        const val DEFAULT_MODEL = "claude-opus-4-6"
+        const val DEFAULT_MODEL = "claude-opus-4-8"
 
         override val displayName = "Claude Code"
         override val outputFilter get() = ClaudeOutputFilter()
