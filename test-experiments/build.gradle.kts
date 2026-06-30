@@ -110,6 +110,13 @@ fun Test.configureExperimentalTest() {
             "test.integration.repo.cache.dir",
             layout.buildDirectory.dir("repo-cache").get().asFile.absolutePath,
         )
+        // Persisted container Maven (~/.m2) + Gradle (~/.gradle) caches, shared (root build dir) with
+        // :test-integration — the two suites never run concurrently — so deps + sources download once and
+        // are reused across runs. See IdeTestFolders.dependencyCacheVolumes.
+        systemProperty(
+            "test.integration.dependency.cache.dir",
+            rootProject.layout.buildDirectory.dir("test-dependency-cache").get().asFile.absolutePath,
+        )
 
         // Build-compatibility test: persistent caches so IDE downloads and Gradle state survive across runs
         val buildCompatDir = layout.buildDirectory.dir("build-compat").get().asFile

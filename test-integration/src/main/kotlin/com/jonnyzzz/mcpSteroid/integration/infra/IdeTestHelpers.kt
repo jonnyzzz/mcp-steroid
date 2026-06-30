@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.integration.infra
 
+import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -111,6 +112,34 @@ object IdeTestFolders {
      * Set via `test.integration.ide.download.dir` (default `build/ide-download`).
      */
     val ideDownloadDir: File = File(System.getProperty("test.integration.ide.download.dir", "build/ide-download"))
+
+    /**
+     * Host directory persisting the container's Maven (`~/.m2`) and Gradle (`~/.gradle`) caches across
+     * runs, so library jars + their sources/javadoc (always auto-downloaded on import) are resolved once
+     * and reused — turning a multi-minute cold Keycloak import into a warm one. Set via
+     * `test.integration.dependency.cache.dir` (the Gradle build points it at a root-shared dir so the
+     * integration and experiments suites — which never run concurrently — share one cache).
+     */
+    val dependencyCacheDir: File =
+        File(System.getProperty("test.integration.dependency.cache.dir", "build/test-dependency-cache"))
+
+    /**
+     * Bind mounts that persist the container's `~/.m2` and `~/.gradle` to host dirs under
+     * [dependencyCacheDir]. The host dirs are made world-writable: Linux bind mounts do not remap UIDs, so
+     * the in-container `agent` (uid 1000) must be able to write them (see [allocRunDirAndTitle]). `agent`'s
+     * home is `/home/agent` (see the ide-base Dockerfile).
+     */
+    fun dependencyCacheVolumes(): List<ContainerVolume> =
+        listOf(
+            dependencyCacheDir.resolve("m2") to "/home/agent/.m2",
+            dependencyCacheDir.resolve("gradle") to "/home/agent/.gradle",
+        ).map { (host, guest) ->
+            host.mkdirs()
+            host.setReadable(true, /* ownerOnly = */ false)
+            host.setWritable(true, /* ownerOnly = */ false)
+            host.setExecutable(true, /* ownerOnly = */ false)
+            ContainerVolume(host, guest, "rw")
+        }
 
     val testOutputDir = remapPathForDockerHost(
         readFilePathFromSystemProperties("test.integration.testOutput"),
