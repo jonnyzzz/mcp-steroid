@@ -3,19 +3,64 @@
 Give Claude the whole JetBrains IDE: run code, debug, refactor, and inspect any
 running IntelliJ-based IDE from Claude via the devrig bridge.
 
-## Install (from the marketplace)
-
-In Claude Code:
+## Install
 
 ```
 /plugin marketplace add jonnyzzz/mcp-steroid
 /plugin install devrig@jonnyzzz
 ```
 
-The `devrig` MCP server registers automatically and downloads the devrig binary
-(~300 MB) in the background on first use. **Restart Claude** once the download
-finishes to activate the full IDE bridge. Check status anytime with
-`/devrig:status`, or run `/devrig:setup` to fetch the binary immediately.
+## How it works (user workflow)
+
+1. The `devrig` MCP server **registers automatically** (bundled `.mcp.json`) — no
+   command to run.
+2. When the plugin activates (after `/plugin install`, `/reload-plugins`, or a new
+   session), a small bundled **bootstrap** server starts: `devrig` shows up
+   **connected (green)** with one tool, `devrig_status`, and the real devrig
+   binary (~500 MB) starts **downloading in the background**. No restart needed to
+   begin.
+3. **Keep Claude open while it downloads** — quitting or restarting Claude stops
+   the download. Check progress anytime: `/devrig:status` or just ask for "devrig
+   status".
+4. When the download **finishes, restart Claude once** — the full IDE bridge is
+   now active.
+5. `/devrig:setup` is only needed to **retry a failed download** or to fetch the
+   binary immediately instead of waiting.
+
+The downloaded binary lands at `~/.mcp-steroid/bin/devrig`; once present, the
+launcher routes to it and the bootstrap is no longer used.
+
+## Editing rules (read before changing files here)
+
+- **Bootstrap binaries are committed to `bin/bootstrap-*`.** After any change to
+  `../devrig-bootstrap/*.go`, run `./gradlew :claude-plugin:updateBundledBinaries`
+  and commit them. `:claude-plugin:check` fails if they're stale. See
+  [../devrig-bootstrap/README.md](../devrig-bootstrap/README.md).
+- **`bin/devrig-mcp.cmd` is a sh/cmd polyglot.** Keep `#!/bin/sh` on line 1, LF
+  endings (enforced by `.gitattributes`), and the executable bit. Claude spawns it
+  via raw `execve`, so a missing shebang or exec bit breaks it.
+- **stdout is the JSON-RPC channel.** `devrig-mcp.cmd` and `install-devrig*` must
+  write nothing to stdout before handing off — diagnostics go to stderr only. The
+  exception is `bin/check-devrig` (SessionStart hook): its stdout **is** its data
+  channel (it prints JSON), and it must stay fast and `exit 0`.
+- **Don't reimplement install logic** — delegate to the canonical `install.sh` /
+  `install.ps1`.
+- **`/devrig:setup` is surfaced to users only on failure** (not while downloading).
+- **Always run `./gradlew :claude-plugin:check`** after edits (validations +
+  strict file-set lockdown). If you add/remove a bundled file, update
+  `verifyPluginFiles` in `build.gradle.kts`.
+
+## Configuration
+
+| Change | Where | Effect |
+|---|---|---|
+| MCP server command | `.mcp.json` | which launcher Claude runs |
+| Installed plugin source | `../.claude-plugin/marketplace.json` (`source`) | which directory gets installed |
+| Download URLs | `../devrig-bootstrap/install.go` | where devrig is fetched from |
+| OS/arch targets | `../devrig-bootstrap/build.gradle.kts` (`targets`) | which platforms get a bootstrap binary |
+| Progress total ("~N MB") | `../devrig-bootstrap/progress.go` (`approxInstallMB`) | the number shown in `devrig_status` |
+| Wedge reclaim timing | `../devrig-bootstrap/status.go` (`heartbeatInterval`, `installLockStaleAfter`) | how fast a dead/interrupted download is retried |
+| User-facing messages | `bin/check-devrig` (hook) + `../devrig-bootstrap/status.go` | what the user sees while installing/failed/done |
 
 ## Run a locally built devrig (your code changes, not the release)
 
