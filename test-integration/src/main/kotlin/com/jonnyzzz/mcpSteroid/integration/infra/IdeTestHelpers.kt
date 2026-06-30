@@ -156,6 +156,14 @@ fun copyRecursively(source: File, destination: File) {
     }
 }
 
+/**
+ * Thrown from a [waitFor] action to stop polling immediately: a known terminal problem was observed (the
+ * awaited condition can never be reached), so retrying until the timeout is pointless. Extends [Error] so
+ * it is never confused with the transient [Exception]s [waitFor] swallows-and-retries; [waitFor] catches
+ * it explicitly and rethrows.
+ */
+class WaitAbortedException(message: String) : Error(message)
+
 fun waitFor(timeoutMillis: Long, condition: String = "condition", action: () -> Boolean) {
     println("Waiting $condition for $timeoutMillis ms...")
     val now = System.currentTimeMillis()
@@ -165,6 +173,9 @@ fun waitFor(timeoutMillis: Long, condition: String = "condition", action: () -> 
         try {
             if (action()) return
             lastException = null
+        } catch (e: WaitAbortedException) {
+            // Known terminal problem — the wait can never succeed. Stop now instead of polling to timeout.
+            throw e
         } catch (e: Exception) {
             lastException = e
         }

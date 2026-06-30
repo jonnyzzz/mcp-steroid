@@ -79,6 +79,18 @@ private const val INDEXING_POLL_BUDGET_MS = 60 * 60 * 1000L
 /** Pure: does this tool-result text say the IDE is still indexing (so we should call again)? */
 internal fun isIndexingInProgress(text: String): Boolean = text.contains(INDEXING_IN_PROGRESS_MARKER)
 
+/** The message the plugin logs (SteroidsMcpServer) when its MCP web server cannot start. */
+internal const val MCP_SERVER_STARTUP_FAILURE_MARKER = "Failed to start MCP server"
+
+/**
+ * Returns the first IDE-log line that reports the MCP web server failed to start, or null. The plugin
+ * logs [MCP_SERVER_STARTUP_FAILURE_MARKER] when it cannot bind its server (busy ports, a startup
+ * exception, etc.). We key on that symptom — "the web server did not come up" — not on any specific root
+ * cause, so the check is independent of why it failed.
+ */
+internal fun findMcpServerStartupFailure(logLines: List<String>): String? =
+    logLines.firstOrNull { it.contains(MCP_SERVER_STARTUP_FAILURE_MARKER) }
+
 class McpSteroidDriver(
     val driver: ContainerDriver,
     val ijDriver: IntelliJDriver,
@@ -94,15 +106,23 @@ class McpSteroidDriver(
     val hostMcpUrl get() = "http://localhost:${driver.mapGuestPortToHostPort(MCP_STEROID_PORT)}/mcp"
 
     fun waitForMcpReady() {
-        waitFor(300_000, "Wait for MCP Steroid ready") {
-            val result = driver.startProcessInContainer {
+        waitFor(300_000, "MCP Steroid server ready") {
+            // Fail fast: if the IDE logged that the MCP web server could not start, the health check below
+            // would otherwise poll a server that will never come up until the deadline. A WaitAbortedException
+            // stops the waitFor loop at once with the offending log line.
+            findMcpServerStartupFailure(ijDriver.readLogs())?.let { line ->
+                throw WaitAbortedException(
+                    "MCP Steroid web server failed to start in ${ijDriver.ideProduct.displayName}: $line",
+                )
+            }
+
+            driver.startProcessInContainer {
                 this
                     .args("curl", "-s", "-f", guestMcpUrl, "-H", "Accept: application/json")
                     .timeoutSeconds(5)
                     .quietly()
                     .description("curl health check $guestMcpUrl")
-            }.awaitForProcessFinish()
-            result.exitCode == 0 && runCatching { resolveProjectName() }.isSuccess
+            }.awaitForProcessFinish().exitCode == 0 && runCatching { resolveProjectName() }.isSuccess
         }
 
         mcpInitialize()

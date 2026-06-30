@@ -58,22 +58,20 @@ abstract class VerifyClassFileVersionTask : DefaultTask() {
         require(checked > 0) { "Scanned 0 class files across ${archives.files} — the guard verified nothing." }
 
         if (violations.isNotEmpty()) {
-            val maxMajor = maxFeature + ClassFileVersionScanner.CLASS_MAJOR_OFFSET
             throw GradleException(
                 buildString {
-                    appendLine("Class-file version check failed: ${violations.size} class(es) exceed Java $maxFeature (class-file major $maxMajor).")
-                    appendLine("These classes would throw UnsupportedClassVersionError on a JBR $maxFeature runtime (e.g. Android Studio on platform 261).")
+                    appendLine("Class-file version check failed: ${violations.size} class(es) are compiled for a Java newer than $maxFeature.")
+                    appendLine("They would throw UnsupportedClassVersionError on a JBR $maxFeature runtime (e.g. Android Studio on platform 261).")
                     appendLine("Compile to the target with `-jvm-target $maxFeature` + `-Xjdk-release=$maxFeature` (Kotlin) / `options.release = $maxFeature` (Java).")
                     appendLine("Offending classes (showing up to $MAX_REPORTED):")
-                    violations.take(MAX_REPORTED).forEach { appendLine("  - ${it.location} (major ${it.major} / Java ${it.javaFeature})") }
+                    violations.take(MAX_REPORTED).forEach { appendLine("  - ${it.location}") }
                     if (violations.size > MAX_REPORTED) appendLine("  … and ${violations.size - MAX_REPORTED} more")
                 },
             )
         }
 
         logger.lifecycle(
-            "Class-file version OK: $checked class file(s) <= Java $maxFeature " +
-                "(major ${maxFeature + ClassFileVersionScanner.CLASS_MAJOR_OFFSET})" +
+            "Class-file version OK: $checked class file(s) compiled for Java $maxFeature or older" +
                 if (brokenClasses.isEmpty()) "." else "; ${brokenClasses.size} unparseable entry(ies) warned.",
         )
     }
