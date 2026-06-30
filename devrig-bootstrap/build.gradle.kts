@@ -28,9 +28,11 @@ val buildBootstrapBinaries = tasks.register("buildBootstrapBinaries") {
         val dest = outDir.get().asFile.apply { deleteRecursively(); mkdirs() }
         targets.forEach { (os, arch, suffix) ->
             val bin = dest.resolve("bootstrap-$os-$arch$suffix")
-            // -buildid= makes the output byte-reproducible across rebuilds (same toolchain),
-            // which lets :claude-plugin verify the committed bin/bootstrap-* are not stale.
-            val pb = ProcessBuilder(goExe, "build", "-trimpath", "-ldflags", "-s -w -buildid=", "-o", bin.absolutePath, ".")
+            // Byte-reproducible across rebuilds (same toolchain) so :claude-plugin can verify the
+            // committed bin/bootstrap-* are not stale: -buildid= drops the build id, and
+            // -buildvcs=false stops Go embedding the git revision/dirty state (which would otherwise
+            // change the bytes on every commit).
+            val pb = ProcessBuilder(goExe, "build", "-trimpath", "-buildvcs=false", "-ldflags", "-s -w -buildid=", "-o", bin.absolutePath, ".")
                 .directory(projectDir)
                 .redirectErrorStream(true)
             pb.environment()["GOOS"] = os
