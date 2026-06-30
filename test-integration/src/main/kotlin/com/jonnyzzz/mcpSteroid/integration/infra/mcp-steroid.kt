@@ -76,6 +76,9 @@ internal const val INDEXING_IN_PROGRESS_MARKER = "INDEXING IN PROGRESS"
 /** Overall budget for polling through "still indexing" — large projects can take a long time. */
 private const val INDEXING_POLL_BUDGET_MS = 60 * 60 * 1000L
 
+/** Delay between "still busy, call again" poll attempts. */
+private const val INDEXING_POLL_INTERVAL_MS = 3_000L
+
 /** Pure: does this tool-result text say the IDE is still indexing (so we should call again)? */
 internal fun isIndexingInProgress(text: String): Boolean = text.contains(INDEXING_IN_PROGRESS_MARKER)
 
@@ -90,6 +93,61 @@ internal const val MCP_SERVER_STARTUP_FAILURE_MARKER = "Failed to start MCP serv
  */
 internal fun findMcpServerStartupFailure(logLines: List<String>): String? =
     logLines.firstOrNull { it.contains(MCP_SERVER_STARTUP_FAILURE_MARKER) }
+
+/**
+ * Pure: is [t] a *transient* execute_code transport failure — the request could not complete in its
+ * window because the IDE was too busy (saturated by a big-project import/indexing) to answer, so the
+ * curl process was killed (exit -1)?
+ *
+ * This is the silent twin of [isIndexingInProgress]: when the IDE settles enough to answer, it returns
+ * the clean `INDEXING IN PROGRESS` marker and we poll; but while the IDE is *so* busy it can't even
+ * answer in time, the request is killed and surfaces as `assertExitCode` throwing with an `exit code is
+ * -1` message (see [executeMcpRequestRaw] -> `assertExitCode(0)`). Both mean the same thing — "still
+ * busy, call again" — so both must be retried. A *script-level* error (compile/runtime) instead comes
+ * back as a clean isError result with a real exit code (1), never as this killed-process -1, so it is
+ * NOT transient and must surface immediately. See jonnyzzz/mcp-steroid#169.
+ */
+internal fun isTransientMcpRequestFailure(t: Throwable): Boolean {
+    val msg = t.message ?: return false
+    return msg.contains("MCP request failed") && msg.contains("exit code is -1")
+}
+
+/**
+ * Pure: retry [attempt] while the IDE reports it is busy, bounded by [deadlineMs].
+ *
+ * "Busy" is two signals treated identically — both mean the IDE is saturated by import/indexing, which
+ * always makes progress, so call again:
+ *  1. a clean result for which [isBusy] is true (carries the [INDEXING_IN_PROGRESS_MARKER]), and
+ *  2. a thrown [transientFailure] (the request itself was killed because the IDE couldn't answer).
+ *
+ * A non-transient exception propagates immediately (a real bug must not be masked by an hour of polling).
+ * Once [deadlineMs] is reached the last attempt's result is returned (or its transient exception
+ * rethrown), so the caller still sees a definite outcome. [now]/[sleep] are injected for testing.
+ */
+internal fun <T> pollWhileIdeBusy(
+    deadlineMs: Long,
+    now: () -> Long,
+    sleep: (Long) -> Unit,
+    isBusy: (T) -> Boolean,
+    transientFailure: (Throwable) -> Boolean,
+    attempt: (attemptNo: Int) -> T,
+): T {
+    var attemptNo = 0
+    while (true) {
+        attemptNo++
+        val result = try {
+            attempt(attemptNo)
+        } catch (t: Throwable) {
+            if (transientFailure(t) && now() < deadlineMs) {
+                sleep(INDEXING_POLL_INTERVAL_MS)
+                continue
+            }
+            throw t
+        }
+        if (!isBusy(result) || now() >= deadlineMs) return result
+        sleep(INDEXING_POLL_INTERVAL_MS)
+    }
+}
 
 class McpSteroidDriver(
     val driver: ContainerDriver,
@@ -413,14 +471,22 @@ try {
         modal: ModalMode = ModalMode.DEFAULT,
     ): ProcessResult {
         val deadline = System.currentTimeMillis() + INDEXING_POLL_BUDGET_MS
-        var attempt = 0
-        while (true) {
-            attempt++
-            val result = mcpExecuteCodeOnce(code, taskId, reason, timeout, projectName, modal)
-            if (!isIndexingInProgress(result.stdout) || System.currentTimeMillis() >= deadline) return result
-            println("[MCP] $taskId: IDE still indexing (attempt $attempt) — calling again to keep waiting…")
-            Thread.sleep(3_000L)
-        }
+        return pollWhileIdeBusy(
+            deadlineMs = deadline,
+            now = System::currentTimeMillis,
+            sleep = Thread::sleep,
+            isBusy = { result -> isIndexingInProgress(result.stdout) },
+            // A killed-request -1 means the IDE was too busy to even answer — keep waiting, exactly as
+            // we do for the clean "INDEXING IN PROGRESS" marker. This is what made Keycloak's heavy
+            // Maven import settle instead of hard-failing mcpSetProjectSdk. (#169)
+            transientFailure = ::isTransientMcpRequestFailure,
+            attempt = { attemptNo ->
+                if (attemptNo > 1) {
+                    println("[MCP] $taskId: IDE still busy (attempt $attemptNo) — calling again to keep waiting…")
+                }
+                mcpExecuteCodeOnce(code, taskId, reason, timeout, projectName, modal)
+            },
+        )
     }
 
     private fun mcpExecuteCodeOnce(
