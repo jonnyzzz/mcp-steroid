@@ -60,19 +60,27 @@ class KeycloakFindUsagesTest {
                 else -> error("Unknown agent: $agentName")
             }
 
+            val startedAt = System.currentTimeMillis()
             val result = agent.runPrompt(if (withMcp) withMcpPrompt() else baselinePrompt(), timeoutSeconds = 1500)
                 .awaitForProcessFinish()
+            val agentDurationMs = System.currentTimeMillis() - startedAt
             val combined = result.stdout + "\n" + result.stderr
 
             val score = scoreTypeHierarchy(combined, REQUIRED_OVERRIDERS, MIN_TOTAL)
             println("[TEST] keycloak find-usages [$agentName+$modeLabel] complete=${score.complete} " +
                     "reported=${score.reportedCount} missing=${score.missingRequired}")
 
-            println("[ARENA] $agentName+$modeLabel — $SCENARIO")
-            println("[ARENA]   Claimed fix:    ${score.complete}")
-            println("[ARENA]   Used MCP:       $withMcp")
-            println("[ARENA]   Exit code:      ${result.exitCode ?: -1}")
-            println("[ARENA]   Summary:        found ${score.reportedCount} overriders; missing required ${score.missingRequired}")
+            recordSemanticRun(
+                scenario = SCENARIO,
+                agentName = agentName,
+                withMcp = withMcp,
+                claimedFix = score.complete,
+                rawOutput = result.rawStdout,
+                exitCode = result.exitCode,
+                agentDurationMs = agentDurationMs,
+                runDir = session.runDirInContainer,
+                summary = "found ${score.reportedCount} overriders; missing required ${score.missingRequired}",
+            )
 
             if (withMcp) assertUsedExecuteCodeEvidence(combined)
         } finally {
