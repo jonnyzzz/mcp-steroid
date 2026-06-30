@@ -1,1 +1,4 @@
+# The polyglot launcher must stay LF (a CR after the #!/bin/sh shebang breaks it).
 bin/devrig-mcp.cmd text eol=lf
+# Bundled Go bootstrap binaries are binary — never normalize line endings/encoding.
+bin/bootstrap-* binary

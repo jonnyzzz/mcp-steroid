@@ -26,7 +26,6 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
     inputs.dir(sourceDir.resolve("commands"))
     inputs.dir(sourceDir.resolve("hooks"))
     inputs.file(sourceDir.resolve(".mcp.json"))
-    inputs.files(bootstrapBins)
     outputs.dir(outputDir)
 
     doLast {
@@ -40,25 +39,21 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
             pluginJson.replace(Regex(""""version"\s*:\s*"[^"]*""""), """"version": "$pluginVersion"""")
         )
 
-        // bin/ -- copy scripts; mark POSIX scripts executable (.ps1 is Windows-only, no x-bit;
-        //         devrig-mcp.cmd is the polyglot MCP launcher and IS marked executable for POSIX exec)
+        // bin/ -- copy everything from the committed source bin/ (the bootstrap-* binaries are
+        // committed there too; see updateBundledBinaries/verifyBundledBinariesUpToDate). Windows
+        // artifacts (.ps1, .exe) carry no POSIX exec bit; everything else Claude must spawn -- the
+        // POSIX scripts, the devrig-mcp.cmd polyglot launcher, and the suffix-less Go bootstrap
+        // binaries -- is marked executable.
         val binOut = out.resolve("bin").also { it.mkdirs() }
         sourceDir.resolve("bin").listFiles()?.forEach { f ->
             val dest = binOut.resolve(f.name)
             f.copyTo(dest, overwrite = true)
-            if (!f.name.endsWith(".ps1") && !f.name.endsWith(".cmd")) dest.setExecutable(true)
-            if (f.name == "devrig-mcp.cmd") dest.setExecutable(true)
+            val windowsOnly = f.name.endsWith(".ps1") || f.name.endsWith(".exe")
+            if (!windowsOnly) dest.setExecutable(true)
         }
 
         // .mcp.json -- MCP server registration for Claude Code
         out.resolve(".mcp.json").writeText(sourceDir.resolve(".mcp.json").readText())
-
-        // bootstrap binaries -- cross-compiled Go binaries for all platforms
-        bootstrapBins.singleFile.listFiles()?.forEach { f ->
-            val dest = binOut.resolve(f.name)
-            f.copyTo(dest, overwrite = true)
-            if (!f.name.endsWith(".exe")) dest.setExecutable(true)
-        }
 
         // commands/ -- slash commands, copied as-is
         val commandsOut = out.resolve("commands").also { it.mkdirs() }
@@ -558,8 +553,58 @@ val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRun
 
 claudePluginZip.configure { finalizedBy(verifyPluginFiles) }
 
+// Refreshes the committed bin/bootstrap-* from a fresh :devrig-bootstrap build. Run this after
+// changing the Go sources, then commit the updated binaries. Not part of build/check (it writes
+// into the tracked source tree on purpose).
+val updateBundledBinaries = tasks.register("updateBundledBinaries") {
+    group = "claude-plugin"
+    description = "Refresh committed claude-plugin/bin/bootstrap-* from a fresh :devrig-bootstrap build"
+    inputs.files(bootstrapBins)
+    doLast {
+        val binDir = projectDir.resolve("bin")
+        bootstrapBins.singleFile.listFiles { f -> f.name.startsWith("bootstrap-") }?.forEach { f ->
+            val dest = binDir.resolve(f.name)
+            f.copyTo(dest, overwrite = true)
+            if (!f.name.endsWith(".exe")) dest.setExecutable(true)
+        }
+    }
+}
+
+// Drift guard: the committed bin/bootstrap-* MUST match a fresh, reproducible :devrig-bootstrap
+// build (byte-for-byte; reproducibility comes from -buildid= + the pinned Go toolchain). Fails
+// loudly if a Go change was not accompanied by `updateBundledBinaries` + a commit.
+val verifyBundledBinariesUpToDate = tasks.register("verifyBundledBinariesUpToDate") {
+    group = "verification"
+    description = "Ensure committed bin/bootstrap-* match a fresh :devrig-bootstrap build"
+    inputs.files(bootstrapBins)
+    inputs.dir(projectDir.resolve("bin"))
+    doLast {
+        val fresh = bootstrapBins.singleFile
+        val binDir = projectDir.resolve("bin")
+        val freshBins = fresh.listFiles { f -> f.name.startsWith("bootstrap-") }?.sortedBy { it.name }.orEmpty()
+        if (freshBins.isEmpty()) throw GradleException(":devrig-bootstrap produced no bootstrap binaries")
+        val problems = mutableListOf<String>()
+        freshBins.forEach { f ->
+            val committed = binDir.resolve(f.name)
+            when {
+                !committed.exists() -> problems += "missing committed binary: bin/${f.name}"
+                !committed.readBytes().contentEquals(f.readBytes()) -> problems += "stale committed binary: bin/${f.name}"
+            }
+        }
+        binDir.listFiles { f -> f.name.startsWith("bootstrap-") }?.forEach { c ->
+            if (freshBins.none { it.name == c.name }) problems += "orphan committed binary (not produced by build): bin/${c.name}"
+        }
+        if (problems.isNotEmpty()) throw GradleException(buildString {
+            appendLine("Committed bootstrap binaries are out of date / inconsistent:")
+            problems.forEach { appendLine("  - $it") }
+            appendLine("Run: ./gradlew :claude-plugin:updateBundledBinaries  (then commit claude-plugin/bin/bootstrap-*)")
+        })
+    }
+}
+
 tasks.named("assemble") { dependsOn(claudePluginZip) }
 tasks.named("check") {
+    dependsOn(verifyBundledBinariesUpToDate)
     dependsOn(verifyPluginFiles)
     dependsOn(validatePluginJson)
     dependsOn(validateInstallScript)
