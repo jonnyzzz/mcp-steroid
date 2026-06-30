@@ -8,7 +8,8 @@ import (
 )
 
 // Approximate total install size (devrig binary + bundled JDK) for the progress readout.
-const approxInstallMB = 300
+// Measured ~440 MB on macOS/arm64; rounded up so the readout doesn't exceed the total.
+const approxInstallMB = 500
 
 func markersDir(home string) string { return filepath.Join(home, ".mcp-steroid", "markers") }
 
