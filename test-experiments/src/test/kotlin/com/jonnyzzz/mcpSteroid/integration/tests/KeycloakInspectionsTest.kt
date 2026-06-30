@@ -58,19 +58,27 @@ class KeycloakInspectionsTest {
                 else -> error("Unknown agent: $agentName")
             }
 
+            val startedAt = System.currentTimeMillis()
             val result = agent.runPrompt(if (withMcp) withMcpPrompt() else baselinePrompt(), timeoutSeconds = 1500)
                 .awaitForProcessFinish()
+            val agentDurationMs = System.currentTimeMillis() - startedAt
             val combined = result.stdout + "\n" + result.stderr
 
             val score = scoreInspections(combined, MIN_ISSUES, TARGET_FILE)
             println("[TEST] keycloak inspections [$agentName+$modeLabel] detected=${score.detected} " +
                     "issuesFound=${score.issuesFound} cast=${score.mentionsRedundantCast} file=${score.mentionsTargetFile}")
 
-            println("[ARENA] $agentName+$modeLabel — $SCENARIO")
-            println("[ARENA]   Claimed fix:    ${score.detected}")
-            println("[ARENA]   Used MCP:       $withMcp")
-            println("[ARENA]   Exit code:      ${result.exitCode ?: -1}")
-            println("[ARENA]   Summary:        issuesFound=${score.issuesFound} redundantCast=${score.mentionsRedundantCast}")
+            recordSemanticRun(
+                scenario = SCENARIO,
+                agentName = agentName,
+                withMcp = withMcp,
+                claimedFix = score.detected,
+                rawOutput = result.rawStdout,
+                exitCode = result.exitCode,
+                agentDurationMs = agentDurationMs,
+                runDir = session.runDirInContainer,
+                summary = "issuesFound=${score.issuesFound} redundantCast=${score.mentionsRedundantCast}",
+            )
 
             if (withMcp) assertUsedExecuteCodeEvidence(combined)
         } finally {
