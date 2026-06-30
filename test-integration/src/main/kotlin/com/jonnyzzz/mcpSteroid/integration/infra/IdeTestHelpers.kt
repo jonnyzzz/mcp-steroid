@@ -195,11 +195,12 @@ fun copyRecursively(source: File, destination: File) {
 
 /**
  * Thrown from a [waitFor] action to stop polling immediately: a known terminal problem was observed (the
- * awaited condition can never be reached), so retrying until the timeout is pointless. Extends [Error] so
- * it is never confused with the transient [Exception]s [waitFor] swallows-and-retries; [waitFor] catches
- * it explicitly and rethrows.
+ * awaited condition can never be reached), so retrying until the timeout is pointless. Extends [Error], and
+ * [waitFor] only ever catches [Exception] — so any [Error] (this and its subtypes, e.g. the MCP layer's
+ * [McpRequestFailedError]) is *not* swallowed and propagates out of the loop to stop it. `open` so
+ * terminal-problem subtypes can inherit the stop-the-loop behavior.
  */
-class WaitAbortedException(message: String, cause: Throwable? = null) : Error(message, cause)
+open class WaitAbortedError(message: String, cause: Throwable? = null) : Error(message, cause)
 
 fun waitFor(timeoutMillis: Long, condition: String = "condition", action: () -> Boolean) {
     println("Waiting $condition for $timeoutMillis ms...")
@@ -210,10 +211,10 @@ fun waitFor(timeoutMillis: Long, condition: String = "condition", action: () -> 
         try {
             if (action()) return
             lastException = null
-        } catch (e: WaitAbortedException) {
-            // Known terminal problem — the wait can never succeed. Stop now instead of polling to timeout.
-            throw e
         } catch (e: Exception) {
+            // Only Exceptions are transient — swallow and retry. Any Error (e.g. WaitAbortedError /
+            // McpRequestFailedError) is deliberately NOT caught here, so it propagates out of the loop to
+            // stop polling at once: a terminal problem the wait can never recover from.
             lastException = e
         }
         Thread.sleep(50)

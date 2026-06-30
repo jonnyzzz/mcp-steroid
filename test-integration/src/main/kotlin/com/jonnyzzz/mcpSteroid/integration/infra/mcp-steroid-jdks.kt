@@ -123,7 +123,7 @@ println("[SDK-RESOLVE] Wait complete — resolved via local ProjectJdkTable only
             timeout = 30,
         )
     } catch (e: Exception) {
-        throw Error("[SDK-RESOLVE] Warning: SDK resolution failed: ${e.message}", e)
+        throw RuntimeException("[SDK-RESOLVE] Warning: SDK resolution failed: ${e.message}", e)
     }
 }
 
@@ -175,6 +175,6 @@ if (currentSdk != null && matchesRequestedVersion(currentSdk.name)) {
             timeout = 30,
         )
     } catch (e: Exception) {
-        throw Error("[SDK] Project SDK setup failed: ${e.message}", e)
+        throw RuntimeException("[SDK] Project SDK setup failed: ${e.message}", e)
     }
 }

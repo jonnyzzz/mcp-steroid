@@ -168,7 +168,7 @@ if (idleRounds >= requiredIdleRounds) {
             timeout = 600,
         )
     } catch (e: Exception) {
-        throw Error("[IMPORT] Import trigger failed: ${e.message}", e)
+        throw RuntimeException("[IMPORT] Import trigger failed: ${e.message}", e)
     }
 
     if (buildSystem != BuildSystem.NONE) {
