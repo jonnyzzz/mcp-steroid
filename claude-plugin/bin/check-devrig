@@ -1,23 +1,39 @@
 #!/bin/sh
 # devrig -- SessionStart hook. The plugin registers its MCP server via .mcp.json and the bundled
-# bootstrap downloads devrig in the background. This hook ONLY surfaces download progress; it never
-# nags about registration (the .mcp.json guarantees it, and plugin-scoped registration does not
-# appear in ~/.claude.json). Stays silent once devrig is installed. Must be fast and exit 0.
+# bootstrap downloads devrig in the background. This hook only surfaces state to the user; it never
+# nags about registration (the .mcp.json guarantees it). It stays silent once devrig is installed,
+# tells the user to wait+restart while downloading, and points at /devrig:setup ONLY if the last
+# install attempt failed. Must be fast and exit 0.
 DEVRIG="$HOME/.mcp-steroid/bin/devrig"
 DEVRIG_WIN="$HOME/.mcp-steroid/bin/devrig.cmd"
+FAILED="$HOME/.mcp-steroid/markers/bootstrap-install.failed"
 
 # Installed -> the launcher proxies the real server; nothing to say.
 if [ -x "$DEVRIG" ] || [ -f "$DEVRIG_WIN" ]; then
   exit 0
 fi
 
-# Not installed yet -> the bootstrap is serving a green server and downloading in the background.
-cat <<'EOF'
+# Last install attempt failed -> point at the manual retry (the ONE place /devrig:setup is surfaced).
+if [ -f "$FAILED" ]; then
+  cat <<'EOF'
 {
-  "systemMessage": "devrig is downloading in the background (~300 MB). The bridge is in bootstrap mode now; restart Claude once it finishes to activate the full IDE. Run /devrig:setup to fetch it immediately.",
+  "systemMessage": "❌ devrig couldn't finish installing. Run /devrig:setup to retry, then restart Claude.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~300 MB devrig binary downloads in the background. The agent can call the devrig_setup tool to check progress. Once installed, the user must restart Claude so the launcher routes to the full devrig server. /devrig:setup pre-downloads it immediately."
+    "additionalContext": "The devrig background install failed (~/.mcp-steroid/markers/bootstrap-install.failed exists). Tell the user to run /devrig:setup to retry the download, then restart Claude. Use the devrig_status tool for the failure detail."
+  }
+}
+EOF
+  exit 0
+fi
+
+# Downloading in the background -> tell the user to wait, then restart. Do NOT mention /devrig:setup here.
+cat <<'EOF'
+{
+  "systemMessage": "⏳ devrig is installing in the background (~300 MB). You can keep working — ask me for devrig status anytime to see progress. When it finishes, restart Claude to activate the full IDE.",
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~300 MB devrig binary downloads in the background. Call the devrig_status tool to report download progress when the user asks. Once it finishes, the user must restart Claude so the launcher routes to the full devrig server. While it is still downloading, do not tell the user to run any manual install command -- just wait and restart."
   }
 }
 EOF
