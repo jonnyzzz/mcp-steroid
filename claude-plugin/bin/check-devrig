@@ -30,10 +30,10 @@ fi
 # Downloading in the background -> tell the user to wait, then restart. Do NOT mention /devrig:setup here.
 cat <<'EOF'
 {
-  "systemMessage": "⏳ devrig is installing in the background (~300 MB). You can keep working — ask me for devrig status anytime to see progress. When it finishes, restart Claude to activate the full IDE.",
+  "systemMessage": "⏳ devrig is installing in the background (~500 MB). Keep Claude open and keep working — if you quit or restart Claude now, the download stops. When it finishes, restart Claude to activate the full IDE. Ask me for devrig status anytime to see progress.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~300 MB devrig binary downloads in the background. Call the devrig_status tool to report download progress when the user asks. Once it finishes, the user must restart Claude so the launcher routes to the full devrig server. While it is still downloading, do not tell the user to run any manual install command -- just wait and restart."
+    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~500 MB devrig binary downloads in the background. IMPORTANT: the download is tied to this Claude session and stops if the user quits or restarts Claude before it finishes, so advise them to keep Claude open until it completes. Call the devrig_status tool to report download progress when the user asks. Once it finishes, the user must restart Claude so the launcher routes to the full devrig server. While it is still downloading, do not tell the user to run any manual install command -- just keep Claude open and wait, then restart."
   }
 }
 EOF
