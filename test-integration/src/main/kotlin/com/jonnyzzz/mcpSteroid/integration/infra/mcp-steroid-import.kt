@@ -1,15 +1,18 @@
 package com.jonnyzzz.mcpSteroid.integration.infra
 
 /**
- * Trigger Maven or Gradle import and wait for it to complete.
+ * Trigger Maven or Gradle import and wait for it to *actually* complete.
  *
- * For Maven: calls `forceUpdateAllProjectsOrFindAllAvailablePomFiles()`
- * For Gradle: configures the linked Gradle JVM, triggers refresh, and waits for import events
- * For NONE: only waits for `Observation.awaitConfiguration`
+ * Trigger phase (build-system specific):
+ * - Maven: `forceUpdateAllProjectsOrFindAllAvailablePomFiles()`.
+ * - Gradle: configure the linked Gradle JVM, trigger refresh, and await the `ProjectDataImportListener`
+ *   import-finished event (Gradle's `Observation.awaitConfiguration` can stay suspended after sync).
+ * - NONE: nothing to trigger.
  *
- * Maven/NONE wait via `Observation.awaitConfiguration(project)` + `waitForSmartMode()`.
- * Gradle waits via `ProjectDataImportListener` + `waitForSmartMode()` because
- * `Observation.awaitConfiguration(project)` can stay suspended after Gradle sync finishes.
+ * Settle phase (shared): poll until the IDE stays out of dumb mode for a stable streak, re-running
+ * `Observation.awaitConfiguration` each round. A single `awaitConfiguration` + `waitForSmartMode` snapshot
+ * is NOT enough: import (and the always-on source/javadoc downloads) add library roots that re-trigger
+ * indexing in waves, so a one-shot check can return in a gap between waves while indexing is still coming.
  */
 /**
  * Pure: the Kotlin script that triggers the Maven import.
@@ -37,7 +40,6 @@ internal fun mavenImportTriggerCode(): String = $$"""
 
 fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
     //TODO: move that to prompts and include it from there are resources
-    val waitForConfigurationWithObservation = buildSystem != BuildSystem.GRADLE
     val triggerCode = when (buildSystem) {
         BuildSystem.MAVEN -> mavenImportTriggerCode()
 
@@ -119,27 +121,43 @@ fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
             """.trimIndent()
     }
 
+    // Cold imports with always-on source/javadoc download have a long indexing tail: each downloaded
+    // *-sources.jar adds a library root and re-triggers indexing, so the project bounces in and out of
+    // dumb mode in waves. The host-mounted ~/.m2 cache keeps re-runs fast.
+    val settleTimeoutMs = 20 * 60 * 1000L
+
     val code = """
 import com.intellij.platform.backend.observation.Observation
+import com.intellij.openapi.project.DumbService
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 
 println("[IMPORT] Build system: $buildSystem")
 $triggerCode
 
-if ($waitForConfigurationWithObservation) {
-    println("[IMPORT] Waiting for project configuration...")
-    val configured = withTimeoutOrNull(8 * 60 * 1000L) {
-        Observation.awaitConfiguration(project)
-    }
-    println(if (configured == null) "[IMPORT] WARNING: Configuration timed out after 8 minutes"
-            else "[IMPORT] Configuration complete")
-} else {
-    println("[IMPORT] Configuration complete")
+// Wait until the IDE is GENUINELY settled, not just a transient smart-mode gap. A single
+// awaitConfiguration + waitForSmartMode can return in a gap between indexing waves while more indexing is
+// still coming (the bug we hit: "Smart mode reached" fired mid-import while *-sources.jar roots were still
+// being indexed). So poll until the project stays OUT of dumb mode for a stable streak, re-running
+// awaitConfiguration each round to drain registered configuration activity. Bounded by a deadline.
+val settleDeadline = System.currentTimeMillis() + ${settleTimeoutMs}L
+val requiredIdleRounds = 10        // ~10s of continuous smart mode before the import is considered done
+var idleRounds = 0
+var round = 0
+var dumb = true
+while (System.currentTimeMillis() < settleDeadline) {
+    withTimeoutOrNull(60_000L) { Observation.awaitConfiguration(project) }
+    dumb = DumbService.getInstance(project).isDumb
+    idleRounds = if (dumb) 0 else idleRounds + 1
+    if (round++ % 15 == 0) println("[IMPORT] settling… dumb=" + dumb + " idleStreak=" + idleRounds + "/" + requiredIdleRounds)
+    if (idleRounds >= requiredIdleRounds) break
+    delay(1_000L)
 }
-
-waitForSmartMode()
-println("[IMPORT] Smart mode reached — import + indexing complete")
+if (idleRounds >= requiredIdleRounds) {
+    println("[IMPORT] Settled — import + indexing complete (smart mode stable for " + requiredIdleRounds + "s)")
+} else {
+    println("[IMPORT] WARNING: project did not fully settle within ${settleTimeoutMs / 60_000} min (dumb=" + dumb + ") — still importing/indexing")
+}
 "done"
 """.trimIndent()
 
