@@ -63,20 +63,28 @@ class KeycloakTypeHierarchyTest {
                 else -> error("Unknown agent: $agentName")
             }
 
+            val startedAt = System.currentTimeMillis()
             val result = agent.runPrompt(if (withMcp) withMcpPrompt() else baselinePrompt(), timeoutSeconds = 1500)
                 .awaitForProcessFinish()
+            val agentDurationMs = System.currentTimeMillis() - startedAt
             val combined = result.stdout + "\n" + result.stderr
 
             val score = scoreTypeHierarchy(combined, REQUIRED_TRANSITIVE, MIN_TOTAL)
             println("[TEST] keycloak type-hierarchy [$agentName+$modeLabel] complete=${score.complete} " +
                     "reported=${score.reportedCount} missing=${score.missingRequired}")
 
-            // [ARENA] block — the dashboard reads the per-mode verdict from here (ArenaLogParser).
-            println("[ARENA] $agentName+$modeLabel — $SCENARIO")
-            println("[ARENA]   Claimed fix:    ${score.complete}")
-            println("[ARENA]   Used MCP:       $withMcp")
-            println("[ARENA]   Exit code:      ${result.exitCode ?: -1}")
-            println("[ARENA]   Summary:        found ${score.reportedCount} subtypes; missing required ${score.missingRequired}")
+            // Emit the full [ARENA] block (verdict + duration + tokens + tool-call counters) for the dashboard.
+            recordSemanticRun(
+                scenario = SCENARIO,
+                agentName = agentName,
+                withMcp = withMcp,
+                claimedFix = score.complete,
+                rawOutput = result.rawStdout,
+                exitCode = result.exitCode,
+                agentDurationMs = agentDurationMs,
+                runDir = session.runDirInContainer,
+                summary = "found ${score.reportedCount} subtypes; missing required ${score.missingRequired}",
+            )
 
             if (withMcp) {
                 // Prove MCP was actually exercised; completeness itself is the comparison metric, not a gate.
