@@ -117,6 +117,24 @@ extra["releaseNotesText"] = releaseNotesText
 subprojects {
     group = rootProject.group
     version = rootProject.version
+
+    // Bytecode target floor: compile every module to JVM 21 (class-file major 65) even though the
+    // toolchain and Gradle daemon stay on JDK 25. The shipped plugin and devrig must load on the OLDEST
+    // JBR they target — Android Studio on platform 261 bundles JBR 21 (major 65), while IntelliJ IDEA
+    // 2026.1 bundles JBR 25 (major 69), so a JDK-25-targeted class throws UnsupportedClassVersionError in
+    // Android Studio. `jvmTarget = 21` sets the emitted bytecode version; `-Xjdk-release=21` additionally
+    // clamps the visible JDK API to 21 so a 22..25-only method can't slip in and NoSuchMethodError at
+    // runtime on JBR 21. `configureEach` runs after the per-module `jvmToolchain(25)`, so it reliably
+    // overrides the toolchain's default target. Enforced on the artifacts by `verifyClassFileVersions`.
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+            freeCompilerArgs.add("-Xjdk-release=21")
+        }
+    }
+    tasks.withType<JavaCompile>().configureEach {
+        options.release.set(21)
+    }
 }
 
 allprojects {

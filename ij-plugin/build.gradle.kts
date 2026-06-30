@@ -643,7 +643,7 @@ val verifyClassFileVersions by tasks.registering(VerifyClassFileVersionTask::cla
     group = "verification"
     description = "Verify bundled plugin class files load on the oldest supported JBR (class-file version guard)"
     archives.from(tasks.buildPlugin)
-    maxJavaFeature.set(25)
+    maxJavaFeature.set(21)
 }
 
 tasks.test {

@@ -7,7 +7,6 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
 import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
-import com.sun.tools.javac.tree.TreeInfo.args
 import java.io.File
 
 fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJContainerOpts): IntelliJContainer = opts.run {
