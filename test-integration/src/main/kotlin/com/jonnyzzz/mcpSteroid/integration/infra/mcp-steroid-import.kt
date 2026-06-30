@@ -170,4 +170,84 @@ if (idleRounds >= requiredIdleRounds) {
     } catch (e: Exception) {
         throw Error("[IMPORT] Import trigger failed: ${e.message}", e)
     }
+
+    if (buildSystem != BuildSystem.NONE) {
+        reportProjectRedCode()
+    }
+}
+
+/**
+ * After a settled import, sanity-check that the project has no "red code" — resolve every reference in a
+ * sample of project source files and count the ones that don't resolve. A clean import resolves them; a
+ * large unresolved count means dependencies (or generated sources) didn't import and the agent would see
+ * red everywhere. Sampling bounds the cost on huge projects (Keycloak). Reported via `[RED-CODE]` lines;
+ * non-fatal (logged, not thrown) so it surfaces the state without failing the harness on a known-red repo.
+ */
+fun McpSteroidDriver.reportProjectRedCode(maxFiles: Int = 150) {
+    val code = $$"""
+import com.intellij.openapi.roots.ProjectFileIndex
+import com.intellij.openapi.roots.ProjectRootManager
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiRecursiveElementWalkingVisitor
+
+val maxFiles = $$maxFiles
+val sample = ArrayList<VirtualFile>()
+readAction {
+    val index = ProjectFileIndex.getInstance(project)
+    for (root in ProjectRootManager.getInstance(project).contentSourceRoots) {
+        if (sample.size >= maxFiles) break
+        VfsUtilCore.iterateChildrenRecursively(root, null) { vf ->
+            if (sample.size >= maxFiles) return@iterateChildrenRecursively false
+            if (!vf.isDirectory && (vf.extension == "java" || vf.extension == "kt") && index.isInSourceContent(vf)) {
+                sample.add(vf)
+            }
+            true
+        }
+    }
+}
+
+var unresolved = 0
+var refs = 0
+val examples = ArrayList<String>()
+readAction {
+    val psiManager = PsiManager.getInstance(project)
+    for (vf in sample) {
+        val psi = psiManager.findFile(vf) ?: continue
+        psi.accept(object : PsiRecursiveElementWalkingVisitor() {
+            override fun visitElement(element: PsiElement) {
+                for (ref in element.references) {
+                    if (ref.isSoft) continue
+                    refs++
+                    // Overloaded methods / static imports (Comparator.comparing, hamcrest is/assertThat,
+                    // RestAssured.given, …) make resolve() return null (multiple candidates) even though the
+                    // IDE shows no red. Count a poly-variant ref as resolved if multiResolve finds >=1
+                    // candidate, so only genuinely-unresolved references (real red code) are reported.
+                    val resolved =
+                        if (ref is com.intellij.psi.PsiPolyVariantReference) ref.multiResolve(false).isNotEmpty()
+                        else ref.resolve() != null
+                    if (!resolved) {
+                        unresolved++
+                        if (examples.size < 15) examples.add(vf.name + ": '" + ref.canonicalText + "'")
+                    }
+                }
+                super.visitElement(element)
+            }
+        })
+    }
+}
+
+println("[RED-CODE] sampled " + sample.size + " source files, " + refs + " references; UNRESOLVED=" + unresolved)
+for (e in examples) println("[RED-CODE]   - " + e)
+"done"
+""".trimIndent()
+
+    try {
+        mcpExecuteCode(code = code, reason = "Verify no red code after import", timeout = 300)
+    } catch (e: Exception) {
+        // The check is a diagnostic; never let it fail the import path.
+        System.err.println("[RED-CODE] check failed to run: ${e.message}")
+    }
 }

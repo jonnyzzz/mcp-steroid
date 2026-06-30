@@ -86,6 +86,17 @@ private fun normalizePathPrefix(path: String): String {
     return path.trimEnd('/')
 }
 
+/**
+ * Make [this] host path readable/writable/executable by any user (chmod a+rwX equivalent). Required before
+ * bind-mounting a host dir into a container whose user (uid 1000) differs from the host uid — Linux bind
+ * mounts do not remap UIDs (see [allocRunDirAndTitle]).
+ */
+internal fun File.makeContainerWritable(): File = apply {
+    setReadable(true, /* ownerOnly = */ false)
+    setWritable(true, /* ownerOnly = */ false)
+    setExecutable(true, /* ownerOnly = */ false)
+}
+
 object IdeTestFolders {
     val pluginZip = readFilePathFromSystemProperties("test.integration.plugin.zip") {
         findLatestPluginZipFromDist()
@@ -130,15 +141,12 @@ object IdeTestFolders {
      * home is `/home/agent` (see the ide-base Dockerfile).
      */
     fun dependencyCacheVolumes(): List<ContainerVolume> =
-        listOf(
-            dependencyCacheDir.resolve("m2") to "/home/agent/.m2",
-            dependencyCacheDir.resolve("gradle") to "/home/agent/.gradle",
-        ).map { (host, guest) ->
-            host.mkdirs()
-            host.setReadable(true, /* ownerOnly = */ false)
-            host.setWritable(true, /* ownerOnly = */ false)
-            host.setExecutable(true, /* ownerOnly = */ false)
-            ContainerVolume(host, guest, "rw")
+        mapOf(
+            "/home/agent/.m2" to dependencyCacheDir.resolve("m2"),
+            "/home/agent/.gradle" to dependencyCacheDir.resolve("gradle"),
+        ).map { (guest, host) ->
+            require(host.isDirectory || host.mkdirs()) { "Could not create dependency cache dir: $host" }
+            ContainerVolume(host.makeContainerWritable(), guest, "rw")
         }
 
     val testOutputDir = remapPathForDockerHost(
