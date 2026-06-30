@@ -68,6 +68,11 @@ class DockerCodexSession(
         val extraEnvVars = buildMap {
             put("OPENAI_API_KEY", apiKey)
             put("CODEX_API_KEY", apiKey)
+            // Route through a host-side OpenAI-compatible gateway when one is configured (no-op on CI).
+            resolveContainerAgentBaseUrl("OPENAI_BASE_URL", "OPENAI_API_BASE")?.let {
+                put("OPENAI_BASE_URL", it)
+                put("OPENAI_API_BASE", it)
+            }
 
             if (debug) {
                 put("CODEX_DEBUG", "1")
@@ -106,6 +111,20 @@ class DockerCodexSession(
             add(model)
             add("--dangerously-bypass-approvals-and-sandbox")
             add("--skip-git-repo-check")
+            // Why this isn't just an env var (unlike Claude/Gemini, which honor their *_BASE_URL env
+            // directly): the Codex CLI has NO base-URL environment variable. It reaches the cloud model
+            // ONLY through a configured provider (`model_provider` + `[model_providers.*].base_url`), and
+            // ignores OPENAI_BASE_URL entirely — verified empirically: with only OPENAI_BASE_URL set,
+            // Codex still calls the public API (api.openai.com) and 401s with the gateway key. So when a
+            // gateway URL is configured we point Codex at it via its OWN `-c` config-override flags — no
+            // config file is written — deriving the URL from the same env var the other agents use.
+            // Auth continues to flow through OPENAI_API_KEY (env_key).
+            resolveContainerAgentBaseUrl("OPENAI_BASE_URL", "OPENAI_API_BASE")?.let { url ->
+                addAll(listOf("-c", "model_provider=gateway"))
+                addAll(listOf("-c", "model_providers.gateway.name=gateway"))
+                addAll(listOf("-c", "model_providers.gateway.base_url=$url"))
+                addAll(listOf("-c", "model_providers.gateway.env_key=OPENAI_API_KEY"))
+            }
             add("--json")
             add(prompt)
         }

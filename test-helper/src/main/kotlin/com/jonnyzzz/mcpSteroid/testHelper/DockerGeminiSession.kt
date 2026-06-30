@@ -62,6 +62,10 @@ class DockerGeminiSession(
         }
         val env = buildMap {
             put("GEMINI_API_KEY", apiKey)
+            // Route through a host-side Gemini-compatible gateway when one is configured (no-op on CI).
+            resolveContainerAgentBaseUrl("GOOGLE_GEMINI_BASE_URL", "GEMINI_BASE_URL")?.let {
+                put("GOOGLE_GEMINI_BASE_URL", it)
+            }
             // Newer Gemini CLI builds (>= late 2026) demote `--approval-mode yolo`.
             // If the working directory is not trusted, they then refuse to run
             // with exit 55 and a "trusted directory" error.

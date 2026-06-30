@@ -43,6 +43,13 @@ data class StartContainerRequest private constructor(
     fun quietly() = copy(quietly = true)
 }
 
+/**
+ * The hostname a container uses to reach a service on the Docker host. Added as a host alias to every
+ * container via `--add-host` below; reused wherever a host endpoint is rewritten for in-container use
+ * (e.g. the agent LLM-gateway base URL — see AgentEndpoint).
+ */
+const val DOCKER_HOST_ALIAS = "host.docker.internal"
+
 fun startDockerContainerAndForget(
     request: StartContainerRequest,
 ): ContainerDriver {
@@ -55,7 +62,7 @@ fun startDockerContainerAndForget(
         add("-d")
         if (request.autoRemove) add("--rm")
         if (request.init) add("--init")
-        add("--add-host=host.docker.internal:host-gateway")
+        add("--add-host=$DOCKER_HOST_ALIAS:host-gateway")
 
         // NOTE: we deliberately do NOT pass --user $(id -u):$(id -g). Tried
         // that as "standard docker-run hygiene" but the ide-agent image and

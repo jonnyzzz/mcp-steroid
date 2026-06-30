@@ -83,6 +83,8 @@ class DockerClaudeSession(
         }
         val env = buildMap {
             put("ANTHROPIC_API_KEY", apiKey)
+            // Route through a host-side Anthropic-compatible gateway when one is configured (no-op on CI).
+            resolveContainerAgentBaseUrl("ANTHROPIC_BASE_URL")?.let { put("ANTHROPIC_BASE_URL", it) }
             if (debug) {
                 put("CLAUDE_CODE_DEBUG", "1")
                 put("DEBUG", "*")
