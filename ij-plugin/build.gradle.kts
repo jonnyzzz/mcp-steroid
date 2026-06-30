@@ -633,8 +633,22 @@ val verifyBundledLibraries by tasks.registering {
     }
 }
 
+// Class-file version guard: every class the plugin bundles must fit the OLDEST JBR the plugin targets, or
+// it throws UnsupportedClassVersionError at load time. Android Studio on platform 261 bundles JBR 21
+// (class-file major 65) where IntelliJ IDEA 2026.1 bundles JBR 25 (major 69) — so a JDK-25 toolchain that
+// emits major-69 classes loads in IDEA but NOT in Android Studio. Scans every bundled jar/zip recursively
+// at any folder (including kotlinc / ocr-tesseract). `maxJavaFeature` is the single knob the JDK-target
+// change lowers to 21.
+val verifyClassFileVersions by tasks.registering(VerifyClassFileVersionTask::class) {
+    group = "verification"
+    description = "Verify bundled plugin class files load on the oldest supported JBR (class-file version guard)"
+    archives.from(tasks.buildPlugin)
+    maxJavaFeature.set(25)
+}
+
 tasks.test {
     dependsOn(verifyBundledLibraries)
+    dependsOn(verifyClassFileVersions)
 }
 
 // Wire the kotlinx runtime probe into :check so local `./gradlew :ij-plugin:check`
@@ -645,12 +659,14 @@ tasks.check {
 
 tasks.buildPlugin {
     finalizedBy(verifyBundledLibraries)
+    finalizedBy(verifyClassFileVersions)
 }
 
 tasks.verifyPlugin {
     dependsOn(verifyBundledKotlinCompatibility)
     dependsOn(verifyBundledKotlinxRuntime)
     dependsOn(verifyBundledLibraries)
+    dependsOn(verifyClassFileVersions)
 }
 
 // Deploy plugin to running IDEs with hot-reload support

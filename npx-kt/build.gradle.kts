@@ -1,4 +1,5 @@
 import com.jonnyzzz.mcpSteroid.gradle.GenerateMetadataTask
+import com.jonnyzzz.mcpSteroid.gradle.VerifyClassFileVersionTask
 import com.jonnyzzz.mcpSteroid.gradle.configurePathingJarClasspath
 import org.gradle.api.attributes.Usage
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -587,14 +588,29 @@ val verifyBundledLibraries by tasks.registering {
     }
 }
 
+// Class-file version guard (mirrors :ij-plugin's). devrig is shipped to end users and launched on a
+// Java 25 runtime today, but the build target is held at the same floor as the plugin so the two stay
+// uniform — and so a future "run devrig on the IDE's JBR" path can't regress. Scans the whole dist
+// recursively at any folder — devrig's own jars AND the bundled ij-plugin.zip (kotlinc included). The
+// 7-Zip binaries aren't .class/.jar/.zip and are ignored. `maxJavaFeature` is the single knob the
+// JDK-target change lowers to 21.
+val verifyClassFileVersions by tasks.registering(VerifyClassFileVersionTask::class) {
+    group = "verification"
+    description = "Verify devrig class files load on the oldest supported JBR (class-file version guard)"
+    archives.from(tasks.distZip)
+    maxJavaFeature.set(25)
+}
+
 tasks.test {
     dependsOn(verifyBundledLibraries)
 }
 
 tasks.distZip {
     finalizedBy(verifyBundledLibraries)
+    finalizedBy(verifyClassFileVersions)
 }
 
 tasks.named("check") {
     dependsOn(verifyBundledLibraries)
+    dependsOn(verifyClassFileVersions)
 }
