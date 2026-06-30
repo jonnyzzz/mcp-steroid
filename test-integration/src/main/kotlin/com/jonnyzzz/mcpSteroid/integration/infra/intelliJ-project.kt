@@ -74,17 +74,6 @@ sealed class IntelliJProject{
      */
     open val buildSystems: Set<ProjectBuildSystem> = emptySet()
 
-    /**
-     * Whether the Maven import should auto-download library sources + javadoc. ON by default so agents
-     * get full API docs in the editor. Turn it OFF for very large projects (e.g. Keycloak) where many
-     * dependencies publish no `*:sources`/`*:javadoc` to central: each failed download churns the
-     * project roots and re-triggers a full re-scan, so the import never settles and project setup
-     * (e.g. `mcpSetProjectSdk`) times out. PSI navigation (type hierarchy, find-usages) uses compiled
-     * stubs, not sources jars, so disabling this does not weaken those experiments. See
-     * jonnyzzz/mcp-steroid#169.
-     */
-    open val downloadMavenSourcesAndDocs: Boolean = true
-
     object TestProject : ProjectFromRepository(
         "test-project",
         openFile = "src/test/kotlin/com/jonnyzzz/mcpSteroid/demo/DemoByJonnyzzzTest.kt",
@@ -140,12 +129,7 @@ sealed class IntelliJProject{
     )
 
     object BroadleafCommerceProject : ProjectFromRemoteGit("https://github.com/BroadleafCommerce/BroadleafCommerce.git")
-    object KeycloakProject : ProjectFromRemoteGit("https://github.com/keycloak/keycloak.git") {
-        // Keycloak pulls hundreds of deps whose `*:sources`/`*:javadoc` are absent from central
-        // (jfreechart, wildfly-legacy, antlr, …); auto-downloading them churns roots endlessly and the
-        // import never settles on CI. The PSI experiments don't need sources jars. See #169.
-        override val downloadMavenSourcesAndDocs: Boolean = false
-    }
+    object KeycloakProject : ProjectFromRemoteGit("https://github.com/keycloak/keycloak.git")
     object KillBillProject : ProjectFromRemoteGit("https://github.com/killbill/killbill.git")
     object ThingsBoardProject : ProjectFromRemoteGit("https://github.com/thingsboard/thingsboard.git")
     object YouTrackDbProject : ProjectFromRemoteGit("https://github.com/JetBrains/youtrackdb.git")

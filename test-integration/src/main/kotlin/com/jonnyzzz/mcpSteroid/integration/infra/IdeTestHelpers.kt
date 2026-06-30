@@ -162,7 +162,7 @@ fun copyRecursively(source: File, destination: File) {
  * it is never confused with the transient [Exception]s [waitFor] swallows-and-retries; [waitFor] catches
  * it explicitly and rethrows.
  */
-class WaitAbortedException(message: String) : Error(message)
+class WaitAbortedException(message: String, cause: Throwable? = null) : Error(message, cause)
 
 fun waitFor(timeoutMillis: Long, condition: String = "condition", action: () -> Boolean) {
     println("Waiting $condition for $timeoutMillis ms...")
