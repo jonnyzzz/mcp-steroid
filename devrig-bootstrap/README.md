@@ -17,7 +17,8 @@ instead so Claude sees a **green** MCP server (never "✗ Failed to connect"). I
 cd devrig-bootstrap && go test ./...                 # unit tests
 ```
 
-Builds are byte-reproducible (`-buildid=` + the pinned `toolchain` in `go.mod`).
+Builds are byte-reproducible (`-buildid=`, `-buildvcs=false`, and the pinned
+`toolchain` in `go.mod`) — that's what lets the drift check below byte-compare.
 
 ## ⚠️ The binaries are committed — regenerate after every Go change
 
