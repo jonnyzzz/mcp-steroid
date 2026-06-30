@@ -73,7 +73,8 @@ func statusMessage(home string) string {
 		return "✅ devrig downloaded. Restart Claude now to activate the full IDE bridge."
 	case "installing":
 		return fmt.Sprintf(
-			"⏳ Downloading devrig: ~%d MB of ~%d MB, %s elapsed. Keep working — when it finishes, restart Claude to activate it.",
+			"⏳ Downloading devrig: ~%d MB of ~%d MB, %s elapsed. Keep Claude open and keep working — "+
+				"if you quit or restart Claude now, the download stops. When it finishes, restart Claude to activate it.",
 			installedMB(home), approxInstallMB, fmtElapsed(installElapsed(home)))
 	case "failed":
 		reason := readFailedReason(home)
