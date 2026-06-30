@@ -26,6 +26,16 @@
   IDE failing its `/windows` fetch errors the whole call (`coroutineScope` + `error(...)`), unlike
   `list_projects` which degrades per-backend. Return partial windows + a per-backend error marker.
 
+- [ ] **`waitForMcpReady` should fail fast on a dead container (quorum follow-up to PR #187, the typed-retry
+  rework)**: the 300s startup health-check treats a *dead/missing* container the same as "server still
+  starting" — `docker exec … curl` **exits non-zero (125)** rather than throwing, so it is retried to the
+  300s deadline instead of surfacing at once as a terminal `McpRequestFailedError`. Pre-existing (not a
+  regression); PR #187 closed every *other* poll-reachable terminal path (`mcpExecuteCode`'s 1-hour poll,
+  `waitForIdeWindow`, and the throw-path of this health-check). The proper fix needs a real container/IDE
+  liveness signal — thread the IDE `RunningContainerProcess` handle into `waitForMcpReady` and throw
+  `McpRequestFailedError` when it is not `isRunning()` — NOT fragile docker exit-code magic (125/126/127 vs
+  curl 7/28). Flagged by codex in round 7 of the adversarial `run-agent.sh` quorum (claude approved all 7).
+
 - [ ] **`install --check` vs the literal Tenet-3 reading (review follow-up to #86)**: `--check` itself
   is read-only, but `runsTool()` in `npx-kt/.../Main.kt` returns true for `DevrigCommandInstall`, so the
   shared CLI startup still fires the PostHog beacon (`beacon.captureStarted`) and the background update

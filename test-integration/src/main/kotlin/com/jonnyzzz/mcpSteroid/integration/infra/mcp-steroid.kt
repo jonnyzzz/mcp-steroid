@@ -8,8 +8,8 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResultValue
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
 
 /** Build system type for project setup. Must be specified explicitly per test. */
@@ -92,22 +92,77 @@ internal fun findMcpServerStartupFailure(logLines: List<String>): String? =
     logLines.firstOrNull { it.contains(MCP_SERVER_STARTUP_FAILURE_MARKER) }
 
 /**
- * Pure: is [t] a *transient* execute_code transport failure — the request could not complete in its
- * window because the IDE was too busy (saturated by a big-project import/indexing) to answer, so the
- * curl process was killed (exit -1)?
- *
- * This is the silent twin of [isIndexingInProgress]: when the IDE settles enough to answer, it returns
- * the clean `INDEXING IN PROGRESS` marker and we poll; but while the IDE is *so* busy it can't even
- * answer in time, the request is killed and surfaces as `assertExitCode` throwing with an `exit code is
- * -1` message (see [executeMcpRequestRaw] -> `assertExitCode(0)`). Both mean the same thing — "still
- * busy, call again" — so both must be retried. A *script-level* error (compile/runtime) instead comes
- * back as a clean isError result with a real exit code (1), never as this killed-process -1, so it is
- * NOT transient and must surface immediately. See jonnyzzz/mcp-steroid#169.
+ * Thrown when an MCP request's curl was killed (exit -1) because the IDE was too busy — saturated by a
+ * big-project import/indexing — to answer in time. It means "still busy, call again": a plain [Exception]
+ * (NOT a [WaitAbortedError]) so [waitFor] swallows-and-retries it, and the hand-rolled project-open
+ * poll loops that `catch (Exception)` retry it too. The silent twin of the clean `INDEXING IN PROGRESS`
+ * marker ([isIndexingInProgress]). A *script-level* error (compile/runtime) instead comes back as a clean
+ * isError result with a real exit code, never this killed-process -1, so it is not transient and surfaces
+ * immediately. The request layer ([McpSteroidDriver] curl handling) throws this type directly, so the
+ * retry policy is implicit for every MCP call. Its fatal twin is [McpRequestFailedError]. See
+ * jonnyzzz/mcp-steroid#169.
  */
-internal fun isTransientMcpRequestFailure(t: Throwable): Boolean {
-    val msg = t.message ?: return false
-    return msg.contains("MCP request failed") && msg.contains("exit code is -1")
-}
+class TransientMcpRequestException(message: String) : RuntimeException(message)
+
+/**
+ * Thrown when an MCP request genuinely failed: curl could not reach the server (a non-`-1` non-zero exit —
+ * curl uses no `--max-time`, so our process timeout is the only thing that kills a *busy* server with -1;
+ * any other non-zero exit means connection refused / unreachable), or the server returned a malformed HTTP
+ * envelope. A [WaitAbortedError] (an [Error]), so [waitFor] stops the loop at once — a full MCP failure
+ * fails the test immediately instead of being retried for the whole indexing budget, and a `catch
+ * (Exception)` retry loop does not swallow it. This is the fatal twin of the transient
+ * [TransientMcpRequestException]; we expect it only on a real crash, which is rare, so we deliberately do
+ * not retry it. The request layer throws this type directly, so the policy is implicit for every MCP call.
+ */
+class McpRequestFailedError(message: String) : WaitAbortedError(message)
+
+/**
+ * Parse an MCP response body, or fail terminally. A malformed/non-JSON envelope is a protocol breakage,
+ * not a busy IDE — so it throws [McpRequestFailedError] (an [Error]) to stop a [waitFor] at once rather
+ * than letting a deterministic parse failure be retried for the whole indexing budget. Used by every MCP
+ * request-parse boundary reachable from `mcpExecuteCode`'s poll (`mcpInitialize`, `executeMcpRequest`), so
+ * the "every terminal path is typed" invariant the typed-retry design relies on actually holds.
+ */
+internal fun parseMcpResponseOrFail(body: String): JsonElement =
+    try {
+        Json.parseToJsonElement(body)
+    } catch (e: SerializationException) {
+        throw McpRequestFailedError("Malformed JSON in MCP response: ${e.message}")
+    }
+
+/**
+ * Interpret a `tools/call` MCP response body into (content texts, isError). The body is parsed via
+ * [parseMcpResponseOrFail]; a *valid-JSON-but-wrong-shape* envelope (e.g. `result` is a string, `content`
+ * is not an array) is a protocol breakage, not a busy IDE — so any kotlinx accessor type-mismatch
+ * (an [IllegalArgumentException]) becomes a terminal [McpRequestFailedError] instead of a plain exception a
+ * [waitFor] would retry for the whole indexing budget. *Missing* optional fields degrade gracefully (no
+ * text / isError=true), preserving the normal "script returned an error result" path. This keeps the
+ * "every terminal path reachable from `mcpExecuteCode`'s poll is typed" invariant whole.
+ */
+internal fun parseMcpToolResultTexts(body: String): Pair<List<String>, Boolean> =
+    try {
+        val data = parseMcpResponseOrFail(body)
+        val texts = buildList {
+            data.jsonObject["result"]?.jsonObject?.get("content")?.jsonArray?.forEach { item ->
+                item.jsonObject["text"]?.jsonPrimitive?.contentOrNull?.let { add(it) }
+            }
+        }
+        val isError = data.jsonObject["result"]?.jsonObject?.get("isError")?.jsonPrimitive?.booleanOrNull ?: true
+        texts to isError
+    } catch (e: IllegalArgumentException) {
+        throw McpRequestFailedError("Malformed MCP tool response shape: ${e.message}")
+    }
+
+/**
+ * The single content text of an MCP tool result, or a terminal [McpRequestFailedError] if the envelope
+ * carries no content text. For tools (`steroid_list_projects`, `steroid_list_windows`) whose payload is one
+ * JSON text blob — the caller then parses that blob, e.g. via [parseMcpResponseOrFail]. Keeps the
+ * direct-poll callers (`waitForIdeWindow` → `mcpListWindows`) terminal-by-type on a deterministic protocol
+ * breakage instead of retrying it to their deadline.
+ */
+internal fun firstMcpToolText(body: String): String =
+    parseMcpToolResultTexts(body).first.firstOrNull()
+        ?: throw McpRequestFailedError("MCP tool result carried no content text: $body")
 
 class McpSteroidDriver(
     val driver: ContainerDriver,
@@ -125,22 +180,36 @@ class McpSteroidDriver(
 
     fun waitForMcpReady() {
         waitFor(300_000, "MCP Steroid server ready") {
-            // Fail fast: if the IDE logged that the MCP web server could not start, the health check below
-            // would otherwise poll a server that will never come up until the deadline. A WaitAbortedException
-            // stops the waitFor loop at once with the offending log line.
-            findMcpServerStartupFailure(ijDriver.readLogs())?.let { line ->
-                throw WaitAbortedException(
-                    "MCP Steroid web server failed to start in ${ijDriver.ideProduct.displayName}: $line",
-                )
+            // The container interactions here are terminal-by-default: reading the IDE log and running the
+            // health-check curl both go through `docker exec`, which THROWS if the container has died — a
+            // terminal infrastructure failure, so we map it to McpRequestFailedError (an Error) and the wait
+            // stops at once instead of polling to the 300s deadline. A still-STARTING server is NOT this: it
+            // keeps the container alive and merely makes curl exit nonzero (handled below as "not ready →
+            // retry"). The other fail-fast signal is the startup-failure log marker (WaitAbortedError, an
+            // Error too — not caught by the `catch (Exception)` below, so it also propagates).
+            val healthCheckExit = try {
+                findMcpServerStartupFailure(ijDriver.readLogs())?.let { line ->
+                    throw WaitAbortedError(
+                        "MCP Steroid web server failed to start in ${ijDriver.ideProduct.displayName}: $line",
+                    )
+                }
+                driver.startProcessInContainer {
+                    this
+                        .args("curl", "-s", "-f", guestMcpUrl, "-H", "Accept: application/json")
+                        .timeoutSeconds(5)
+                        .quietly()
+                        .description("curl health check $guestMcpUrl")
+                }.awaitForProcessFinish().exitCode
+            } catch (e: Exception) {
+                throw McpRequestFailedError("MCP health-check transport failed (${e.javaClass.simpleName}): ${e.message}")
             }
 
-            driver.startProcessInContainer {
-                this
-                    .args("curl", "-s", "-f", guestMcpUrl, "-H", "Accept: application/json")
-                    .timeoutSeconds(5)
-                    .quietly()
-                    .description("curl health check $guestMcpUrl")
-            }.awaitForProcessFinish().exitCode == 0 && runCatching { resolveProjectName() }.isSuccess
+            // The nullable resolveProjectName(dir) overload returns null while the project is simply not open
+            // yet (→ retry, the normal startup case) but PROPAGATES a terminal McpRequestFailedError from the
+            // MCP call (→ stop). Using it instead of `runCatching { resolveProjectName() }` — which would
+            // swallow even that Error and retry to the 300s deadline — keeps the terminal-by-type contract.
+            // A transient busy (-1) stays a plain TransientMcpRequestException that waitFor retries.
+            healthCheckExit == 0 && resolveProjectName(ijDriver.getGuestProjectDir()) != null
         }
 
         mcpInitialize()
@@ -167,26 +236,25 @@ class McpSteroidDriver(
             }
         }.toString()
 
-        val run = executeMcpRequest(sessionId, request)
-        val data = json.parseToJsonElement(run)
+        val text = firstMcpToolText(executeMcpRequest(sessionId, request))
 
-        val text = data.jsonObject["result"]
-            ?.jsonObject?.get("content")
-            ?.jsonArray?.firstOrNull()
-            ?.jsonObject?.get("text")
-            ?.jsonPrimitive?.contentOrNull
-            ?: error("steroid_list_projects returned no content: $run")
-
-        val response = json.parseToJsonElement(text)
-        return response.jsonObject["projects"]
-            ?.jsonArray
-            ?.map {
-                McpProjectInfo(
-                    name = it.jsonObject["name"]!!.jsonPrimitive.content,
-                    path = it.jsonObject["path"]!!.jsonPrimitive.content,
-                )
-            }
-            ?: error("steroid_list_projects returned no projects: $text")
+        // A malformed/missing projects payload is a deterministic protocol breakage, not a busy IDE: type it
+        // as McpRequestFailedError so a poll (waitForMcpReady) stops at once instead of retrying to its budget.
+        return try {
+            parseMcpResponseOrFail(text).jsonObject["projects"]
+                ?.jsonArray
+                ?.map {
+                    McpProjectInfo(
+                        name = it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
+                            ?: throw McpRequestFailedError("steroid_list_projects entry missing 'name': $text"),
+                        path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull
+                            ?: throw McpRequestFailedError("steroid_list_projects entry missing 'path': $text"),
+                    )
+                }
+                ?: throw McpRequestFailedError("steroid_list_projects returned no projects payload: $text")
+        } catch (e: IllegalArgumentException) {
+            throw McpRequestFailedError("steroid_list_projects malformed payload: ${e.message}")
+        }
     }
 
     /**
@@ -213,30 +281,29 @@ class McpSteroidDriver(
             }
         }.toString()
 
-        val run = executeMcpRequest(sessionId, request, timeoutSeconds = timeoutSeconds)
-        val data = json.parseToJsonElement(run)
+        val text = firstMcpToolText(executeMcpRequest(sessionId, request, timeoutSeconds = timeoutSeconds))
 
-        val text = data.jsonObject["result"]
-            ?.jsonObject?.get("content")
-            ?.jsonArray?.firstOrNull()
-            ?.jsonObject?.get("text")
-            ?.jsonPrimitive?.contentOrNull
-            ?: error("steroid_list_windows returned no content: $run")
-
-        val response = json.parseToJsonElement(text)
-        return response.jsonObject["windows"]
-            ?.jsonArray
-            ?.map {
-                val window = it.jsonObject
-                McpWindowInfo(
-                    projectName = window["projectName"]?.jsonPrimitive?.contentOrNull,
-                    projectPath = window["projectPath"]?.jsonPrimitive?.contentOrNull,
-                    modalDialogShowing = window["modalDialogShowing"]?.jsonPrimitive?.booleanOrNull ?: false,
-                    indexingInProgress = window["indexingInProgress"]?.jsonPrimitive?.booleanOrNull,
-                    projectInitialized = window["projectInitialized"]?.jsonPrimitive?.booleanOrNull,
-                )
-            }
-            ?: error("steroid_list_windows returned no windows payload: $text")
+        // A malformed/missing windows payload is a deterministic protocol breakage, not a busy IDE: type it as
+        // McpRequestFailedError so waitForIdeWindow's `catch (Exception)` poll does not retry it to the deadline
+        // (it lets this Error fail fast). The normal "not ready yet" path returns a valid windows list, never an
+        // exception, so this does not affect legitimate polling.
+        return try {
+            parseMcpResponseOrFail(text).jsonObject["windows"]
+                ?.jsonArray
+                ?.map {
+                    val window = it.jsonObject
+                    McpWindowInfo(
+                        projectName = window["projectName"]?.jsonPrimitive?.contentOrNull,
+                        projectPath = window["projectPath"]?.jsonPrimitive?.contentOrNull,
+                        modalDialogShowing = window["modalDialogShowing"]?.jsonPrimitive?.booleanOrNull ?: false,
+                        indexingInProgress = window["indexingInProgress"]?.jsonPrimitive?.booleanOrNull,
+                        projectInitialized = window["projectInitialized"]?.jsonPrimitive?.booleanOrNull,
+                    )
+                }
+                ?: throw McpRequestFailedError("steroid_list_windows returned no windows payload: $text")
+        } catch (e: IllegalArgumentException) {
+            throw McpRequestFailedError("steroid_list_windows malformed payload: ${e.message}")
+        }
     }
 
     /**
@@ -430,21 +497,15 @@ try {
          */
         modal: ModalMode = ModalMode.DEFAULT,
     ): ProcessResult =
-        // Retry-while-busy, the same way an agent would: just call again. The IDE reports "busy" two ways
-        // while a big-project import/indexing is saturating it, both meaning "not done, call again":
-        //   1. a clean result carrying the INDEXING IN PROGRESS marker, and
-        //   2. a transient transport failure — the request was killed (exit -1) because the IDE couldn't
-        //      even answer in time (#169).
-        // A non-transient failure (a real bug) instead aborts the wait at once via WaitAbortedException,
-        // so it is never masked by an hour of polling. waitForValue retries on null until the budget runs out.
+        // Retry-while-busy, the same way an agent would: just call again. The exception types from the
+        // request layer drive the wait, so no try/catch is needed here: a transient TransientMcpRequestException
+        // (IDE too busy to answer, curl killed, exit -1) is a plain exception that waitFor swallows-and-retries,
+        // while a fatal McpRequestFailedError (a WaitAbortedError) stops the loop at once instead of
+        // retrying a genuine crash for the whole budget. The last "busy" signal is a clean INDEXING IN
+        // PROGRESS result → null → call again.
         waitForValue(INDEXING_POLL_BUDGET_MS, "exec_code '$taskId' to run (IDE busy with import/indexing)") {
-            val result = try {
-                mcpExecuteCodeOnce(code, taskId, reason, timeout, projectName, modal)
-            } catch (t: Throwable) {
-                if (isTransientMcpRequestFailure(t)) return@waitForValue null // still busy — call again
-                throw WaitAbortedException("exec_code '$taskId' failed: ${t.message}", t)
-            }
-            result.takeUnless { isIndexingInProgress(it.stdout) } // INDEXING marker -> null -> call again
+            mcpExecuteCodeOnce(code, taskId, reason, timeout, projectName, modal)
+                .takeUnless { isIndexingInProgress(it.stdout) }
         }
 
     private fun mcpExecuteCodeOnce(
@@ -478,18 +539,14 @@ try {
 
         // Execute the tool call (curl timeout must exceed the server-side execution timeout)
         val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeout.toLong() + 30)
-        val data = json.parseToJsonElement(run)
+        val (texts, isError) = parseMcpToolResultTexts(run)
 
         val messages = buildString {
-            data.jsonObject["result"]?.jsonObject["content"]?.jsonArray?.forEach {
-                it.jsonObject["text"]?.jsonPrimitive?.contentOrNull?.let { text ->
-                    println("[MCP LOG]: $text ")
-                    appendLine(text)
-                }
+            texts.forEach { text ->
+                println("[MCP LOG]: $text ")
+                appendLine(text)
             }
         }
-
-        val isError = data.jsonObject["result"]?.jsonObject["isError"]?.jsonPrimitive?.booleanOrNull ?: true
 
         return ProcessResultValue(
             exitCode = if (isError) 1 else 0,
@@ -531,17 +588,9 @@ try {
         }.toString()
 
         val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeout.toLong() + 30)
-        val data = json.parseToJsonElement(run)
+        val (texts, isError) = parseMcpToolResultTexts(run)
 
-        val messages = buildString {
-            data.jsonObject["result"]?.jsonObject["content"]?.jsonArray?.forEach {
-                it.jsonObject["text"]?.jsonPrimitive?.contentOrNull?.let { text ->
-                    appendLine(text)
-                }
-            }
-        }
-
-        val isError = data.jsonObject["result"]?.jsonObject["isError"]?.jsonPrimitive?.booleanOrNull ?: true
+        val messages = buildString { texts.forEach { appendLine(it) } }
 
         return ProcessResultValue(
             exitCode = if (isError) 1 else 0,
@@ -574,11 +623,13 @@ try {
             sessionId = null,
             requestBody = initRequest,
         )
-        json.parseToJsonElement(responseBody)
+        parseMcpResponseOrFail(responseBody)
 
+        // A missing session header on an otherwise-OK response is a protocol breakage, not a busy IDE —
+        // McpRequestFailedError (an Error) so a retrying caller stops at once instead of looping the budget.
         val sessionId = responseHeaders[SESSION_HEADER]
             ?.takeIf { it.isNotBlank() }
-            ?: error("MCP initialize response missing $SESSION_HEADER header")
+            ?: throw McpRequestFailedError("MCP initialize response missing $SESSION_HEADER header")
 
         mcpSessionIdHolder.set(sessionId)
         return sessionId
@@ -597,7 +648,7 @@ try {
             requestBody = requestBody,
             timeoutSeconds = timeoutSeconds,
         ).first
-        return json.encodeToString(json.parseToJsonElement(responseBody.trim()))
+        return json.encodeToString(parseMcpResponseOrFail(responseBody.trim()))
     }
 
     private fun executeMcpRequestRaw(
@@ -613,7 +664,6 @@ try {
         // command-line string, so CommandLineToArgvW strips all `"` from the JSON, producing
         // unquoted keys/values that the MCP server rejects (-32600 "jsonrpc must be 2.0").
         val bodyFile = "/tmp/mcp-steroid-request.json"
-        driver.writeFileInContainer(bodyFile, requestBody)
 
         // Create curl command
         val curlCommand = buildList {
@@ -639,16 +689,44 @@ try {
             add("@$bodyFile")
         }
 
-        val result = driver.startProcessInContainer {
-            this
-                .args(curlCommand)
-                .timeoutSeconds(timeoutSeconds)
-                .description("curl MCP request")
-        }.assertExitCode(0) { "MCP request failed: $stdout" }
+        // The container/process transport is terminal-by-default. Writing the request file or spawning curl
+        // can fail outright when the IDE container has died or is unreachable — a *full* failure, not a busy
+        // IDE — so any thrown transport error becomes a McpRequestFailedError (an Error): a poll stops at once
+        // instead of retrying it for the whole budget. A merely *busy* IDE never throws here; it surfaces as
+        // the returned exit code -1 handled below. This makes the primitive's only outcomes: a valid response,
+        // a TransientMcpRequestException (retry), or a McpRequestFailedError (terminal) — no untyped escape.
+        val result = try {
+            driver.writeFileInContainer(bodyFile, requestBody)
+            driver.startProcessInContainer {
+                this
+                    .args(curlCommand)
+                    .timeoutSeconds(timeoutSeconds)
+                    .description("curl MCP request")
+            }.awaitForProcessFinish()
+        } catch (e: Exception) {
+            throw McpRequestFailedError("MCP request transport failed (${e.javaClass.simpleName}): ${e.message}")
+        }
+
+        // The request layer throws the typed exceptions that drive every retrying caller (mcpExecuteCode's
+        // waitForValue and the hand-rolled project-open poll loops); the fatal-vs-retry decision is implicit
+        // in the type, so no caller needs a try/catch.
+        //  - exit -1 = curl was killed by our process timeout because the IDE was too busy to even answer in
+        //    time → transient "call again" (a plain TransientMcpRequestException, swallowed-and-retried).
+        //  - any OTHER non-zero exit = curl could not reach the server (no --max-time is set, so a *busy*
+        //    server only ever yields -1; a non-`-1` failure means connection refused / unreachable) → a real
+        //    crash, McpRequestFailedError (a WaitAbortedError) so the wait stops at once.
+        if (result.exitCode == -1) {
+            throw TransientMcpRequestException("MCP request did not complete: IDE too busy to answer (curl killed, exit -1)")
+        }
+        if (result.exitCode != 0) {
+            throw McpRequestFailedError("MCP request failed (exit ${result.exitCode}): ${result.stdout} ${result.stderr}")
+        }
 
         val raw = result.stdout.replace("\r\n", "\n")
         val splitIndex = raw.indexOf("\n\n")
-        require(splitIndex >= 0) { "Invalid HTTP response from MCP server: missing headers/body separator" }
+        if (splitIndex < 0) {
+            throw McpRequestFailedError("Invalid HTTP response from MCP server: missing headers/body separator")
+        }
 
         val headerLines = raw.substring(0, splitIndex)
             .lineSequence()

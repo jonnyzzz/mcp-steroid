@@ -1,6 +1,6 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
-import com.jonnyzzz.mcpSteroid.integration.infra.WaitAbortedException
+import com.jonnyzzz.mcpSteroid.integration.infra.WaitAbortedError
 import com.jonnyzzz.mcpSteroid.integration.infra.findMcpServerStartupFailure
 import com.jonnyzzz.mcpSteroid.integration.infra.parseDockerHostPathMappings
 import com.jonnyzzz.mcpSteroid.integration.infra.remapPathForDockerHost
@@ -108,12 +108,12 @@ class IdeTestHelpersTest {
     }
 
     @Test
-    fun `waitFor aborts immediately on WaitAbortedException, not waiting out the timeout`() {
+    fun `waitFor aborts immediately on WaitAbortedError, not waiting out the timeout`() {
         val start = System.currentTimeMillis()
-        val error = Assertions.assertThrows(WaitAbortedException::class.java) {
-            // Large timeout, but the first poll throws WaitAbortedException — it must stop at once.
+        val error = Assertions.assertThrows(WaitAbortedError::class.java) {
+            // Large timeout, but the first poll throws WaitAbortedError — it must stop at once.
             waitFor(60_000, "server ready") {
-                throw WaitAbortedException("web server failed to start")
+                throw WaitAbortedError("web server failed to start")
             }
         }
         val elapsed = System.currentTimeMillis() - start
