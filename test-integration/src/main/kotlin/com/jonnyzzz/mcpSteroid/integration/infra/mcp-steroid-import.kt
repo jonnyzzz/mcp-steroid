@@ -11,18 +11,24 @@ package com.jonnyzzz.mcpSteroid.integration.infra
  * Gradle waits via `ProjectDataImportListener` + `waitForSmartMode()` because
  * `Observation.awaitConfiguration(project)` can stay suspended after Gradle sync finishes.
  */
-fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
-    //TODO: move that to prompts and include it from there are resources
-    val waitForConfigurationWithObservation = buildSystem != BuildSystem.GRADLE
-    val triggerCode = when (buildSystem) {
-        BuildSystem.MAVEN -> $$"""
+/**
+ * Pure: the Kotlin script that triggers the Maven import.
+ *
+ * [downloadSourcesAndDocs] controls auto-download of library sources + javadoc — ON gives agents API
+ * docs in the editor, but on huge projects (Keycloak) with many absent `*:sources` artifacts it churns
+ * the project roots and the import never settles. See jonnyzzz/mcp-steroid#169. Extracted as a pure
+ * function so the source-download choice is unit-testable.
+ */
+internal fun mavenImportTriggerCode(downloadSourcesAndDocs: Boolean): String = $$"""
                 try {
                     println("[IMPORT] Triggering Maven import...")
                     val mavenManager = org.jetbrains.idea.maven.project.MavenProjectsManager.getInstance(project)
-                    // Enable source + javadoc downloading so agents have full API docs in the IDE
+                    // Source + javadoc auto-download: ON gives agents full API docs in the IDE; OFF on huge
+                    // projects whose deps publish no *:sources/*:javadoc, where the failed downloads churn
+                    // roots so the import never settles (#169). PSI navigation uses compiled stubs anyway.
                     val importSettings = mavenManager.importingSettings
-                    importSettings.isDownloadSourcesAutomatically = true
-                    importSettings.isDownloadDocsAutomatically = true
+                    importSettings.isDownloadSourcesAutomatically = $$downloadSourcesAndDocs
+                    importSettings.isDownloadDocsAutomatically = $$downloadSourcesAndDocs
                     println("[IMPORT] Maven source/doc download: sources=${importSettings.isDownloadSourcesAutomatically} docs=${importSettings.isDownloadDocsAutomatically}")
                     mavenManager.forceUpdateAllProjectsOrFindAllAvailablePomFiles()
                     kotlinx.coroutines.delay(2_000L)
@@ -31,6 +37,12 @@ fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
                     throw e
                 }
             """.trimIndent()
+
+fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem, downloadSourcesAndDocs: Boolean = true) {
+    //TODO: move that to prompts and include it from there are resources
+    val waitForConfigurationWithObservation = buildSystem != BuildSystem.GRADLE
+    val triggerCode = when (buildSystem) {
+        BuildSystem.MAVEN -> mavenImportTriggerCode(downloadSourcesAndDocs)
 
         BuildSystem.GRADLE -> $$"""
                 println("[IMPORT] Gradle auto-import active from project open")

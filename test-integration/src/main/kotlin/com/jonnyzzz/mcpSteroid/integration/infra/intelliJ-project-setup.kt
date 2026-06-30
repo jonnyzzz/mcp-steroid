@@ -78,7 +78,7 @@ fun IntelliJContainer.waitForProjectReady(
     } else {
         systemsToImport.forEach { bs ->
             console.writeStep(text = "Triggering $bs import and waiting...")
-            mcpSteroid.mcpTriggerImportAndWait(bs)
+            mcpSteroid.mcpTriggerImportAndWait(bs, downloadSourcesAndDocs = project.downloadMavenSourcesAndDocs)
         }
         console.writeSuccess("Import + indexing complete")
     }
