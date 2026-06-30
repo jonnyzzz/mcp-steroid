@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 const (
@@ -43,9 +44,14 @@ func ensureInstall(home string, runner func() error) (bool, error) {
 
 // runInstallAttempt runs one install, always releasing the lock, and records the outcome:
 // a failure writes the failure marker (read back by status/hook); success clears it.
+// While the install runs it heartbeats the lock so a crash/Claude-restart (which kills this
+// non-detached install) is detected as a stale lock within installLockStaleAfter and retried.
 // Extracted from the goroutine so it can be tested synchronously.
 func runInstallAttempt(home, lp string, runner func() error) {
 	defer os.Remove(lp)
+	stop := make(chan struct{})
+	go heartbeatLock(lp, stop)
+	defer close(stop)
 	if rerr := runner(); rerr != nil {
 		// Fail loudly to stderr; never silent.
 		os.Stderr.WriteString("devrig-bootstrap: install failed: " + rerr.Error() + "\n")
@@ -55,6 +61,29 @@ func runInstallAttempt(home, lp string, runner func() error) {
 	// Success: drop any stale failure record from a prior attempt.
 	if err := os.Remove(failedMarkerPath(home)); err != nil && !os.IsNotExist(err) {
 		os.Stderr.WriteString("devrig-bootstrap: failed to clear failure marker: " + err.Error() + "\n")
+	}
+}
+
+// heartbeatLock refreshes the lock's mtime every heartbeatInterval until stopped, so a live
+// install keeps the lock "fresh" and a dead one (mtime frozen) is reclaimed as stale.
+func heartbeatLock(lp string, stop <-chan struct{}) {
+	t := time.NewTicker(heartbeatInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			touchLock(lp)
+		}
+	}
+}
+
+// touchLock sets the lock's mtime to now (the heartbeat). A missing lock is not an error here.
+func touchLock(lp string) {
+	now := time.Now()
+	if err := os.Chtimes(lp, now, now); err != nil && !os.IsNotExist(err) {
+		os.Stderr.WriteString("devrig-bootstrap: lock heartbeat failed: " + err.Error() + "\n")
 	}
 }
 

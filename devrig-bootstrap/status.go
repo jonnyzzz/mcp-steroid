@@ -8,7 +8,13 @@ import (
 	"time"
 )
 
-const installLockStaleAfter = 1 * time.Hour
+// The lock is heartbeated (mtime touched) every heartbeatInterval while an install runs, so a lock
+// whose mtime is older than installLockStaleAfter means the owning bootstrap died (e.g. Claude was
+// restarted mid-download) -- a new bootstrap then reclaims it and retries instead of waiting forever.
+const (
+	heartbeatInterval     = 20 * time.Second
+	installLockStaleAfter = 60 * time.Second
+)
 
 // lockIsStale returns true if the lock file exists and its mtime is older than installLockStaleAfter.
 func lockIsStale(home string) bool {

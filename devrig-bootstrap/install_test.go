@@ -125,6 +125,25 @@ func TestEnsureInstallSkipsWhenFailed(t *testing.T) {
 	}
 }
 
+func TestTouchLockRefreshesMtime(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(markersDir(home), 0o755)
+	lp := lockPath(home)
+	os.WriteFile(lp, []byte("1"), 0o644)
+	// Back-date well past the stale threshold, then heartbeat once.
+	old := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(lp, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if !lockIsStale(home) {
+		t.Fatal("precondition: back-dated lock should read as stale")
+	}
+	touchLock(lp)
+	if lockIsStale(home) {
+		t.Fatal("after heartbeat, lock must be fresh again")
+	}
+}
+
 type errFake string
 
 func (e errFake) Error() string { return string(e) }
