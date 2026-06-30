@@ -318,7 +318,12 @@ val validateCheckDevrig = tasks.register("validateCheckDevrig") {
         if (!content.contains("systemMessage"))
             throw GradleException("check-devrig: must emit a top-level systemMessage when devrig is absent")
         if (!content.contains("background"))
-            throw GradleException("check-devrig: message must describe the background download, not a registration nag")
+            throw GradleException("check-devrig: downloading message must describe the background download, not a registration nag")
+        // The failure branch detects the marker and is the ONLY place /devrig:setup is surfaced.
+        if (!content.contains("bootstrap-install.failed"))
+            throw GradleException("check-devrig: must detect the failure marker (bootstrap-install.failed)")
+        if (!content.contains("/devrig:setup"))
+            throw GradleException("check-devrig: failure branch must point at /devrig:setup")
     }
 }
 
@@ -354,12 +359,16 @@ val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
             return out
         }
 
-        fun makeHome(name: String, launcher: String?): java.io.File {
+        fun makeHome(name: String, launcher: String?, failed: Boolean = false): java.io.File {
             val home = work.get().asFile.resolve(name)
             home.deleteRecursively()
             val bin = home.resolve(".mcp-steroid/bin").apply { mkdirs() }
             if (launcher != null) {
                 bin.resolve(launcher).apply { writeText("#!/bin/sh\n"); setExecutable(true) }
+            }
+            if (failed) {
+                home.resolve(".mcp-steroid/markers").apply { mkdirs() }
+                    .resolve("bootstrap-install.failed").writeText("network down")
             }
             return home
         }
@@ -379,10 +388,19 @@ val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
             throw GradleException("check-devrig falsely nagged on a working POSIX install. Output:\n$posixOut")
         }
 
-        // 3. Nothing installed -> hook MUST report background download (regression guard that silence above is meaningful).
+        // 3. Nothing installed, no failure -> report background download, and must NOT surface /devrig:setup.
         val emptyOut = runHook(makeHome("empty", null))
         if (!emptyOut.contains("systemMessage") || !emptyOut.contains("background")) {
             throw GradleException("check-devrig must report the background download when devrig is absent. Output:\n$emptyOut")
+        }
+        if (emptyOut.contains("/devrig:setup")) {
+            throw GradleException("check-devrig must NOT mention /devrig:setup while merely downloading. Output:\n$emptyOut")
+        }
+
+        // 4. Failed install (marker present, no launcher) -> MUST point at /devrig:setup.
+        val failedOut = runHook(makeHome("failed", null, failed = true))
+        if (!failedOut.contains("systemMessage") || !failedOut.contains("/devrig:setup")) {
+            throw GradleException("check-devrig must point at /devrig:setup when the install failed. Output:\n$failedOut")
         }
     }
 }

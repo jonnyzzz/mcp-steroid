@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -40,32 +41,45 @@ func launcherPresent(home string) bool {
 }
 
 // installState reports the current bootstrap-visible state.
-// Returns one of "installed", "installing", or "absent".
-// Order matters: an installed launcher always wins over a stale lock.
-// A lock that is older than installLockStaleAfter is treated as absent so
-// retries are unblocked after a crashed/killed install.
+// Returns one of "installed", "installing", "failed", or "absent".
+// Order matters: an installed launcher wins; a fresh lock means a download is
+// in progress; a failure marker (with no active download) is a terminal "failed"
+// the user clears via /devrig:setup; otherwise nothing has started yet.
+// A lock older than installLockStaleAfter is ignored so a crashed install
+// doesn't wedge the state forever.
 func installState(home string) string {
 	if launcherPresent(home) {
 		return "installed"
 	}
-	if _, err := os.Stat(lockPath(home)); err == nil {
-		if lockIsStale(home) {
-			return "absent"
-		}
+	if _, err := os.Stat(lockPath(home)); err == nil && !lockIsStale(home) {
 		return "installing"
+	}
+	if _, err := os.Stat(failedMarkerPath(home)); err == nil {
+		return "failed"
 	}
 	return "absent"
 }
 
-func toolCall(_ json.RawMessage) any {
-	var msg string
-	switch installState(homeDir()) {
+// statusMessage is the user-facing text the devrig_status tool returns for the current state.
+func statusMessage(home string) string {
+	switch installState(home) {
 	case "installed":
-		msg = "devrig is installed. Restart Claude to activate the full IDE bridge."
+		return "✅ devrig downloaded. Restart Claude now to activate the full IDE bridge."
 	case "installing":
-		msg = "devrig is downloading in the background (~300 MB). Re-run devrig_setup to re-check; restart Claude once it completes."
+		return fmt.Sprintf(
+			"⏳ Downloading devrig: ~%d MB of ~%d MB, %s elapsed. Keep working — when it finishes, restart Claude to activate it.",
+			installedMB(home), approxInstallMB, fmtElapsed(installElapsed(home)))
+	case "failed":
+		reason := readFailedReason(home)
+		if reason == "" {
+			reason = "unknown error"
+		}
+		return "❌ devrig install failed: " + reason + ". Run /devrig:setup to retry."
 	default:
-		msg = "devrig is not installed yet. The download will start automatically; re-run devrig_setup to check progress."
+		return "⏳ devrig download is starting — check again in a moment. When it finishes, restart Claude to activate it."
 	}
-	return map[string]any{"content": []any{map[string]any{"type": "text", "text": msg}}}
+}
+
+func toolCall(_ json.RawMessage) any {
+	return map[string]any{"content": []any{map[string]any{"type": "text", "text": statusMessage(homeDir())}}}
 }

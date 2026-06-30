@@ -30,14 +30,14 @@ func TestInitializeHandshake(t *testing.T) {
 	}
 
 	// notifications/initialized produces NO response line.
-	// 2nd line: tools/list with exactly one tool named devrig_setup
+	// 2nd line: tools/list with exactly one tool named devrig_status
 	sc.Scan()
 	var list rpcResponse
 	if err := json.Unmarshal(sc.Bytes(), &list); err != nil {
 		t.Fatalf("tools/list resp: %v (line=%q)", err, sc.Text())
 	}
 	tools := list.Result.(map[string]any)["tools"].([]any)
-	if len(tools) != 1 || tools[0].(map[string]any)["name"] != "devrig_setup" {
-		t.Fatalf("expected one devrig_setup tool, got %v", tools)
+	if len(tools) != 1 || tools[0].(map[string]any)["name"] != "devrig_status" {
+		t.Fatalf("expected one devrig_status tool, got %v", tools)
 	}
 }

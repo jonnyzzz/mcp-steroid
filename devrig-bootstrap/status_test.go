@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,5 +27,54 @@ func TestInstallState(t *testing.T) {
 	os.WriteFile(filepath.Join(bin, "devrig"), []byte("#!/bin/sh\n"), 0o755)
 	if got := installState(home); got != "installed" {
 		t.Fatalf("launcher present: want installed, got %s", got)
+	}
+}
+
+func TestInstallStateFailed(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(markersDir(home), 0o755)
+	// failure marker, no lock, no launcher -> failed
+	os.WriteFile(failedMarkerPath(home), []byte("boom"), 0o644)
+	if got := installState(home); got != "failed" {
+		t.Fatalf("failure marker: want failed, got %s", got)
+	}
+	// a fresh lock means an install is running again -> installing wins over the marker
+	os.WriteFile(lockPath(home), []byte("1"), 0o644)
+	if got := installState(home); got != "installing" {
+		t.Fatalf("fresh lock over marker: want installing, got %s", got)
+	}
+}
+
+func TestStatusMessage(t *testing.T) {
+	cases := []struct {
+		name   string
+		setup  func(home string)
+		expect []string // all substrings must be present
+	}{
+		{"installing", func(h string) {
+			os.MkdirAll(markersDir(h), 0o755)
+			os.WriteFile(lockPath(h), []byte("1"), 0o644)
+		}, []string{"Downloading devrig", "of ~300 MB", "restart Claude"}},
+		{"failed", func(h string) {
+			os.MkdirAll(markersDir(h), 0o755)
+			os.WriteFile(failedMarkerPath(h), []byte("network down"), 0o644)
+		}, []string{"network down", "/devrig:setup"}},
+		{"installed", func(h string) {
+			bin := filepath.Join(h, ".mcp-steroid", "bin")
+			os.MkdirAll(bin, 0o755)
+			os.WriteFile(filepath.Join(bin, "devrig"), []byte("#!/bin/sh\n"), 0o755)
+		}, []string{"Restart Claude"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			home := t.TempDir()
+			c.setup(home)
+			msg := statusMessage(home)
+			for _, sub := range c.expect {
+				if !strings.Contains(msg, sub) {
+					t.Fatalf("%s message %q missing %q", c.name, msg, sub)
+				}
+			}
+		})
 	}
 }

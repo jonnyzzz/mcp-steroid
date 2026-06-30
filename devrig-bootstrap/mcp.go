@@ -24,9 +24,11 @@ const serverName = "devrig-bootstrap"
 func toolsList() any {
 	return map[string]any{"tools": []any{
 		map[string]any{
-			"name": "devrig_setup",
-			"description": "Reports devrig IDE-bridge install status. devrig is downloading in the " +
-				"background; once it finishes, restart Claude to activate the full IDE bridge.",
+			"name": "devrig_status",
+			"description": "Check devrig install/download progress. Call this when the user asks " +
+				"whether devrig is ready, how the download is going, or what to do next. devrig is " +
+				"downloading in the background; once it finishes the user restarts Claude to activate " +
+				"the full IDE bridge.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
 		},
 	}}

@@ -88,3 +88,43 @@ func TestEnsureInstallReclaimsStaleLock(t *testing.T) {
 		t.Fatal("fresh lock: ensureInstall must not start a new install while lock is fresh")
 	}
 }
+
+func TestRunInstallAttemptRecordsOutcome(t *testing.T) {
+	// failure -> lock released, failure marker written with the reason
+	home := t.TempDir()
+	os.MkdirAll(markersDir(home), 0o755)
+	lp := lockPath(home)
+	os.WriteFile(lp, []byte("1"), 0o644)
+	runInstallAttempt(home, lp, func() error { return errFake("network down") })
+	if _, err := os.Stat(lp); !os.IsNotExist(err) {
+		t.Fatal("failure: lock must be released")
+	}
+	if b, err := os.ReadFile(failedMarkerPath(home)); err != nil || string(b) != "network down" {
+		t.Fatalf("failure: marker want 'network down', got %q err=%v", string(b), err)
+	}
+
+	// success -> lock released, any prior failure marker cleared
+	os.WriteFile(lp, []byte("1"), 0o644)
+	runInstallAttempt(home, lp, func() error { return nil })
+	if _, err := os.Stat(lp); !os.IsNotExist(err) {
+		t.Fatal("success: lock must be released")
+	}
+	if _, err := os.Stat(failedMarkerPath(home)); !os.IsNotExist(err) {
+		t.Fatal("success: failure marker must be cleared")
+	}
+}
+
+func TestEnsureInstallSkipsWhenFailed(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(markersDir(home), 0o755)
+	os.WriteFile(failedMarkerPath(home), []byte("boom"), 0o644) // terminal failed state
+
+	started, _ := ensureInstall(home, func() error { t.Fatal("must not retry a failed install"); return nil })
+	if started {
+		t.Fatal("failed state must not auto-retry; user runs /devrig:setup")
+	}
+}
+
+type errFake string
+
+func (e errFake) Error() string { return string(e) }

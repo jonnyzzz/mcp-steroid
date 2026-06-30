@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,18 +37,37 @@ func ensureInstall(home string, runner func() error) (bool, error) {
 		return false, nil // someone else holds the lock
 	}
 	f.Close()
-	go func() {
-		defer os.Remove(lp)
-		if rerr := runner(); rerr != nil {
-			// Fail loudly to stderr; never silent.
-			os.Stderr.WriteString("devrig-bootstrap: install failed: " + rerr.Error() + "\n")
-		}
-	}()
+	go runInstallAttempt(home, lp, runner)
 	return true, nil
 }
 
-// spawnInstaller runs the canonical installer to completion (it is what runner wraps).
-func spawnInstaller() error {
+// runInstallAttempt runs one install, always releasing the lock, and records the outcome:
+// a failure writes the failure marker (read back by status/hook); success clears it.
+// Extracted from the goroutine so it can be tested synchronously.
+func runInstallAttempt(home, lp string, runner func() error) {
+	defer os.Remove(lp)
+	if rerr := runner(); rerr != nil {
+		// Fail loudly to stderr; never silent.
+		os.Stderr.WriteString("devrig-bootstrap: install failed: " + rerr.Error() + "\n")
+		writeFailedMarker(home, rerr.Error())
+		return
+	}
+	// Success: drop any stale failure record from a prior attempt.
+	if err := os.Remove(failedMarkerPath(home)); err != nil && !os.IsNotExist(err) {
+		os.Stderr.WriteString("devrig-bootstrap: failed to clear failure marker: " + err.Error() + "\n")
+	}
+}
+
+// runInstaller runs the canonical installer to completion, tee'ing its output to the install
+// log (so progress/diagnostics are inspectable) and to OUR stderr — never stdout (JSON-RPC).
+func runInstaller(home string) error {
+	out := io.Writer(os.Stderr)
+	if lf, err := os.OpenFile(logPath(home), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); err != nil {
+		os.Stderr.WriteString("devrig-bootstrap: cannot open install log (continuing without it): " + err.Error() + "\n")
+	} else {
+		defer lf.Close()
+		out = io.MultiWriter(os.Stderr, lf)
+	}
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
@@ -56,7 +76,7 @@ func spawnInstaller() error {
 		// curl|sh, mirroring bin/install-devrig
 		cmd = exec.Command("sh", "-c", "curl -fsSL "+installShURL+" | sh")
 	}
-	cmd.Stdout = os.Stderr // installer chatter must never hit OUR stdout (JSON-RPC)
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = out
+	cmd.Stderr = out
 	return cmd.Run()
 }
