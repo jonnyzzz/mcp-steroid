@@ -2,8 +2,9 @@
 # devrig -- SessionStart hook. The plugin registers its MCP server via .mcp.json and the bundled
 # bootstrap downloads devrig in the background. This hook only surfaces state to the user; it never
 # nags about registration (the .mcp.json guarantees it). It stays silent once devrig is installed,
-# tells the user to wait+restart while downloading, and points at /devrig:setup ONLY if the last
-# install attempt failed. Must be fast and exit 0.
+# tells the user to keep Claude open while downloading (tools activate automatically — no restart
+# needed), and points at /devrig:setup ONLY if the last install attempt failed. Must be fast and
+# exit 0.
 DEVRIG="$HOME/.mcp-steroid/bin/devrig"
 DEVRIG_WIN="$HOME/.mcp-steroid/bin/devrig.cmd"
 FAILED="$HOME/.mcp-steroid/markers/bootstrap-install.failed"
