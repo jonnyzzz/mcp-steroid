@@ -29,16 +29,23 @@ import java.util.concurrent.TimeUnit
  */
 class KeycloakRenameTest {
 
-    @Test @Timeout(value = 50, unit = TimeUnit.MINUTES)
+    // 80 min, not the 50 the other Keycloak scenarios use: the without-MCP baseline legitimately needs
+    // ~30 min of agent work for the manual rename sweep + rebuild (measured on CI build 991971402, where
+    // the agent finished successfully at 30.3 min but container start + Keycloak import + verification
+    // pushed the method past 50). The slow baseline IS the experiment's finding — it must complete and
+    // emit its [ARENA] block so the dashboard can show the gap, not die as a timeout with no data.
+    // TC-side executionTimeoutMin=180 fits two 80-min methods.
+
+    @Test @Timeout(value = 80, unit = TimeUnit.MINUTES)
     fun `claude with mcp`() = run("claude", withMcp = true)
 
-    @Test @Timeout(value = 50, unit = TimeUnit.MINUTES)
+    @Test @Timeout(value = 80, unit = TimeUnit.MINUTES)
     fun `claude without mcp`() = run("claude", withMcp = false)
 
-    @Test @Timeout(value = 50, unit = TimeUnit.MINUTES)
+    @Test @Timeout(value = 80, unit = TimeUnit.MINUTES)
     fun `codex with mcp`() = run("codex", withMcp = true)
 
-    @Test @Timeout(value = 50, unit = TimeUnit.MINUTES)
+    @Test @Timeout(value = 80, unit = TimeUnit.MINUTES)
     fun `codex without mcp`() = run("codex", withMcp = false)
 
     private fun run(agentName: String, withMcp: Boolean) {
