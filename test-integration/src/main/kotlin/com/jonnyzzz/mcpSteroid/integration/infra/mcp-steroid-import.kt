@@ -9,10 +9,11 @@ package com.jonnyzzz.mcpSteroid.integration.infra
  *   import-finished event (Gradle's `Observation.awaitConfiguration` can stay suspended after sync).
  * - NONE: nothing to trigger.
  *
- * Settle phase (shared): poll until the IDE stays out of dumb mode for a stable streak, re-running
- * `Observation.awaitConfiguration` each round. A single `awaitConfiguration` + `waitForSmartMode` snapshot
- * is NOT enough: import (and the always-on source/javadoc downloads) add library roots that re-trigger
- * indexing in waves, so a one-shot check can return in a gap between waves while indexing is still coming.
+ * Settle phase (shared, [importSettleCode]): wait for progress to DRAIN — smart mode plus zero running
+ * background progress indicators — and fail fast when progress FREEZES (stuck import). A one-shot
+ * `awaitConfiguration` + `waitForSmartMode` snapshot is NOT enough: import (and the always-on source/javadoc
+ * downloads) add library roots that re-trigger indexing in waves, so a dumb-flag-only check can return in a
+ * gap between waves; the indicator check sees the still-running download/update tasks through those gaps.
  */
 /**
  * Pure: the Kotlin script that triggers the Maven import.
@@ -152,6 +153,74 @@ fun gradleImportTriggerCode(): String = $$"""
                 }
             """.trimIndent()
 
+/**
+ * Pure: the Kotlin script that waits until the IDE is GENUINELY settled after an import trigger — by
+ * watching whether progress is MOVING, not by a fixed idle streak.
+ *
+ * - **Settled**: `Observation.awaitConfiguration` completed within its bound (the PRIMARY signal —
+ *   coroutine-based tracked work like the Maven source/javadoc download is invisible to progress
+ *   indicators; a timed-out await means "still configuring" and the round is not quiet) AND smart mode AND
+ *   zero running thread-under-indicator tasks (`CoreProgressManager.getCurrentIndicators()`, the secondary
+ *   signal for old-style `Task.Backgroundable`/dumb tasks) — confirmed over a 10-round quiet window.
+ * - **Stuck**: the observable state (configuring + dumb flags + indicator titles/text2/fractions) is FROZEN
+ *   for a stuck budget while NOT configuring → fail fast naming the frozen state, instead of silently
+ *   burning the whole deadline. A blocked awaitConfiguration is tracked activity in flight (liveness), so
+ *   it never counts as stuck; a hung tracked activity is caught by the deadline.
+ * - **Deadline**: an overall backstop for pathological still-changing-but-never-done states.
+ */
+fun importSettleCode(
+    settleTimeoutMs: Long = 20 * 60 * 1000L,
+    stuckTimeoutMs: Long = 3 * 60 * 1000L,
+): String = $$"""
+// Settle by PROGRESS, not by a fixed idle streak: done when configuration is drained + smart + no running
+// background tasks (confirmed over a quiet window); fail fast when the observable state freezes.
+val settleDeadline = System.currentTimeMillis() + $${settleTimeoutMs}L
+val stuckTimeoutMs = $${stuckTimeoutMs}L
+val requiredQuietRounds = 10
+var quietRounds = 0
+var round = 0
+var lastSignature = ""
+var lastChangeAt = System.currentTimeMillis()
+var settled = false
+while (System.currentTimeMillis() < settleDeadline) {
+    // The PRIMARY busy signal: coroutine-based tracked work (Maven source/javadoc download runs via
+    // launchTracked/withBackgroundProgress) is INVISIBLE to getCurrentIndicators() — only
+    // Observation.awaitConfiguration sees it. A timed-out await (null) means "configuration still in
+    // progress": that round is NOT quiet, no matter what the dumb flag and indicators say.
+    val configuring = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+        com.intellij.platform.backend.observation.Observation.awaitConfiguration(project)
+    } == null
+    val dumb = com.intellij.openapi.project.DumbService.getInstance(project).isDumb
+    // Secondary: old-style thread-under-indicator tasks (Task.Backgroundable, dumb tasks).
+    val indicators = com.intellij.openapi.progress.impl.CoreProgressManager.getCurrentIndicators()
+        .filter { it.isRunning }
+    quietRounds = if (!configuring && !dumb && indicators.isEmpty()) quietRounds + 1 else 0
+    if (quietRounds >= requiredQuietRounds) { settled = true; break }
+
+    // Stuck detector: a healthy import keeps changing this signature (per-file indexing texts in text2,
+    // task fractions). Frozen signature while busy = stuck -> fail fast naming the frozen state. A blocked
+    // awaitConfiguration is tracked activity in flight — liveness by definition — so the stuck error only
+    // fires when NOT configuring (a hung tracked activity is caught by the overall deadline instead).
+    val signature = "configuring=" + configuring + " dumb=" + dumb + " tasks=" + indicators.joinToString("; ") {
+        (it.text ?: "?") + " " + (it.text2 ?: "") +
+            if (it.isIndeterminate) "" else " " + (it.fraction * 100).toInt() + "%"
+    }
+    if (signature != lastSignature) {
+        lastSignature = signature
+        lastChangeAt = System.currentTimeMillis()
+    } else if (!configuring && System.currentTimeMillis() - lastChangeAt > stuckTimeoutMs) {
+        error("[IMPORT] STUCK: no observable progress for " + (stuckTimeoutMs / 60_000) + " min: " + signature)
+    }
+    if (round++ % 15 == 0) println("[IMPORT] settling… " + signature + " quiet=" + quietRounds + "/" + requiredQuietRounds)
+    kotlinx.coroutines.delay(1_000L)
+}
+if (settled) {
+    println("[IMPORT] Settled — configuration drained + smart mode + no running background tasks")
+} else {
+    println("[IMPORT] WARNING: project did not fully settle within the deadline — last state: " + lastSignature)
+}
+""".trimIndent()
+
 fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
     //TODO: move that to prompts and include it from there are resources
     val triggerCode = when (buildSystem) {
@@ -164,54 +233,30 @@ fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
             """.trimIndent()
     }
 
-    // Cold imports with always-on source/javadoc download have a long indexing tail: each downloaded
-    // *-sources.jar adds a library root and re-triggers indexing, so the project bounces in and out of
-    // dumb mode in waves. The host-mounted ~/.m2 cache keeps re-runs fast.
-    val settleTimeoutMs = 20 * 60 * 1000L
-
     val code = """
-import com.intellij.platform.backend.observation.Observation
-import com.intellij.openapi.project.DumbService
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.delay
-
 println("[IMPORT] Build system: $buildSystem")
 $triggerCode
 
-// Wait until the IDE is GENUINELY settled, not just a transient smart-mode gap. A single
-// awaitConfiguration + waitForSmartMode can return in a gap between indexing waves while more indexing is
-// still coming (the bug we hit: "Smart mode reached" fired mid-import while *-sources.jar roots were still
-// being indexed). So poll until the project stays OUT of dumb mode for a stable streak, re-running
-// awaitConfiguration each round to drain registered configuration activity. Bounded by a deadline.
-val settleDeadline = System.currentTimeMillis() + ${settleTimeoutMs}L
-val requiredIdleRounds = 10        // ~10s of continuous smart mode before the import is considered done
-var idleRounds = 0
-var round = 0
-var dumb = true
-while (System.currentTimeMillis() < settleDeadline) {
-    withTimeoutOrNull(60_000L) { Observation.awaitConfiguration(project) }
-    dumb = DumbService.getInstance(project).isDumb
-    idleRounds = if (dumb) 0 else idleRounds + 1
-    if (round++ % 15 == 0) println("[IMPORT] settling… dumb=" + dumb + " idleStreak=" + idleRounds + "/" + requiredIdleRounds)
-    if (idleRounds >= requiredIdleRounds) break
-    delay(1_000L)
-}
-if (idleRounds >= requiredIdleRounds) {
-    println("[IMPORT] Settled — import + indexing complete (smart mode stable for " + requiredIdleRounds + "s)")
-} else {
-    println("[IMPORT] WARNING: project did not fully settle within ${settleTimeoutMs / 60_000} min (dumb=" + dumb + ") — still importing/indexing")
-}
+${importSettleCode()}
 "done"
 """.trimIndent()
 
-    try {
+    // The exec timeout must CONTAIN the script's own budgets (up to 8 min trigger await + 20 min settle
+    // deadline + slack) — with a smaller value the server kills the script mid-settle and the deadline/stuck
+    // detectors never get to speak.
+    val result = try {
         mcpExecuteCode(
             code = code,
             reason = "Trigger $buildSystem import and wait for completion",
-            timeout = 600,
+            timeout = 30 * 60,
         )
     } catch (e: Exception) {
         throw RuntimeException("[IMPORT] Import trigger failed: ${e.message}", e)
+    }
+    // A script-level failure (the Maven trigger's rethrow, the settle STUCK error) comes back as a clean
+    // isError result (exitCode 1), NOT an exception — ignoring the returned value would silently swallow it.
+    if (result.exitCode != 0) {
+        throw RuntimeException("[IMPORT] Import script failed:\n${result.stdout.trim().takeLast(1000)}")
     }
 
     if (buildSystem != BuildSystem.NONE) {

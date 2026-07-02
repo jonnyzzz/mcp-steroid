@@ -51,4 +51,32 @@ class ImportTriggerCodeTest {
         assertTrue(code.contains("ProjectDataImportListener.TOPIC"), code)
         assertTrue(code.contains("importDone.await()"), code)
     }
+
+    @Test
+    fun `settle waits for progress to drain (configuration + smart mode + no running background tasks)`() {
+        val code = importSettleCode()
+        assertTrue(code.contains("CoreProgressManager.getCurrentIndicators()"), code)
+        assertTrue(code.contains("DumbService.getInstance(project).isDumb"), code)
+        // PRIMARY: a timed-out awaitConfiguration means "still configuring" — the round must NOT be quiet
+        // (coroutine-based tracked work, e.g. the Maven source download, is invisible to indicators)
+        assertTrue(code.contains("Observation.awaitConfiguration(project)"), code)
+        assertTrue(code.contains("} == null"), code)
+        assertTrue(code.contains("if (!configuring && !dumb && indicators.isEmpty())"), code)
+        // settled = quiet confirmed over consecutive polls
+        assertTrue(code.contains("requiredQuietRounds = 10"), code)
+        // the progress signature must include text2 — the fast-changing per-file/artifact detail — or a
+        // long single-title task would look frozen while healthily progressing
+        assertTrue(code.contains("it.text2"), code)
+    }
+
+    @Test
+    fun `settle fails fast when progress freezes, bounded by an overall deadline`() {
+        val code = importSettleCode(settleTimeoutMs = 1_200_000L, stuckTimeoutMs = 180_000L)
+        // the frozen-state detector: same flags + task titles/text2/fractions for the stuck budget -> error;
+        // never while configuring (a blocked awaitConfiguration is tracked activity in flight = liveness)
+        assertTrue(code.contains("STUCK: no observable progress"), code)
+        assertTrue(code.contains("!configuring && System.currentTimeMillis() - lastChangeAt > stuckTimeoutMs"), code)
+        assertTrue(code.contains("val stuckTimeoutMs = 180000L"), code)
+        assertTrue(code.contains("System.currentTimeMillis() + 1200000L"), code)
+    }
 }
