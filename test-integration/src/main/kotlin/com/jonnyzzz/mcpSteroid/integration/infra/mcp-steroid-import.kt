@@ -19,9 +19,13 @@ package com.jonnyzzz.mcpSteroid.integration.infra
  *
  * Library sources + javadoc are always auto-downloaded — agents get full API docs in the editor, which is
  * a real advantage worth the extra import time. Extracted as a pure function so a test can assert the
- * download stays enabled.
+ * download stays enabled and that the import is awaited (not blindly delayed).
+ *
+ * Unified with the Gradle logic: instead of a blind `delay`, it subscribes to the project-level
+ * `MavenImportListener` and awaits `importFinished` (bounded by a timeout), mirroring the Gradle path's
+ * `ProjectDataImportListener` await.
  */
-internal fun mavenImportTriggerCode(): String = $$"""
+fun mavenImportTriggerCode(): String = $$"""
                 try {
                     println("[IMPORT] Triggering Maven import...")
                     val mavenManager = org.jetbrains.idea.maven.project.MavenProjectsManager.getInstance(project)
@@ -30,26 +34,58 @@ internal fun mavenImportTriggerCode(): String = $$"""
                     importSettings.isDownloadSourcesAutomatically = true
                     importSettings.isDownloadDocsAutomatically = true
                     println("[IMPORT] Maven source/doc download: sources=${importSettings.isDownloadSourcesAutomatically} docs=${importSettings.isDownloadDocsAutomatically}")
+
+                    // Await import completion via the project-level MavenImportListener (subscribe BEFORE the
+                    // trigger), mirroring the Gradle ProjectDataImportListener await — no blind delay.
+                    val importDone = kotlinx.coroutines.CompletableDeferred<Unit>()
+                    val importConnection = project.messageBus.connect(disposable)
+                    importConnection.subscribe(
+                        org.jetbrains.idea.maven.project.MavenImportListener.TOPIC,
+                        object : org.jetbrains.idea.maven.project.MavenImportListener {
+                            override fun importFinished(
+                                importedProjects: Collection<org.jetbrains.idea.maven.project.MavenProject>,
+                                newModules: List<com.intellij.openapi.module.Module>,
+                            ) {
+                                if (importDone.complete(Unit)) {
+                                    println("[IMPORT] Maven import finished: " + importedProjects.size + " project(s), " + newModules.size + " module(s)")
+                                }
+                            }
+                        }
+                    )
+                    importDone.invokeOnCompletion { importConnection.disconnect() }
+
                     mavenManager.forceUpdateAllProjectsOrFindAllAvailablePomFiles()
-                    kotlinx.coroutines.delay(2_000L)
+                    // A never-firing listener fails the trigger after 8 min (TimeoutCancellationException is
+                    // rethrown below) — a bounded, visible failure instead of silently proceeding half-imported.
+                    kotlinx.coroutines.withTimeout(8 * 60 * 1000L) { importDone.await() }
                 } catch (e: Exception) {
                     println("[IMPORT] Maven trigger failed: ${e.message}")
                     throw e
                 }
             """.trimIndent()
 
-fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
-    //TODO: move that to prompts and include it from there are resources
-    val triggerCode = when (buildSystem) {
-        BuildSystem.MAVEN -> mavenImportTriggerCode()
-
-        BuildSystem.GRADLE -> $$"""
+/**
+ * Pure: the Kotlin script that triggers the Gradle import and awaits completion — symmetric with
+ * [mavenImportTriggerCode].
+ *
+ * Configures the linked Gradle JVM, enables source auto-download (the full available parity with Maven:
+ * IntelliJ's Gradle integration has no IDE-side javadoc auto-download, and *-sources.jar carries the API
+ * docs), triggers a refresh, and awaits the project-level `ProjectDataImportListener` import-finished event
+ * (Gradle's `Observation.awaitConfiguration` can stay suspended after sync). Extracted as a pure function so
+ * a test can assert the source download stays enabled and the import is awaited.
+ */
+fun gradleImportTriggerCode(): String = $$"""
                 println("[IMPORT] Gradle auto-import active from project open")
-                // Enable source downloading for Gradle projects
+                // Enable source downloading for Gradle projects. Sources are the doc carrier here: unlike
+                // Maven (isDownloadDocsAutomatically), IntelliJ's Gradle integration has NO IDE-side javadoc
+                // auto-download — the only registered setting is "gradle.download.sources" (see
+                // community/plugins/gradle/plugin-resources/intellij.gradle.xml; `downloadJavadoc` is a Gradle
+                // build-script `idea`-plugin option, not an IDE setting). *-sources.jar gives agents the API
+                // docs in the editor, so this is the full available parity with Maven.
                 try {
                     val gradleSettings = org.jetbrains.plugins.gradle.settings.GradleSystemSettings.getInstance()
                     gradleSettings.isDownloadSources = true
-                    println("[IMPORT] Gradle source download: enabled")
+                    println("[IMPORT] Gradle source download: enabled (no IDE-side javadoc auto-download exists for Gradle)")
                 } catch (e: Exception) {
                     println("[IMPORT] Gradle source download setting failed: ${e.message}")
                 }
@@ -115,6 +151,13 @@ fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
                     importDone.await()
                 }
             """.trimIndent()
+
+fun McpSteroidDriver.mcpTriggerImportAndWait(buildSystem: BuildSystem) {
+    //TODO: move that to prompts and include it from there are resources
+    val triggerCode = when (buildSystem) {
+        BuildSystem.MAVEN -> mavenImportTriggerCode()
+
+        BuildSystem.GRADLE -> gradleImportTriggerCode()
 
         BuildSystem.NONE -> """
                 println("[IMPORT] No build system — skipping import trigger")

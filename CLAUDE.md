@@ -74,6 +74,11 @@ When changing files across multiple sub-folders, read the guides for each.
 
 - **`runCatching{}.onFailure{}`** — use `try { } catch (e: Exception) { }` instead. Other `runCatching` uses
   (`.getOrNull()`, `.getOrDefault()`) are fine.
+- **The `internal` visibility modifier.** Prefer plain public (no modifier). Don't add `internal` to
+  declarations — including test-visible helpers.
+- **Returning a `(value, errorFlag)` pair/tuple from a call that can fail.** Return the value (or a domain
+  value object) and signal failure by throwing or returning `null` — not `Pair<Result, Boolean>` where the
+  boolean is an error/isError flag.
 - **Empty `catch` / `catch (_: Exception) {}`.** Fail fast and log: every catch must rethrow, log via
   `System.err.println` / `logger.error`, or both. Silent failure hides root causes.
 - **`run-agent.sh` references in production code or tests.** It is a manual dev/peer-review tool only.
