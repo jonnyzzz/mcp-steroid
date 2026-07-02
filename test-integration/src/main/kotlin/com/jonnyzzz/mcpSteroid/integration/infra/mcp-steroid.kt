@@ -123,7 +123,7 @@ class McpRequestFailedError(message: String) : WaitAbortedError(message)
  * request-parse boundary reachable from `mcpExecuteCode`'s poll (`mcpInitialize`, `executeMcpRequest`), so
  * the "every terminal path is typed" invariant the typed-retry design relies on actually holds.
  */
-internal fun parseMcpResponseOrFail(body: String): JsonElement =
+fun parseMcpResponseOrFail(body: String): JsonElement =
     try {
         Json.parseToJsonElement(body)
     } catch (e: SerializationException) {
@@ -131,38 +131,37 @@ internal fun parseMcpResponseOrFail(body: String): JsonElement =
     }
 
 /**
- * Interpret a `tools/call` MCP response body into (content texts, isError). The body is parsed via
- * [parseMcpResponseOrFail]; a *valid-JSON-but-wrong-shape* envelope (e.g. `result` is a string, `content`
- * is not an array) is a protocol breakage, not a busy IDE — so any kotlinx accessor type-mismatch
- * (an [IllegalArgumentException]) becomes a terminal [McpRequestFailedError] instead of a plain exception a
- * [waitFor] would retry for the whole indexing budget. *Missing* optional fields degrade gracefully (no
- * text / isError=true), preserving the normal "script returned an error result" path. This keeps the
- * "every terminal path reachable from `mcpExecuteCode`'s poll is typed" invariant whole.
+ * The body of a `tools/call` MCP response — its content texts, newline-joined — or throw. The body is
+ * returned whether the tool reported success or an error (an error text like `INDEXING IN PROGRESS` or a
+ * compile failure IS the payload the caller inspects); [parseMcpToolResultIsError] reads the error flag.
+ * A *valid-JSON-but-wrong-shape* envelope (e.g. `result` is a string, `content` is not an array) is a
+ * protocol breakage, not a busy IDE — any kotlinx accessor type-mismatch (an [IllegalArgumentException])
+ * throws a terminal [McpRequestFailedError] rather than a plain exception a [waitFor] would retry for the
+ * whole indexing budget; a non-JSON body throws the same via [parseMcpResponseOrFail]. *Missing* optional
+ * fields degrade gracefully (empty body), preserving the normal "script returned an error result" path.
  */
-internal fun parseMcpToolResultTexts(body: String): Pair<List<String>, Boolean> =
+fun parseMcpToolResultBody(response: String): String =
     try {
-        val data = parseMcpResponseOrFail(body)
-        val texts = buildList {
-            data.jsonObject["result"]?.jsonObject?.get("content")?.jsonArray?.forEach { item ->
-                item.jsonObject["text"]?.jsonPrimitive?.contentOrNull?.let { add(it) }
+        buildString {
+            parseMcpResponseOrFail(response).jsonObject["result"]?.jsonObject?.get("content")?.jsonArray?.forEach { item ->
+                item.jsonObject["text"]?.jsonPrimitive?.contentOrNull?.let { appendLine(it) }
             }
         }
-        val isError = data.jsonObject["result"]?.jsonObject?.get("isError")?.jsonPrimitive?.booleanOrNull ?: true
-        texts to isError
     } catch (e: IllegalArgumentException) {
         throw McpRequestFailedError("Malformed MCP tool response shape: ${e.message}")
     }
 
 /**
- * The single content text of an MCP tool result, or a terminal [McpRequestFailedError] if the envelope
- * carries no content text. For tools (`steroid_list_projects`, `steroid_list_windows`) whose payload is one
- * JSON text blob — the caller then parses that blob, e.g. via [parseMcpResponseOrFail]. Keeps the
- * direct-poll callers (`waitForIdeWindow` → `mcpListWindows`) terminal-by-type on a deterministic protocol
- * breakage instead of retrying it to their deadline.
+ * The `isError` flag of a `tools/call` MCP response (a missing `result`/`isError` counts as an error —
+ * the graceful "script returned an error result" path). Same terminal typing as [parseMcpToolResultBody]:
+ * wrong shape → [McpRequestFailedError].
  */
-internal fun firstMcpToolText(body: String): String =
-    parseMcpToolResultTexts(body).first.firstOrNull()
-        ?: throw McpRequestFailedError("MCP tool result carried no content text: $body")
+fun parseMcpToolResultIsError(response: String): Boolean =
+    try {
+        parseMcpResponseOrFail(response).jsonObject["result"]?.jsonObject?.get("isError")?.jsonPrimitive?.booleanOrNull ?: true
+    } catch (e: IllegalArgumentException) {
+        throw McpRequestFailedError("Malformed MCP tool response shape: ${e.message}")
+    }
 
 class McpSteroidDriver(
     val driver: ContainerDriver,
@@ -236,22 +235,22 @@ class McpSteroidDriver(
             }
         }.toString()
 
-        val text = firstMcpToolText(executeMcpRequest(sessionId, request))
+        val payload = parseMcpToolResultBody(executeMcpRequest(sessionId, request)).trim()
 
         // A malformed/missing projects payload is a deterministic protocol breakage, not a busy IDE: type it
         // as McpRequestFailedError so a poll (waitForMcpReady) stops at once instead of retrying to its budget.
         return try {
-            parseMcpResponseOrFail(text).jsonObject["projects"]
+            parseMcpResponseOrFail(payload).jsonObject["projects"]
                 ?.jsonArray
                 ?.map {
                     McpProjectInfo(
                         name = it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
-                            ?: throw McpRequestFailedError("steroid_list_projects entry missing 'name': $text"),
+                            ?: throw McpRequestFailedError("steroid_list_projects entry missing 'name': $payload"),
                         path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull
-                            ?: throw McpRequestFailedError("steroid_list_projects entry missing 'path': $text"),
+                            ?: throw McpRequestFailedError("steroid_list_projects entry missing 'path': $payload"),
                     )
                 }
-                ?: throw McpRequestFailedError("steroid_list_projects returned no projects payload: $text")
+                ?: throw McpRequestFailedError("steroid_list_projects returned no projects payload: $payload")
         } catch (e: IllegalArgumentException) {
             throw McpRequestFailedError("steroid_list_projects malformed payload: ${e.message}")
         }
@@ -281,14 +280,14 @@ class McpSteroidDriver(
             }
         }.toString()
 
-        val text = firstMcpToolText(executeMcpRequest(sessionId, request, timeoutSeconds = timeoutSeconds))
+        val payload = parseMcpToolResultBody(executeMcpRequest(sessionId, request, timeoutSeconds = timeoutSeconds)).trim()
 
         // A malformed/missing windows payload is a deterministic protocol breakage, not a busy IDE: type it as
         // McpRequestFailedError so waitForIdeWindow's `catch (Exception)` poll does not retry it to the deadline
         // (it lets this Error fail fast). The normal "not ready yet" path returns a valid windows list, never an
         // exception, so this does not affect legitimate polling.
         return try {
-            parseMcpResponseOrFail(text).jsonObject["windows"]
+            parseMcpResponseOrFail(payload).jsonObject["windows"]
                 ?.jsonArray
                 ?.map {
                     val window = it.jsonObject
@@ -300,7 +299,7 @@ class McpSteroidDriver(
                         projectInitialized = window["projectInitialized"]?.jsonPrimitive?.booleanOrNull,
                     )
                 }
-                ?: throw McpRequestFailedError("steroid_list_windows returned no windows payload: $text")
+                ?: throw McpRequestFailedError("steroid_list_windows returned no windows payload: $payload")
         } catch (e: IllegalArgumentException) {
             throw McpRequestFailedError("steroid_list_windows malformed payload: ${e.message}")
         }
@@ -539,18 +538,11 @@ try {
 
         // Execute the tool call (curl timeout must exceed the server-side execution timeout)
         val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeout.toLong() + 30)
-        val (texts, isError) = parseMcpToolResultTexts(run)
-
-        val messages = buildString {
-            texts.forEach { text ->
-                println("[MCP LOG]: $text ")
-                appendLine(text)
-            }
-        }
-
+        val body = parseMcpToolResultBody(run)
+        body.lineSequence().filter { it.isNotBlank() }.forEach { println("[MCP LOG]: $it ") }
         return ProcessResultValue(
-            exitCode = if (isError) 1 else 0,
-            stdout = messages,
+            exitCode = if (parseMcpToolResultIsError(run)) 1 else 0,
+            stdout = body,
             stderr = "",
         )
     }
@@ -588,13 +580,9 @@ try {
         }.toString()
 
         val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeout.toLong() + 30)
-        val (texts, isError) = parseMcpToolResultTexts(run)
-
-        val messages = buildString { texts.forEach { appendLine(it) } }
-
         return ProcessResultValue(
-            exitCode = if (isError) 1 else 0,
-            stdout = messages,
+            exitCode = if (parseMcpToolResultIsError(run)) 1 else 0,
+            stdout = parseMcpToolResultBody(run),
             stderr = "",
         )
     }
