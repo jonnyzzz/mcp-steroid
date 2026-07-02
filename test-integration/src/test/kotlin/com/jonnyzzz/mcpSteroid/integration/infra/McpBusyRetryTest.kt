@@ -77,49 +77,50 @@ class McpBusyRetryTest {
     }
 
     @Test
-    fun `parseMcpToolResultTexts reads content texts and isError from a well-formed tool result`() {
-        val (texts, isError) = parseMcpToolResultTexts(
+    fun `parseMcpToolResultBody returns the content texts of a well-formed result`() {
+        val body = parseMcpToolResultBody(
             """{"result":{"content":[{"type":"text","text":"hello"},{"type":"text","text":"world"}],"isError":false}}""",
         )
-        assertEquals(listOf("hello", "world"), texts)
-        assertFalse(isError)
+        assertEquals(listOf("hello", "world"), body.lines().filter { it.isNotBlank() })
     }
 
     @Test
-    fun `parseMcpToolResultTexts treats a missing result as a graceful error result (no throw)`() {
+    fun `parseMcpToolResultBody returns the body even when the tool reported an error`() {
+        // The error text IS the payload (INDEXING IN PROGRESS marker, compile failure...) — the caller
+        // inspects it; the flag is read separately via parseMcpToolResultIsError.
+        val response = """{"result":{"content":[{"type":"text","text":"boom"}],"isError":true}}"""
+        assertTrue(parseMcpToolResultBody(response).contains("boom"))
+        assertTrue(parseMcpToolResultIsError(response))
+        assertFalse(parseMcpToolResultIsError("""{"result":{"content":[],"isError":false}}"""))
+    }
+
+    @Test
+    fun `a missing result is a graceful error result (no throw)`() {
         // Missing optional fields are the normal "script returned an error" path — NOT a protocol breakage:
-        // degrade to isError=true so mcpExecuteCode returns exitCode 1 immediately (never retried).
-        val (texts, isError) = parseMcpToolResultTexts("""{"jsonrpc":"2.0","id":2}""")
-        assertTrue(texts.isEmpty())
-        assertTrue(isError)
+        // empty body + isError=true, no exception (so mcpExecuteCode returns exitCode 1 immediately).
+        val response = """{"jsonrpc":"2.0","id":2}"""
+        assertTrue(parseMcpToolResultBody(response).isBlank())
+        assertTrue(parseMcpToolResultIsError(response))
     }
 
     @Test
-    fun `parseMcpToolResultTexts aborts on valid JSON with a malformed tool-result shape`() {
+    fun `a malformed tool-result shape aborts, even inside a waitFor`() {
         // Valid JSON but wrong shape (result is a string, content is not an array) is a protocol breakage:
         // a terminal McpRequestFailedError, so it stops a waitFor at once instead of retrying for an hour.
         var calls = 0
         assertThrows<McpRequestFailedError> {
             waitFor(5_000, "malformed MCP tool-result shape") {
                 calls++
-                parseMcpToolResultTexts("""{"result":"oops"}""")
+                parseMcpToolResultBody("""{"result":"oops"}""")
                 true
             }
         }
         assertEquals(1, calls, "a malformed tool-result shape must stop the loop immediately, not retry")
         // content present but not an array is likewise terminal
-        assertThrows<McpRequestFailedError> { parseMcpToolResultTexts("""{"result":{"content":"bad"}}""") }
-        // and a top-level non-object envelope
-        assertThrows<McpRequestFailedError> { parseMcpToolResultTexts("""["unexpected","array"]""") }
-    }
-
-    @Test
-    fun `firstMcpToolText returns the single content text, or aborts when there is none`() {
-        assertEquals(
-            """{"windows":[]}""",
-            firstMcpToolText("""{"result":{"content":[{"type":"text","text":"{\"windows\":[]}"}]}}"""),
-        )
-        // a well-formed envelope with an empty content array is a terminal protocol breakage for these tools
-        assertThrows<McpRequestFailedError> { firstMcpToolText("""{"result":{"content":[]}}""") }
+        assertThrows<McpRequestFailedError> { parseMcpToolResultBody("""{"result":{"content":"bad"}}""") }
+        // a top-level non-object envelope
+        assertThrows<McpRequestFailedError> { parseMcpToolResultBody("""["unexpected","array"]""") }
+        // and the isError read is guarded the same way
+        assertThrows<McpRequestFailedError> { parseMcpToolResultIsError("""{"result":"oops"}""") }
     }
 }
