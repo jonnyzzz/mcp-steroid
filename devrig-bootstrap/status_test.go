@@ -54,7 +54,7 @@ func TestStatusMessage(t *testing.T) {
 		{"installing", func(h string) {
 			os.MkdirAll(markersDir(h), 0o755)
 			os.WriteFile(lockPath(h), []byte("1"), 0o644)
-		}, []string{"Downloading devrig", "of ~500 MB", "the download stops", "restart Claude"}},
+		}, []string{"Downloading devrig", "of ~500 MB", "the download stops", "no restart"}},
 		{"failed", func(h string) {
 			os.MkdirAll(markersDir(h), 0o755)
 			os.WriteFile(failedMarkerPath(h), []byte("network down"), 0o644)
@@ -63,7 +63,7 @@ func TestStatusMessage(t *testing.T) {
 			bin := filepath.Join(h, ".mcp-steroid", "bin")
 			os.MkdirAll(bin, 0o755)
 			os.WriteFile(filepath.Join(bin, "devrig"), []byte("#!/bin/sh\n"), 0o755)
-		}, []string{"Restart Claude"}},
+		}, []string{"active"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

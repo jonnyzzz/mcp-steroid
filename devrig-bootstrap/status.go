@@ -70,11 +70,12 @@ func installState(home string) string {
 func statusMessage(home string) string {
 	switch installState(home) {
 	case "installed":
-		return "✅ devrig downloaded. Restart Claude now to activate the full IDE bridge."
+		return "✅ devrig is now active — its full IDE toolset is available (send a message if you don't see the tools yet)."
 	case "installing":
 		return fmt.Sprintf(
 			"⏳ Downloading devrig: ~%d MB of ~%d MB, %s elapsed. Keep Claude open and keep working — "+
-				"if you quit or restart Claude now, the download stops. When it finishes, restart Claude to activate it.",
+				"if you quit or restart Claude now, the download stops. When it finishes, the full IDE "+
+				"toolset activates automatically on your next message — no restart needed.",
 			installedMB(home), approxInstallMB, fmtElapsed(installElapsed(home)))
 	case "failed":
 		reason := readFailedReason(home)

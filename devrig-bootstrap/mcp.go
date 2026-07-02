@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 )
 
@@ -88,26 +86,3 @@ func handle(req rpcRequest) (any, bool) {
 	}
 }
 
-func Serve(in io.Reader, out io.Writer) error {
-	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	enc := json.NewEncoder(out)
-	for sc.Scan() {
-		line := sc.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		var req rpcRequest
-		if err := json.Unmarshal(line, &req); err != nil {
-			continue
-		}
-		result, isNotif := handle(req)
-		if isNotif || len(req.ID) == 0 {
-			continue
-		}
-		if err := enc.Encode(rpcResponse{Jsonrpc: "2.0", ID: req.ID, Result: result}); err != nil {
-			return err
-		}
-	}
-	return sc.Err()
-}
