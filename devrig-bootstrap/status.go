@@ -84,7 +84,7 @@ func statusMessage(home string) string {
 		}
 		return "❌ devrig install failed: " + reason + ". Run /devrig:setup to retry."
 	default:
-		return "⏳ devrig download is starting — check again in a moment. When it finishes, restart Claude to activate it."
+		return "⏳ devrig download is starting — check again in a moment. When it finishes, its tools activate automatically on your next message — no restart needed."
 	}
 }
 

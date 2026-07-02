@@ -7,8 +7,12 @@ instead so Claude sees a **green** MCP server (never "✗ Failed to connect"). I
 - serves a minimal MCP server exposing one tool, `devrig_status`;
 - downloads the real devrig in the background (the canonical `install.sh` /
   `install.ps1`), guarded by a single-flight lock with a heartbeat;
-- gets out of the way: once `~/.mcp-steroid/bin/devrig` exists, the launcher
-  runs that instead and this binary is no longer used.
+- **stays alive as a proxy**: when the download finishes, the bootstrap spawns
+  `devrig mcp`, hot-swaps to it, and fires `notifications/tools/list_changed`
+  so Claude activates the full toolset on the user's next message — no restart
+  needed;
+- gets out of the way on subsequent launches: once `~/.mcp-steroid/bin/devrig`
+  exists, the launcher runs that directly and this binary is no longer used.
 
 ## Build
 
@@ -40,12 +44,16 @@ forgot to regenerate them.
 
 | File | What |
 |---|---|
-| `mcp.go` | minimal MCP stdio server + `devrig_status` tool |
+| `mcp.go` | minimal MCP stdio server + `devrig_status` tool; advertises `listChanged` capability |
 | `status.go` | install-state detection (`installed`/`installing`/`failed`/`absent`) + user messages |
 | `install.go` | background install, single-flight lock, heartbeat |
 | `progress.go` | markers, log, download-size progress |
+| `jsonrpc.go` | JSON-RPC message types (`rpcRequest`, `rpcResponse`, `rpcMessage`) and framing helpers |
+| `backend.go` | `backend`: wraps the spawned `devrig mcp` process, owns its stdin/stdout pipes |
+| `proxy.go` | `proxy`: hot-swap MCP proxy — forwards client↔backend traffic, ID-prefixes server-initiated requests, fires `tools/list_changed` after swap |
 
 Tunable constants: `approxInstallMB` (progress total, `progress.go`),
 `heartbeatInterval` / `installLockStaleAfter` (`status.go`), installer URLs
-(`install.go`). State lives under `~/.mcp-steroid/markers/`
-(`bootstrap-install.lock` / `.failed` / `.log`).
+(`install.go`), `swapPollInterval` (`proxy.go` — how often the proxy polls for
+the downloaded launcher before spawning `devrig mcp`). State lives under
+`~/.mcp-steroid/markers/` (`bootstrap-install.lock` / `.failed` / `.log`).

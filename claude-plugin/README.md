@@ -22,8 +22,10 @@ running IntelliJ-based IDE from Claude via the devrig bridge.
 3. **Keep Claude open while it downloads** — quitting or restarting Claude stops
    the download. Check progress anytime: `/devrig:status` or just ask for "devrig
    status".
-4. When the download **finishes, restart Claude once** — the full IDE bridge is
-   now active.
+4. When the download **finishes, the full IDE toolset activates automatically on
+   your next message** — no restart needed. (The bootstrap fires
+   `notifications/tools/list_changed` so Claude picks up the new tools
+   immediately.)
 5. `/devrig:setup` is only needed to **retry a failed download** or to fetch the
    binary immediately instead of waiting.
 
@@ -88,6 +90,10 @@ npx-kt\build\install\devrig\bin\devrig.bat install devrig
 
 **Restart Claude.** `/devrig:status` now runs your local build. Repeat both steps
 after each code change.
+
+> **Note:** this "Restart Claude" step is a separate developer flow — you are
+> repointing the launcher at a local build. It is distinct from the automatic
+> no-restart activation that happens when the first background download finishes.
 
 Revert to the released binary anytime by re-running the website installer:
 
