@@ -151,7 +151,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     require(ijProcess.isRunning()) { "${ideProduct.displayName} process finished" }
 
     // Wait for MCP server readiness
-    val mcpSteroidDriver = McpSteroidDriver(container, ijDriver)
+    val mcpSteroidDriver = McpSteroidDriver(container, ijDriver, ijProcess)
     console.writeInfo("Waiting for MCP Steroid server...")
     mcpSteroidDriver.waitForMcpReady()
 

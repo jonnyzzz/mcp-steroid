@@ -35,7 +35,7 @@
   thrown), but the signal is noise for Kotlin projects. Found validating #200's settle on
   GradleCompileTest (2026-07-02).
 
-- [ ] **`waitForMcpReady` should fail fast on a dead container (quorum follow-up to PR #187, the typed-retry
+- [x] **`waitForMcpReady` should fail fast on a dead container (quorum follow-up to PR #187, the typed-retry
   rework)**: the 300s startup health-check treats a *dead/missing* container the same as "server still
   starting" — `docker exec … curl` **exits non-zero (125)** rather than throwing, so it is retried to the
   300s deadline instead of surfacing at once as a terminal `McpRequestFailedError`. Pre-existing (not a

@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.infra
 
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerPort
+import com.jonnyzzz.mcpSteroid.testHelper.docker.RunningContainerProcess
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
@@ -166,6 +167,13 @@ fun parseMcpToolResultIsError(response: String): Boolean =
 class McpSteroidDriver(
     val driver: ContainerDriver,
     val ijDriver: IntelliJDriver,
+    /**
+     * The IDE process this MCP server lives in — the liveness signal for [waitForMcpReady]. Passed in
+     * from [IntelliJDriver.startIde]'s return value (the driver stays stateless — it can start multiple
+     * container processes and holds no mutable process field); kept private so the process-level surface
+     * does not leak past this driver.
+     */
+    private val ideProcess: RunningContainerProcess,
 ) {
     companion object {
         val MCP_STEROID_PORT = ContainerPort(6754)
@@ -179,6 +187,17 @@ class McpSteroidDriver(
 
     fun waitForMcpReady() {
         waitFor(300_000, "MCP Steroid server ready") {
+            // Dead-IDE/dead-container fail-fast: a dead IDE process can never serve MCP, but its symptoms —
+            // `docker exec` exiting non-zero (125 on a dead container) or curl connection-refused — are
+            // indistinguishable from "server still starting", so they alone must keep retrying. The process
+            // liveness (`kill -0` via docker exec; also false when the whole container is gone) is the real
+            // signal: when it drops, log the process details and stop the 300s poll at once instead of
+            // burning it to the deadline (quorum follow-up to the typed-retry rework).
+            if (!ideProcess.isRunning()) {
+                ideProcess.printProcessInfo() // exit code + output tails, logged by the process itself
+                throw McpRequestFailedError("IDE died while waiting for the MCP Steroid server")
+            }
+
             // The container interactions here are terminal-by-default: reading the IDE log and running the
             // health-check curl both go through `docker exec`, which THROWS if the container has died — a
             // terminal infrastructure failure, so we map it to McpRequestFailedError (an Error) and the wait
