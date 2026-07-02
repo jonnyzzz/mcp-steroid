@@ -41,3 +41,32 @@ func TestInitializeHandshake(t *testing.T) {
 		t.Fatalf("expected one devrig_status tool, got %v", tools)
 	}
 }
+
+func TestInitializeResultAdvertisesListChanged(t *testing.T) {
+	res := initializeResult("2025-06-18")
+	if res["protocolVersion"] != "2025-06-18" {
+		t.Fatalf("must echo client protocol version, got %v", res["protocolVersion"])
+	}
+	caps, ok := res["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("capabilities missing/typed wrong: %v", res["capabilities"])
+	}
+	for _, prim := range []string{"tools", "resources", "prompts"} {
+		p, ok := caps[prim].(map[string]any)
+		if !ok || p["listChanged"] != true {
+			t.Fatalf("%s must advertise listChanged=true, got %v", prim, caps[prim])
+		}
+	}
+	// Empty version falls back to the baseline protocol.
+	if initializeResult("")["protocolVersion"] != "2024-11-05" {
+		t.Fatal("empty version must fall back to 2024-11-05")
+	}
+}
+
+func TestHandleInitializeEchoesProtocolVersion(t *testing.T) {
+	res, _ := handle(rpcRequest{Method: "initialize", ID: json.RawMessage(`1`),
+		Params: json.RawMessage(`{"protocolVersion":"2025-11-05"}`)})
+	if res.(map[string]any)["protocolVersion"] != "2025-11-05" {
+		t.Fatalf("want echoed version, got %v", res.(map[string]any)["protocolVersion"])
+	}
+}
