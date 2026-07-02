@@ -6,6 +6,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.jonnyzzz.mcpSteroid.prompts.generated.debugger.OverviewPromptArticle as DebuggerOverview
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJThreadingPromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJVfsPromptArticle
 
 inline val Project.executionSuggestionService: ExecutionSuggestionService get() = service()
 
@@ -116,6 +117,17 @@ class ExecutionSuggestionService(
 
             errorMessage.contains("JavaLineBreakpointProperties", ignoreCase = true) || errorMessage.contains("\"props\" is null") ->
                 "TIP: Use XDebuggerUtil.toggleLineBreakpoint() instead of breakpointManager.addLineBreakpoint() with null properties. See ${DebuggerOverview().uri}"
+
+            // #156: matches ONLY the messageless-exception summary produced by ScriptExecutor
+            // ("NullPointerException (no message)"), so NPEs that carry a real message — which
+            // is its own diagnostic — keep their more specific handling.
+            errorMessage.contains("NullPointerException (no message)") ->
+                "TIP: A bare NullPointerException usually means `!!` on a null lookup. " +
+                    "findProjectFile()/findFile() return null when the file is missing — prefer " +
+                    "`?: error(\"not found: \$path\")` over `!!` so the failure names the path. " +
+                    "Both helpers accept project-relative and absolute paths; outside read/write " +
+                    "actions the lookup always refreshes the file from disk (snapshot-only inside). " +
+                    "For directory refresh and other VFS recipes, fetch ${CodingWithIntelliJVfsPromptArticle().uri}."
 
             errorMessage.contains("breakpoint", ignoreCase = true) || errorMessage.contains("debug", ignoreCase = true) ->
                 "TIP: For debugger help, fetch ${DebuggerOverview().uri} via steroid_fetch_resource"

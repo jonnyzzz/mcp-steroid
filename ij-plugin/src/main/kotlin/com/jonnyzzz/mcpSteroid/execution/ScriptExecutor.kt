@@ -254,8 +254,14 @@ class ScriptExecutor(
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            log.warn("Unexpected error during execution $executionId: ${t.message}", t)
-            val remappedMessage = evalResult.lineMapping.remapStackTrace(t.message ?: "")
+            // #156: never report an empty error. A messageless throwable (e.g. the bare
+            // NullPointerException from `!!`) used to produce "FAILED: Unexpected error
+            // during execution: " — undiagnosable for the agent and invisible to the
+            // hint engine (which matches on errorMessages, not the logged stack trace).
+            val rawMessage = t.message?.takeIf { it.isNotBlank() }
+                ?: "${t.javaClass.simpleName} (no message) — see stack trace above"
+            log.warn("Unexpected error during execution $executionId: $rawMessage", t)
+            val remappedMessage = evalResult.lineMapping.remapStackTrace(rawMessage)
             resultBuilder.logRemappedException("Unexpected error during execution: $remappedMessage", t, evalResult.lineMapping)
             resultBuilder.reportFailed("Unexpected error during execution: $remappedMessage")
         }

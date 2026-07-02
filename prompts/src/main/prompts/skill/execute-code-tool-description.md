@@ -27,11 +27,11 @@ Keep `old_string` to the shortest unique signature (30–60 chars usually — no
 | Task shape | One-line IDE call |
 |---|---|
 | **Two or more literal-text edits, same or different files** | `steroid_execute_code` with the `applyPatch { }` DSL — atomic undo, pre-flight validation, PSI commit, VFS refreshed after the script. See `mcp-steroid://ide/apply-patch`. |
-| **One literal-text edit, single file** | `val vf = findProjectFile(p)!!; writeAction { VfsUtil.saveText(vf, String(vf.contentsToByteArray(), vf.charset).replace(OLD, NEW)) }` |
+| **One literal-text edit, single file** | `val vf = findProjectFile(p) ?: error("not found: $p"); writeAction { VfsUtil.saveText(vf, String(vf.contentsToByteArray(), vf.charset).replace(OLD, NEW)) }` |
 | **Find files by extension** | `readAction { FilenameIndex.getAllFilesByExt(project, "java", projectScope()) }` — not `Bash find … -name "*.java"` |
 | **Find files by exact name** | `readAction { FilenameIndex.getVirtualFilesByName("UserService.java", projectScope()) }` |
 | **Find all references to a symbol** | `readAction { ReferencesSearch.search(psiElement, projectScope()).findAll() }` — type-aware; Grep over source text is a fallback |
-| **Read file content (any size)** | `String(findProjectFile(p)!!.contentsToByteArray(), charset)` — stays inside the IDE; the next semantic query sees what you read |
+| **Read file content (any size)** | `String((findProjectFile(p) ?: error("not found: $p")).contentsToByteArray(), charset)` — accepts relative or absolute paths, always re-reads from disk when called at the script top level; the next semantic query sees what you read |
 | **Grep content inside project files** | `readAction { FilenameIndex.getAllFilesByExt(project, ext, scope).flatMap { vf -> Regex(pat).findAll(String(vf.contentsToByteArray(), vf.charset)) … } }` in ONE call |
 | **Run Maven / Gradle tests** | IDE runner — see `mcp-steroid://skill/execute-code-maven` and `mcp-steroid://skill/execute-code-gradle`; Bash is only for shell-level final verification or IDE-runner fallback |
 | **IDE build aborted (`errors=false, aborted=true`)** | Fetch `mcp-steroid://skill/execute-code-gradle` or `mcp-steroid://skill/execute-code-maven` and run the matching sync pattern before Bash fallback. |
@@ -197,11 +197,12 @@ For deeper patterns (SMTRunner listeners that block until tests finish + emit st
 - `Read access is allowed from inside read-action only` → wrap in `readAction { }`
 
 **File discovery**: `readAction { FilenameIndex.getAllFilesByExt(project, ext, projectScope()) }` or `readAction { FilenameIndex.getVirtualFilesByName(name, projectScope()) }` inside `steroid_execute_code` — O(1) indexed lookup over the same VFS your next write will touch. The `readAction { }` wrap is mandatory; without it the call throws `Read access is allowed from inside read-action only` and the script aborts.
-**File reading**: `String(findProjectFile(relPath)!!.contentsToByteArray(), charset)` inside `steroid_execute_code` — single call, stays inside the IDE so PSI is consistent if you read the same file again later. The native `Read` tool is a valid alternative but imposes the Read-before-Edit contract only it tracks; staying inside `steroid_execute_code` avoids that coupling entirely.
+**File reading**: `String((findProjectFile(path) ?: error("not found: $path")).contentsToByteArray(), charset)` inside `steroid_execute_code` — `findProjectFile` accepts project-relative AND absolute paths, and (outside `readAction`/`writeAction`) always refreshes the file from disk before returning, so externally created or modified files are seen correctly. Prefer `?: error(...)` over `!!` so a missing file fails with the path in the message. Single call, stays inside the IDE so PSI is consistent if you read the same file again later. The native `Read` tool is a valid alternative but imposes the Read-before-Edit contract only it tracks; staying inside `steroid_execute_code` avoids that coupling entirely.
 **In-place file editing (ANY size, 1–1000+ lines)**: use steroid_execute_code — do NOT use the native `Edit` tool. The native `Edit` writes to disk bypassing IntelliJ, leaving VFS + PSI stale; every following semantic query sees the old content until you force a refresh. The IDE-side recipe below is ~5 lines of real code, same payload shape as `Edit(old, new)`, reads+writes inside one call, and the VFS auto-refreshes so PSI stays consistent:
 
 ```kotlin
-val vf = findProjectFile("src/main/java/com/example/MyClass.java")!!
+val path = "src/main/java/com/example/MyClass.java"   // relative or absolute both work
+val vf = findProjectFile(path) ?: error("not found: $path")
 val content = String(vf.contentsToByteArray(), vf.charset)  // read
 val updated = content.replace("OLD_STRING", "NEW_STRING")
 check(updated != content) { "no match for OLD_STRING — verify with Grep first" }

@@ -193,11 +193,12 @@ println("Project scope: $projScope")
 ### File Access Helpers
 
 ```kotlin
-// File access helpers — call from the script body or another suspend fun, NEVER inside readAction { }:
+// File access helpers — call from the script body or another suspend fun, NEVER inside readAction { }
+// (inside readAction they are snapshot-only; at top level they ALWAYS refresh the file from disk):
 val vf = findFile("/tmp/test.txt")                   // VirtualFile by absolute path
 val psi = findPsiFile("/tmp/test.txt")                // PsiFile by absolute path — SUSPEND
-val projFile = findProjectFile("build.gradle.kts")    // VirtualFile relative to project
-val projPsi = findProjectPsiFile("build.gradle.kts")  // PsiFile relative to project — SUSPEND
+val projFile = findProjectFile("build.gradle.kts")    // VirtualFile relative to project (absolute also accepted)
+val projPsi = findProjectPsiFile("build.gradle.kts")  // PsiFile relative to project (absolute also accepted) — SUSPEND
 println("file=$vf, psi=$psi, projFile=$projFile, projPsi=$projPsi")
 //
 // DON'T:
@@ -210,7 +211,7 @@ println("file=$vf, psi=$psi, projFile=$projFile, projPsi=$projPsi")
 //   readAction { /* now operate on `psi` here */ }  // wrap only the PSI/VFS reads, not the resolver call
 ```
 
-> **⚠️ `findProjectFile()` pitfall for resource files**: This function requires the **full relative path** from the project root (e.g., `"src/main/resources/application.properties"`). Calling it with just a filename (`findProjectFile("application.properties")`) **always returns null** — causing NPE on `!!`. For files under `src/main/resources/`, use `FilenameIndex.getVirtualFilesByName()` which searches by filename without requiring the full path:
+> **⚠️ `findProjectFile()` pitfall for resource files**: This function requires the **full relative path** from the project root (e.g., `"src/main/resources/application.properties"`). Calling it with just a filename (`findProjectFile("application.properties")`) **always returns null** (prefer `?: error("not found: ...")` over `!!` so the failure names the path). For files under `src/main/resources/`, use `FilenameIndex.getVirtualFilesByName()` which searches by filename without requiring the full path:
 ```kotlin
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope

@@ -134,9 +134,16 @@ action cannot start while your read action is held, so the call **deadlocks**. I
 (outside `readAction { }` / `smartReadAction { }`), then do the PSI/document work in a
 separate read action afterwards.
 
-Note: the script context's `findProjectFile()` / `findFile()` do a **plain lookup without
-refresh** — for externally created files they return `null` until you have run one of the
-refresh-then-find calls above (or a directory refresh like the post-Bash recipe below).
+Note: the script context's `findProjectFile()` / `findFile()` **always refresh the single
+file from disk** when called outside `readAction { }` / `writeAction { }` — externally
+created, modified, or deleted files are seen correctly without a manual refresh-then-find.
+Inside a read/write action they are snapshot-only (a synchronous refresh there would
+deadlock), so call them at the script top level when content freshness matters. Their
+refresh is per-file and shallow: for **directory contents** (new children created by an
+external process) you still need the explicit refresh-then-find calls above or the
+recursive post-Bash recipe below. After MANY external writes, batch the writes and look
+files up once — or run one recursive `markDirtyAndRefresh` — rather than alternating
+write → `findFile` per file.
 
 ### List Directory Contents
 ```kotlin
@@ -269,7 +276,7 @@ java.io.File("${project.basePath}/src/main/java/com/example/model/Product.java")
 LocalFileSystem.getInstance().refreshAndFindFileByPath("${project.basePath}/src/main/java/com/example/model/Product.java")
 println("Created Product.java")
 // Verify the write succeeded:
-val vf = findProjectFile("src/main/java/com/example/model/Product.java")!!
+val vf = findProjectFile("src/main/java/com/example/model/Product.java") ?: error("Product.java not found")
 check(String(vf.contentsToByteArray(), vf.charset).contains("class Product")) { "Write failed or file is empty" }
 println("Verified: Product.java written correctly")
 ```
@@ -322,12 +329,25 @@ println("File created and VFS refreshed")
 ## Read a Project File via findProjectFile
 
 ```kotlin
-val vf = findProjectFile("src/main/resources/application.properties")!!
+val path = "src/main/resources/application.properties"
+val vf = findProjectFile(path) ?: error("not found: $path")
 val text = String(vf.contentsToByteArray(), vf.charset)
 println(text)
 ```
 
-**⚠️ `findProjectFile()` pitfall for resource files**: requires the **FULL relative path** from the project root (e.g., `"src/main/resources/application.properties"`). Calling it with just a filename **always returns null** — causing NPE on `!!`. For files under `src/main/resources/`, use `FilenameIndex.getVirtualFilesByName()` which searches by filename:
+**Path contract for the script-context file helpers:**
+
+| Helper | Path argument | Refresh behavior |
+|---|---|---|
+| `findFile(p)` / `findPsiFile(p)` | absolute | always refreshes the file from disk outside read/write actions; snapshot-only inside |
+| `findProjectFile(p)` / `findProjectPsiFile(p)` | relative to project root — **absolute also accepted** | same as `findFile` |
+| `findProjectFiles(glob)` | glob relative to project root | iterates the VFS snapshot; NOT a per-path refresh |
+| `applyPatch { hunk(path, …) }` | absolute | resolves during a preflight read action → snapshot-only |
+
+Prefer `?: error("not found: $path")` over `!!` on every lookup — a bare `!!` NPE carries no
+message, while `error(...)` names the exact path that failed.
+
+**⚠️ `findProjectFile()` pitfall for resource files**: requires the **FULL relative path** from the project root (e.g., `"src/main/resources/application.properties"`). Calling it with just a filename **always returns null** (use `?: error(...)` so the failure names the path). For files under `src/main/resources/`, use `FilenameIndex.getVirtualFilesByName()` which searches by filename:
 ```kotlin
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope

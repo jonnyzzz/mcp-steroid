@@ -49,7 +49,7 @@ If you are about to write any of these in a `steroid_execute_code` script, you o
 | `PsiDocumentManager.getInstance(project).commitAllDocuments()` | `writeAction { }` |
 | Refactoring processor `.run()` (Rename / Move / SafeDelete / Inline / ChangeSignature / Extract*) | `writeIntentReadAction { }` (NOT `writeAction` — deadlocks) |
 
-**Safe outside any wrap:** `LocalFileSystem.getInstance().findFileByPath(path)` (resolution only), `findProjectFile(relPath)` helper, `vf.path` / `vf.name` / `vf.isDirectory` (cached metadata), and plain `java.io.File` / `Files.*` / `Path.*` operations. The wrap becomes mandatory the moment you read the file's *structure* or hand it to a PSI API.
+**Safe outside any wrap:** `LocalFileSystem.getInstance().findFileByPath(path)` (resolution only), `findProjectFile(relPath)` helper, `vf.path` / `vf.name` / `vf.isDirectory` (cached metadata), and plain `java.io.File` / `Files.*` / `Path.*` operations. The wrap becomes mandatory the moment you read the file's *structure* or hand it to a PSI API. Do NOT call `findFile` / `findProjectFile` *inside* `readAction { }` "to be safe" — under a read action they silently skip their disk refresh and can return stale content; resolve at the top level, then wrap only the PSI/structure reads.
 
 **Symptom of skipping the wrap:** the runtime emits `SEVERE` `ThreadingAssertions` log lines and — in stricter modes — throws `RuntimeExceptionWithAttachments: Read access is allowed from inside read-action only`. Even when assertions only log, the IDE may produce stale or partial results, so wrap eagerly.
 

@@ -426,21 +426,31 @@ interface McpScriptContext {
     // ============================================================
 
     /**
-     * Find a VirtualFile by an absolute path.
-     * Returns null if the file doesn't exist.
+     * Find a VirtualFile by an absolute path (local file system).
+     * Returns null if the file doesn't exist on disk.
+     *
+     * Called outside read/write actions, the lookup ALWAYS refreshes the file from
+     * disk first — externally created, modified, or deleted files are seen correctly
+     * even when the file watcher missed them. Inside a read/write action the helper
+     * is snapshot-only (synchronous refresh there would deadlock), so prefer calling
+     * it at the top level of the script when content freshness matters.
+     * The refresh is per-file and shallow: for a directory it validates the directory
+     * itself, not its unloaded children. After many external writes, batch the writes
+     * and look files up once rather than alternating write → findFile per file.
+     * Files with unsaved in-memory Documents are returned as-is (the unsaved Document
+     * is the newest content; refreshing would trigger the memory-vs-disk conflict).
      *
      * ```kotlin
-     * val vf = findFile("/path/to/file.kt")
-     * if (vf != null) {
-     *     val content = String(vf.contentsToByteArray())
-     * }
+     * val vf = findFile("/path/to/file.kt") ?: error("not found: /path/to/file.kt")
+     * val content = String(vf.contentsToByteArray(), vf.charset)
      * ```
      */
     fun findFile(absolutePath: String): VirtualFile?
 
     /**
      * Find a PsiFile by an absolute path.
-     * Requires a read action context or uses one internally.
+     * Same lookup semantics as [findFile] (always-refresh outside read/write actions),
+     * then PSI resolution inside a read action.
      * Returns null if the file doesn't exist or can't be parsed.
      *
      * ```kotlin
@@ -451,11 +461,15 @@ interface McpScriptContext {
     suspend fun findPsiFile(absolutePath: String): PsiFile?
 
     /**
-     * Find a VirtualFile relative to the project base path.
+     * Find a VirtualFile by a path relative to the project base path.
+     * Absolute paths are also accepted and resolved as-is (like [findFile]).
+     * Same refresh semantics as [findFile]: always refreshes from disk outside
+     * read/write actions; snapshot-only inside.
      * Returns null if the file doesn't exist.
      *
      * ```kotlin
      * val vf = findProjectFile("src/main/kotlin/MyClass.kt")
+     *     ?: error("not found: src/main/kotlin/MyClass.kt")
      * ```
      */
     fun findProjectFile(relativePath: String): VirtualFile?
@@ -468,12 +482,19 @@ interface McpScriptContext {
      * - src/main/starstar-slash-Demo-star.kt for demo classes
      * - star.md for markdown files in root
      *
+     * Iterates the VFS snapshot of the project root — this is NOT a per-path refresh
+     * helper; for externally created files refresh first (or use [findFile] /
+     * [findProjectFile], which refresh their single path).
+     *
      * Returns files sorted by absolute path for deterministic results.
      */
     suspend fun findProjectFiles(globPattern: String): List<VirtualFile>
 
     /**
-     * Find a PsiFile relative to the project base path.
+     * Find a PsiFile by a path relative to the project base path.
+     * Absolute paths are also accepted (delegates to [findProjectFile], inheriting
+     * its always-refresh-outside-actions semantics), then PSI resolution inside a
+     * read action.
      * Returns null if the file doesn't exist or can't be parsed.
      *
      * ```kotlin

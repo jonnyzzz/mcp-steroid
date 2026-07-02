@@ -205,4 +205,47 @@ class SkillReferenceHintTest : BasePlatformTestCase() {
             hint.contains("point-in-time")
         )
     }
+
+    fun testHintForBareNullPointerException() {
+        // #156: the messageless-NPE summary produced by ScriptExecutor must get the
+        // lookup-contract hint (agents' `!!` on a null findProjectFile lookup).
+        val error = "Unexpected error during execution: NullPointerException (no message) — see stack trace above"
+
+        val hint = project.executionSuggestionService.computeHint(error)
+        assertTrue(
+            "Hint should explain the null-lookup / `!!` pattern:\n$hint",
+            hint.contains("null lookup")
+        )
+        assertTrue(
+            "Hint should teach the ?: error(...) idiom naming the path:\n$hint",
+            hint.contains("error(")
+        )
+        assertTrue(
+            "Hint should reference the VFS skill resource:\n$hint",
+            hint.contains("mcp-steroid://skill/coding-with-intellij-vfs")
+        )
+    }
+
+    fun testBreakpointNpeStillWinsOverGenericNpeHint() {
+        // Precedence: the debugger-specific NPE branch must keep matching first.
+        val error = """Cannot invoke "com.intellij.debugger.JavaLineBreakpointProperties.getLambdaOrdinal()" because "props" is null"""
+
+        val hint = project.executionSuggestionService.computeHint(error)
+        assertTrue(
+            "Debugger-specific NPE hint must win over the generic NPE hint:\n$hint",
+            hint.contains("XDebuggerUtil.toggleLineBreakpoint")
+        )
+    }
+
+    fun testNpeWithRealMessageGetsNoLookupHint() {
+        // An NPE that carries its own message is its own diagnostic — the lookup-contract
+        // hint must NOT fire (it matches only the "(no message)" summary shape).
+        val error = """Unexpected error during execution: java.lang.NullPointerException: Cannot read field "foo" because "bar" is null"""
+
+        val hint = project.executionSuggestionService.computeHint(error)
+        assertFalse(
+            "Messaged NPE must not get the lookup-contract hint:\n$hint",
+            hint.contains("null lookup")
+        )
+    }
 }

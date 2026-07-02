@@ -205,4 +205,33 @@ class ScriptExecutorTest : BasePlatformTestCase() {
         // Should fail due to timeout (or error if engine not available)
         assertTrue("Should fail", builder.isFailed)
     }
+
+    /**
+     * #156: a messageless throwable (the bare NullPointerException from `!!`) must never
+     * produce an empty "Unexpected error during execution: " FAILED line — the summary
+     * must carry the exception class so the agent (and the hint engine) can react.
+     *
+     * Engine-tolerant per this class's convention: the assertion applies only when the
+     * script actually reached runtime (the failure message carries the runtime prefix);
+     * an environment without the script engine fails earlier with a different message.
+     */
+    fun testMesslessExceptionProducesNonEmptyFailure(): Unit = timeoutRunBlocking(60.seconds) {
+        val code = """
+            val value: String? = null
+            value!!
+        """.trimIndent()
+
+        val builder = TestResultBuilder()
+        executor.executeWithProgress(nextExecutionId(), testExecParams(code), builder)
+
+        assertTrue("Execution of `null!!` must fail", builder.isFailed)
+        val failure = builder.failureMessage ?: ""
+        if (failure.startsWith("Unexpected error during execution:")) {
+            // Runtime was reached: the summary must not be empty after the prefix.
+            assertTrue(
+                "FAILED line must name the exception class for messageless throwables:\n$failure",
+                failure.contains("NullPointerException (no message)")
+            )
+        }
+    }
 }

@@ -24,7 +24,9 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
@@ -540,8 +542,28 @@ class McpScriptContextImpl(
     // File Access
     // ============================================================
 
-    override fun findFile(absolutePath: String): VirtualFile? =
-        LocalFileSystem.getInstance().findFileByPath(absolutePath)
+    override fun findFile(absolutePath: String): VirtualFile? {
+        val lfs = LocalFileSystem.getInstance()
+        if (ApplicationManager.getApplication().isReadAccessAllowed) {
+            // Synchronous refresh off-EDT under read access deadlocks (the write action
+            // delivering VFS events can never start while our read lock is held —
+            // VirtualFile.refresh / VfsUtil.markDirtyAndRefresh contract). Inside
+            // read/write actions the helper is snapshot-only, same as before #156.
+            return lfs.findFileByPath(absolutePath)?.takeIf { it.isValid }
+        }
+        // #156: ALWAYS refresh. A snapshot hit may still carry stale content — the
+        // refresh-and-find utilities only instantiate path segments missing from the
+        // snapshot and never re-stat an existing file, and in a headless eval IDE the
+        // file watcher cannot be trusted to mark external changes dirty.
+        val vf = lfs.refreshAndFindFileByPath(absolutePath) ?: return null
+        // An UNSAVED in-memory Document + forced refresh would engage the platform's
+        // memory-vs-disk conflict resolver (a dialog in production, IllegalStateException
+        // in tests). The unsaved Document IS the newest content here — keep the snapshot.
+        if (!FileDocumentManager.getInstance().isFileModified(vf)) {
+            VfsUtil.markDirtyAndRefresh(/* async = */ false, /* recursive = */ false, /* reloadChildren = */ false, vf)
+        }
+        return vf.takeIf { it.isValid }
+    }
 
     override suspend fun findPsiFile(absolutePath: String): PsiFile? {
         val vf = findFile(absolutePath) ?: return null
@@ -549,9 +571,15 @@ class McpScriptContextImpl(
     }
 
     override fun findProjectFile(relativePath: String): VirtualFile? {
+        // #156: agents routinely pass absolute paths (every tool result shows them).
+        // Absolute input behaves exactly like findFile(absolutePath).
+        if (isAbsolutePath(relativePath)) return findFile(relativePath)
         val basePath = project.basePath ?: return null
         return findFile("$basePath/$relativePath")
     }
+
+    private fun isAbsolutePath(path: String): Boolean =
+        path.startsWith("/") || runCatching { Path.of(path).isAbsolute }.getOrDefault(false)
 
     override suspend fun findProjectFiles(globPattern: String): List<VirtualFile> {
         if (globPattern.isBlank()) return emptyList()
@@ -590,16 +618,18 @@ class McpScriptContextImpl(
     }
 
     override suspend fun findProjectPsiFile(relativePath: String): PsiFile? {
-        val basePath = project.basePath ?: return null
-        return findPsiFile("$basePath/$relativePath")
+        // Delegate through findProjectFile so absolute-path tolerance and refresh
+        // semantics live in exactly one place (#156).
+        val vf = findProjectFile(relativePath) ?: return null
+        return readAction { PsiManager.getInstance(project).findFile(vf) }
     }
 
     override suspend fun applyPatch(block: ApplyPatchBuilder.() -> Unit): ApplyPatchResult {
         val builder = ApplyPatchBuilder()
         builder.block()
-        // Reuse findFile so apply-patch handles every VFS flavour the rest of the
-        // script context handles (LocalFileSystem in production, temp:// in unit
-        // tests, mock VFS in fixtures) — no hard-coded LocalFileSystem.
+        // Hunk paths resolve through findFile (LocalFileSystem). Note: the resolver
+        // runs inside applyPatch's preflight readAction, where findFile is
+        // snapshot-only (no refresh) — see the findFile read-access guard.
         return executeApplyPatch(project, builder.hunks) { path -> findFile(path) }
     }
 }
