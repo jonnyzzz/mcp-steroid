@@ -117,3 +117,136 @@ func TestProxyHotSwapEmitsListChangedAndForwards(t *testing.T) {
 
 	clientInW.Close()
 }
+
+func TestBackendExitClearsProxy(t *testing.T) {
+	home := t.TempDir()
+	old := swapPollInterval
+	swapPollInterval = 10 * time.Millisecond
+	defer func() { swapPollInterval = old }()
+
+	clientInR, clientInW := io.Pipe()
+	clientOutR, clientOutW := io.Pipe()
+
+	// channel to receive the fake backend's write end so the test can close it to simulate a crash.
+	backendWriteEnd := make(chan *io.PipeWriter, 1)
+
+	p := newProxy(clientInR, clientOutW, home)
+	p.startBackend = func(h, ver string) (*backend, error) {
+		toDevR, toDevW := io.Pipe()
+		fromDevR, fromDevW := io.Pipe()
+		backendWriteEnd <- fromDevW // give test control of the write end
+		go func() {
+			// Mini-fake: answer initialize handshake, then block until fromDevW is closed.
+			sc := bufio.NewScanner(toDevR)
+			sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+			enc2 := json.NewEncoder(fromDevW)
+			for sc.Scan() {
+				line := sc.Bytes()
+				if len(strings.TrimSpace(string(line))) == 0 {
+					continue
+				}
+				var m rpcMessage
+				if json.Unmarshal(line, &m) != nil {
+					continue
+				}
+				if m.Method == "initialize" {
+					enc2.Encode(map[string]any{
+						"jsonrpc": "2.0", "id": json.RawMessage(m.ID),
+						"result": map[string]any{
+							"protocolVersion": "2024-11-05",
+							"capabilities":    map[string]any{"tools": map[string]any{}},
+							"serverInfo":      map[string]any{"name": "devrig", "version": "9.9"},
+						},
+					})
+					break
+				}
+			}
+			// Drain stdin so writes don't block; exit when fromDevW is closed (toDevR will EOF).
+			io.Copy(io.Discard, toDevR)
+		}()
+		b := newBackend(toDevW, fromDevR)
+		if err := b.handshake(ver); err != nil {
+			return nil, err
+		}
+		return b, nil
+	}
+	go func() { _ = p.run() }()
+
+	msgs := make(chan rpcMessage, 64)
+	go collectLines(clientOutR, msgs)
+
+	enc := json.NewEncoder(clientInW)
+
+	// initialize + initialized
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{"protocolVersion": "2024-11-05"}})
+	waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool { return m.isResponse() && string(m.ID) == "1" })
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+	// Trigger swap by simulating devrig binary becoming available.
+	binDir := filepath.Join(home, ".mcp-steroid", "bin")
+	os.MkdirAll(binDir, 0o755)
+	os.WriteFile(filepath.Join(binDir, "devrig"), []byte("#!/bin/sh\n"), 0o755)
+
+	// Wait for the tools/list_changed notification that signals swap.
+	waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool {
+		return m.isNotification() && m.Method == "notifications/tools/list_changed"
+	})
+
+	// Get the fake backend's write end (sent during startBackend call).
+	var fakeOut *io.PipeWriter
+	select {
+	case fakeOut = <-backendWriteEnd:
+	case <-time.After(3 * time.Second):
+		t.Fatal("did not receive backend write end in time")
+	}
+
+	// Verify p.backend is non-nil after swap.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		p.mu.Lock()
+		b := p.backend
+		p.mu.Unlock()
+		if b != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	p.mu.Lock()
+	if p.backend == nil {
+		p.mu.Unlock()
+		t.Fatal("expected p.backend to be non-nil after swap")
+	}
+	p.mu.Unlock()
+
+	// Simulate backend crash by closing its output pipe (EOF to pumpBackend).
+	fakeOut.Close()
+
+	// p.backend must be cleared within a short time (pumpBackend detects EOF and nils it).
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		p.mu.Lock()
+		b := p.backend
+		p.mu.Unlock()
+		if b == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	p.mu.Lock()
+	cleared := p.backend == nil
+	p.mu.Unlock()
+	if !cleared {
+		t.Fatal("expected p.backend to be cleared after backend crash, but it is still non-nil")
+	}
+
+	// devrig_status must still be answered locally after the backend exits.
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+		"params": map[string]any{"name": "devrig_status"}})
+	st := waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool { return m.isResponse() && string(m.ID) == "5" })
+	if !strings.Contains(string(st.Result), "content") {
+		t.Fatalf("devrig_status must be answered locally after crash: %s", st.Result)
+	}
+
+	clientInW.Close()
+}

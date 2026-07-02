@@ -3,12 +3,18 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 )
+
+// startBackendTimeout is the maximum time to wait for the devrig mcp handshake to complete.
+// A package var (not const) so tests can lower it.
+var startBackendTimeout = 120 * time.Second
 
 const backendInitID = "devrig-proxy-init"
 
@@ -53,6 +59,25 @@ func (b *backend) handshake(protocolVersion string) error {
 	return b.writer.writeJSON(notif("notifications/initialized"))
 }
 
+// runHandshakeWithTimeout runs b.handshake within startBackendTimeout.
+// On timeout it calls kill() then returns an error.
+// On handshake error it also calls kill() then returns the error.
+func runHandshakeWithTimeout(b *backend, protocolVersion string, kill func()) error {
+	hsDone := make(chan error, 1)
+	go func() { hsDone <- b.handshake(protocolVersion) }()
+	select {
+	case err := <-hsDone:
+		if err != nil {
+			kill()
+		}
+		return err
+	case <-time.After(startBackendTimeout):
+		kill()
+		os.Stderr.WriteString("devrig-bootstrap: devrig mcp handshake timed out after " + startBackendTimeout.String() + ", killed child\n")
+		return fmt.Errorf("devrig mcp handshake timed out after %v, killed child", startBackendTimeout)
+	}
+}
+
 // startBackend spawns `devrig mcp`, wires its stdio, and completes the handshake.
 func startBackend(home, protocolVersion string) (*backend, error) {
 	name := "devrig"
@@ -78,8 +103,11 @@ func startBackend(home, protocolVersion string) (*backend, error) {
 
 	b := newBackend(stdin, stdout)
 	b.cmd = cmd
-	if err := b.handshake(protocolVersion); err != nil {
+	kill := func() {
 		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}
+	if err := runHandshakeWithTimeout(b, protocolVersion, kill); err != nil {
 		return nil, err
 	}
 	return b, nil

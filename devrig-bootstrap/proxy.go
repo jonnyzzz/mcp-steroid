@@ -183,7 +183,7 @@ func (p *proxy) pumpBackend(b *backend) {
 			if err != io.EOF {
 				os.Stderr.WriteString("devrig-bootstrap: backend read error: " + err.Error() + "\n")
 			}
-			return
+			break
 		}
 		if msg.isRequest() {
 			// server->client request: namespace its id so it can't collide with client ids.
@@ -192,6 +192,12 @@ func (p *proxy) pumpBackend(b *backend) {
 			p.write(p.toClient, raw)
 		}
 	}
+	p.mu.Lock()
+	if p.backend == b {
+		p.backend = nil
+	}
+	p.mu.Unlock()
+	os.Stderr.WriteString("devrig-bootstrap: devrig backend exited; falling back to local handling until Claude restarts\n")
 }
 
 func isDevrigStatusCall(msg rpcMessage) bool {

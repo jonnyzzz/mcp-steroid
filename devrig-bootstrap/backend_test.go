@@ -70,3 +70,44 @@ func TestBackendHandshake(t *testing.T) {
 
 	b.stdin.Close() // let fakeDevrig see EOF and exit
 }
+
+func TestStartBackendTimesOut(t *testing.T) {
+	old := startBackendTimeout
+	startBackendTimeout = 200 * time.Millisecond
+	defer func() { startBackendTimeout = old }()
+
+	// Silent backend: accepts writes (so writer doesn't block), but stdout never produces data
+	// (blocking read end of a pipe whose write end is never written to).
+	toDevR, toDevW := io.Pipe()
+	fromDevR, fromDevW := io.Pipe() // fromDevW is never written -> fromDevR.Read blocks forever
+	go io.Copy(io.Discard, toDevR)  // drain writes so writer doesn't block
+
+	b := newBackend(toDevW, fromDevR)
+
+	killed := make(chan struct{})
+	killFn := func() {
+		fromDevW.Close() // unblocks the blocking Read in handshake
+		toDevW.Close()
+		close(killed)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- runHandshakeWithTimeout(b, "2024-11-05", killFn) }()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected timeout error from silent backend, got nil")
+		}
+		t.Logf("got expected error: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("runHandshakeWithTimeout did not complete within deadline — may be hanging")
+	}
+
+	// killFn must have been called.
+	select {
+	case <-killed:
+	default:
+		t.Fatal("kill was not called after timeout")
+	}
+}
