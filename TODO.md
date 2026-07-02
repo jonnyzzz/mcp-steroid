@@ -26,6 +26,15 @@
   IDE failing its `/windows` fetch errors the whole call (`coroutineScope` + `error(...)`), unlike
   `list_projects` which degrades per-backend. Return partial windows + a per-backend error marker.
 
+- [ ] **red-code reporter false-positives on Kotlin files**: `reportProjectRedCode` (PSI reference scan,
+  `mcp-steroid-import.kt`) reports Kotlin stdlib/operator references (`mutableMapOf`, `runCatching`,
+  `trim()`, `!!`, `=`) as UNRESOLVED — 95/646 on the stock Gradle test-project's `SsrRunCatchingDemo.kt`
+  while the project is actually green. Java-only Keycloak showed 1/25747, so the scan is sound for Java;
+  the Kotlin path needs K2-aware handling for operator/implicit references (or skip
+  `KtOperationReference`-style refs / restrict the sample to Java files). Non-fatal today (logged, never
+  thrown), but the signal is noise for Kotlin projects. Found validating #200's settle on
+  GradleCompileTest (2026-07-02).
+
 - [ ] **`waitForMcpReady` should fail fast on a dead container (quorum follow-up to PR #187, the typed-retry
   rework)**: the 300s startup health-check treats a *dead/missing* container the same as "server still
   starting" — `docker exec … curl` **exits non-zero (125)** rather than throwing, so it is retried to the
