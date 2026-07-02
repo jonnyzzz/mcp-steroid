@@ -431,20 +431,13 @@ class DebuggerDemoTest {
             "Agent did not output required marker 'ROOT_CAUSE:' (or equivalent).\nOutput:\n$combined"
         }
 
-        val ignoredReturnPatterns = listOf(
-            "ignor", "unused", "discard", "return value", "not assigned", "not assigned back",
-            "not used", "isn't assigned", "not stored", "not captured", "thrown away", "result is lost",
-        )
-        val returnsNewListPatterns = listOf(
-            "new list", "returns new", "does not modify", "doesn't modify",
-            "not in place", "immutable", "original list", "new sorted list", "sorted copy",
-        )
-        val mentionsIgnoredReturn = ignoredReturnPatterns.any { rootCause.contains(it, ignoreCase = true) }
-        val mentionsNewList = returnsNewListPatterns.any { rootCause.contains(it, ignoreCase = true) }
-        check(mentionsIgnoredReturn && mentionsNewList) {
+        // Pattern-matching lives in scoreSortedByDescendingRootCause (markdown-normalized — raw substring
+        // matching rejected two semantically perfect CI answers because of backticks around identifiers).
+        val rootCauseScore = scoreSortedByDescendingRootCause(rootCause)
+        check(rootCauseScore.pass) {
             "ROOT_CAUSE must explain that sortedByDescending returns a new list and its return value is ignored.\n" +
-                    "Expected ignored-return patterns: $ignoredReturnPatterns\n" +
-                    "Expected new-list patterns: $returnsNewListPatterns\n" +
+                    "mentionsIgnoredReturn=${rootCauseScore.mentionsIgnoredReturn} " +
+                    "mentionsNewList=${rootCauseScore.mentionsNewList}\n" +
                     "Actual ROOT_CAUSE: $rootCause\nOutput:\n$combined"
         }
         console.writeSuccess("ROOT_CAUSE quality validated")

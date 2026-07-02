@@ -113,3 +113,41 @@ fun scoreInspections(output: String, minIssues: Int, targetFile: String): Inspec
         detected = mentionsCast && mentionsFile && (count ?: 0) >= minIssues,
     )
 }
+
+data class RootCauseScore(
+    val mentionsIgnoredReturn: Boolean,
+    val mentionsNewList: Boolean,
+) {
+    val pass: Boolean get() = mentionsIgnoredReturn && mentionsNewList
+}
+
+/**
+ * Score the ROOT_CAUSE explanation for the sortedByDescending debugger scenario: the agent must state
+ * BOTH that `sortedByDescending` produces a new list (does not mutate) AND that its return value is
+ * ignored / never assigned back.
+ *
+ * Matching runs on a markdown-normalized copy of the text — backticks/asterisks stripped, punctuation
+ * collapsed to spaces — because agents format code identifiers ("returns a NEW sorted `List`", "the
+ * original `players` list"), which broke raw substring patterns on two real CI runs (988635686,
+ * 991971410) despite semantically perfect answers.
+ */
+fun scoreSortedByDescendingRootCause(rootCause: String): RootCauseScore {
+    // Normalize: lowercase, drop markdown emphasis/code marks and punctuation, collapse whitespace.
+    val text = rootCause.lowercase()
+        .replace(Regex("[`*_,;:()\\[\\]{}\"']"), " ")
+        .replace(Regex("\\s+"), " ")
+
+    val ignoredReturnPatterns = listOf(
+        "ignor", "unused", "discard", "return value", "not assigned", "never assigned",
+        "not used", "isn't assigned", "not stored", "not captured", "thrown away", "result is lost",
+    )
+    val returnsNewListPatterns = listOf(
+        "new list", "returns new", "returns a new", "does not modify", "doesn't modify",
+        "not in place", "non-mutating", "non mutating", "immutable", "original list",
+        "new sorted list", "a new sorted", "sorted copy", "leaves the original", "leaves the receiver",
+    )
+    return RootCauseScore(
+        mentionsIgnoredReturn = ignoredReturnPatterns.any { text.contains(it) },
+        mentionsNewList = returnsNewListPatterns.any { text.contains(it) },
+    )
+}
