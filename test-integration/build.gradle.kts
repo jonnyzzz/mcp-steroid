@@ -93,9 +93,11 @@ fun Test.configureIntegrationTest(sourceSetName: String = "test") {
         require(resolvedPluginZip.isFile) { "Plugin ZIP not found: ${resolvedPluginZip.absolutePath}" }
 
         systemProperty("test.integration.plugin.zip", resolvedPluginZip.absolutePath)
+        // Root-shared (same convention as test.integration.dependency.cache.dir): the integration and
+        // experiments suites reuse ONE IDE-archive cache instead of downloading per module.
         systemProperty(
             "test.integration.ide.download.dir",
-            layout.buildDirectory.dir("ide-download").get().asFile.absolutePath,
+            rootProject.layout.buildDirectory.dir("ide-download").get().asFile.absolutePath,
         )
         systemProperty(
             "test.integration.docker",

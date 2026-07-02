@@ -119,10 +119,14 @@ object IdeTestFolders {
     /**
      * Host directory caching IDE archives (e.g. `ideaIC-<version>.tar.gz`). Shared by the IDE-image
      * download and the devrig managed-backend downloads RW-mount — an archive fetched by either is reused
-     * by the other (IdeDownloader skips when the file already exists). Created on first use.
-     * Set via `test.integration.ide.download.dir` (default `build/ide-download`).
+     * by the other (IdeDownloader skips when the file already exists). Created on first use. Set via
+     * `test.integration.ide.download.dir` — the Gradle build points it at a ROOT-shared dir (sibling of
+     * [dependencyCacheDir], same convention) so the integration and experiments suites download each IDE
+     * archive once.
      */
-    val ideDownloadDir: File = File(System.getProperty("test.integration.ide.download.dir", "build/ide-download"))
+    val ideDownloadDir: File = System.getProperty("test.integration.ide.download.dir")
+        ?.let { File(it) }
+        ?: error("Failed to configure IDE download directory, set \"test.integration.ide.download.dir\"")
 
     /**
      * Host directory persisting the container's Maven (`~/.m2`) and Gradle (`~/.gradle`) caches across
@@ -131,8 +135,9 @@ object IdeTestFolders {
      * `test.integration.dependency.cache.dir` (the Gradle build points it at a root-shared dir so the
      * integration and experiments suites — which never run concurrently — share one cache).
      */
-    val dependencyCacheDir: File =
-        File(System.getProperty("test.integration.dependency.cache.dir", "build/test-dependency-cache"))
+    val dependencyCacheDir: File = System.getProperty("test.integration.dependency.cache.dir")
+        ?.let { File(it) }
+        ?: error("Failed to configure dependency cache directory, set \"test.integration.dependency.cache.dir\"")
 
     /**
      * Bind mounts that persist the container's `~/.m2` and `~/.gradle` to host dirs under
@@ -140,14 +145,16 @@ object IdeTestFolders {
      * the in-container `agent` (uid 1000) must be able to write them (see [allocRunDirAndTitle]). `agent`'s
      * home is `/home/agent` (see the ide-base Dockerfile).
      */
-    fun dependencyCacheVolumes(): List<ContainerVolume> =
-        mapOf(
-            "/home/agent/.m2" to dependencyCacheDir.resolve("m2"),
-            "/home/agent/.gradle" to dependencyCacheDir.resolve("gradle"),
-        ).map { (guest, host) ->
-            require(host.isDirectory || host.mkdirs()) { "Could not create dependency cache dir: $host" }
-            ContainerVolume(host.makeContainerWritable(), guest, "rw")
-        }
+    fun dependencyCacheVolumes(): List<ContainerVolume> = listOf(
+        dependencyCacheVolume("m2", "/home/agent/.m2"),
+        dependencyCacheVolume("gradle", "/home/agent/.gradle"),
+    )
+
+    private fun dependencyCacheVolume(name: String, guestPath: String): ContainerVolume {
+        val host = dependencyCacheDir.resolve(name)
+        require(host.isDirectory || host.mkdirs()) { "Could not create dependency cache dir: $host" }
+        return ContainerVolume(host.makeContainerWritable(), guestPath, "rw")
+    }
 
     val testOutputDir = remapPathForDockerHost(
         readFilePathFromSystemProperties("test.integration.testOutput"),
