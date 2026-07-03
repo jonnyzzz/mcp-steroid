@@ -71,7 +71,7 @@ Tasks requiring semantic understanding show the largest speed gains. Simple text
 
 ## Install
 
-**Requirements:** IntelliJ IDEA 2026.1+ (or any IntelliJ-based IDE: Rider, Android Studio, GoLand, WebStorm, PyCharm, CLion, etc.)
+**Requirements:** IntelliJ IDEA 2026.1+ (or any IntelliJ-based IDE: Rider, Android Studio, GoLand, WebStorm, PyCharm, CLion, etc.). The IDE must run with its normal UI or as a remote development backend — headless launches (`-Djava.awt.headless=true`) are unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)).
 
 ### JetBrains Marketplace
 

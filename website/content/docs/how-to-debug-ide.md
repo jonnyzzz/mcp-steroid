@@ -718,6 +718,13 @@ throw RuntimeException("Debug marker")
 
 **Reason:** Target IDE running headless (no GUI)
 
+**Support status:** headless IDEs are unsupported (best-effort) for MCP Steroid. The platform
+behaves differently without a UI and long blocking waits/deadlocks in platform code have been
+observed — see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177). On startup the plugin
+logs an `IDE run mode: ...` INFO line and, for a plain headless IDE, a
+`MCP Steroid is running in a headless IDE` WARN in `idea.log`. Prefer a normal desktop IDE or a
+remote development backend; the workarounds below are best-effort only.
+
 **Approach:**
 - Don't rely on UI automation
 - Use programmatic testing

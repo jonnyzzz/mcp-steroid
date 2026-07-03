@@ -19,6 +19,9 @@ MCP Steroid is distributed as an IntelliJ plugin. Currently, in early access - [
 ### Requirements
 
 - IntelliJ IDEA 2025.3+ (or any IntelliJ-based IDE: Rider, Android Studio, GoLand, WebStorm, PyCharm, etc.)
+- The IDE must run with its normal UI or as a remote development backend — headless launches
+  (`-Djava.awt.headless=true`) are unsupported (best-effort, see
+  [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177))
 - An MCP-compatible AI Agent (Claude Code, Codex, Gemini, or any MCP client)
 
 ### Install the Plugin
@@ -69,6 +72,15 @@ If port 6315 is in use, change it:
 3. Set a different port (e.g., 6316)
 4. Restart IntelliJ
 5. Update your MCP client configuration with the new URL from `.idea/mcp-steroid.md`
+
+**Headless IDE (Unsupported)**
+
+If `idea.log` contains the WARN `MCP Steroid is running in a headless IDE`, the IDE was launched
+without a UI (e.g. `-Djava.awt.headless=true`). Headless mode is unsupported (best-effort): the
+platform behaves differently without a UI and long blocking waits/deadlocks in platform code have
+been observed — see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177). Run a normal
+desktop IDE or a remote development backend instead. The plugin logs an `IDE run mode: ...` INFO
+line on every startup, so the environment is always recorded in `idea.log`.
 
 
 After connecting your AI Agent, you should see a list of currently open IntelliJ projects when testing with the `steroid_list_projects` tool. If the connection works, your AI Agent can now access all MCP Steroid capabilities.
