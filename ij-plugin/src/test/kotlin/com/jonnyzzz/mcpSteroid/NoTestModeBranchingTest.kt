@@ -15,13 +15,21 @@ class NoTestModeBranchingTest : BasePlatformTestCase() {
         }
 
         val forbiddenToken = "is" + "UnitTestMode"
+        // The ban targets test-mode BEHAVIOR BRANCHING. IdeRunMode.kt is the single
+        // permitted reader: it performs diagnostics-only run-mode classification for
+        // the startup log line and headless warning (#212) and never branches logic.
+        val allowlist = setOf(
+            "main/kotlin/com/jonnyzzz/mcpSteroid/server/IdeRunMode.kt",
+        )
         val matches = mutableListOf<String>()
 
         for (file in collectKotlinFiles(sourceRoot)) {
+            val relative = sourceRoot.relativize(file).toString().replace('\\', '/')
+            if (relative in allowlist) continue
             val lines = Files.readAllLines(file)
             lines.forEachIndexed { index, line ->
                 if (line.contains(forbiddenToken)) {
-                    matches.add("${sourceRoot.relativize(file)}:${index + 1}")
+                    matches.add("$relative:${index + 1}")
                 }
             }
         }

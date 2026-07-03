@@ -54,12 +54,15 @@ fun ideRunModeLogLine(mode: IdeRunMode): String {
 }
 
 /**
- * True when this process is a test process. Reads the same system property the platform uses to
- * initialize the Application's test-mode flag (community `ApplicationImpl.java:254`), so it is
- * equivalent to the Application accessor — which this codebase deliberately never references
- * (`NoTestModeBranchingTest`). This is diagnostics-only classification, not behavior branching.
+ * True when this process is a test process, read from the Application accessor. This file is the
+ * single allowlisted reader in `NoTestModeBranchingTest`: the accessor is used for
+ * diagnostics-only run-mode classification (the startup log line and the headless warning),
+ * never for behavior branching. The accessor — not the `idea.is.unit.test` system property — is
+ * required because the test framework sets the Application flag directly in its constructor
+ * without the property (production `ApplicationImpl` initializes it from the property; the
+ * test-framework path does not).
  */
-fun isUnitTestProcess(): Boolean = java.lang.Boolean.getBoolean("idea.is.unit.test")
+fun isUnitTestProcess(): Boolean = ApplicationManager.getApplication().isUnitTestMode
 
 /**
  * True when the IDE runs as a remote-development backend. `IdeProductMode.isBackend` is the
