@@ -16,12 +16,8 @@ type ideEndpoint struct {
 }
 
 // markerFileRegex matches the plugin's marker filename: "<pid>.mcp-steroid".
+// (markersDir lives in progress.go — the shared marker/lock directory.)
 var markerFileRegex = regexp.MustCompile(`^(\d+)\.mcp-steroid$`)
-
-// markerDir is where the IDE plugin writes its pid markers.
-func markerDir(home string) string {
-	return filepath.Join(home, ".mcp-steroid", "markers")
-}
 
 // pidMarkerShape is the minimal subset of PidMarker (schema 1) the bootstrap reads.
 type pidMarkerShape struct {
@@ -36,7 +32,7 @@ type pidMarkerShape struct {
 // (createdAt) first. Unreadable/malformed markers and markers without an MCP endpoint are skipped
 // (logged to stderr, never fatal). stdout is never touched.
 func discoverIdeEndpoints(home string) []ideEndpoint {
-	entries, err := os.ReadDir(markerDir(home))
+	entries, err := os.ReadDir(markersDir(home))
 	if err != nil {
 		if !os.IsNotExist(err) {
 			os.Stderr.WriteString("devrig-bootstrap: reading marker dir: " + err.Error() + "\n")
@@ -48,7 +44,7 @@ func discoverIdeEndpoints(home string) []ideEndpoint {
 		if e.IsDir() || !markerFileRegex.MatchString(e.Name()) {
 			continue
 		}
-		data, rerr := os.ReadFile(filepath.Join(markerDir(home), e.Name()))
+		data, rerr := os.ReadFile(filepath.Join(markersDir(home), e.Name()))
 		if rerr != nil {
 			os.Stderr.WriteString("devrig-bootstrap: reading marker " + e.Name() + ": " + rerr.Error() + "\n")
 			continue

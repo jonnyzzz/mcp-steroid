@@ -8,7 +8,7 @@ import (
 
 func writeMarker(t *testing.T, home string, pid int64, createdAt, baseURL string) {
 	t.Helper()
-	dir := markerDir(home)
+	dir := markersDir(home)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +47,8 @@ func TestDiscoverIdeEndpointsNewestFirstAndFilters(t *testing.T) {
 	writeMarker(t, home, 200, "2026-07-03T12:00:00Z", "http://127.0.0.1:6316/mcp") // newer
 	writeMarker(t, home, 300, "2026-07-03T13:00:00Z", "")                          // no server -> filtered
 	// A malformed file and a non-marker file must both be ignored, not crash.
-	os.WriteFile(filepath.Join(markerDir(home), "400.mcp-steroid"), []byte("{garbage"), 0o644)
-	os.WriteFile(filepath.Join(markerDir(home), "notes.txt"), []byte("ignore me"), 0o644)
+	os.WriteFile(filepath.Join(markersDir(home), "400.mcp-steroid"), []byte("{garbage"), 0o644)
+	os.WriteFile(filepath.Join(markersDir(home), "notes.txt"), []byte("ignore me"), 0o644)
 
 	got := discoverIdeEndpoints(home)
 	if len(got) != 2 {
