@@ -21,6 +21,8 @@ object CodeWrapperForCompilation {
         "import com.intellij.openapi.editor.*",
         "import com.intellij.openapi.fileEditor.*",
         "import com.intellij.openapi.command.*",
+        // The type of McpScriptContext.progressIndicator (#213) — imported so fenced
+        // examples/scripts can name the type (e.g. a typed val) without an explicit import.
         "import com.intellij.psi.*",
         "import com.intellij.psi.search.*",
         "import com.intellij.psi.search.searches.*",
@@ -146,35 +148,37 @@ object CodeWrapperForCompilation {
 
         // Build the line mapping from wrapped line numbers to original user line numbers.
         //
-        // The wrapped code layout (1-based line numbers):
-        //   Lines 1..12:          defaultImports (12 lines via joinToString with \n separator + \n postfix)
-        //   Line 13:              empty (appendLine())
-        //   Line 14:              "//imports from the submitted code"
-        //   Lines 15..14+N:       user imports (N = importLines.size)
-        //   Line 15+N:            empty (appendLine())
-        //   Line 16+N:            "class $clazzName {"
-        //   Line 17+N:            "  inline fun ..."
-        //   Line 18+N:            "  fun $methodName..."
-        //   Line 19+N:            "    builder.$addBlockName..."
-        //   Line 20+N:            "  }"
-        //   Line 21+N:            "  suspend fun ..."
-        //   Line 22+N:            "    //the rest of submitted code"
-        //   Lines 23+N..22+N+M:   user code lines (M = otherLines.size)
-        //   Line 23+N+M:          "  }"
-        //   Line 24+N+M:          "}"
-        //   Line 25+N+M:          empty (trailing \n)
+        // The wrapped code layout (1-based line numbers, K = defaultImports.size):
+        //   Lines 1..K:           defaultImports (joinToString with \n separator + \n postfix)
+        //   Line K+1:             empty (appendLine())
+        //   Line K+2:             "//imports from the submitted code"
+        //   Lines K+3..K+2+N:     user imports (N = importLines.size)
+        //   Line K+3+N:           empty (appendLine())
+        //   Line K+4+N:           "class $clazzName {"
+        //   Line K+5+N:           "  inline fun ..."
+        //   Line K+6+N:           "  fun $methodName..."
+        //   Line K+7+N:           "    builder.$addBlockName..."
+        //   Line K+8+N:           "  }"
+        //   Line K+9+N:           "  suspend fun ..."
+        //   Line K+10+N:          "    //the rest of submitted code"
+        //   Lines K+11+N..K+10+N+M: user code lines (M = otherLines.size)
+        //
+        // Offsets are DERIVED from defaultImports.size so adding a default import can
+        // never skew the mapping again (#221: they were hardcoded for 12 imports while
+        // the list had grown to 15, then 16 — agents saw error lines 3-4 lines off).
+        val k = defaultImports.size
         val n = importLines.size
         val mapping = mutableMapOf<Int, Int>()
 
         // Map user import lines
         for (i in extracted.importLineNumbers.indices) {
-            val wrappedLine = 15 + i
+            val wrappedLine = k + 3 + i
             mapping[wrappedLine] = extracted.importLineNumbers[i]
         }
 
         // Map user code lines (non-import)
         for (i in extracted.otherLineNumbers.indices) {
-            val wrappedLine = 23 + n + i
+            val wrappedLine = k + 11 + n + i
             mapping[wrappedLine] = extracted.otherLineNumbers[i]
         }
 

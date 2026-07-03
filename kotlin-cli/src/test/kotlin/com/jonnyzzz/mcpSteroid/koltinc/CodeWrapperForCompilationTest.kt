@@ -6,6 +6,16 @@ import org.junit.Test
 
 class CodeWrapperForCompilationTest {
 
+    // Layout-derived offsets (#221): computed from defaultImports.size so a change to the
+    // default-import list can never silently skew these tests again.
+    private val k = CodeWrapperForCompilation.defaultImports.size
+
+    /** Wrapped line of the i-th (0-based) extracted user import. */
+    private fun importLine(i: Int) = k + 3 + i
+
+    /** Wrapped line of the j-th (0-based) non-import user line, with n extracted imports. */
+    private fun codeLine(n: Int, j: Int) = k + 11 + n + j
+
     @Test
     fun `line mapping maps import lines back to original positions`() {
         val code = """
@@ -18,10 +28,8 @@ class CodeWrapperForCompilationTest {
         val result = CodeWrapperForCompilation.wrap("Test", code)
         val mapping = result.lineMapping
 
-        // "import foo.Bar" is on original line 1.
-        // In wrapped code, user imports start at line 15 (after 12 default imports + empty + comment).
-        // So wrapped line 15 should map to original line 1.
-        val remapped = mapping.remapCompilerOutput("input.kt:15:1: error: unresolved")
+        // "import foo.Bar" is on original line 1 -> wrapped importLine(0).
+        val remapped = mapping.remapCompilerOutput("input.kt:${importLine(0)}:1: error: unresolved")
         assertEquals("input.kt:1:1: error: unresolved", remapped)
     }
 
@@ -37,16 +45,12 @@ class CodeWrapperForCompilationTest {
         val result = CodeWrapperForCompilation.wrap("Test", code)
         val mapping = result.lineMapping
 
-        // "import foo.Bar" is 1 import line, so N=1.
-        // Non-import lines: "" (line 2), "val x: String = 123" (line 3), "println(x)" (line 4)
-        // User code starts at wrapped line 23 + N = 24.
-        // Wrapped line 24 -> original line 2 (the empty line)
-        // Wrapped line 25 -> original line 3 (val x: String = 123)
-        // Wrapped line 26 -> original line 4 (println(x))
-        val remapped3 = mapping.remapCompilerOutput("input.kt:25:21: error: type mismatch")
+        // 1 import (n=1). Non-import lines: "" (orig 2, idx 0), "val x..." (orig 3, idx 1),
+        // "println(x)" (orig 4, idx 2).
+        val remapped3 = mapping.remapCompilerOutput("input.kt:${codeLine(1, 1)}:21: error: type mismatch")
         assertEquals("input.kt:3:21: error: type mismatch", remapped3)
 
-        val remapped4 = mapping.remapCompilerOutput("input.kt:26:1: error: unresolved reference")
+        val remapped4 = mapping.remapCompilerOutput("input.kt:${codeLine(1, 2)}:1: error: unresolved reference")
         assertEquals("input.kt:4:1: error: unresolved reference", remapped4)
     }
 
@@ -60,14 +64,11 @@ class CodeWrapperForCompilationTest {
         val result = CodeWrapperForCompilation.wrap("Test", code)
         val mapping = result.lineMapping
 
-        // No user imports, so N=0.
-        // User code starts at wrapped line 23 + 0 = 23.
-        // "val x: String = 123" is original line 1 -> wrapped line 23
-        // "println(x)" is original line 2 -> wrapped line 24
-        val remapped1 = mapping.remapCompilerOutput("input.kt:23:21: error: type mismatch")
+        // No user imports (n=0): code idx 0 = orig 1, idx 1 = orig 2.
+        val remapped1 = mapping.remapCompilerOutput("input.kt:${codeLine(0, 0)}:21: error: type mismatch")
         assertEquals("input.kt:1:21: error: type mismatch", remapped1)
 
-        val remapped2 = mapping.remapCompilerOutput("input.kt:24:1: error: unresolved reference")
+        val remapped2 = mapping.remapCompilerOutput("input.kt:${codeLine(0, 1)}:1: error: unresolved reference")
         assertEquals("input.kt:2:1: error: unresolved reference", remapped2)
     }
 
@@ -83,20 +84,14 @@ class CodeWrapperForCompilationTest {
         val result = CodeWrapperForCompilation.wrap("Test", code)
         val mapping = result.lineMapping
 
-        // 2 import lines (N=2).
-        // Import 1: wrapped line 15 -> original line 1
-        // Import 2: wrapped line 16 -> original line 2
-        val remappedImport1 = mapping.remapCompilerOutput("input.kt:15:8: error: unresolved")
+        // 2 import lines (n=2), then "" (orig 3, idx 0) and "val x = 42" (orig 4, idx 1).
+        val remappedImport1 = mapping.remapCompilerOutput("input.kt:${importLine(0)}:8: error: unresolved")
         assertEquals("input.kt:1:8: error: unresolved", remappedImport1)
 
-        val remappedImport2 = mapping.remapCompilerOutput("input.kt:16:8: error: unresolved")
+        val remappedImport2 = mapping.remapCompilerOutput("input.kt:${importLine(1)}:8: error: unresolved")
         assertEquals("input.kt:2:8: error: unresolved", remappedImport2)
 
-        // Non-import lines: "" (line 3), "val x = 42" (line 4)
-        // User code starts at wrapped line 23 + 2 = 25.
-        // Wrapped line 25 -> original line 3 (empty)
-        // Wrapped line 26 -> original line 4 (val x = 42)
-        val remappedCode = mapping.remapCompilerOutput("input.kt:26:5: error: something")
+        val remappedCode = mapping.remapCompilerOutput("input.kt:${codeLine(2, 1)}:5: error: something")
         assertEquals("input.kt:4:5: error: something", remappedCode)
     }
 
@@ -106,9 +101,8 @@ class CodeWrapperForCompilationTest {
         val result = CodeWrapperForCompilation.wrap("Test", code)
         val mapping = result.lineMapping
 
-        // No imports (N=0), one code line at original line 1.
-        // Wrapped line 23 -> original line 1.
-        val remapped = mapping.remapCompilerOutput("input.kt:23:21: error: type mismatch")
+        // No imports (n=0), one code line at original line 1.
+        val remapped = mapping.remapCompilerOutput("input.kt:${codeLine(0, 0)}:21: error: type mismatch")
         assertEquals("input.kt:1:21: error: type mismatch", remapped)
     }
 
@@ -118,8 +112,8 @@ class CodeWrapperForCompilationTest {
         val result = CodeWrapperForCompilation.wrap("Test", code)
         val mapping = result.lineMapping
 
-        // Line 16 is "class Test {" — a wrapper boilerplate line.
-        val input = "input.kt:16:1: error: some weird error"
+        // Line k+4 (n=0) is "class Test {" — a wrapper boilerplate line, absent from the map.
+        val input = "input.kt:${k + 4}:1: error: some weird error"
         assertEquals(input, mapping.remapCompilerOutput(input))
     }
 
@@ -160,15 +154,12 @@ class CodeWrapperForCompilationTest {
         assertEquals(listOf(2, 4, 6), extracted.otherLineNumbers)
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // 3 imports (N=3), code lines start at 23+3=26
-        // otherLine[0]="val x = 1" (orig 2) -> wrapped 26
-        // otherLine[1]="val y = x + 1" (orig 4) -> wrapped 27
-        // otherLine[2]="println(y)" (orig 6) -> wrapped 28
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:27:5: error: something on y")
+        // 3 imports (n=3); otherLine[1]="val y = x + 1" (orig 4).
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(3, 1)}:5: error: something on y")
         assertEquals("input.kt:4:5: error: something on y", remapped)
 
-        // import lines: wrapped 15->orig 1, 16->orig 3, 17->orig 5
-        val remappedImport = result.lineMapping.remapCompilerOutput("input.kt:16:8: error: unresolved")
+        // import idx 1 -> orig 3
+        val remappedImport = result.lineMapping.remapCompilerOutput("input.kt:${importLine(1)}:8: error: unresolved")
         assertEquals("input.kt:3:8: error: unresolved", remappedImport)
     }
 
@@ -186,10 +177,8 @@ class CodeWrapperForCompilationTest {
         """.trimIndent()
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // No imports (N=0), code starts at line 23
-        // Line 23->orig 1, 24->2, 25->3, 26->4, 27->5, 28->6, 29->7, 30->8
-        // Error on "val bad: String = result.length" -> orig line 7
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:29:23: error: type mismatch")
+        // No imports (n=0); "val bad: String = result.length" is orig 7 = idx 6.
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(0, 6)}:23: error: type mismatch")
         assertEquals("input.kt:7:23: error: type mismatch", remapped)
     }
 
@@ -198,15 +187,8 @@ class CodeWrapperForCompilationTest {
         val code = "val text = \"\"\"\n    line 1\n    line 2\n    line 3\n\"\"\".trimIndent()\nval bad: Int = text\nprintln(text)"
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // No imports, code starts at line 23
-        // val text = """   -> orig 1, line 23
-        //     line 1        -> orig 2, line 24
-        //     line 2        -> orig 3, line 25
-        //     line 3        -> orig 4, line 26
-        // """.trimIndent()  -> orig 5, line 27
-        // val bad: Int = text -> orig 6, line 28
-        // println(text)     -> orig 7, line 29
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:28:20: error: type mismatch")
+        // No imports (n=0); "val bad: Int = text" is orig 6 = idx 5.
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(0, 5)}:20: error: type mismatch")
         assertEquals("input.kt:6:20: error: type mismatch", remapped)
     }
 
@@ -225,9 +207,8 @@ class CodeWrapperForCompilationTest {
         assertEquals(listOf(1, 2, 3, 4, 6, 7), extracted.otherLineNumbers)
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // 1 import (N=1), code starts at 24
-        // otherLine[4]="val f: Int = File(\"x\")" (orig 6) -> wrapped 28
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:28:18: error: type mismatch")
+        // 1 import (n=1); otherLine[4]="val f: Int = File(\"x\")" (orig 6).
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(1, 4)}:18: error: type mismatch")
         assertEquals("input.kt:6:18: error: type mismatch", remapped)
     }
 
@@ -250,15 +231,11 @@ class CodeWrapperForCompilationTest {
         """.trimIndent()
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // 1 import (N=1), code starts at 24
-        // otherLines: ""(2), "val counter..."(3), "val incrementer..."(4), "counter.inc..."(5),
-        //   "}"(6), ""(7), "val result: String..."(8), "val items..."(9), "val joined: Int..."(10),
-        //   ""(11), "incrementer()"(12), "println..."(13)
-        // otherLine[6] = "val result: String = counter.get()" (orig 8) -> wrapped 30
-        // otherLine[8] = "val joined: Int = items.joinToString()" (orig 10) -> wrapped 32
+        // 1 import (n=1); otherLine[6] = "val result: String..." (orig 8);
+        // otherLine[8] = "val joined: Int..." (orig 10).
         val compilerOutput = """
-            input.kt:30:26: error: type mismatch: expected 'String', actual 'Int'
-            input.kt:32:24: error: type mismatch: expected 'Int', actual 'String'
+            input.kt:${codeLine(1, 6)}:26: error: type mismatch: expected 'String', actual 'Int'
+            input.kt:${codeLine(1, 8)}:24: error: type mismatch: expected 'Int', actual 'String'
         """.trimIndent()
         val remapped = result.lineMapping.remapCompilerOutput(compilerOutput)
         val expected = """
@@ -288,9 +265,8 @@ class CodeWrapperForCompilationTest {
         assertEquals(listOf(3, 6, 8), extracted.otherLineNumbers)
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // 5 imports (N=5), code starts at 23+5=28
-        // otherLine[2]="val c: String = a + b" (orig 8) -> wrapped 30
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:30:21: error: type mismatch")
+        // 5 imports (n=5); otherLine[2]="val c: String = a + b" (orig 8).
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(5, 2)}:21: error: type mismatch")
         assertEquals("input.kt:8:21: error: type mismatch", remapped)
     }
 
@@ -309,8 +285,8 @@ class CodeWrapperForCompilationTest {
         assertEquals(listOf(1, 2), extracted.otherLineNumbers)
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // No imports (N=0), code starts at 23
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:24:18: error: type mismatch")
+        // No imports (n=0); "val x: Int = msg" is orig 2 = idx 1.
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(0, 1)}:18: error: type mismatch")
         assertEquals("input.kt:2:18: error: type mismatch", remapped)
     }
 
@@ -330,8 +306,8 @@ class CodeWrapperForCompilationTest {
         assertEquals(listOf(1, 3), extracted.otherLineNumbers)
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // 1 import (N=1), code starts at 24
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:25:18: error: type mismatch")
+        // 1 import (n=1); "val f: Int = File(\"x\")" is orig 3 = idx 1.
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(1, 1)}:18: error: type mismatch")
         assertEquals("input.kt:3:18: error: type mismatch", remapped)
     }
 
@@ -361,10 +337,8 @@ class CodeWrapperForCompilationTest {
         assertEquals(listOf(5), extracted.importLineNumbers)
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // 1 import, code starts at 24
-        // otherLines: line 1 ($"""), line 2 (import fake), line 3 (real content), line 4 ("""), line 6 (val x)
-        // otherLine[4] = "val x: Int = \"hello\"" (orig 6) -> wrapped 28
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:28:18: error: type mismatch")
+        // 1 import (n=1); otherLine[4] = "val x: Int = \"hello\"" (orig 6).
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(1, 4)}:18: error: type mismatch")
         assertEquals("input.kt:6:18: error: type mismatch", remapped)
     }
 
@@ -399,9 +373,8 @@ class CodeWrapperForCompilationTest {
         assertEquals(listOf(1, 3), extracted.otherLineNumbers)
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // 1 import (N=1), code starts at 24
-        // otherLine[1] = "val x: Int = s" (orig 3) -> wrapped 25
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:25:18: error: type mismatch")
+        // 1 import (n=1); otherLine[1] = "val x: Int = s" (orig 3).
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(1, 1)}:18: error: type mismatch")
         assertEquals("input.kt:3:18: error: type mismatch", remapped)
     }
 
@@ -438,10 +411,8 @@ class CodeWrapperForCompilationTest {
         assertEquals(listOf(2, 3, 4, 5, 7), extracted.otherLineNumbers)
 
         val result = CodeWrapperForCompilation.wrap("Test", code)
-        // 2 imports (N=2), code starts at 25
-        // otherLines: line 2 (val s="""), line 3 (import fake.one), line 4 (import fake.two), line 5 ("""), line 7 (val d)
-        // otherLine[4] = "val d: Int = Date()" (orig 7) -> wrapped 29
-        val remapped = result.lineMapping.remapCompilerOutput("input.kt:29:18: error: type mismatch")
+        // 2 imports (n=2); otherLine[4] = "val d: Int = Date()" (orig 7).
+        val remapped = result.lineMapping.remapCompilerOutput("input.kt:${codeLine(2, 4)}:18: error: type mismatch")
         assertEquals("input.kt:7:18: error: type mismatch", remapped)
     }
 
@@ -468,12 +439,10 @@ class CodeWrapperForCompilationTest {
 
         val result = CodeWrapperForCompilation.wrap("Script", code)
 
-        // Simulate compiler output with wrapped line numbers:
-        // 1 import (N=1), code lines start at 23+1=24
-        // Line 24 -> original 2 (empty), line 25 -> original 3, line 26 -> original 4
+        // 1 import (n=1): orig 3 = idx 1, orig 4 = idx 2.
         val compilerOutput = """
-            e: input.kt:25:21: error: The integer literal does not conform to the expected type 'String'
-            e: input.kt:26:18: error: The literal does not conform to the expected type 'Int'
+            e: input.kt:${codeLine(1, 1)}:21: error: The integer literal does not conform to the expected type 'String'
+            e: input.kt:${codeLine(1, 2)}:18: error: The literal does not conform to the expected type 'Int'
         """.trimIndent()
 
         val remapped = result.lineMapping.remapCompilerOutput(compilerOutput)
