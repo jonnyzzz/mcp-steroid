@@ -50,6 +50,84 @@ fun scoreTypeHierarchy(output: String, required: Set<String>, minTotal: Int): Ty
     )
 }
 
+data class CallHierarchyScore(
+    /** Endpoints the agent reported (normalized `pkg.Class.method` strings from `ENDPOINT:` markers). */
+    val reported: Set<String>,
+    /** Required endpoints the agent FAILED to report — the interface-dispatch / DI-lookup ones grep misses. */
+    val missingRequired: Set<String>,
+    val reportedCount: Int,
+    /** True when every required endpoint was reported AND at least [minTotal] endpoints were listed. */
+    val complete: Boolean,
+)
+
+/**
+ * Score a caller-hierarchy (endpoint reachability) answer for completeness — the CALLERS dual of
+ * [scoreTypeHierarchy]. The question is "which REST endpoints can transitively reach method X?"; the
+ * required endpoints are the ones whose call chain crosses an interface dispatch, a lambda, or a DI
+ * provider lookup — links `grep` cannot follow but the IDE's caller hierarchy walks exactly.
+ *
+ * @param output   the agent's answer text (markdown tolerated — backticks/emphasis are stripped first,
+ *                 and `#`, `.`, `$`, `::` are all accepted as class/method separators).
+ * @param required each entry is one required endpoint given as a set of ACCEPTABLE SPELLINGS
+ *                 (`pkg.Class#method`) — agents legitimately name a nested JAX-RS resource by its outer
+ *                 class, the nested class, or an inheriting subclass. An endpoint counts as found when
+ *                 any spelling's simple class name appears ADJACENT to its method name (separators only
+ *                 in between); a class mentioned in prose without its method does not count.
+ * @param minTotal minimum number of distinct endpoints expected (guards against a near-empty answer).
+ */
+fun scoreCallHierarchy(output: String, required: List<Set<String>>, minTotal: Int): CallHierarchyScore {
+    // Strip markdown emphasis/code marks so `Class.method()` and **Class#method** match plain patterns.
+    val text = output.replace(Regex("[`*_]"), "")
+
+    // Reported endpoints: prefer explicit `ENDPOINT: <class-and-method>` markers; if the agent used a
+    // different layout, fall back to every `Class.method` / `Class#method`-shaped token in the answer.
+    val marked = Regex("""(?im)^\s*[>#\-]*\s*ENDPOINT\s*:\s*(\S.*)$""")
+        .findAll(text).map { normalizeEndpointSpec(it.groupValues[1]) }.filter { it.isNotEmpty() }.toSet()
+    val reported = marked.ifEmpty {
+        Regex("""\b[A-Z]\w*(?:\s*[.#$]\s*|\s*::\s*)[a-z]\w*\b""")
+            .findAll(text).map { normalizeEndpointSpec(it.value) }.toSet()
+    }
+
+    val missing = required
+        .filter { alternatives -> alternatives.none { spec -> endpointMentioned(text, spec) } }
+        .map { it.first() }
+        .toSet()
+
+    return CallHierarchyScore(
+        reported = reported,
+        missingRequired = missing,
+        reportedCount = reported.size,
+        complete = missing.isEmpty() && reported.size >= minTotal,
+    )
+}
+
+/** Canonicalize one endpoint mention: unify separators to `.`, drop `()`/whitespace, lowercase. */
+private fun normalizeEndpointSpec(raw: String): String = raw
+    .replace("::", ".").replace('#', '.').replace('$', '.')
+    .replace(Regex("""\(\s*\)"""), "")
+    .replace(Regex("""\s+"""), "")
+    .trim('.', ',', ';', ':', '-')
+    .lowercase()
+
+/**
+ * True when [spec] (`pkg.Outer.Inner#method`) is mentioned in [text]: any of its simple class names must
+ * appear with the method name adjacent to it — only `.`/`#`/`$`/`::` separators (possibly through further
+ * nested-class identifiers) in between. Prose like "looked at TokenEndpoint but found nothing" does NOT
+ * match because there is no separator chain between the class and the method name.
+ */
+private fun endpointMentioned(text: String, spec: String): Boolean {
+    val method = spec.substringAfterLast('#').trim()
+    val classNames = spec.substringBeforeLast('#')
+        .split('.', '$').filter { it.firstOrNull()?.isUpperCase() == true }
+    if (method.isEmpty() || classNames.isEmpty()) return false
+    return classNames.any { cls ->
+        Regex(
+            """\b${Regex.escape(cls)}(?:\s*(?:[.#$]|::)\s*[A-Za-z_]\w*)*\s*(?:[.#$]|::)\s*${Regex.escape(method)}\b""",
+            RegexOption.IGNORE_CASE,
+        ).containsMatchIn(text)
+    }
+}
+
 data class RenameSafetyScore(
     val renameDone: Boolean,
     /** The post-rename build/compile result the agent reported (null if it never reported one). */
