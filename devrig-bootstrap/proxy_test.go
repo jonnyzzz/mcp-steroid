@@ -250,3 +250,64 @@ func TestBackendExitClearsProxy(t *testing.T) {
 
 	clientInW.Close()
 }
+
+func TestProxyTierOneThenTierTwo(t *testing.T) {
+	home := t.TempDir()
+	old := swapPollInterval
+	swapPollInterval = 10 * time.Millisecond
+	defer func() { swapPollInterval = old }()
+
+	// A live IDE endpoint is present from the start.
+	ide := fakeMcpHTTP(t)
+	defer ide.Close()
+	writeMarker(t, home, 4242, "2026-07-03T12:00:00Z", ide.URL)
+
+	clientInR, clientInW := io.Pipe()
+	clientOutR, clientOutW := io.Pipe()
+	p := newProxy(clientInR, clientOutW, home)
+	// Inject a fake devrig stdio backend factory for the Tier-2 swap.
+	p.startBackend = func(h, ver string) (*backend, error) {
+		toDevR, toDevW := io.Pipe()
+		fromDevR, fromDevW := io.Pipe()
+		go fakeDevrig(toDevR, fromDevW)
+		b := newBackend(toDevW, fromDevR)
+		if err := b.handshake(ver); err != nil {
+			return nil, err
+		}
+		b.shutdown = func() { toDevW.Close() }
+		return b, nil
+	}
+	go func() { _ = p.run() }()
+
+	msgs := make(chan rpcMessage, 64)
+	go collectLines(clientOutR, msgs)
+
+	enc := json.NewEncoder(clientInW)
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"protocolVersion": "2024-11-05"}})
+	waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool { return m.isResponse() && string(m.ID) == "1" })
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+	// Tier 1: list_changed fires, and tools/list now forwards to the IDE HTTP endpoint.
+	waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool {
+		return m.isNotification() && m.Method == "notifications/tools/list_changed"
+	})
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+	t1 := waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool { return m.isResponse() && string(m.ID) == "2" })
+	if !strings.Contains(string(t1.Result), `"ok":true`) {
+		t.Fatalf("Tier-1 tools/list must be served by the IDE HTTP endpoint: %s", t1.Result)
+	}
+
+	// Tier 2: devrig finishes installing -> a second list_changed -> tools/list forwards to devrig.
+	binDir := filepath.Join(home, ".mcp-steroid", "bin")
+	os.MkdirAll(binDir, 0o755)
+	os.WriteFile(filepath.Join(binDir, "devrig"), []byte("#!/bin/sh\n"), 0o755)
+	waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool {
+		return m.isNotification() && m.Method == "notifications/tools/list_changed"
+	})
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+	t2 := waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool { return m.isResponse() && string(m.ID) == "3" })
+	if !strings.Contains(string(t2.Result), "steroid_execute_code") {
+		t.Fatalf("Tier-2 tools/list must be forwarded to devrig: %s", t2.Result)
+	}
+	clientInW.Close()
+}

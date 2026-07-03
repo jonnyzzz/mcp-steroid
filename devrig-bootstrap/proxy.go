@@ -17,11 +17,13 @@ type proxy struct {
 	toClient *msgWriter
 	clientIn *msgReader
 
-	// startBackend is injectable for tests; production uses the real process spawner.
-	startBackend func(home, ver string) (*backend, error)
+	// startBackend/startHTTPBackend are injectable for tests; production uses the real spawners.
+	startBackend     func(home, ver string) (*backend, error)
+	startHTTPBackend func(baseURL, ver string) (*backend, error)
 
 	mu       sync.Mutex
 	backend  *backend
+	tier     int // 0 none, 1 ide (HTTP), 2 devrig (stdio)
 	protoVer string
 
 	initOnce    sync.Once
@@ -31,13 +33,14 @@ type proxy struct {
 
 func newProxy(in io.Reader, out io.Writer, home string) *proxy {
 	return &proxy{
-		home:         home,
-		toClient:     newMsgWriter(out),
-		clientIn:     newMsgReader(in),
-		startBackend: startBackend,
-		protoVer:     "2024-11-05",
-		initialized:  make(chan struct{}),
-		done:         make(chan struct{}),
+		home:             home,
+		toClient:         newMsgWriter(out),
+		clientIn:         newMsgReader(in),
+		startBackend:     startBackend,
+		startHTTPBackend: newHTTPBackend,
+		protoVer:         "2024-11-05",
+		initialized:      make(chan struct{}),
+		done:             make(chan struct{}),
 	}
 }
 
@@ -47,6 +50,7 @@ func runProxy(in io.Reader, out io.Writer, home string) error {
 }
 
 func (p *proxy) run() error {
+	go p.watchForIde()
 	go p.watchForInstall()
 	err := p.pumpClient()
 	close(p.done)
@@ -123,7 +127,40 @@ func (p *proxy) handleLocal(msg rpcMessage) {
 	p.writeJSON(p.toClient, newResult(msg.ID, result))
 }
 
-// watchForInstall waits for the session to initialize, then swaps as soon as devrig is installed.
+// watchForIde swaps to a running IDE's HTTP MCP endpoint (Tier 1) as soon as one is reachable,
+// so the user has full IDE tools within seconds — before the devrig download finishes.
+func (p *proxy) watchForIde() {
+	select {
+	case <-p.initialized:
+	case <-p.done:
+		return
+	}
+	t := time.NewTicker(swapPollInterval)
+	defer t.Stop()
+	for {
+		p.mu.Lock()
+		alreadySwapped := p.tier >= 1
+		p.mu.Unlock()
+		if alreadySwapped {
+			return
+		}
+		for _, ep := range discoverIdeEndpoints(p.home) {
+			if err := p.swapToIde(ep); err != nil {
+				os.Stderr.WriteString("devrig-bootstrap: Tier-1 IDE swap failed for " + ep.baseURL + ": " + err.Error() + "\n")
+				continue
+			}
+			return // swapped
+		}
+		select {
+		case <-t.C:
+		case <-p.done:
+			return
+		}
+	}
+}
+
+// watchForInstall swaps to the real devrig backend (Tier 2) once the download completes.
+// Tier 2 supersedes Tier 1.
 func (p *proxy) watchForInstall() {
 	select {
 	case <-p.initialized:
@@ -134,8 +171,8 @@ func (p *proxy) watchForInstall() {
 	defer t.Stop()
 	for {
 		if installState(p.home) == "installed" {
-			if err := p.swap(); err != nil {
-				os.Stderr.WriteString("devrig-bootstrap: proxy swap failed: " + err.Error() + "\n")
+			if err := p.swapToDevrig(); err != nil {
+				os.Stderr.WriteString("devrig-bootstrap: Tier-2 devrig swap failed: " + err.Error() + "\n")
 			}
 			return
 		}
@@ -147,10 +184,44 @@ func (p *proxy) watchForInstall() {
 	}
 }
 
-// swap connects the real devrig backend and tells the client the lists changed.
-func (p *proxy) swap() error {
+// swapToIde connects the HTTP backend and fires list_changed (Tier 1). No-op if a swap already happened.
+func (p *proxy) swapToIde(ep ideEndpoint) error {
 	p.mu.Lock()
-	if p.backend != nil {
+	if p.tier >= 1 {
+		p.mu.Unlock()
+		return nil
+	}
+	ver := p.protoVer
+	p.mu.Unlock()
+
+	b, err := p.startHTTPBackend(ep.baseURL, ver)
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	if p.tier >= 1 { // lost a race with Tier 2 (or another IDE): discard this backend
+		p.mu.Unlock()
+		if b.shutdown != nil {
+			b.shutdown()
+		}
+		return nil
+	}
+	p.backend = b
+	p.tier = 1
+	p.mu.Unlock()
+
+	go p.pumpBackend(b)
+	p.emitListChanged()
+	os.Stderr.WriteString("devrig-bootstrap: Tier 1 active — bridged to running IDE at " + ep.baseURL + "\n")
+	return nil
+}
+
+// swapToDevrig connects the stdio devrig backend and fires list_changed (Tier 2), tearing down a
+// Tier-1 HTTP backend if present. No-op if Tier 2 is already active.
+func (p *proxy) swapToDevrig() error {
+	p.mu.Lock()
+	if p.tier >= 2 {
 		p.mu.Unlock()
 		return nil
 	}
@@ -162,17 +233,27 @@ func (p *proxy) swap() error {
 		return err
 	}
 
-	go p.pumpBackend(b)
-
 	p.mu.Lock()
+	old := p.backend
 	p.backend = b
+	p.tier = 2
 	p.mu.Unlock()
 
+	if old != nil && old.shutdown != nil {
+		old.shutdown() // stop the Tier-1 HTTP pump; its pumpBackend goroutine then exits on EOF
+	}
+	go p.pumpBackend(b)
+	p.emitListChanged()
+	os.Stderr.WriteString("devrig-bootstrap: Tier 2 active — swapped to devrig mcp\n")
+	return nil
+}
+
+// emitListChanged tells Claude to re-fetch tools/resources/prompts on its next turn.
+func (p *proxy) emitListChanged() {
 	// Claude re-fetches each list on the next turn (verified: it honors tools/list_changed).
 	p.writeJSON(p.toClient, notif("notifications/tools/list_changed"))
 	p.writeJSON(p.toClient, notif("notifications/resources/list_changed"))
 	p.writeJSON(p.toClient, notif("notifications/prompts/list_changed"))
-	return nil
 }
 
 // pumpBackend forwards backend -> client until the backend closes.
@@ -195,9 +276,11 @@ func (p *proxy) pumpBackend(b *backend) {
 	p.mu.Lock()
 	if p.backend == b {
 		p.backend = nil
+		// Keep p.tier as-is: a superseding swap already advanced it; a Tier-1 exit before Tier 2
+		// simply returns to local handling until watchForInstall swaps devrig in.
 	}
 	p.mu.Unlock()
-	os.Stderr.WriteString("devrig-bootstrap: devrig backend exited; falling back to local handling until Claude restarts\n")
+	os.Stderr.WriteString("devrig-bootstrap: backend exited; local handling until the next swap\n")
 }
 
 func isDevrigStatusCall(msg rpcMessage) bool {

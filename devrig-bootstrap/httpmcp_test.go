@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,8 +23,17 @@ func fakeMcpHTTP(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
+		// Echo the request's id back, as a real MCP server does, so the proxy's client can match it.
+		var req struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage(`1`)
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`))
+		w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(id) + `,"result":{"ok":true}}`))
 	}))
 }
 
