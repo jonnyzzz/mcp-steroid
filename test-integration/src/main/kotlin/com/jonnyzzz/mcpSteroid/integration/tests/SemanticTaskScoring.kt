@@ -80,6 +80,70 @@ fun scoreRenameSafety(output: String): RenameSafetyScore {
     return RenameSafetyScore(renameDone = renameDone, buildGreen = buildGreen, safe = renameDone && buildGreen == true)
 }
 
+data class ChangeSignatureScore(
+    /** The agent reported the interface method's signature itself was changed. */
+    val signatureChanged: Boolean,
+    /** FQNs the agent reported as updated overrides (from `OVERRIDE_UPDATED:` markers, else any FQN). */
+    val reportedOverrides: Set<String>,
+    /** Ground-truth overrides the agent did NOT report updating — the manual-sweep misses. */
+    val missingOverrides: Set<String>,
+    /** The post-change build result the agent reported (null if it never reported one). */
+    val buildGreen: Boolean?,
+    /** Signature changed AND every ground-truth override was reported updated. */
+    val complete: Boolean,
+    /** A safe change-signature = complete AND the project still compiles afterwards. */
+    val safe: Boolean,
+)
+
+/**
+ * Score a project-wide CHANGE SIGNATURE for completeness + safety. With MCP the agent drives IntelliJ's
+ * `ChangeSignatureProcessor` (PSI): the interface method, every override — abstract bases, `default`
+ * methods in sub-interfaces, anonymous classes — and every call site are updated atomically. Without MCP
+ * a shell/editor sweep typically misses the non-obvious overrides or breaks call sites. Scored
+ * identically for both modes.
+ *
+ * Expected markers (the prompt asks the agent to compile after the change and report):
+ *   SIGNATURE_CHANGED: yes
+ *   OVERRIDE_UPDATED: <fully.qualified.ClassName>   (one line per updated override)
+ *   BUILD_AFTER_CHANGE: SUCCESS | FAILURE
+ *
+ * @param requiredOverrides ground-truth override FQNs derived from the project source — every one must
+ *                          be reported (exact FQN, or same simple name under a nearby package).
+ */
+fun scoreChangeSignature(output: String, requiredOverrides: Set<String>): ChangeSignatureScore {
+    val signatureChanged = findMarkerValue(output, "SIGNATURE_CHANGED", "Signature changed")
+        ?.contains("yes", ignoreCase = true) == true
+
+    // Prefer explicit `OVERRIDE_UPDATED: <fqn>` markers (tolerating markdown wrapping and backticked
+    // FQNs); if the agent used a different layout, fall back to every FQN in the answer body.
+    val marked = Regex("""(?im)^\s*[*_`>#-]*\s*OVERRIDE_UPDATED\s*[*_`>#-]*\s*:\s*[*_`]*([\w.$]+)""")
+        .findAll(output).map { it.groupValues[1].trim().trim('.') }.toSet()
+    val reported = marked.ifEmpty { FQN.findAll(output).map { it.groupValues[1] }.toSet() }
+
+    val missing = requiredOverrides.filterNot { req ->
+        req in reported || reported.any { it.endsWith(".${req.substringAfterLast('.')}") }
+    }.toSet()
+
+    val build = findMarkerValue(output, "BUILD_AFTER_CHANGE", "Build after change")
+    val buildGreen = build?.let {
+        when {
+            it.contains("SUCCESS", ignoreCase = true) || it.equals("pass", ignoreCase = true) || it.equals("green", ignoreCase = true) -> true
+            it.contains("FAIL", ignoreCase = true) || it.contains("error", ignoreCase = true) || it.contains("broke", ignoreCase = true) -> false
+            else -> null
+        }
+    }
+
+    val complete = signatureChanged && missing.isEmpty()
+    return ChangeSignatureScore(
+        signatureChanged = signatureChanged,
+        reportedOverrides = reported,
+        missingOverrides = missing,
+        buildGreen = buildGreen,
+        complete = complete,
+        safe = complete && buildGreen == true,
+    )
+}
+
 data class InspectionScore(
     val issuesFound: Int?,
     val mentionsRedundantCast: Boolean,
