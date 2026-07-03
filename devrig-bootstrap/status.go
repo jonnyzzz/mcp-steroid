@@ -73,8 +73,8 @@ func statusMessage(home string) string {
 		return "✅ devrig is now active — its full IDE toolset is available (send a message if you don't see the tools yet)."
 	case "installing":
 		return fmt.Sprintf(
-			"⏳ Downloading devrig: ~%d MB of ~%d MB, %s elapsed. Keep Claude open and keep working — "+
-				"if you quit or restart Claude now, the download stops. When it finishes, the full IDE "+
+			"⏳ Downloading devrig: ~%d MB of ~%d MB, %s elapsed. It keeps downloading in the "+
+				"background even if you close or restart Claude. When it finishes, the full IDE "+
 				"toolset activates automatically on your next message — no restart needed.",
 			installedMB(home), approxInstallMB, fmtElapsed(installElapsed(home)))
 	case "failed":

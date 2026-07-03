@@ -6,7 +6,10 @@ instead so Claude sees a **green** MCP server (never "✗ Failed to connect"). I
 
 - serves a minimal MCP server exposing one tool, `devrig_status`;
 - downloads the real devrig in the background (the canonical `install.sh` /
-  `install.ps1`), guarded by a single-flight lock with a heartbeat;
+  `install.ps1`), guarded by a single-flight lock with a heartbeat. The download
+  runs in a **detached re-exec of this binary** (`DEVRIG_BOOTSTRAP_ROLE_INSTALLER=1`,
+  a "supervisor" that owns the lock heartbeat + failure markers) so it **survives
+  Claude quitting or restarting** — a later bootstrap picks up the finished binary;
 - **stays alive as a proxy**: when the download finishes, the bootstrap spawns
   `devrig mcp`, hot-swaps to it, and fires `notifications/tools/list_changed`
   so Claude activates the full toolset on the user's next message — no restart

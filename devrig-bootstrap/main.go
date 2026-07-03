@@ -7,8 +7,16 @@ import (
 
 func main() {
 	home := homeDir()
-	// Kick off the background download (single-flight via the lock).
-	if _, err := ensureInstall(home, func() error { return runInstaller(home) }); err != nil {
+
+	// Detached supervisor role: run a single install attempt (heartbeating the lock and recording the
+	// outcome) and exit. Spawned by spawnDetachedInstaller so the download outlives this Claude session.
+	if os.Getenv(installerRoleEnv) == "1" {
+		runInstallAttempt(home, lockPath(home), func() error { return runInstaller(home) })
+		return
+	}
+
+	// Kick off the background download in a detached supervisor (single-flight via the lock).
+	if _, err := ensureInstall(home, spawnDetachedInstaller); err != nil {
 		fmt.Fprintf(os.Stderr, "devrig-bootstrap: ensureInstall: %v\n", err)
 	}
 	// Serve as an MCP proxy: answers locally until devrig is downloaded, then hot-swaps

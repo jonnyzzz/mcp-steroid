@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,17 +14,21 @@ func TestEnsureInstallSingleFlight(t *testing.T) {
 	os.MkdirAll(filepath.Join(home, ".mcp-steroid", "markers"), 0o755)
 
 	var mu sync.Mutex
-	runs := 0
-	runner := func() error { mu.Lock(); runs++; mu.Unlock(); return nil }
+	spawns := 0
+	spawn := func(_, _ string) error { mu.Lock(); spawns++; mu.Unlock(); return nil }
 
-	started, err := ensureInstall(home, runner)
+	started, err := ensureInstall(home, spawn)
 	if err != nil || !started {
 		t.Fatalf("first call: started=%v err=%v", started, err)
 	}
-	// lock now exists -> second call must NOT start a second install
-	started2, _ := ensureInstall(home, runner)
+	// lock now exists (the stub spawn leaves it — the real detached supervisor owns its lifecycle)
+	// -> second call must NOT start a second install.
+	started2, _ := ensureInstall(home, spawn)
 	if started2 {
 		t.Fatalf("second call started a duplicate install")
+	}
+	if spawns != 1 {
+		t.Fatalf("spawn must run exactly once, ran %d", spawns)
 	}
 }
 
@@ -33,9 +38,27 @@ func TestEnsureInstallSkipsWhenInstalled(t *testing.T) {
 	os.MkdirAll(bin, 0o755)
 	os.WriteFile(filepath.Join(bin, "devrig"), []byte("#!/bin/sh\n"), 0o755)
 
-	started, _ := ensureInstall(home, func() error { t.Fatal("must not run"); return nil })
+	started, _ := ensureInstall(home, func(_, _ string) error { t.Fatal("must not spawn"); return nil })
 	if started {
 		t.Fatalf("must not start install when devrig already present")
+	}
+}
+
+func TestEnsureInstallSpawnFailureReleasesLock(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(markersDir(home), 0o755)
+
+	started, err := ensureInstall(home, func(_, _ string) error { return errFake("no exe") })
+	if started || err == nil {
+		t.Fatalf("spawn failure must return started=false, err!=nil (got started=%v err=%v)", started, err)
+	}
+	// A failed spawn must not wedge the state: the lock is released...
+	if _, e := os.Stat(lockPath(home)); !os.IsNotExist(e) {
+		t.Fatal("spawn failure must release the lock so it doesn't wedge the state")
+	}
+	// ...and the failure is recorded so the user is routed to /devrig:setup.
+	if b, e := os.ReadFile(failedMarkerPath(home)); e != nil || !strings.Contains(string(b), "no exe") {
+		t.Fatalf("spawn failure must write the .failed marker with the reason, got %q err=%v", string(b), e)
 	}
 }
 
@@ -57,10 +80,10 @@ func TestEnsureInstallReclaimsStaleLock(t *testing.T) {
 	}
 
 	var mu sync.Mutex
-	runs := 0
-	mockRunner := func() error { mu.Lock(); runs++; mu.Unlock(); return nil }
+	spawns := 0
+	spawn := func(_, _ string) error { mu.Lock(); spawns++; mu.Unlock(); return nil }
 
-	started, err := ensureInstall(homeStale, mockRunner)
+	started, err := ensureInstall(homeStale, spawn)
 	if err != nil {
 		t.Fatalf("stale lock: unexpected error: %v", err)
 	}
@@ -80,12 +103,15 @@ func TestEnsureInstallReclaimsStaleLock(t *testing.T) {
 	}
 	// Leave mtime at now — fresh lock must block.
 
-	started2, err2 := ensureInstall(homeFresh, mockRunner)
+	started2, err2 := ensureInstall(homeFresh, spawn)
 	if err2 != nil {
 		t.Fatalf("fresh lock: unexpected error: %v", err2)
 	}
 	if started2 {
 		t.Fatal("fresh lock: ensureInstall must not start a new install while lock is fresh")
+	}
+	if spawns != 1 {
+		t.Fatalf("only the stale-lock reclaim should have spawned; got %d spawns", spawns)
 	}
 }
 
@@ -119,7 +145,7 @@ func TestEnsureInstallSkipsWhenFailed(t *testing.T) {
 	os.MkdirAll(markersDir(home), 0o755)
 	os.WriteFile(failedMarkerPath(home), []byte("boom"), 0o644) // terminal failed state
 
-	started, _ := ensureInstall(home, func() error { t.Fatal("must not retry a failed install"); return nil })
+	started, _ := ensureInstall(home, func(_, _ string) error { t.Fatal("must not retry a failed install"); return nil })
 	if started {
 		t.Fatal("failed state must not auto-retry; user runs /devrig:setup")
 	}

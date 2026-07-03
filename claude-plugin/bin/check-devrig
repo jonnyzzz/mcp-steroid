@@ -28,13 +28,14 @@ EOF
   exit 0
 fi
 
-# Downloading in the background -> tell user to keep Claude open; tools activate automatically. Do NOT mention /devrig:setup here.
+# Downloading in the background -> reassure the user; the download is detached and tools activate
+# automatically. Do NOT mention /devrig:setup here.
 cat <<'EOF'
 {
-  "systemMessage": "⏳ devrig is installing in the background (~500 MB). Keep Claude open and keep working — if you quit or restart Claude now, the download stops. When it finishes, the full IDE toolset activates automatically on your next message — no restart needed. Ask me for devrig status anytime to see progress.",
+  "systemMessage": "⏳ devrig is installing in the background (~500 MB). It keeps downloading even if you close or restart Claude — no need to wait around. When it finishes, the full IDE toolset activates automatically on your next message — no restart needed. Ask me for devrig status anytime to see progress.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~500 MB devrig binary downloads in the background. IMPORTANT: the download is tied to this Claude session and stops if the user quits or restarts Claude before it finishes, so advise them to keep Claude open until it completes. Call the devrig_status tool to report download progress when the user asks. Once the download finishes, the bootstrap fires tools/list_changed and the full IDE toolset activates automatically on the user's next message — no restart needed. While it is still downloading, do not tell the user to run any manual install command -- just keep Claude open and wait."
+    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~500 MB devrig binary downloads in the background. The download runs in a DETACHED process, so it continues even if the user quits or restarts Claude — you do NOT need to tell them to keep Claude open. Call the devrig_status tool to report download progress when the user asks. Once the download finishes, the bootstrap fires tools/list_changed and the full IDE toolset activates automatically on the user's next message — no restart needed. While it is still downloading, do not tell the user to run any manual install command -- just let it finish."
   }
 }
 EOF
