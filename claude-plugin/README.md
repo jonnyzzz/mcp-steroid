@@ -19,9 +19,9 @@ running IntelliJ-based IDE from Claude via the devrig bridge.
    **connected (green)** with one tool, `devrig_status`, and the real devrig
    binary (~500 MB) starts **downloading in the background**. No restart needed to
    begin.
-3. **Keep Claude open while it downloads** — quitting or restarting Claude stops
-   the download. Check progress anytime: `/devrig:status` or just ask for "devrig
-   status".
+3. **The download runs detached — you can keep working, close, or restart Claude**
+   and it keeps going in the background. Check progress anytime: `/devrig:status`
+   or just ask for "devrig status".
 4. When the download **finishes, the full IDE toolset activates automatically on
    your next message** — no restart needed. (The bootstrap fires
    `notifications/tools/list_changed` so Claude picks up the new tools
