@@ -17,7 +17,6 @@ import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.concurrency.ThreadingAssertions
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
-import com.intellij.diagnostic.ThreadDumper
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
@@ -189,14 +188,9 @@ class ScriptExecutor(
         } catch (e: Exception) {
             log.warn("Failed to capture modal screenshot for $executionId: ${e.message}", e)
         }
-        try {
-            project.executionStorage.writeCodeExecutionData(
-                executionId, "thread-dump-modality-gate.txt", ThreadDumper.dumpThreadsToString())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Failed to capture modality-gate thread dump for $executionId: ${e.message}")
-        }
+        // Shared dump helper (#215): writes thread-dump-modality-gate.txt (as before) and now
+        // coroutine-dump-modality-gate.txt too. Never throws (failures logged at WARN inside).
+        captureDiagnosticDumps(project, executionId, "modality-gate")
         throw ToolCallErrorException(
             "modal=${modal.name.lowercase()} requires a non-modal IDE, but a modal dialog/progress is present " +
                 "and could not be cleared. Use modal=unleashed to run anyway (no PSI guarantees). " +
@@ -275,8 +269,19 @@ class ScriptExecutor(
         } catch (e: TimeoutCancellationException) {
             // Timeout - report as error (must be caught before CancellationException since it's a subclass)
             log.warn("Execution $executionId timed out: ${e.message}")
+            // #215 (1): complete the cancellation FIRST — cancel the execution's indicator so
+            // blocking platform code unwinds at its next checkCanceled(). The watcher above
+            // normally already did this when the timeout cancelled the scope; cancel() is
+            // idempotent, and the explicit call here is the decided belt-and-braces (the
+            // platform's own coroutine→indicator bridge does exactly this on cancellation).
+            context.progressIndicator.cancel()
+            // #215 (2): suspected deadlock — capture thread + coroutine dumps while the stuck
+            // frames are still live (the stuck block keeps running after withTimeout fires; a
+            // non-cancellable read action does not unwind from outside). Never throws: a failed
+            // dump is logged at WARN inside and must not mask the timeout report below.
+            captureDiagnosticDumps(project, executionId, "timeout")
             resultBuilder.logRemappedException("Execution timed out", e, evalResult.lineMapping)
-            resultBuilder.reportFailed("Execution timed out after ${exec.timeout} seconds")
+            resultBuilder.reportFailed(timeoutFailureMessage(exec.timeout, executionId))
         } catch (e: CancellationException) {
             throw e
         } catch (e: ProcessCanceledException) {
@@ -299,6 +304,23 @@ class ScriptExecutor(
             resultBuilder.logRemappedException("Unexpected error during execution: $remappedMessage", t, evalResult.lineMapping)
             resultBuilder.reportFailed("Unexpected error during execution: $remappedMessage")
         }
+    }
+
+    /**
+     * The FAILED line for a timed-out execution: the fixed timeout message plus the absolute
+     * execution-folder path where [captureDiagnosticDumps] stored the diagnostics — the path
+     * ONLY, never the dump content (dumps are large; the agent reads the files on demand).
+     * Resolving the folder must not mask the timeout report either, so it is best-effort.
+     */
+    private fun timeoutFailureMessage(timeoutSeconds: Int, executionId: ExecutionId): String {
+        val base = "Execution timed out after $timeoutSeconds seconds"
+        val dumpDir = try {
+            project.executionStorage.resolveExecutionDir(executionId).toAbsolutePath()
+        } catch (e: Exception) {
+            log.warn("Failed to resolve execution dir for $executionId: ${e.message}")
+            null
+        }
+        return if (dumpDir != null) "$base. Diagnostic thread + coroutine dumps stored at $dumpDir" else base
     }
 
     // Single source of truth, shared with the dialog killer (DialogWindowsLookup): the

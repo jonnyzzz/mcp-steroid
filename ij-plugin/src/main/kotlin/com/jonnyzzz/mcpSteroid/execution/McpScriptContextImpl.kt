@@ -31,12 +31,10 @@ import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.diagnostic.ThreadDumper
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiDocumentManager
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
-import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
@@ -344,17 +342,13 @@ class McpScriptContextImpl(
         }
     }
 
-    /** Record a thread dump with the execution (diagnostics for a stuck/modal EDT). */
+    /**
+     * Record thread + coroutine dumps with the execution (diagnostics for a stuck/modal EDT).
+     * Delegates to the shared [captureDiagnosticDumps] (#215), which never throws — a failed
+     * dump is logged at WARN inside and must not mask the caller's own error reporting.
+     */
     private suspend fun captureThreadDump(reason: String) {
-        try {
-            val dump = ThreadDumper.dumpThreadsToString()
-            log.info("[$executionId] thread dump ($reason):\n$dump")
-            project.executionStorage.writeCodeExecutionData(executionId, "thread-dump-$reason.txt", dump)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("[$executionId] failed to capture thread dump ($reason): ${e.message}")
-        }
+        captureDiagnosticDumps(project, executionId, reason)
     }
 
     // ============================================================
