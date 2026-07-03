@@ -677,6 +677,94 @@ fun scoreInteropUsages(
     )
 }
 
+data class MoveClassScore(
+    /** The class file exists at the new package AND is gone from the old one — HARNESS-measured. */
+    val moveDone: Boolean,
+    /** Normalized (deduplicated) file paths extracted from the agent's `UPDATED:` lines. */
+    val reportedUpdatedFiles: Set<String>,
+    /** Ground-truth reference sites the agent did NOT report updating — the manual-sweep misses. */
+    val missingUpdatedFiles: Set<String>,
+    /** The post-move build result the agent reported (null if it never reported one). */
+    val buildGreen: Boolean?,
+    /** Occurrences of the OLD fully-qualified name left in the tree — HARNESS-measured grep count. */
+    val oldFqnResidueCount: Int?,
+    /** True when the harness grep found ZERO old-FQN occurrences (null count = not clean). */
+    val residueClean: Boolean,
+    /** Move performed AND every ground-truth reference site was reported updated. */
+    val complete: Boolean,
+    /** A safe move = complete AND build green AND zero old-FQN residue. */
+    val safe: Boolean,
+)
+
+/**
+ * Score a project-wide MOVE CLASS (between packages) for completeness + safety. With MCP the agent
+ * drives IntelliJ's `MoveClassesOrPackagesProcessor` (PSI): the class file moves, its package
+ * declaration changes, and every import, FQN reference, javadoc link and (with text-occurrence
+ * search) non-Java FQN string is rewritten atomically. Without MCP a grep-driven sweep has two
+ * blind spots: same-package usages carry NO import line to rewrite (they need a NEW import added
+ * or the build breaks), and FQN strings hide in resource/script/doc files (the build stays green
+ * but the runtime reference dangles). Scored identically for both modes.
+ *
+ * Evidence-based by construction — the three load-bearing inputs are measured by the test harness
+ * (identically for both legs), NOT self-reported:
+ *  - [classAtNewPath] / [classAtOldPath]: container file-existence checks — a `MOVE_DONE: yes`
+ *    claim with the file still at the old path (copy, not move) scores false;
+ *  - [oldFqnResidueCount]: a project-wide grep for the old FQN run by the harness — the objective
+ *    residue check; any count other than exactly 0 (including a failed check = null) is unclean.
+ *
+ * Only the per-file list and the build claim come from the agent's marker output:
+ *   MOVE_DONE: yes
+ *   UPDATED: <path/relative/to/repo/File.java>       (one line per updated file)
+ *   BUILD_AFTER_MOVE: SUCCESS | FAILURE
+ *
+ * Path matching is markdown-normalized and suffix-based (see [pathsReferToSameFile]), so absolute
+ * in-container paths and repo-relative spellings both count.
+ *
+ * @param requiredUpdatedFiles ground-truth reference-site paths derived by hand from the pinned
+ *                             project revision — every one must appear among the `UPDATED:` lines.
+ */
+fun scoreMoveClass(
+    output: String,
+    requiredUpdatedFiles: Set<String>,
+    classAtNewPath: Boolean?,
+    classAtOldPath: Boolean?,
+    oldFqnResidueCount: Int?,
+): MoveClassScore {
+    // `UPDATED\b` keeps `UPDATED_COUNT:` (same prefix) from contributing a fake path.
+    val updatedLine = Regex("""(?im)^\s*[*_`>#|:-]*\s*UPDATED\b\s*[*_`]*\s*:\s*(.+)$""")
+    val reported = updatedLine.findAll(output)
+        .map { normalizeReportedPath(it.groupValues[1]) }
+        .filter { it.isNotEmpty() }
+        .toSet()
+
+    val missing = requiredUpdatedFiles.filterNot { truth ->
+        reported.any { pathsReferToSameFile(it, truth) }
+    }.toSet()
+
+    val build = findMarkerValue(output, "BUILD_AFTER_MOVE", "Build after move")
+    val buildGreen = build?.let {
+        when {
+            it.contains("SUCCESS", ignoreCase = true) || it.equals("pass", ignoreCase = true) || it.equals("green", ignoreCase = true) -> true
+            it.contains("FAIL", ignoreCase = true) || it.contains("error", ignoreCase = true) || it.contains("broke", ignoreCase = true) -> false
+            else -> null
+        }
+    }
+
+    val moveDone = classAtNewPath == true && classAtOldPath == false
+    val residueClean = oldFqnResidueCount == 0
+    val complete = moveDone && missing.isEmpty()
+    return MoveClassScore(
+        moveDone = moveDone,
+        reportedUpdatedFiles = reported,
+        missingUpdatedFiles = missing,
+        buildGreen = buildGreen,
+        oldFqnResidueCount = oldFqnResidueCount,
+        residueClean = residueClean,
+        complete = complete,
+        safe = complete && buildGreen == true && residueClean,
+    )
+}
+
 data class RootCauseScore(
     val mentionsIgnoredReturn: Boolean,
     val mentionsNewList: Boolean,
