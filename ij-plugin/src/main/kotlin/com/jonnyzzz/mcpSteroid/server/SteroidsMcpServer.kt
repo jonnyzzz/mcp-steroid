@@ -135,20 +135,15 @@ class SteroidsMcpServer(
     private fun logIdeRunMode() {
         val mode = detectIdeRunMode()
         log.info(ideRunModeLogLine(mode))
-        if (mode == IdeRunMode.HEADLESS) {
-            log.warn(HEADLESS_UNSUPPORTED_WARNING)
-        }
+        headlessWarningFor(mode)?.let(log::warn)
     }
 
     /**
      * Builds the MCP server instructions; when the IDE is plain headless, a one-line notice is
      * appended so the connected agent knows the environment is unsupported (see mcp-steroid#177).
      */
-    private fun buildServerInstructions(): String {
-        val instructions = McpSteroidInfoPrompt().readPrompt()
-        if (detectIdeRunMode() != IdeRunMode.HEADLESS) return instructions
-        return instructions + "\n\n" + HEADLESS_MCP_CLIENT_NOTICE
-    }
+    private fun buildServerInstructions(): String =
+        serverInstructionsFor(detectIdeRunMode(), McpSteroidInfoPrompt().readPrompt())
 
     /**
      * Tries to start the server on the given port. If the port is busy,

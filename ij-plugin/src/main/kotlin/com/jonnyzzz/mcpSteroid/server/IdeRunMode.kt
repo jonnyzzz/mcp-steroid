@@ -87,3 +87,21 @@ const val HEADLESS_MCP_CLIENT_NOTICE: String =
     "Note: this IDE is running headless, which is unsupported (best-effort) for MCP Steroid — " +
         "long blocking waits/deadlocks in IDE platform code have been observed (see mcp-steroid#177), " +
         "so prefer your built-in tools for risky long-running operations."
+
+/**
+ * The WARN to log for the given mode, or null when the mode needs no warning.
+ * Only plain [IdeRunMode.HEADLESS] warns — normal UI, remote-dev backends, and test
+ * processes are supported environments.
+ */
+fun headlessWarningFor(mode: IdeRunMode): String? =
+    if (mode == IdeRunMode.HEADLESS) HEADLESS_UNSUPPORTED_WARNING else null
+
+/**
+ * The MCP server instructions for the given mode: [baseInstructions] as-is for every
+ * supported mode; plain [IdeRunMode.HEADLESS] appends [HEADLESS_MCP_CLIENT_NOTICE] so the
+ * connected agent knows the environment is unsupported (see mcp-steroid#177).
+ */
+fun serverInstructionsFor(mode: IdeRunMode, baseInstructions: String): String =
+    if (mode == IdeRunMode.HEADLESS) baseInstructions + "\n\n" + HEADLESS_MCP_CLIENT_NOTICE
+    else baseInstructions
+
