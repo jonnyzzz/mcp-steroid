@@ -378,6 +378,110 @@ private fun normalizeReportedPath(raw: String): String {
 private fun pathsReferToSameFile(a: String, b: String): Boolean =
     a == b || a.endsWith("/$b") || b.endsWith("/$a")
 
+data class InteropUsagesScore(
+    /** The `USAGES_FOUND:` total the agent reported (null if it never reported one). */
+    val reportedCount: Int?,
+    /** Distinct (path, line) pairs parsed from `USAGE:` markers — non-source paths already dropped. */
+    val reportedPairCount: Int,
+    /** Ground-truth required usages the agent DID report (ground-truth path → matched lines). */
+    val foundRequired: Map<String, Set<Int>>,
+    /** Ground-truth required usages the agent FAILED to report — the cross-language ones grep misses. */
+    val missedRequired: Map<String, Set<Int>>,
+    /** Reported `path:line` pairs that are neither required nor optional — e.g. same-named locals. */
+    val falsePositives: Set<String>,
+    /** True when EVERY required usage was reported (within the ±1 line tolerance). */
+    val complete: Boolean,
+    /** [complete] AND no false positives — the resolve-exact answer. */
+    val exact: Boolean,
+)
+
+/**
+ * Score a "enumerate EVERY usage of a symbol across BOTH languages" answer against a hand-derived
+ * `file → lines` ground truth (pinned revision, so lines are stable). The scenario this scores:
+ * a Kotlin `val requestLine` consumed from Java as the generated getter `getRequestLine()` —
+ * a case-sensitive search for the declared name finds ZERO Java call sites, while a loose search
+ * for the identifier over-matches same-named LOCAL VARIABLES that are not property usages at all.
+ * Resolve-based find-usages (`ReferencesSearch` on the property) answers this exactly; the scorer
+ * treats both failure modes separately: [InteropUsagesScore.missedRequired] (under-match) and
+ * [InteropUsagesScore.falsePositives] (over-match).
+ *
+ * Expected markers (mode-independent — with-MCP and shell runs are scored identically):
+ *   USAGES_FOUND: <total count>
+ *   USAGE: <path/relative/to/repo>:<line>      (one line per usage)
+ *
+ * Matching rules:
+ *  - only `.java` / `.kt` paths count; anything else (README snippets, `.api` dumps) is ignored,
+ *  - paths are markdown-normalized and suffix-matched, so absolute in-container spellings and
+ *    shorter-but-unambiguous relative spellings both count,
+ *  - lines match with ±1 tolerance (multi-line expressions), exact matches claimed first, and each
+ *    reported line satisfies at most one ground-truth line (and vice versa),
+ *  - [optional] usages (e.g. reads inside the declaring file, the declaration line itself) are
+ *    never required and never counted as false positives — agents legitimately disagree on them.
+ */
+fun scoreInteropUsages(
+    output: String,
+    required: Map<String, Set<Int>>,
+    optional: Map<String, Set<Int>> = emptyMap(),
+): InteropUsagesScore {
+    val reportedCount = findMarkerValue(output, "USAGES_FOUND", "Usages found")
+        ?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }
+
+    // Every `USAGE:` marker line contributes one (normalized path, line) pair. `USAGE` must be
+    // followed by the separator, so the `USAGES_FOUND:` count line can never match.
+    val usageLine = Regex("""(?im)^\s*[*_`>#|:\s-]*USAGE\s*[*_`]*\s*:\s*(.+)$""")
+    val pathAndLine = Regex("""([^\s:`*"']+\.(?:java|kt))\s*:\s*(\d+)""")
+    val reportedPairs: Set<Pair<String, Int>> = usageLine.findAll(output)
+        .mapNotNull { usage ->
+            val m = pathAndLine.find(usage.groupValues[1]) ?: return@mapNotNull null
+            normalizeReportedPath(m.groupValues[1]) to m.groupValues[2].toInt()
+        }
+        .filter { it.first.isNotEmpty() }
+        .toSet()
+
+    // Group the reported lines under the ground-truth file they refer to (suffix path matching).
+    // A reported pair may sit in `remaining` for at most one ground-truth file — files in the
+    // ground truth have distinct suffix-disjoint paths.
+    fun matchAgainst(truth: Map<String, Set<Int>>, pool: MutableSet<Pair<String, Int>>): Map<String, Set<Int>> {
+        val matched = mutableMapOf<String, MutableSet<Int>>()
+        for ((truthFile, truthLines) in truth) {
+            val candidates = pool.filter { pathsReferToSameFile(it.first, truthFile) }.toMutableList()
+            for (tolerance in 0..1) {
+                for (truthLine in truthLines.sorted()) {
+                    if (truthLine in (matched[truthFile] ?: emptySet<Int>())) continue
+                    val hit = candidates.firstOrNull { kotlin.math.abs(it.second - truthLine) <= tolerance }
+                        ?: continue
+                    candidates.remove(hit)
+                    pool.remove(hit)
+                    matched.getOrPut(truthFile) { mutableSetOf() }.add(truthLine)
+                }
+            }
+        }
+        return matched
+    }
+
+    val pool = reportedPairs.toMutableSet()
+    val foundRequired = matchAgainst(required, pool)
+    matchAgainst(optional, pool) // consume optional hits so they are not false positives
+
+    val missedRequired = required.mapNotNull { (file, lines) ->
+        val missing = lines - (foundRequired[file] ?: emptySet())
+        if (missing.isEmpty()) null else file to missing
+    }.toMap()
+
+    val falsePositives = pool.map { "${it.first}:${it.second}" }.toSet()
+    val complete = missedRequired.isEmpty()
+
+    return InteropUsagesScore(
+        reportedCount = reportedCount,
+        reportedPairCount = reportedPairs.size,
+        foundRequired = foundRequired,
+        missedRequired = missedRequired,
+        falsePositives = falsePositives,
+        complete = complete,
+        exact = complete && falsePositives.isEmpty(),
+    )
+}
+
 data class RootCauseScore(
     val mentionsIgnoredReturn: Boolean,
     val mentionsNewList: Boolean,

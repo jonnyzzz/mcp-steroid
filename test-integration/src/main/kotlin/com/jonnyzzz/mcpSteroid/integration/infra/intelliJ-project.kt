@@ -155,6 +155,27 @@ sealed class IntelliJProject{
     )
     object IntelliJPlatformGradlePluginProject : ProjectFromRemoteGit("https://github.com/JetBrains/intellij-platform-gradle-plugin.git")
 
+    /**
+     * OkHttp pinned to the 4.12.0 release tag — the Kotlin↔Java cross-language find-usages
+     * experiment (`InteropFindUsagesTest`). Chosen because it is genuinely mixed: the library is
+     * Kotlin, but a large legacy Java test suite consumes Kotlin `val`s through their generated
+     * getters (e.g. `RecordedRequest.requestLine` → `getRequestLine()` at 58 Java call sites),
+     * so the experiment's ground truth depends on this exact revision. When bumping the tag,
+     * re-derive every dependent ground-truth list.
+     *
+     * The pinned Gradle 7.5 wrapper refuses to run on JDK 19+ ("Unsupported class file major
+     * version"), hence jdkVersion 17 (temurin-17 is preinstalled in the ide-agent image); the
+     * import flow propagates it to gradleJvm. `settings.gradle` only includes the Android module
+     * when ANDROID_SDK_ROOT is set, so a plain IntelliJ Gradle import works.
+     */
+    object OkHttpPinnedProject : ProjectFromRemoteGit(
+        "https://github.com/square/okhttp.git",
+        gitRef = "parent-4.12.0",
+    ) {
+        override val jdkVersion: String = "17"
+        override val openFileOnStart: String = "mockwebserver/src/main/kotlin/okhttp3/mockwebserver/RecordedRequest.kt"
+    }
+
     /** A real Android (Gradle) project, used to exercise Android Studio. Google's official base template. */
     object AndroidSampleProject : ProjectFromRemoteGit("https://github.com/android/architecture-templates.git")
 
