@@ -17,13 +17,15 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
 /**
- * Shared helpers used by every `StructuralSearchYoutrackdb*Test` class — kept in
- * one place so the default-IDE and pinned (253/261/...) variants stay in sync.
+ * Shared helpers for the MCP-only SSR *skill audit* on youtrackdb — kept in one
+ * place so pinned-IDE variants (253/261/...) stay in sync. Currently used by
+ * [StructuralSearchYoutrackdb261Test]; the default-IDE [StructuralSearchYoutrackdbTest]
+ * used to run this same audit but is now the with/without-MCP A/B experiment
+ * (Optional.get() audit scored against a pinned-revision ground truth) and does
+ * not use these helpers.
  *
  * Mirror of `YouTrackDbMavenPromptShared.kt` for the SSR scenario.
  */
-
-const val SSR_YOUTRACKDB_LABEL = "ssr-youtrackdb"
 
 /** The single prompt every variant uses. Produces three markers: SSR_PROFILES,
  *  OPTIONAL_GET_MATCHES, JAVA_PREDEFINED_COUNT, plus the IMPROVEMENTS block. */

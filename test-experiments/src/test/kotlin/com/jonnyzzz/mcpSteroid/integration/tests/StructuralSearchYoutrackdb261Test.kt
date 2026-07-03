@@ -20,13 +20,17 @@ import org.junit.jupiter.api.Timeout
 import java.util.concurrent.TimeUnit
 
 /**
- * Same scenario as [StructuralSearchYoutrackdbTest], pinned via
+ * The MCP-only SSR skill audit on youtrackdb, pinned via
  * [IdeDistribution.FromUrl] to a specific 2026.1.x (build prefix `IU-261.*`)
  * Linux build. The default `IdeChannel.STABLE` resolves to "whatever the
- * current GA is" — once it rolls forward to 2026.2 the existing default test
- * will silently switch IDE generations. This sibling locks the 261 generation
- * in place so any 2026.1-specific SSR / Maven / indexing behavior keeps the
- * same regression coverage. Mirror of [YouTrackDbMaven261Test].
+ * current GA is" — pinning locks the 261 generation in place so any
+ * 2026.1-specific SSR / Maven / indexing behavior keeps the same regression
+ * coverage. Mirror of [YouTrackDbMaven261Test].
+ *
+ * Historical note: [StructuralSearchYoutrackdbTest] used to run this same
+ * audit on the STABLE IDE; it is now the with/without-MCP A/B experiment
+ * (Optional.get() audit), so this pinned sibling is the only remaining
+ * consumer of `runStructuralSearchYoutrackdbAudit`.
  *
  * Update [PINNED_261_URL] to a newer 2026.1.x patch when one ships; do NOT
  * jump it to 2026.2 — that would defeat the purpose of this sibling.

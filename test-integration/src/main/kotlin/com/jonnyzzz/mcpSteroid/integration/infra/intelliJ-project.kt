@@ -140,6 +140,19 @@ sealed class IntelliJProject{
     object KillBillProject : ProjectFromRemoteGit("https://github.com/killbill/killbill.git")
     object ThingsBoardProject : ProjectFromRemoteGit("https://github.com/thingsboard/thingsboard.git")
     object YouTrackDbProject : ProjectFromRemoteGit("https://github.com/JetBrains/youtrackdb.git")
+
+    /**
+     * [YouTrackDbProject] pinned to a fixed revision (a published snapshot tag). Used by experiments
+     * whose scoring compares the agent's answer against a hand-derived ground truth (e.g. the
+     * structural-search Optional.get() audit in `StructuralSearchYoutrackdbTest`) — the unpinned
+     * default-branch clone would silently invalidate that ground truth on every upstream push.
+     * When bumping this tag, re-derive every dependent ground-truth list at the new revision.
+     */
+    object YouTrackDbPinnedProject : ProjectFromRemoteGit(
+        "https://github.com/JetBrains/youtrackdb.git",
+        // == commit 44cf982894c37a62aba3319b5024f76f6ccae97c
+        gitRef = "0.5.0-20260428.132443-44cf982-SNAPSHOT",
+    )
     object IntelliJPlatformGradlePluginProject : ProjectFromRemoteGit("https://github.com/JetBrains/intellij-platform-gradle-plugin.git")
 
     /** A real Android (Gradle) project, used to exercise Android Studio. Google's official base template. */

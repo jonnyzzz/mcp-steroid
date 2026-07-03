@@ -114,6 +114,84 @@ fun scoreInspections(output: String, minIssues: Int, targetFile: String): Inspec
     )
 }
 
+data class SsrOptionalGetScore(
+    /** The OPTIONAL_GET_MATCHES total the agent reported (null if it never reported one). */
+    val reportedCount: Int?,
+    /** Normalized (deduplicated) file paths extracted from the agent's `MATCH:` lines. */
+    val reportedFiles: Set<String>,
+    /** Ground-truth files the agent DID report (keyed by the ground-truth spelling). */
+    val foundFiles: Set<String>,
+    /** Ground-truth files the agent FAILED to report — e.g. chained `findFirst().get()` grep can't type. */
+    val missedFiles: Set<String>,
+    /** Reported files with NO true Optional.get() — e.g. ByteBuffer/AtomicLong/Future `.get()` over-matches. */
+    val falsePositiveFiles: Set<String>,
+    /** True when every ground-truth file was reported AND nothing extra was — the SSR-exact answer. */
+    val exact: Boolean,
+)
+
+/**
+ * Score an "audit every `Optional.get()` callsite" answer against a known ground-truth file list
+ * (derived by hand from the audited repo at the revision the experiment pins). SSR with an
+ * `exprtype(java.util.Optional…)` constraint answers this exactly; a text search over `.get()` both
+ * over-matches (dozens of other no-arg `get()` receivers: Atomic*, ThreadLocal, Supplier, Future,
+ * WeakReference, ByteBuffer, …) and under-matches (chained receivers like `stream.findFirst().get()`
+ * whose Optional type only exists after resolution).
+ *
+ * Scored at FILE granularity: line numbers drift with formatting and agents report them
+ * inconsistently, but the file set separates the two failure modes cleanly. Expected markers:
+ *   OPTIONAL_GET_MATCHES: <total count>
+ *   MATCH: <path/relative/to/repo/File.java>:<line>     (one line per callsite)
+ *
+ * Path matching is markdown-normalized and suffix-based, so absolute in-container paths
+ * (`/home/agent/project/core/src/…`) and shorter-but-unambiguous relative spellings both count.
+ */
+fun scoreSsrOptionalGet(output: String, groundTruthFiles: Set<String>): SsrOptionalGetScore {
+    val reportedCount = findMarkerValue(output, "OPTIONAL_GET_MATCHES", "Optional get matches")
+        ?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }
+
+    val matchLine = Regex("""(?im)^\s*[*_`>#|:-]*\s*MATCH\s*[*_`]*\s*:\s*(.+)$""")
+    val reportedFiles = matchLine.findAll(output)
+        .map { normalizeReportedPath(it.groupValues[1]) }
+        .filter { it.isNotEmpty() }
+        .toSet()
+
+    val found = groundTruthFiles.filter { truth ->
+        reportedFiles.any { pathsReferToSameFile(it, truth) }
+    }.toSet()
+    val falsePositives = reportedFiles.filterNot { reported ->
+        groundTruthFiles.any { pathsReferToSameFile(reported, it) }
+    }.toSet()
+    val missed = groundTruthFiles - found
+
+    return SsrOptionalGetScore(
+        reportedCount = reportedCount,
+        reportedFiles = reportedFiles,
+        foundFiles = found,
+        missedFiles = missed,
+        falsePositiveFiles = falsePositives,
+        exact = missed.isEmpty() && falsePositives.isEmpty(),
+    )
+}
+
+/** Strip markdown/quoting, unify separators, drop the `:<line>` suffix — keep just the path. */
+private fun normalizeReportedPath(raw: String): String {
+    var p = raw.trim().trim('`', '*', '_', '"', '\'', '|')
+    p = p.replace('\\', '/')
+    // Drop a trailing :<line> or :<line>:<col> suffix (only numeric suffixes are stripped).
+    p = p.replace(Regex("""(:\d+)+\s*$"""), "")
+    p = p.trim().trim('`', '*', '_', '"', '\'')
+    p = p.removePrefix("./")
+    return p.trim('/')
+}
+
+/**
+ * True when one normalized path is a whole-component suffix of the other. Handles the agent
+ * reporting absolute in-container paths (longer than ground truth) or short relative spellings
+ * (shorter than ground truth, e.g. starting below the module root).
+ */
+private fun pathsReferToSameFile(a: String, b: String): Boolean =
+    a == b || a.endsWith("/$b") || b.endsWith("/$a")
+
 data class RootCauseScore(
     val mentionsIgnoredReturn: Boolean,
     val mentionsNewList: Boolean,
