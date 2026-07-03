@@ -222,6 +222,100 @@ fun scoreChangeSignature(output: String, requiredOverrides: Set<String>): Change
     )
 }
 
+data class SafeDeleteScore(
+    /** The agent reported the method declaration itself was removed. */
+    val methodDeleted: Boolean,
+    /** Normalized paths from the agent's `MIGRATED: <file>[:<line>]` markers. */
+    val reportedMigrated: Set<String>,
+    /** Ground-truth usage files the agent did NOT report migrating — the blind-sweep misses. */
+    val missingMigrations: Set<String>,
+    /** Normalized paths from the agent's `CHANGED_FILE:` markers (the full reported diff). */
+    val changedFiles: Set<String>,
+    /** Changed PRODUCTION files outside the known set — "while I'm here" collateral edits. */
+    val collateralFiles: Set<String>,
+    /** The post-delete build result the agent reported (null if it never reported one). */
+    val buildGreen: Boolean?,
+    /** Method deleted AND every ground-truth usage site was reported migrated. */
+    val complete: Boolean,
+    /** A safe delete = complete AND the build stays green AND no collateral production edits. */
+    val safe: Boolean,
+)
+
+/**
+ * Score a SAFE DELETE of a method for completeness + safety + precision. With MCP the agent drives
+ * IntelliJ's `SafeDeleteProcessor` (or `ReferencesSearch` + guided edits) via `steroid_execute_code`:
+ * the IDE surfaces every BLOCKING USAGE up front, the agent migrates each one (inline the deprecated
+ * wrapper's trivial body / call the documented successor) and the deletion lands only when nothing
+ * references the method anymore. Without MCP, a shell sweep deletes blind and discovers the missed
+ * cross-module usage — or the forgotten import — only at compile time. Scored identically for both.
+ *
+ * Expected markers (the prompt asks the agent to compile after the delete and report):
+ *   METHOD_DELETED: yes
+ *   MIGRATED: <path/relative/to/repo/File.java>:<line>   (one line per migrated production usage)
+ *   CHANGED_FILE: <path>                                  (one line per file from `git diff --name-only`)
+ *   BUILD_AFTER_DELETE: SUCCESS | FAILURE
+ *
+ * Matching is markdown-normalized and suffix-based (absolute in-container paths and short relative
+ * spellings both count). Lines in `MIGRATED` markers are informational — the file is the evidence:
+ * an agent cannot name the exact usage files without finding them, which is what the experiment
+ * measures (a hallucinated "done" cannot list `integration/…/AuthUtil.java`). Changed files under
+ * `src/test` or `testsuite/` are NOT collateral — deleting a method legitimately ripples into tests,
+ * and the build verdict covers production sources only.
+ *
+ * @param requiredUsageFiles  hand-derived ground truth: every production file with a usage of the
+ *                            method that must be migrated.
+ * @param allowedChangedFiles the full set of files the task is allowed to touch (declaration file +
+ *                            usage files); any other changed production file is collateral.
+ */
+fun scoreSafeDelete(
+    output: String,
+    requiredUsageFiles: Set<String>,
+    allowedChangedFiles: Set<String>,
+): SafeDeleteScore {
+    val methodDeleted = findMarkerValue(output, "METHOD_DELETED", "Method deleted")
+        ?.contains("yes", ignoreCase = true) == true
+
+    val migrated = Regex("""(?im)^\s*[*_`>#|:-]*\s*MIGRATED\s*[*_`]*\s*:\s*(.+)$""")
+        .findAll(output)
+        .map { normalizeReportedPath(it.groupValues[1]) }
+        .filter { it.isNotEmpty() }
+        .toSet()
+    val missing = requiredUsageFiles.filterNot { truth ->
+        migrated.any { pathsReferToSameFile(it, truth) }
+    }.toSet()
+
+    val changed = Regex("""(?im)^\s*[*_`>#|:-]*\s*CHANGED_FILE\s*[*_`]*\s*:\s*(.+)$""")
+        .findAll(output)
+        .map { normalizeReportedPath(it.groupValues[1].replace(Regex("""^\s*[MADRCU?!]{1,2}\s+"""), "")) }
+        .filter { it.isNotEmpty() }
+        .toSet()
+    val collateral = changed.filterNot { file ->
+        val isTestFile = file.contains("/src/test/") || file.startsWith("testsuite/") || file.contains("/testsuite/")
+        isTestFile || allowedChangedFiles.any { pathsReferToSameFile(file, it) }
+    }.toSet()
+
+    val build = findMarkerValue(output, "BUILD_AFTER_DELETE", "Build after delete")
+    val buildGreen = build?.let {
+        when {
+            it.contains("SUCCESS", ignoreCase = true) || it.equals("pass", ignoreCase = true) || it.equals("green", ignoreCase = true) -> true
+            it.contains("FAIL", ignoreCase = true) || it.contains("error", ignoreCase = true) || it.contains("broke", ignoreCase = true) -> false
+            else -> null
+        }
+    }
+
+    val complete = methodDeleted && missing.isEmpty()
+    return SafeDeleteScore(
+        methodDeleted = methodDeleted,
+        reportedMigrated = migrated,
+        missingMigrations = missing,
+        changedFiles = changed,
+        collateralFiles = collateral,
+        buildGreen = buildGreen,
+        complete = complete,
+        safe = complete && buildGreen == true && collateral.isEmpty(),
+    )
+}
+
 data class InspectionScore(
     /** The agent's self-reported `ISSUES_FOUND:` count (informational only — never trusted for the verdict). */
     val issuesFound: Int?,
