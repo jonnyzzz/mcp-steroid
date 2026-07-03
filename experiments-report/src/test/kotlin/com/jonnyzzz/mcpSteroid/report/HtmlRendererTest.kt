@@ -93,6 +93,73 @@ class HtmlRendererTest {
     }
 
     @Test
+    fun `shows a weighted history line under a leg with repeat runs and none for a single run`() {
+        val runs = listOf(
+            AgentRun("petclinic-27", "claude", McpMode.WITH, claimedFix = true, agentDurationMs = 312_000),
+            AgentRun("petclinic-27", "claude", McpMode.WITHOUT, claimedFix = true, agentDurationMs = 400_000),
+        )
+        val histories = listOf(
+            // 9 attempts for the WITH leg spread over ~4 months and 3 model generations
+            RunHistory(
+                scenario = "petclinic-27", agent = "claude", mode = McpMode.WITH,
+                runs = 9, crashed = 1, weightedSuccessPct = 82,
+                weightedMedianDurationMs = 298_000, weightedMedianCostUsd = 1.02,
+                spanDays = 120.0,
+                models = listOf("claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8"),
+            ),
+            // single attempt for the WITHOUT leg — no history line
+            RunHistory(
+                scenario = "petclinic-27", agent = "claude", mode = McpMode.WITHOUT,
+                runs = 1, crashed = 0, weightedSuccessPct = 100,
+                weightedMedianDurationMs = 400_000, weightedMedianCostUsd = 2.0,
+                spanDays = null, models = listOf("claude-opus-4-8"),
+            ),
+        )
+        val html = HtmlRenderer.render(
+            Report("t", "2026-07-03T00:00:00Z", Aggregator.compare(runs), runs, histories = histories)
+        )
+        assertTrue(html.contains("run history"), "repeat-run leg gets a history line")
+        assertTrue(html.contains("9 runs"))
+        assertTrue(html.contains("over 4 months"), "age span disclosed")
+        assertTrue(html.contains("82% ✓ (weighted)"), "recency-weighted success rate, labelled as such")
+        assertTrue(html.contains("median 4m 58s"))
+        assertTrue(html.contains("$1.02"))
+        assertTrue(html.contains("1 crashed"))
+        assertTrue(html.contains("3 models"), "model drift disclosed compactly")
+        assertTrue(html.contains("claude-opus-4-6 → claude-opus-4-8"), "oldest → newest model")
+        // the n=1 leg renders NO history line: its numbers must not read as history
+        assertFalse(html.contains("1 runs"), "a single run is not a history")
+    }
+
+    @Test
+    fun `omits crash count and model note when there is nothing to disclose`() {
+        val runs = listOf(
+            AgentRun("x", "claude", McpMode.WITH, claimedFix = true),
+            AgentRun("x", "claude", McpMode.WITHOUT, claimedFix = true),
+        )
+        val histories = listOf(
+            RunHistory(
+                scenario = "x", agent = "claude", mode = McpMode.WITH,
+                runs = 3, crashed = 0, weightedSuccessPct = 100,
+                weightedMedianDurationMs = null, weightedMedianCostUsd = null,
+                spanDays = 2.0, models = listOf("claude-opus-4-8"),
+            ),
+        )
+        val html = HtmlRenderer.render(
+            Report("t", "now", Aggregator.compare(runs), runs, histories = histories)
+        )
+        assertTrue(html.contains("run history"))
+        assertFalse(html.contains("crashed"), "no crash note when crashed == 0")
+        assertFalse(html.contains("models"), "no drift note for a single model")
+    }
+
+    @Test
+    fun `no history line at all when the report carries no histories`() {
+        val html = HtmlRenderer.render(sampleReport())
+        assertFalse(html.contains("run history"))
+    }
+
+    @Test
     fun `escapes html special characters in agent text`() {
         val runs = listOf(
             AgentRun("x", "claude", McpMode.WITH, claimedFix = true, summary = "<script>alert(1)</script> & co"),

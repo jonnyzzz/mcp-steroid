@@ -20,6 +20,7 @@ fun mergeRuns(runs: List<AgentRun>): List<AgentRun> {
 private fun mergeTwo(a: AgentRun, b: AgentRun): AgentRun = a.copy(
     buildConfigId = a.buildConfigId ?: b.buildConfigId,
     buildId = a.buildId ?: b.buildId,
+    finishedAt = a.finishedAt ?: b.finishedAt,
     testStatus = a.testStatus ?: b.testStatus,
     testDurationMs = a.testDurationMs ?: b.testDurationMs,
     agentDurationMs = a.agentDurationMs ?: b.agentDurationMs,

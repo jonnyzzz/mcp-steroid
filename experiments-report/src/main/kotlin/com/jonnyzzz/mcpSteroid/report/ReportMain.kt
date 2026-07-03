@@ -9,13 +9,16 @@ import java.time.Instant
  * output side.
  */
 fun buildReport(inputDir: File, title: String, generatedAt: String): Report {
-    val runs = InputReader.read(inputDir)
+    val collected = InputReader.readAll(inputDir)
     return Report(
         title = title,
         generatedAt = generatedAt,
-        comparisons = Aggregator.compare(runs),
-        allRuns = runs,
+        comparisons = Aggregator.compare(collected.latest),
+        allRuns = collected.latest,
         collectedBuilds = InputReader.readBuildMetas(inputDir),
+        // generatedAt is the "now" of the recency weighting — the clock is threaded through, the
+        // pure pipeline never reads the wall clock itself.
+        histories = runHistories(collected.allBuilds, parseFinishDate(generatedAt)),
     )
 }
 

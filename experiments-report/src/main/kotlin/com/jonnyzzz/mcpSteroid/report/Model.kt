@@ -17,6 +17,8 @@ data class AgentRun(
     val mode: McpMode,
     val buildConfigId: String? = null,
     val buildId: Long? = null,
+    /** When the build that produced this run finished (collector meta.json `finishDate`); null for old caches. */
+    val finishedAt: java.time.Instant? = null,
     // JUnit / CI test occurrence (authoritative pass/fail of the *test*, lenient: passes if the
     // agent exited cleanly or claimed a fix — NOT a quality signal on its own).
     val testStatus: String? = null,

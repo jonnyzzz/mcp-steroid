@@ -89,6 +89,7 @@ object HtmlRenderer {
 
     // ── Primary: per-agent with/without tables, grouped into scenario buckets ───
     private fun renderComparisons(sb: StringBuilder, report: Report) {
+        val histories = report.histories.associateBy { Triple(it.scenario, it.agent, it.mode) }
         val byAgent = report.comparisons.groupBy { it.agent }.toSortedMap()
         for ((agent, comps) in byAgent) {
             sb.append("<section><h2>").append(esc(agent)).append(" — per task</h2>\n")
@@ -113,6 +114,14 @@ object HtmlRenderer {
                     val toolDiff = renderToolDiff(c.withMcp, c.without)
                     if (toolDiff.isNotEmpty()) {
                         sb.append("<tr class=\"detail\"><td colspan=\"6\">").append(toolDiff).append("</td></tr>\n")
+                    }
+                    // Recency-weighted history over ALL cached builds — one line per leg, and only
+                    // when there is actual history (n > 1): a single run is just the row above.
+                    for ((legLabel, mode) in listOf("with MCP" to McpMode.WITH, "without MCP" to McpMode.WITHOUT)) {
+                        val h = histories[Triple(c.scenario, c.agent, mode)] ?: continue
+                        if (h.runs <= 1) continue
+                        sb.append("<tr class=\"detail\"><td colspan=\"6\"><span class=\"detail-label\">run history — ")
+                            .append(legLabel).append(":</span> ").append(historyLine(h)).append("</td></tr>\n")
                     }
                     val summary = c.withMcp?.summary ?: c.without?.summary
                     if (!summary.isNullOrBlank()) {
@@ -170,6 +179,35 @@ object HtmlRenderer {
 
     private fun shortTool(name: String): String =
         if (name.startsWith("mcp__")) name.substringAfterLast("__") else name
+
+    /**
+     * One leg's history over all cached builds, e.g.
+     * `9 runs over 4 months · 82% ✓ (weighted) · median 4m 58s · $1.02 · 1 crashed · 3 models: a → b`.
+     * Crash count and model-drift note appear only when there is something to disclose.
+     */
+    private fun historyLine(h: RunHistory): String {
+        val bits = mutableListOf<String>()
+        bits += "${h.runs} runs" + (h.spanDays?.let { " over " + fmtSpan(it) } ?: "")
+        h.weightedSuccessPct?.let { bits += "$it% ✓ (weighted)" }
+        h.weightedMedianDurationMs?.let { bits += "median " + fmtDuration(it) }
+        h.weightedMedianCostUsd?.let { bits += "$" + String.format("%.2f", it) }
+        if (h.crashed > 0) bits += "${h.crashed} crashed"
+        if (h.models.size > 1) {
+            bits += "${h.models.size} models: " + esc(h.models.first()) + " → " + esc(h.models.last())
+        }
+        return bits.joinToString(" · ")
+    }
+
+    /** Human age span: days under two weeks, then weeks, then months. */
+    private fun fmtSpan(days: Double): String {
+        val d = Math.round(days).toInt()
+        return when {
+            d <= 1 -> "1 day"
+            d < 14 -> "$d days"
+            d < 61 -> "${Math.round(d / 7.0)} weeks"
+            else -> "${Math.round(d / 30.44)} months"
+        }
+    }
 
     private fun fmtInt(n: Long?): String = if (n == null) "?" else String.format("%,d", n)
 

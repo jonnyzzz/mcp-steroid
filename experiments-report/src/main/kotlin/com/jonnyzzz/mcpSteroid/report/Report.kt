@@ -8,6 +8,8 @@ data class Report(
     val allRuns: List<AgentRun>,
     /** Every build the collector pulled (incl. ones that produced no parseable run data). Empty for a flat local run. */
     val collectedBuilds: List<BuildMeta> = emptyList(),
+    /** Recency-weighted aggregation over ALL cached builds per (scenario, agent, mode) — see [runHistories]. */
+    val histories: List<RunHistory> = emptyList(),
 )
 
 /** One collected build's identity + outcome, from the collector's `meta.json`. Drives the coverage view. */

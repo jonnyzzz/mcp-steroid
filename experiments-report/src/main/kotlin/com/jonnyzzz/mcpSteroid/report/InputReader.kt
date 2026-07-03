@@ -29,14 +29,32 @@ import java.io.File
 object InputReader {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    fun read(root: File): List<AgentRun> {
+    fun read(root: File): List<AgentRun> = readAll(root).latest
+
+    /**
+     * Both views of the cache:
+     *  - [latest] — per (scenario, agent, mode) only the LATEST build's merged run; the primary
+     *    comparison is built exclusively from these.
+     *  - [allBuilds] — one merged run per (scenario, agent, mode, build): every cached build,
+     *    including superseded ones, contributes one attempt to the run history.
+     */
+    data class CollectedRuns(val latest: List<AgentRun>, val allBuilds: List<AgentRun>)
+
+    fun readAll(root: File): CollectedRuns {
         val buildsDir = File(root, "builds")
-        val runs = if (buildsDir.isDirectory) {
-            buildsDir.listFiles { f -> f.isDirectory }.orEmpty().flatMap { readBuildFolder(it) }
-        } else {
-            readFlat(root)
+        if (!buildsDir.isDirectory) {
+            val flat = mergeRuns(readFlat(root))
+            return CollectedRuns(latest = flat, allBuilds = flat)
         }
-        return mergeRuns(latestBuildOnly(runs))
+        // Source-merge stays WITHIN one build folder: each cached build yields its own merged run
+        // per (scenario, agent, mode), so a superseded build survives as a distinct history attempt
+        // and can never leak fields across builds.
+        val perBuild = buildsDir.listFiles { f -> f.isDirectory }.orEmpty().sortedBy { it.name }
+            .flatMap { mergeRuns(readBuildFolder(it)) }
+        return CollectedRuns(
+            latest = mergeRuns(latestBuildOnly(perBuild)),
+            allBuilds = perBuild,
+        )
     }
 
     /**
@@ -105,6 +123,9 @@ object InputReader {
         // latest-build selection can tell fresh runs from a superseded build's leftovers. The folder
         // name (`<configId>__<buildId>`) is the fallback when meta.json is missing.
         val (buildConfigId, buildId) = readBuildIdentity(dir)
+        // …and its finish date (collector meta.json `finishDate` — ISO-8601 or TeamCity format),
+        // the recency signal for the run-history weighting. Old caches without it stay undated.
+        val finishedAt = parseFinishDate(readMetaField(dir, "finishDate"))
 
         val ndjsonRuns = if (ctx == null) emptyList() else files
             .filter { it.name.lowercase().endsWith(".ndjson") }
@@ -127,8 +148,16 @@ object InputReader {
             r.copy(
                 buildConfigId = r.buildConfigId ?: buildConfigId,
                 buildId = r.buildId ?: buildId,
+                finishedAt = r.finishedAt ?: finishedAt,
             )
         }
+    }
+
+    /** One string field out of the folder's meta.json, or null when the file/field is absent. */
+    private fun readMetaField(dir: File, field: String): String? {
+        val meta = File(dir, "meta.json").takeIf { it.isFile } ?: return null
+        val o = runCatching { json.parseToJsonElement(meta.readText()).jsonObject }.getOrNull() ?: return null
+        return o[field]?.jsonPrimitive?.contentOrNull
     }
 
     /** (buildConfigId, buildId) from meta.json, falling back to the `<configId>__<buildId>` dir name. */
