@@ -78,3 +78,14 @@ func TestStatusMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestStatusMessageMentionsRunningIdeFastPath(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(markersDir(home), 0o755) // installing state
+	os.WriteFile(lockPath(home), []byte("1"), 0o644)
+	writeMarker(t, home, 555, "2026-07-03T12:00:00Z", "http://127.0.0.1:6315/mcp")
+	msg := statusMessage(home)
+	if !strings.Contains(msg, "already available") {
+		t.Fatalf("installing message must mention the open-IDE fast path, got: %s", msg)
+	}
+}

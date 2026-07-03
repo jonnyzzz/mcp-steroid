@@ -72,11 +72,15 @@ func statusMessage(home string) string {
 	case "installed":
 		return "✅ devrig is now active — its full IDE toolset is available (send a message if you don't see the tools yet)."
 	case "installing":
+		fast := ""
+		if len(discoverIdeEndpoints(home)) > 0 {
+			fast = " Your open IDE's tools are already available now while this finishes."
+		}
 		return fmt.Sprintf(
 			"⏳ Downloading devrig: ~%d MB of ~%d MB, %s elapsed. It keeps downloading in the "+
 				"background even if you close or restart Claude. When it finishes, the full IDE "+
-				"toolset activates automatically on your next message — no restart needed.",
-			installedMB(home), approxInstallMB, fmtElapsed(installElapsed(home)))
+				"toolset activates automatically on your next message — no restart needed.%s",
+			installedMB(home), approxInstallMB, fmtElapsed(installElapsed(home)), fast)
 	case "failed":
 		reason := readFailedReason(home)
 		if reason == "" {

@@ -28,8 +28,29 @@ EOF
   exit 0
 fi
 
+# Is a running IDE with the MCP Steroid plugin already reachable? If so, the bootstrap bridges to its
+# HTTP MCP endpoint (Tier 1) and the user has full IDE tools NOW, while the download continues. The
+# plugin advertises the endpoint in ~/.mcp-steroid/markers/<pid>.mcp-steroid (mcpSteroidServer.baseUrl).
+IDE_UP=0
+for m in "$HOME"/.mcp-steroid/markers/*.mcp-steroid; do
+  [ -f "$m" ] || continue
+  if grep -q 'mcpSteroidServer' "$m" 2>/dev/null; then IDE_UP=1; break; fi
+done
+
 # Downloading in the background -> reassure the user; the download is detached and tools activate
 # automatically. Do NOT mention /devrig:setup here.
+if [ "$IDE_UP" = "1" ]; then
+  cat <<'EOF'
+{
+  "systemMessage": "⚡ Your open IDE's tools are available now — the full devrig toolset (~500 MB) is still downloading in the background and will activate automatically on your next message when it finishes. No need to wait or restart. Ask me for devrig status anytime.",
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "A running IDE with the MCP Steroid plugin is reachable, so the bootstrap has bridged to its HTTP MCP endpoint (Tier 1): the user ALREADY has the open IDE's tools. Meanwhile the ~500 MB devrig download continues in a DETACHED process (survives quit/restart). When it completes, the bootstrap fires tools/list_changed a second time and swaps to the full devrig backend (Tier 2, adds cross-backend/managed features) automatically on the user's next message — no restart. Call devrig_status for download progress. Do not tell the user to run any manual install command."
+  }
+}
+EOF
+  exit 0
+fi
 cat <<'EOF'
 {
   "systemMessage": "⏳ devrig is installing in the background (~500 MB). It keeps downloading even if you close or restart Claude — no need to wait around. When it finishes, the full IDE toolset activates automatically on your next message — no restart needed. Ask me for devrig status anytime to see progress.",
