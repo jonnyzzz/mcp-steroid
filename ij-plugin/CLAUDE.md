@@ -192,11 +192,12 @@ If the gates pass, the wiring itself is two lines:
 
 Same gate applies to **adding methods on `McpScriptContext`** (Tenet 3 in
 PHILOSOPHY.md): the IntelliJ API is the extension point; context methods
-are last-resort. The `applyPatch { }` DSL on the context class is the
-canonical example — it earned its place because composing multi-site
-literal edits with surrounding PSI / inspections work in one read/write
-cycle is genuinely worth the surface. New context methods must clear
-the same bar.
+are last-resort. The removed `applyPatch { }` DSL is the cautionary
+example — it earned its place for atomic multi-site edits, then lost it
+when full-scale eval data showed 64% of real calls failed on exact-match
+resolution (#206; tolerance-matching successor tracked in #208). New
+context methods must clear both bars: justify the surface AND prove
+agents can use it reliably.
 
 ## IDE control via execute_code
 
@@ -371,7 +372,7 @@ rm -rf ij-plugin/build/idea-sandbox/                            # corrupted inde
 - **ExecCodeParams**: `taskId`, `code`, `reason`, `timeout`, `rawParams`.
 - **ToolCallResult**: `content` (`List<ContentItem>`), `isError`. Use `ToolCallResult.builder()`.
 - **McpScriptContext**: in-script Kotlin runtime context (`project`, `disposable`, `printJson(...)`,
-  `progress(...)`, `applyPatch { }`, `findProjectFile(...)`, `projectScope()`, the inspection /
+  `progress(...)`, `findProjectFile(...)`, `projectScope()`, the inspection /
   highlighting helpers, etc.). See
   `ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/execution/McpScriptContext.kt` for the
   current surface — not enumerated here on purpose, since growing the surface is gated by Tenet 3

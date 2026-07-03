@@ -502,40 +502,4 @@ interface McpScriptContext {
      * ```
      */
     suspend fun findProjectPsiFile(relativePath: String): PsiFile?
-
-    // ============================================================
-    // Multi-Site Literal Patch
-    // ============================================================
-
-    /**
-     * Apply N literal-text substitutions across one or more files as a single
-     * atomic, undoable command. This is the idiomatic replacement for a chain
-     * of native `Edit(old, new)` tool calls — you ship only the data, the
-     * plugin owns the threading and validation.
-     *
-     * Pre-flight (read action) verifies every `oldString` occurs exactly once
-     * in its file; if any hunk is missing or non-unique, an
-     * [ApplyPatchException] is thrown BEFORE any edit lands.
-     *
-     * Apply (write action + one `CommandProcessor.executeCommand`) runs every
-     * hunk as one undo step. Multi-hunk edits in the same file are applied in
-     * descending offset order automatically.
-     *
-     * The returned [ApplyPatchResult] carries per-hunk `path:line:column` info
-     * for auditing; calling `println(result)` emits a human-readable summary.
-     *
-     * ```kotlin
-     * val result = applyPatch {
-     *     hunk("/abs/A.java", "old1", "new1")
-     *     hunk("/abs/A.java", "old2", "new2")
-     *     hunk("/abs/B.java", "oldX", "newX")
-     * }
-     * println(result)
-     * // apply-patch: 3 hunks across 2 file(s) applied atomically.
-     * //   [#0] /abs/A.java:17:5 (12→18 chars)
-     * //   [#1] /abs/A.java:42:9 (5→9 chars)
-     * //   [#2] /abs/B.java:88:13 (7→5 chars)
-     * ```
-     */
-    suspend fun applyPatch(block: ApplyPatchBuilder.() -> Unit): ApplyPatchResult
 }

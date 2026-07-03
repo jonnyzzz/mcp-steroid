@@ -624,12 +624,4 @@ class McpScriptContextImpl(
         return readAction { PsiManager.getInstance(project).findFile(vf) }
     }
 
-    override suspend fun applyPatch(block: ApplyPatchBuilder.() -> Unit): ApplyPatchResult {
-        val builder = ApplyPatchBuilder()
-        builder.block()
-        // Hunk paths resolve through findFile (LocalFileSystem). Note: the resolver
-        // runs inside applyPatch's preflight readAction, where findFile is
-        // snapshot-only (no refresh) — see the findFile read-access guard.
-        return executeApplyPatch(project, builder.hunks) { path -> findFile(path) }
-    }
 }

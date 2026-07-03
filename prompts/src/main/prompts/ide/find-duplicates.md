@@ -384,6 +384,5 @@ The Cross-check recipe's typed imports work in **IDEA Ultimate, PyCharm Pro, Rub
 
 - [Inspection + Quick Fix](mcp-steroid://ide/inspect-and-fix) — single-file inspection + quick fix pattern this recipe extends
 - [Inspection Summary](mcp-steroid://ide/inspection-summary) — list inspections enabled in the project
-- [Apply Patch](mcp-steroid://ide/apply-patch) — atomic multi-site edits, the natural follow-up after locating a clone cluster
 - [Common Patterns](mcp-steroid://skill/coding-with-intellij-patterns) — cross-classloader fallback and find-by-extension recipes used above
 - [IntelliJ API Power User Guide](mcp-steroid://prompt/skill) — top-level skill index

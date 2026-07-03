@@ -342,7 +342,6 @@ println(text)
 | `findFile(p)` / `findPsiFile(p)` | absolute | always refreshes the file from disk outside read/write actions; snapshot-only inside |
 | `findProjectFile(p)` / `findProjectPsiFile(p)` | relative to project root — **absolute also accepted** | same as `findFile` |
 | `findProjectFiles(glob)` | glob relative to project root | iterates the VFS snapshot; NOT a per-path refresh |
-| `applyPatch { hunk(path, …) }` | absolute | resolves during a preflight read action → snapshot-only |
 
 Prefer `?: error("not found: $path")` over `!!` on every lookup — a bare `!!` NPE carries no
 message, while `error(...)` names the exact path that failed.

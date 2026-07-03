@@ -34,9 +34,9 @@ val ideDownloaderClasspath by configurations.creating {
 }
 
 // Extra classpath entries for the per-block kotlinc subprocess in
-// KtBlockCompilationTestBase. The inlined `ApplyPatch.kt` source imports
-// `com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk` (lives in
-// `:mcp-steroid-server` since the extraction in commit acc5650b). The
+// KtBlockCompilationTestBase, for inlined ij-plugin sources that reference
+// sibling-module classes. (Historically `ApplyPatchHunk` via the
+// since-removed `ApplyPatch.kt`, #206; kept as plumbing.) The
 // IDE-home jar walk that builds the rest of the classpath obviously
 // doesn't see project-local outputs — passing this configuration's
 // resolved files via the `mcp.steroid.extra.classpath` system property
@@ -235,7 +235,7 @@ tasks.test {
 
         // Extra binary classpath entries the per-block kotlinc subprocess
         // needs because the inlined ij-plugin sources reference classes that
-        // live in sibling modules (today: ApplyPatchHunk in :mcp-steroid-server).
+        // live in sibling modules (none today; see ktblockExtraClasspath comment).
         // File.pathSeparator-joined absolute paths — same shape kotlinc itself
         // would expect.
         val extraClasspath = ktblockExtraClasspath.files.joinToString(File.pathSeparator) { it.absolutePath }

@@ -1,5 +1,15 @@
 # `steroid_apply_patch` API audit vs standard agent edit tools
 
+> **Status (2026-07-03):** the in-script `applyPatch { }` DSL analyzed below is **removed from
+> the product** ([#206](https://github.com/jonnyzzz/mcp-steroid/issues/206)) after run-3 eval
+> data showed a 64% call failure rate. The efficient successor (tolerance-ladder matching, see
+> the `GenericPatchApplier` section) is backlogged as
+> [#208](https://github.com/jonnyzzz/mcp-steroid/issues/208). Last main revision with the DSL
+> present: [`97363152`](https://github.com/jonnyzzz/mcp-steroid/commit/97363152153f6e6c3077e6ca2265a8aef5f4e2c2).
+> This document stays as the design record for #208. Interim: the platform engine is already
+> reachable today via the `mcp-steroid://ide/apply-unified-diff` recipe (an escape hatch for
+> complex changes / existing diffs — the read-replace-save script remains the primary flow).
+
 Cross-referencing our tool's input shape and semantics against the
 built-in file-mutation tools of the major AI coding CLIs. Evidence
 sources: tool-use NDJSON from the DPAIA autoresearch runs (real Claude

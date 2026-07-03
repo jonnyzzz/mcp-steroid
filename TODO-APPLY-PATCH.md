@@ -39,3 +39,25 @@ each in reverse to bring the surface back. Five removal commits, in order:
 5. `prompts: route corpus through applyPatch { } DSL`
 
 Don't restore wholesale — re-evaluate against Tenet 1's three gates first.
+
+## Chapter 2 — the in-script `applyPatch { }` DSL removed too (July 2026, #206)
+
+Full-scale eval (2026-06-26, 141 tasks) showed the DSL failed **56 of 87
+invocations (64%)** — 52 of them exact-match misses on `old_string` — while
+the prompt corpus actively steered agents into it. Task outcomes were flat
+with or without it; the DSL only added wasted round-trips. Decision:
+remove now, re-introduce only with tolerance matching.
+
+Removed in the #206 PR:
+- `ij-plugin/.../execution/ApplyPatch.kt` (builder, executor, exception, result, `ApplyPatchHunk`)
+- `McpScriptContext.applyPatch` + `McpScriptContextImpl` override
+- `ij-plugin/.../execution/ApplyPatchTest.kt`
+- `prompts/.../ide/apply-patch.md` resource + every corpus reference
+  (tool description steering, overview rows, anchor-safe recipe, arena prompt)
+
+Restore guide: last main revision with the DSL present is
+[`97363152`](https://github.com/jonnyzzz/mcp-steroid/commit/97363152153f6e6c3077e6ca2265a8aef5f4e2c2)
+(2026-07-03). The successor design (IntelliJ `GenericPatchApplier`-style
+tolerance ladder, atomicity preserved) is specified in
+`docs/steroid-apply-patch-api-audit.md` and tracked in
+[#208](https://github.com/jonnyzzz/mcp-steroid/issues/208).

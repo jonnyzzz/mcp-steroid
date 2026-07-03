@@ -118,4 +118,3 @@ withContext(Dispatchers.EDT) {
 - [IntelliJ API Power User Guide](mcp-steroid://prompt/skill)
 - [Inspection + Quick Fix](mcp-steroid://ide/inspect-and-fix)
 - [Run Configuration](mcp-steroid://ide/run-configuration)
-- [Apply Patch — Atomic Multi-Site Edit](mcp-steroid://ide/apply-patch)

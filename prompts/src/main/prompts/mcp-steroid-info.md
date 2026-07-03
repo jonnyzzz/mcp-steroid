@@ -40,7 +40,7 @@ or trivial non-PSI actions only). Finer control (`closeModalDialogs()`, `monitor
 | Find duplicate / cloned / DRY-violation / copy-paste code across the project | `mcp-steroid://ide/find-duplicates` |
 | Run a single named inspection + apply its quick fix | `mcp-steroid://ide/inspect-and-fix` |
 | List which inspections are enabled in the project | `mcp-steroid://ide/inspection-summary` |
-| Apply the same edit across many files atomically | `mcp-steroid://ide/apply-patch` (the `applyPatch { }` DSL inside `steroid_execute_code`) |
+| Apply the same edit across many files | one `steroid_execute_code` script: read + replace each file, save all in a single `writeAction { }` |
 | Find usages of a symbol | `mcp-steroid://lsp/find-references` |
 | Run a debug session on a test | `mcp-steroid://ide/demo-debug-test` |
 

@@ -58,7 +58,7 @@ Adding state to devrig requires:
 
 ## Tenet 4 — `McpScriptContext` methods are last-resort
 
-**Don't add methods to `McpScriptContext` casually.** The current surface (see the `McpScriptContext` source for the exact list — `project`, `disposable`, `printJson(...)`, `progress(...)`, `applyPatch { }`, `findProjectFile(...)`, `projectScope()`, the inspection / highlighting helpers, etc.) exists because the IntelliJ API genuinely couldn't cover those cases at the time. They are not the extension point — the IntelliJ API is. The surface is already substantial; that's why "don't grow it" is a tenet, not a preference.
+**Don't add methods to `McpScriptContext` casually.** The current surface (see the `McpScriptContext` source for the exact list — `project`, `disposable`, `printJson(...)`, `progress(...)`, `findProjectFile(...)`, `projectScope()`, the inspection / highlighting helpers, etc.) exists because the IntelliJ API genuinely couldn't cover those cases at the time. They are not the extension point — the IntelliJ API is. The surface is already substantial; that's why "don't grow it" is a tenet, not a preference.
 
 A new context method requires:
 
@@ -66,7 +66,7 @@ A new context method requires:
 2. Three-reviewer consensus across `run-agent.sh codex` / `claude` / `gemini`. **One reviewer disagreeing kills the proposal** — propose a recipe instead.
 3. The new method teaches an idiom reusable across many tasks, not one specific scenario.
 
-`applyPatch { }` is the canonical example: the script-context DSL lives on `McpScriptContext` because composing multi-site literal edits with surrounding IntelliJ API work in one read/write cycle is genuinely worth the surface. The `mcp-steroid://ide/apply-patch` recipe drives it inside `steroid_execute_code` — there is no dedicated MCP tool wrapping it.
+`applyPatch { }` is the cautionary example: the DSL earned its place on `McpScriptContext` for atomic multi-site edits, but eval data showed its exact-match resolution failed 64% of real calls — so it was removed (2026-07, #206) rather than kept as an attractive-but-unreliable surface. The tenet cuts both ways: don't grow the surface casually, and remove what the data shows agents cannot use reliably. A tolerance-matching successor is tracked in #208.
 
 # In practice
 

@@ -116,7 +116,7 @@ git log --oneline --grep="onFinalTasksFinished\|JDK 24\|Gradle abort"
 git log --oneline -- prompts/src/main/prompts/skill/execute-code-gradle.md
 git log --oneline -- test-experiments/src/test/kotlin/com/jonnyzzz/mcpSteroid/integration/arena/ArenaTestRunner.kt
 
-# Apply-patch DSL persistence — applyPatch { } inside steroid_execute_code saves every touched document.
+# Apply-patch history — the steroid_apply_patch tool (removed May 2026) and the applyPatch { } DSL (removed July 2026, #206).
 git log --oneline --grep="apply.patch\|ApplyPatch"
 
 # Aborted-build result-boundary guidance — ExecuteCodeToolHandler appends REQUIRED ACTION hint

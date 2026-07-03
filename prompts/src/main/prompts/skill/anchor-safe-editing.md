@@ -5,11 +5,10 @@ Locate, excerpt, unique-occurrence check, apply, verify — the four-step recipe
 # When to use this recipe
 
 You are about to mutate an existing file by literal-text replacement —
-via the `applyPatch { hunk(...) }` DSL inside `steroid_execute_code` or a
-manual `content.replace(OLD, NEW)` shape. The patch will be rejected if
-the `old_string` you ship isn't present **exactly once** in the file.
-This page is the four-step pre-flight that makes the patch land on the
-first attempt.
+the `content.replace(OLD, NEW)` shape inside `steroid_execute_code`. The
+edit silently does nothing (or edits the wrong site) if the `old_string`
+you ship isn't present **exactly once** in the file. This page is the
+four-step pre-flight that makes the edit land on the first attempt.
 
 ## Step 1 — Locate the file via the index, not a hand-typed path
 
@@ -93,13 +92,13 @@ same way as the first.
 
 ## Step 4 — Apply, then verify
 
-Apply the patch via the `applyPatch { hunk(...) }` DSL inside
-`steroid_execute_code` (one or many hunks). Then re-read the file and
-assert the new text is present — the patch engine guarantees
-atomicity but does not guarantee semantic correctness:
+Apply the edit with the read-outside-write-inside shape, then re-read
+the file and assert the new text is present — a clean write does not
+guarantee semantic correctness:
 
 ```kotlin
 import com.intellij.psi.search.FilenameIndex
+import com.intellij.openapi.vfs.VfsUtil
 
 val vf = readAction {
     FilenameIndex.getVirtualFilesByName("FeatureService.java", projectScope()).single()
@@ -107,24 +106,22 @@ val vf = readAction {
 val oldString = "fun findByStatus(status: Status): List<Feature>"
 val newString = "fun findByStatus(status: Status, limit: Int = 50): List<Feature>"
 
-applyPatch {
-    hunk(filePath = vf.path, oldString = oldString, newString = newString)
-}
+val content = String(vf.contentsToByteArray(), vf.charset)
+check(content.contains(oldString)) { "old_string not found in ${vf.path}" }
+writeAction { VfsUtil.saveText(vf, content.replace(oldString, newString)) }
 
-val after = readAction { String(vf.contentsToByteArray(), vf.charset) }
-check(after.contains(newString)) { "patch reported success but new_string not in ${vf.path}" }
+val after = String(vf.contentsToByteArray(), vf.charset)
+check(after.contains(newString)) { "write reported success but new_string not in ${vf.path}" }
 println("PATCHED: ${vf.path}")
 ```
 
-For a single literal-text replacement *outside* a multi-hunk
-transaction, the read-outside-write-inside shape covers the same flow
-without `applyPatch`: see the "writeAction — Read Outside, Write
-Inside" example in
+For the threading rules behind this shape see the "writeAction — Read
+Outside, Write Inside" example in
 [Threading and Read/Write Actions](mcp-steroid://skill/coding-with-intellij-threading).
 
 # See also
 
-- [Apply Patch — Atomic Multi-Site Edit](mcp-steroid://ide/apply-patch)
+- [Apply a Unified Diff](mcp-steroid://ide/apply-unified-diff) — the IDE's tolerance-matching patch engine, for complex changes when literal anchors keep failing
 - [McpScriptContext API Reference](mcp-steroid://skill/coding-with-intellij-context-api)
 - [Threading and Read/Write Actions](mcp-steroid://skill/coding-with-intellij-threading)
 - [VFS access](mcp-steroid://skill/coding-with-intellij-vfs)

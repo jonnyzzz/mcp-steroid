@@ -13,12 +13,12 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 
 | Resource | Operation | Description |
 |----------|-----------|-------------|
-| `mcp-steroid://ide/apply-patch` | Apply Patch (multi-site edit) | Atomic N-site literal-text replacement across one or more files, in one undoable command |
 | `mcp-steroid://ide/extract-method` | Extract Method | Extract selected statements into a new method |
 | `mcp-steroid://ide/introduce-variable` | Introduce Variable | Extract expression into a new local variable |
 | `mcp-steroid://ide/inline-method` | Inline Method | Inline method body at call sites |
 | `mcp-steroid://ide/change-signature` | Change Signature | Add/reorder parameters and update call sites |
 | `mcp-steroid://ide/move-file` | Move File | Move a file to another directory and update references |
+| `mcp-steroid://ide/apply-unified-diff` | Apply a Unified Diff (tolerance matching) | The IDE's own patch engine for COMPLEX changes / existing diffs — not the primary edit flow |
 | `mcp-steroid://ide/safe-delete` | Safe Delete | Safely remove elements with usage analysis |
 | `mcp-steroid://ide/pull-up-members` | Pull Up Members | Move members to a base class |
 | `mcp-steroid://ide/push-down-members` | Push Down Members | Move members to subclasses |

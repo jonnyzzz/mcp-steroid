@@ -46,13 +46,14 @@ A new tool may be added only when **all** of these are true:
 
 Anything short of that — propose a recipe instead.
 
-**Worked example — `steroid_apply_patch` removed.** A dedicated patch tool
-duplicated what `steroid_execute_code` + the in-script `applyPatch { }` DSL
-+ `mcp-steroid://ide/apply-patch` already deliver: data-only multi-site
-edits, atomicity, VFS refresh. The tool added schema surface and a forked
-recipe corpus without enabling anything the recipe couldn't. Removing it
-is what Tenet 1 looks like in practice — unlock IDE depth rather than
-optimize a generic edit path.
+**Worked example — apply-patch removed, twice.** A dedicated
+`steroid_apply_patch` tool duplicated what `steroid_execute_code` already
+delivers and was removed (May 2026). The in-script `applyPatch { }` DSL
+survived it — until full-scale eval data showed its exact-match resolution
+failed 64% of real calls, and it was removed too (#206, July 2026); a
+tolerance-matching successor is backlogged as #208. Both removals are what
+Tenet 1 looks like in practice — unlock IDE depth rather than keep an
+attractive-but-unreliable generic edit path.
 
 ## Tenet 2 — power lives in prompts and direct IntelliJ API usage
 
@@ -143,7 +144,7 @@ Concretely:
 exposed to scripts running inside `steroid_execute_code` (see
 `ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/execution/McpScriptContext.kt`
 for the current surface — `project`, `disposable`, `printJson(...)`,
-`progress(...)`, `applyPatch { }`, `findProjectFile(...)`, `projectScope()`,
+`progress(...)`, `findProjectFile(...)`, `projectScope()`,
 the inspection / highlighting helpers, etc.) exist because the
 IntelliJ API genuinely could not cover the case at the time. They are
 not the default extension point; the IntelliJ API is. The surface is
@@ -160,14 +161,13 @@ preference.
 3. The new method must teach an idiom that's reusable across many tasks,
    not specialised to one DPAIA scenario.
 
-**`applyPatch { }` is the canonical example of how we earn a script-context
-method.** The DSL lives on `McpScriptContext` because composing
-multi-site literal edits with surrounding IntelliJ API work (PSI walk →
-patch → inspections in one read/write cycle) is genuinely worth the
-surface. Production guidance routes agents to the
-`mcp-steroid://ide/apply-patch` recipe inside `steroid_execute_code` —
-there is no dedicated MCP tool wrapping it. New context methods must
-clear the same bar.
+**`applyPatch { }` is the cautionary example of this bar.** The DSL earned
+its `McpScriptContext` seat for atomic multi-site edits — and lost it when
+eval data showed 64% of real calls failed on exact-match resolution
+(removed in #206; tolerance-matching successor tracked in #208). Earning
+the surface is necessary but not sufficient: a method must also prove
+agents can use it reliably at scale. New context methods must clear both
+bars.
 
 ## Tenet 5 — the devrig↔plugin WIRE is additive-only (the devrig-computed output is not)
 

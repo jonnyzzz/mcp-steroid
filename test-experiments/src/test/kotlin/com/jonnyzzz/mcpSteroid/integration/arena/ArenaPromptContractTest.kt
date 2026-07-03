@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
 class ArenaPromptContractTest {
 
     @Test
-    fun `mcp prompt routes multi-site edits through applyPatch DSL and keeps verification rerun guardrails`() {
+    fun `mcp prompt routes multi-site edits through one write action script and keeps verification rerun guardrails`() {
         val prompt = ArenaTestRunner(
             container = ContainerDriver(
                 logPrefix = "prompt-test",
@@ -24,13 +24,17 @@ class ArenaPromptContractTest {
             prompt.contains("steroid_apply_patch"),
             "The dedicated apply-patch tool was removed — prompts must not name it",
         )
-        assertTrue(
-            prompt.contains("applyPatch { }") || prompt.contains("applyPatch {\n"),
-            "MCP prompt should route multi-site edits through the applyPatch { } DSL inside steroid_execute_code",
+        assertFalse(
+            prompt.contains("applyPatch"),
+            "The applyPatch { } DSL was removed (#206) — prompts must not route agents to it",
+        )
+        assertFalse(
+            prompt.contains("mcp-steroid://ide/apply-patch"),
+            "The apply-patch recipe resource was removed (#206) — prompts must not link it",
         )
         assertTrue(
-            prompt.contains("mcp-steroid://ide/apply-patch"),
-            "Prompt should link agents to the apply-patch recipe",
+            prompt.contains("Multi-site edits") && prompt.contains("writeAction { }"),
+            "MCP prompt should route multi-site edits through a single writeAction script inside steroid_execute_code",
         )
         assertFalse(
             prompt.contains("Run each Maven/Gradle verification target at most once"),

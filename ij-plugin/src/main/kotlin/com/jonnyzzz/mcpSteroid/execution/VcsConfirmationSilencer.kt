@@ -18,7 +18,7 @@ import com.intellij.openapi.vcs.VcsShowConfirmationOption
  * ### Why
  *
  * MCP Steroid agents create and delete files via [steroid_execute_code]
- * (with the in-script `applyPatch { }` DSL). The platform's default for
+ * (VfsUtil.saveText / createChildData and friends). The platform's default for
  * `VcsConfiguration.StandardConfirmation.ADD` is
  * [VcsShowConfirmationOption.Value.SHOW_CONFIRMATION], which surfaces a modal
  * dialog on the EDT every time a new unversioned file appears in a Git-tracked

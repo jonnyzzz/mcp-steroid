@@ -245,10 +245,10 @@ abstract class KtBlockCompilationTestBase {
 
         /**
          * Extra binary classpath entries the per-block kotlinc subprocess needs
-         * because the inlined ij-plugin sources reference classes that live in
-         * sibling project modules — not in any IDE-bundled jar. Today the only
-         * such reference is `ApplyPatchHunk` in `:mcp-steroid-server` (imported
-         * from `ApplyPatch.kt`, which the test inlines). Populated by Gradle:
+         * because the inlined ij-plugin sources may reference classes that live
+         * in sibling project modules — not in any IDE-bundled jar. (Historically
+         * `ApplyPatchHunk` via the since-removed `ApplyPatch.kt`, #206; kept as
+         * plumbing for future cases.) Populated by Gradle:
          * see `prompts/build.gradle.kts` → `ktblockExtraClasspath` configuration
          * and the `mcp.steroid.extra.classpath` system property in
          * `tasks.test.doFirst`. Empty if the property is unset, which keeps
@@ -266,10 +266,7 @@ abstract class KtBlockCompilationTestBase {
             val ijSourcesDir = System.getProperty("mcp.steroid.ij.sources")
                 ?: error("Missing system property 'mcp.steroid.ij.sources'")
             val executionDir = Path.of(ijSourcesDir, "com", "jonnyzzz", "mcpSteroid", "execution")
-            // ApplyPatch.kt defines ApplyPatchBuilder / ApplyPatchResult / ApplyPatchException,
-            // which McpScriptContext.kt references at its `applyPatch { }` extension — must be
-            // supplied to kotlinc alongside so fenced-block scripts that use the DSL compile.
-            listOf("McpScriptContext.kt", "McpScriptBuilder.kt", "ApplyPatch.kt").map { fileName ->
+            listOf("McpScriptContext.kt", "McpScriptBuilder.kt").map { fileName ->
                 val file = executionDir.resolve(fileName)
                 require(file.isRegularFile()) { "ij-plugin source file not found: $file" }
                 file

@@ -52,15 +52,14 @@ writeAction { VfsUtil.saveText(vf, updated) }  // write INSIDE writeAction
 
 ---
 
-## Multi-Site Literal Edits: Use the `applyPatch { }` DSL
+## Multi-Site Literal Edits: One Script, One Write Action
 
-When you need two or more literal substitutions in one file or across many files, wrap them in a
-single `steroid_execute_code` call that uses the script-context `applyPatch { hunk(...); hunk(...) }`
-DSL — not a chain of native `Edit` calls.
-
-The DSL validates all hunks before writing, applies them as one undoable IDE command, commits PSI in
-place, and the editing guard inlined into `steroid_execute_code` refreshes VFS after the script returns. Read
-`mcp-steroid://ide/apply-patch` for the full recipe.
+When you need two or more literal substitutions in one file or across many files, do them in a
+single `steroid_execute_code` call — not a chain of native `Edit` calls. Read each file, apply
+`content.replace(OLD, NEW)`, pre-check every match, then save all files inside one
+`writeAction { }`. VFS + PSI stay consistent, and the plugin refreshes VFS after the script
+returns. The anchor-safe recipe (`mcp-steroid://skill/anchor-safe-editing`) shows the full
+locate → excerpt → check → apply → verify flow.
 
 ---
 

@@ -28,13 +28,6 @@ object CodeWrapperForCompilation {
         "import kotlinx.coroutines.*",
         "import kotlin.time.Duration.Companion.seconds",
         "import kotlin.time.Duration.Companion.minutes",
-        // Expose ApplyPatchBuilder / ApplyPatchResult / ApplyPatchException so that
-        // fenced-block examples in `ide/apply-patch.md` and user scripts can use
-        // the DSL classes by short name — e.g. `catch (e: ApplyPatchException)`
-        // without a fully-qualified name.
-        "import com.jonnyzzz.mcpSteroid.execution.ApplyPatchBuilder",
-        "import com.jonnyzzz.mcpSteroid.execution.ApplyPatchException",
-        "import com.jonnyzzz.mcpSteroid.execution.ApplyPatchResult",
     )
 
     const val DEFAULT_SCRIPT_CONTEXT_FQN = "com.jonnyzzz.mcpSteroid.execution.McpScriptContext"
