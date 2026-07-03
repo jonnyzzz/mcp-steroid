@@ -22,10 +22,11 @@ var backendInitIDRaw = json.RawMessage(`"` + backendInitID + `"`)
 
 // backend is a live `devrig mcp` child the proxy forwards traffic to.
 type backend struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	reader *msgReader
-	writer *msgWriter
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	reader   *msgReader
+	writer   *msgWriter
+	shutdown func() // stops the backend (kill child / close HTTP pump); nil until set
 }
 
 // newBackend wires a backend over arbitrary streams (tests use in-memory pipes).
@@ -110,5 +111,6 @@ func startBackend(home, protocolVersion string) (*backend, error) {
 	if err := runHandshakeWithTimeout(b, protocolVersion, kill); err != nil {
 		return nil, err
 	}
+	b.shutdown = kill
 	return b, nil
 }
