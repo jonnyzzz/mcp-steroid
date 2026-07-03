@@ -38,15 +38,14 @@ class SelfBackendDescription(
     val projects: List<ListedProject>,
 )
 
-fun describeSelfBackend(): SelfBackendDescription {
+suspend fun describeSelfBackend(): SelfBackendDescription {
     val ide = IdeInfo.ofApplication()
     val pid = ProcessHandle.current().pid()
     val selfBackendName = backendNameForMarker(pid = pid, build = ide.build)
 
-    // Lock-free (#214): ProjectManager.getOpenProjects() is documented safe outside a read
-    // action when each project is filtered for isDisposed — this keeps steroid_list_projects /
-    // steroid_list_windows responsive while a hung read action blocks a pending write action.
-    val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDisposed }
+    val openProjects = run { // #214: no read action — must not park behind a pending write (wedges every tool)
+        ProjectManager.getInstance().openProjects.toList()
+    }
 
     val listedProjects = openProjects.map { project ->
         ListedProject(

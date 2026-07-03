@@ -32,14 +32,12 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
             logger.info("steroid_open_project received backend_name='$it' on a direct IDE connection; ignoring (routing applies only via devrig).")
         }
 
-        // Check if project is already open. Lock-free (#214): getOpenProjects() is documented
-        // safe outside a read action when each project is checked for isDisposed — a suspend
-        // readAction here would park behind any pending write action and wedge the tool.
-        val existingProject = ProjectManager.getInstance().openProjects
-            .filter { !it.isDisposed }
-            .find { project ->
+        // Check if project is already open
+        val existingProject = run { // #214: no read action — must not park behind a pending write (wedges every tool)
+            ProjectManager.getInstance().openProjects.find { project ->
                 project.basePath?.let { Path.of(it).toAbsolutePath().normalize() == projectPath.normalize() } == true
             }
+        }
 
         if (existingProject != null) {
             return ToolCallResult.builder()

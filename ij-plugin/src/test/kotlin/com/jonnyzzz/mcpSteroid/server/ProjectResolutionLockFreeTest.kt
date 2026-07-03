@@ -148,7 +148,7 @@ class ProjectResolutionLockFreeTest : BasePlatformTestCase() {
         }
     }
 
-    fun testResolveProjectNotFoundListsAvailableProjectNames() {
+    fun testResolveProjectNotFoundListsAvailableProjectNames(): Unit = timeoutRunBlocking(30.seconds) {
         try {
             service<ProjectScopedToolHandler>().resolveProject("no-such-project-214")
             fail("resolveProject must throw ToolCallErrorException for an unknown project name")
