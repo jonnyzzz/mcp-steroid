@@ -279,9 +279,9 @@ class ScriptExecutor(
             // frames are still live (the stuck block keeps running after withTimeout fires; a
             // non-cancellable read action does not unwind from outside). Never throws: a failed
             // dump is logged at WARN inside and must not mask the timeout report below.
-            captureDiagnosticDumps(project, executionId, "timeout")
+            val dumpsWritten = captureDiagnosticDumps(project, executionId, "timeout")
             resultBuilder.logRemappedException("Execution timed out", e, evalResult.lineMapping)
-            resultBuilder.reportFailed(timeoutFailureMessage(exec.timeout, executionId))
+            resultBuilder.reportFailed(timeoutFailureMessage(exec.timeout, executionId, dumpsWritten))
         } catch (e: CancellationException) {
             throw e
         } catch (e: ProcessCanceledException) {
@@ -312,8 +312,9 @@ class ScriptExecutor(
      * ONLY, never the dump content (dumps are large; the agent reads the files on demand).
      * Resolving the folder must not mask the timeout report either, so it is best-effort.
      */
-    private fun timeoutFailureMessage(timeoutSeconds: Int, executionId: ExecutionId): String {
+    private fun timeoutFailureMessage(timeoutSeconds: Int, executionId: ExecutionId, dumpsWritten: Boolean): String {
         val base = "Execution timed out after $timeoutSeconds seconds"
+        if (!dumpsWritten) return base
         val dumpDir = try {
             project.executionStorage.resolveExecutionDir(executionId).toAbsolutePath()
         } catch (e: Exception) {

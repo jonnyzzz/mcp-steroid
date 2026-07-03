@@ -359,17 +359,20 @@ class ScriptExecutorTest : BasePlatformTestCase() {
     }
 
     /**
-     * #215: a failed dump capture must never mask the timeout report. Instead of a test-only
-     * injection seam (banned), the dump write is made to fail for real: a directory squats the
-     * `thread-dump-timeout.txt` filename, so the storage write throws. The execution must still
-     * fail with the plain timeout message.
+     * #215: a failed dump capture must never mask the timeout report, and the FAILED line
+     * must not CLAIM dumps were stored when nothing was written. Instead of a test-only
+     * injection seam (banned), both dump writes are made to fail for real: directories squat
+     * the `thread-dump-timeout.txt` AND `coroutine-dump-timeout.txt` filenames, so both
+     * storage writes throw (per-file isolation means squatting only one would still yield
+     * the other file — and then claiming storage would be correct).
      */
     fun testDumpCaptureFailureDoesNotMaskTimeoutError(): Unit = timeoutRunBlocking(60.seconds) {
         // Unique id for the same reason as testTimeoutWritesDumpsAndReportsFolderPathOnly — this
-        // test squats the dump filename with a directory, which must not leak into other tests.
+        // test squats the dump filenames with directories, which must not leak into other tests.
         val executionId = ExecutionId("test-215-dump-failure-${System.nanoTime()}")
         val dir = project.executionStorage.resolveExecutionDir(executionId)
         Files.createDirectories(dir.resolve("thread-dump-timeout.txt"))
+        Files.createDirectories(dir.resolve("coroutine-dump-timeout.txt"))
 
         val builder = TestResultBuilder()
         executor.executeWithProgress(
@@ -383,8 +386,12 @@ class ScriptExecutorTest : BasePlatformTestCase() {
         val failure = builder.failureMessage ?: ""
         if (failure.contains("timed out")) {
             assertTrue(
-                "timeout must be reported even when the dump write fails: $failure",
+                "timeout must be reported even when the dump writes fail: $failure",
                 failure.contains("Execution timed out after 1 seconds")
+            )
+            assertFalse(
+                "FAILED line must not claim dumps were stored when nothing was written: $failure",
+                failure.contains("stored at")
             )
         }
     }

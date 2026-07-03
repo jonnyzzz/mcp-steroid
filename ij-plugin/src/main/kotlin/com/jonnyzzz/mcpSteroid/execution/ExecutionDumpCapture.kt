@@ -45,22 +45,47 @@ const val COROUTINE_DUMP_UNAVAILABLE_NOTE: String =
  * for control-flow exceptions); any other failure is logged at WARN and swallowed, so the caller's
  * failure report still happens.
  */
-suspend fun captureDiagnosticDumps(project: Project, executionId: ExecutionId, reason: String) {
+/**
+ * @return true when at least one dump file was written — callers use this to decide whether
+ * the user-facing failure message may claim that diagnostics were stored (review #215:
+ * never claim "dumps stored at <path>" when nothing was written).
+ */
+suspend fun captureDiagnosticDumps(project: Project, executionId: ExecutionId, reason: String): Boolean {
     try {
         val threadDump = ThreadDumper.dumpThreadsToString()
         val coroutineDump = dumpCoroutines(stripDump = false) ?: COROUTINE_DUMP_UNAVAILABLE_NOTE
         val storage = project.executionStorage
+        // Each file is written independently: a squatting/failed thread-dump write must not
+        // kill the coroutine dump (and vice versa). On a write failure the captured dump is
+        // preserved in idea.log at WARN — matching the pre-#215 modal-path behavior of never
+        // losing a captured dump.
+        var written = 0
         withContext(NonCancellable + Dispatchers.IO) {
-            storage.writeCodeExecutionData(executionId, "thread-dump-$reason.txt", threadDump)
-            storage.writeCodeExecutionData(executionId, "coroutine-dump-$reason.txt", coroutineDump)
+            for ((fileName, content) in listOf(
+                "thread-dump-$reason.txt" to threadDump,
+                "coroutine-dump-$reason.txt" to coroutineDump,
+            )) {
+                try {
+                    storage.writeCodeExecutionData(executionId, fileName, content)
+                    written++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.warn("[$executionId] failed to write $fileName ($reason): ${e.message}; dump follows:\n$content")
+                }
+            }
         }
-        log.info(
-            "[$executionId] thread + coroutine dumps ($reason) written to " +
-                storage.resolveExecutionDir(executionId).toAbsolutePath()
-        )
+        if (written > 0) {
+            log.info(
+                "[$executionId] diagnostic dumps ($reason, $written file(s)) written to " +
+                    storage.resolveExecutionDir(executionId).toAbsolutePath()
+            )
+        }
+        return written > 0
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         log.warn("[$executionId] failed to capture diagnostic dumps ($reason): ${e.message}")
+        return false
     }
 }
