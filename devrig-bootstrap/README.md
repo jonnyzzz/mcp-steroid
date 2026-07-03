@@ -10,10 +10,19 @@ instead so Claude sees a **green** MCP server (never "✗ Failed to connect"). I
   runs in a **detached re-exec of this binary** (`DEVRIG_BOOTSTRAP_ROLE_INSTALLER=1`,
   a "supervisor" that owns the lock heartbeat + failure markers) so it **survives
   Claude quitting or restarting** — a later bootstrap picks up the finished binary;
-- **stays alive as a proxy**: when the download finishes, the bootstrap spawns
-  `devrig mcp`, hot-swaps to it, and fires `notifications/tools/list_changed`
-  so Claude activates the full toolset on the user's next message — no restart
-  needed;
+- **stays alive as a proxy** and activates tools in up to three tiers, firing
+  `notifications/tools/list_changed` at each swap so Claude re-fetches the
+  toolset on the user's next message — no restart at any point:
+  - **Tier 0** — before any backend is ready, serves one tool, `devrig_status`;
+  - **Tier 1 (seconds, no download)** — if an IDE running the MCP Steroid plugin
+    is already open, it advertises its HTTP MCP endpoint in
+    `~/.mcp-steroid/markers/<pid>.mcp-steroid` (`mcpSteroidServer.baseUrl`). The
+    bootstrap bridges to it over Streamable HTTP and proxies the full IDE
+    toolset immediately, on the IDE's own JBR;
+  - **Tier 2 (after the ~500 MB download)** — spawns `devrig mcp`, swaps to it
+    (superseding Tier 1), adding cross-backend routing and managed-backend
+    lifecycle. If no IDE is open, the proxy goes Tier 0 → Tier 2 directly, exactly
+    as before;
 - gets out of the way on subsequent launches: once `~/.mcp-steroid/bin/devrig`
   exists, the launcher runs that directly and this binary is no longer used.
 
@@ -52,8 +61,11 @@ forgot to regenerate them.
 | `install.go` | background install, single-flight lock, heartbeat |
 | `progress.go` | markers, log, download-size progress |
 | `jsonrpc.go` | JSON-RPC message types (`rpcRequest`, `rpcResponse`, `rpcMessage`) and framing helpers |
-| `backend.go` | `backend`: wraps the spawned `devrig mcp` process, owns its stdin/stdout pipes |
-| `proxy.go` | `proxy`: hot-swap MCP proxy — forwards client↔backend traffic, ID-prefixes server-initiated requests, fires `tools/list_changed` after swap |
+| `backend.go` | `backend`: wraps the spawned `devrig mcp` process, owns its stdin/stdout pipes + a `shutdown` hook |
+| `marker.go` | `discoverIdeEndpoints`: reads `<pid>.mcp-steroid` markers, returns running IDEs' HTTP MCP endpoints (newest first) |
+| `httpmcp.go` | `httpMcpClient`: minimal Streamable-HTTP MCP client (POST + `Mcp-Session-Id`) for the IDE endpoint |
+| `httpbackend.go` | `newHTTPBackend`: presents a running IDE's HTTP endpoint as a `backend` so the proxy forwards to it unchanged |
+| `proxy.go` | `proxy`: tiered hot-swap MCP proxy — Tier 1 (`swapToIde`) then Tier 2 (`swapToDevrig`); forwards client↔backend traffic, ID-prefixes server-initiated requests, fires `tools/list_changed` at each swap |
 
 Tunable constants: `approxInstallMB` (progress total, `progress.go`),
 `heartbeatInterval` / `installLockStaleAfter` (`status.go`), installer URLs

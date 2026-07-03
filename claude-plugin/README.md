@@ -22,11 +22,16 @@ running IntelliJ-based IDE from Claude via the devrig bridge.
 3. **The download runs detached — you can keep working, close, or restart Claude**
    and it keeps going in the background. Check progress anytime: `/devrig:status`
    or just ask for "devrig status".
-4. When the download **finishes, the full IDE toolset activates automatically on
+4. **If an IDE with the MCP Steroid plugin is already open, its tools activate
+   within seconds — no download wait.** The bootstrap bridges to the running
+   IDE's built-in MCP endpoint and fires `notifications/tools/list_changed`, so
+   you get the full IDE toolset immediately while the ~500 MB download continues.
+5. When the download **finishes, the full devrig toolset activates automatically on
    your next message** — no restart needed. (The bootstrap fires
-   `notifications/tools/list_changed` so Claude picks up the new tools
-   immediately.)
-5. `/devrig:setup` is only needed to **retry a failed download** or to fetch the
+   `notifications/tools/list_changed` a second time, swapping to the full backend
+   for cross-backend/managed features. If no IDE was open, this is the point the
+   tools first appear.)
+6. `/devrig:setup` is only needed to **retry a failed download** or to fetch the
    binary immediately instead of waiting.
 
 The downloaded binary lands at `~/.mcp-steroid/bin/devrig`; once present, the
