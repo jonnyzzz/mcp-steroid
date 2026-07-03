@@ -14,16 +14,21 @@ For similar edits across **two or more files** (same pattern, different paths), 
 ```kotlin
 val edits = listOf(
     Triple("/abs/path/A.java", "oldA", "newA"),
+    Triple("/abs/path/A.java", "oldA2", "newA2"),  // same-file edits are folded, in order
     Triple("/abs/path/B.java", "oldB", "newB"),
 )
-val resolved = edits.map { (path, old, new) ->
+val resolved = edits.groupBy { it.first }.map { (path, fileEdits) ->
     val vf = findProjectFile(path) ?: error("not found: $path")
-    val content = String(vf.contentsToByteArray(), vf.charset)
-    check(content.contains(old)) { "no match in $path — verify with Grep first" }
-    Triple(vf, content.replace(old, new), path)
+    var content = String(vf.contentsToByteArray(), vf.charset)
+    for ((_, old, new) in fileEdits) {   // each edit sees the previous one's result
+        val occurrences = content.split(old).size - 1
+        check(occurrences == 1) { "$path: anchor occurs $occurrences times — expand it with surrounding context" }
+        content = content.replace(old, new)
+    }
+    vf to content
 }
-writeAction { resolved.forEach { (vf, updated, _) -> VfsUtil.saveText(vf, updated) } }
-println("edited: " + resolved.joinToString { it.third })
+writeAction { resolved.forEach { (vf, updated) -> VfsUtil.saveText(vf, updated) } }
+println("edited: " + resolved.joinToString { it.first.path })
 ```
 
 The pre-check loop validates every match before any write lands; `VfsUtil.saveText` keeps

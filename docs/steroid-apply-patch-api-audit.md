@@ -91,8 +91,9 @@ byte-for-byte.
    lines inside the hunk body**, trims identical tails, pads short hunks — genuine fuzzy
    application as a last resort.
 
-Whatever still fails lands in a `myNotBound` list and the result is **PARTIAL**, never a hard
-stop. Our DSL does step 0 only: `document.text.indexOf(old_string)` must succeed and be unique
+Whatever still fails lands in a `myNotBound` list and surfaces as **PARTIAL** in the
+interactive VCS flow (note: the batch entry point `GenericPatchApplier.apply` instead returns
+`null` when `execute()` fails — callers like `ApplyTextFilePatch` map that to FAILURE). Our DSL does step 0 only: `document.text.indexOf(old_string)` must succeed and be unique
 (`ApplyPatch.kt:156-168`); any miss rejects the whole patch.
 
 There is also a strict platform variant — `PlainSimplePatchApplier` (`@ApiStatus.Internal`),

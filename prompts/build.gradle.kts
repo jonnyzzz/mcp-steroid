@@ -59,7 +59,6 @@ dependencies {
 
     kotlincDist(project(":kotlin-cli"))
     ideDownloaderClasspath(project(":intellij-downloader"))
-    ktblockExtraClasspath(project(":mcp-steroid-server"))
 }
 
 val generatedSources = layout.buildDirectory.dir("generated/kotlin/prompts")

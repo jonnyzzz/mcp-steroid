@@ -83,23 +83,56 @@ class MultiSiteEditRecipeTest : BasePlatformTestCase() {
         val b = createProjectFile("recipe/multi/B.java", "class B { void oldB() {} }")
         val c = createProjectFile("recipe/multi/C.java", "class C { void oldC() {} }")
 
-        // The execute-code-tool-description "Multi-site edits" recipe:
+        // The execute-code-tool-description "Multi-site edits" recipe, verbatim shape:
         val edits = listOf(
             Triple(a.path, "oldA", "newA"),
             Triple(b.path, "oldB", "newB"),
             Triple(c.path, "oldC", "newC"),
         )
-        val resolved = edits.map { (path, old, new) ->
-            val vf = context.findFile(path) ?: error("not found: $path")
-            val content = String(vf.contentsToByteArray(), vf.charset)
-            check(content.contains(old)) { "no match in $path — verify with Grep first" }
-            Triple(vf, content.replace(old, new), path)
+        val resolved = edits.groupBy { it.first }.map { (path, fileEdits) ->
+            val vf = context.findProjectFile(path) ?: error("not found: $path")
+            var content = String(vf.contentsToByteArray(), vf.charset)
+            for ((_, old, new) in fileEdits) {
+                val occurrences = content.split(old).size - 1
+                check(occurrences == 1) { "$path: anchor occurs $occurrences times — expand it with surrounding context" }
+                content = content.replace(old, new)
+            }
+            vf to content
         }
-        context.writeAction { resolved.forEach { (vf, updated, _) -> VfsUtil.saveText(vf, updated) } }
+        context.writeAction { resolved.forEach { (vf, updated) -> VfsUtil.saveText(vf, updated) } }
 
         assertEquals("class A { void newA() {} }", diskText(a))
         assertEquals("class B { void newB() {} }", diskText(b))
         assertEquals("class C { void newC() {} }", diskText(c))
+    }
+
+    fun testTwoEditsInTheSameFileBothLand(): Unit = timeoutRunBlocking(30.seconds) {
+        // The same-file case: edits to one file must FOLD (each sees the previous
+        // result) — a naive per-edit map over the original content silently loses
+        // all but the last write. This pins the grouped-fold shape the fence teaches.
+        val context = createContext()
+        val vf = createProjectFile("recipe/fold/F.java", "class F { void one() {} void two() {} }")
+
+        val edits = listOf(
+            Triple(vf.path, "one()", "uno()"),
+            Triple(vf.path, "two()", "dos()"),
+        )
+        val resolved = edits.groupBy { it.first }.map { (path, fileEdits) ->
+            val file = context.findProjectFile(path) ?: error("not found: $path")
+            var content = String(file.contentsToByteArray(), file.charset)
+            for ((_, old, new) in fileEdits) {
+                val occurrences = content.split(old).size - 1
+                check(occurrences == 1) { "$path: anchor occurs $occurrences times — expand it with surrounding context" }
+                content = content.replace(old, new)
+            }
+            file to content
+        }
+        context.writeAction { resolved.forEach { (file, updated) -> VfsUtil.saveText(file, updated) } }
+
+        assertEquals(
+            "BOTH same-file edits must land, not just the last one",
+            "class F { void uno() {} void dos() {} }", diskText(vf),
+        )
     }
 
     fun testPreCheckFailureLeavesAllFilesUntouched(): Unit = timeoutRunBlocking(30.seconds) {
@@ -112,13 +145,17 @@ class MultiSiteEditRecipeTest : BasePlatformTestCase() {
             Triple(b.path, "oldB", "newB"),   // not present — must fail the batch pre-check
         )
         val thrown = runCatching {
-            val resolved = edits.map { (path, old, new) ->
-                val vf = context.findFile(path) ?: error("not found: $path")
-                val content = String(vf.contentsToByteArray(), vf.charset)
-                check(content.contains(old)) { "no match in $path — verify with Grep first" }
-                Triple(vf, content.replace(old, new), path)
+            val resolved = edits.groupBy { it.first }.map { (path, fileEdits) ->
+                val vf = context.findProjectFile(path) ?: error("not found: $path")
+                var content = String(vf.contentsToByteArray(), vf.charset)
+                for ((_, old, new) in fileEdits) {
+                    val occurrences = content.split(old).size - 1
+                    check(occurrences == 1) { "$path: anchor occurs $occurrences times — expand it with surrounding context" }
+                    content = content.replace(old, new)
+                }
+                vf to content
             }
-            context.writeAction { resolved.forEach { (vf, updated, _) -> VfsUtil.saveText(vf, updated) } }
+            context.writeAction { resolved.forEach { (vf, updated) -> VfsUtil.saveText(vf, updated) } }
         }.exceptionOrNull()
 
         assertNotNull("batch with a bad anchor must fail in the pre-check", thrown)

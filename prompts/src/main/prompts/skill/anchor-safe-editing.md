@@ -63,10 +63,11 @@ println(content.substring(start, end))
 
 ## Step 3 — Verify exactly-one-occurrence BEFORE applying
 
-The patch engine rejects multi-occurrence anchors with
-`old_string occurs more than once` — but rejection costs a tool call.
-Count it yourself first; if it's > 1, expand `old_string` with
-surrounding context (preceding line, enclosing class) until unique:
+`content.replace(OLD, NEW)` replaces EVERY occurrence — an ambiguous
+anchor silently edits sites you never meant to touch. The explicit
+`check(occurrences == 1)` below is the only guard, so count BEFORE
+applying; if it's > 1, expand `old_string` with surrounding context
+(preceding line, enclosing class) until unique:
 
 ```kotlin
 import com.intellij.psi.search.FilenameIndex

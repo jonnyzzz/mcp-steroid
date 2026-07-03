@@ -42,12 +42,16 @@ val diffText = """
 +        return x * 2 + 1;
      }
  }
+
 """.trimIndent()
 
 val reader = PatchReader(diffText)
 reader.parseAllPatches()
 
 for (patch in reader.textPatches) {
+    check(!patch.isNewFile && !patch.isDeletedFile) {
+        "this recipe applies UPDATE hunks only — create files via VfsUtil / delete via vf.delete(this) in a writeAction"
+    }
     val relativePath = patch.beforeName ?: patch.afterName ?: error("patch without a file name")
     val vf = findProjectFile(relativePath) ?: error("not found: $relativePath")
     val text = String(vf.contentsToByteArray(), vf.charset)
@@ -80,6 +84,10 @@ tests. The engine guarantees a match was found, not that the result is semantica
 
 ## Caveats
 
+- **Update hunks only.** A `git diff` can carry file creations (`--- /dev/null`) and deletions
+  (`+++ /dev/null`); this recipe guards against both — without the guard a creation fails with a
+  misleading "not found" and a deletion would EMPTY the file while reporting success. Create and
+  delete files through the VFS APIs instead.
 - **Context lines matter.** The tolerance ladder works off the hunk's context lines — give
   each hunk 2-3 unchanged lines around the change (standard `git diff` output already does).
   A context-free diff degrades to exact matching.
