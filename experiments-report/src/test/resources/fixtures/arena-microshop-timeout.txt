@@ -1,0 +1,93 @@
+[23:37:17] :		 [:test-experiments:test]     [ARENA] Downloading dataset from https://raw.githubusercontent.com/dpaia/ee-dataset/main/datasets/java-spring-ee-dataset.json ...
+[23:37:17] :		 [:test-experiments:test]     [ARENA] Loaded 154 test cases
+[23:37:17] :		 [:test-experiments:test]     [ARENA] Creating container for [claude+mcp] dpaia__spring__boot__microshop-18 ...
+[ARENA] Downloading dataset from https://raw.githubusercontent.com/dpaia/ee-dataset/main/datasets/java-spring-ee-dataset.json ...
+[ARENA] Loaded 154 test cases
+[ARENA] Creating container for [claude+mcp] dpaia__spring__boot__microshop-18 ...
+[23:45:18] :		 [:test-experiments:test]     [ARENA] ========================================
+[23:45:18] :		 [:test-experiments:test]     [ARENA] Running: dpaia__spring__boot__microshop-18
+[23:45:18] :		 [:test-experiments:test]     [ARENA] Repo: dpaia/spring-boot-microshop.git
+[23:45:18] :		 [:test-experiments:test]     [ARENA] Tags: [API, Controller, Endpoints, REST]
+[23:45:18] :		 [:test-experiments:test]     [ARENA] Build: gradle
+[23:45:18] :		 [:test-experiments:test]     [ARENA] Using pre-deployed project at /home/agent/project-home (skipping clone+patch)
+[23:45:18] :		 [:test-experiments:test]     [ARENA] Prompt length: 34109 chars
+[23:45:18] :		 [:test-experiments:test]     [ARENA] Running agent (timeout: 900s) ...
+[ARENA] ========================================
+[ARENA] Running: dpaia__spring__boot__microshop-18
+[ARENA] Repo: dpaia/spring-boot-microshop.git
+[ARENA] Tags: [API, Controller, Endpoints, REST]
+[ARENA] Build: gradle
+[ARENA] Using pre-deployed project at /home/agent/project-home (skipping clone+patch)
+[ARENA] Prompt length: 34109 chars
+[ARENA] Running agent (timeout: 900s) ...
+[00:00:18] :		 [:test-experiments:test]     [ARENA] ========================================
+[00:00:18] :		 [:test-experiments:test]     [ARENA] Result for dpaia__spring__boot__microshop-18:
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Agent exit code: -1
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Agent claimed fix: false
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Used MCP: true
+[00:00:18] :		 [:test-experiments:test]     [ARENA] Run summary written to: /mnt/agent/work/3303fb6b47f20d72/test-experiments/build/test-logs/test/dpaia-arena-run-dpaia__spring__boot__microshop-18-claude-mcp.json
+[00:00:18] :		 [:test-experiments:test]     [ARENA] Comparison CSV appended to: /mnt/agent/work/3303fb6b47f20d72/test-experiments/build/test-logs/test/arena-comparison.csv
+[00:00:18] :		 [:test-experiments:test]     [ARENA] ════════════════════════════════════════
+[00:00:18] :		 [:test-experiments:test]     [ARENA] claude+mcp — dpaia__spring__boot__microshop-18
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Claimed fix:    false
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Used MCP:       true
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Exit code:      -1
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Agent time:     900s
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Prewarm time:   0s
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   exec_code:      4
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Read/Edit/Write: 59/9/13
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Glob/Grep/Bash: 0/0/15
+[00:00:18] :		 [:test-experiments:test]     [ARENA]   Summary:        (none)
+[ARENA] Result for dpaia__spring__boot__microshop-18:
+[ARENA]   Agent exit code: -1
+[ARENA]   Agent claimed fix: false
+[ARENA]   Used MCP: true
+[ARENA] Run summary written to: /mnt/agent/work/3303fb6b47f20d72/test-experiments/build/test-logs/test/dpaia-arena-run-dpaia__spring__boot__microshop-18-claude-mcp.json
+[ARENA] Comparison CSV appended to: /mnt/agent/work/3303fb6b47f20d72/test-experiments/build/test-logs/test/arena-comparison.csv
+[ARENA] ════════════════════════════════════════
+[ARENA] claude+mcp — dpaia__spring__boot__microshop-18
+[ARENA]   Claimed fix:    false
+[ARENA]   Used MCP:       true
+[ARENA]   Exit code:      -1
+[ARENA]   Agent time:     900s
+[ARENA]   Prewarm time:   0s
+[ARENA]   exec_code:      4
+[ARENA]   Read/Edit/Write: 59/9/13
+[ARENA]   Glob/Grep/Bash: 0/0/15
+[ARENA]   Summary:        (none)
+[00:04:38] :		 [:test-experiments:test]     [ARENA] Creating container for [claude+none] dpaia__spring__boot__microshop-18 ...
+[ARENA] Creating container for [claude+none] dpaia__spring__boot__microshop-18 ...
+[00:08:06] :		 [:test-experiments:test]     [ARENA] ========================================
+[00:08:06] :		 [:test-experiments:test]     [ARENA] Running: dpaia__spring__boot__microshop-18
+[00:08:06] :		 [:test-experiments:test]     [ARENA] Repo: dpaia/spring-boot-microshop.git
+[00:08:06] :		 [:test-experiments:test]     [ARENA] Tags: [API, Controller, Endpoints, REST]
+[00:08:06] :		 [:test-experiments:test]     [ARENA] Build: gradle
+[00:08:06] :		 [:test-experiments:test]     [ARENA] Using pre-deployed project at /home/agent/project-home (skipping clone+patch)
+[00:08:06] :		 [:test-experiments:test]     [ARENA] Prompt length: 19800 chars
+[00:08:06] :		 [:test-experiments:test]     [ARENA] Running agent (timeout: 900s) ...
+[ARENA] Prompt length: 19800 chars
+[00:23:06] :		 [:test-experiments:test]     [ARENA] ========================================
+[00:23:06] :		 [:test-experiments:test]     [ARENA] Result for dpaia__spring__boot__microshop-18:
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Agent exit code: -1
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Agent claimed fix: false
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Used MCP: false
+[00:23:06] :		 [:test-experiments:test]     [ARENA] Run summary written to: /mnt/agent/work/3303fb6b47f20d72/test-experiments/build/test-logs/test/dpaia-arena-run-dpaia__spring__boot__microshop-18-claude-none.json
+[00:23:06] :		 [:test-experiments:test]     [ARENA] Comparison CSV appended to: /mnt/agent/work/3303fb6b47f20d72/test-experiments/build/test-logs/test/arena-comparison.csv
+[00:23:06] :		 [:test-experiments:test]     [ARENA] ════════════════════════════════════════
+[00:23:06] :		 [:test-experiments:test]     [ARENA] claude+none — dpaia__spring__boot__microshop-18
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Claimed fix:    false
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Used MCP:       false
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Exit code:      -1
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Agent time:     900s
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Prewarm time:   0s
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   exec_code:      0
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Read/Edit/Write: 128/5/14
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Glob/Grep/Bash: 0/0/56
+[00:23:06] :		 [:test-experiments:test]     [ARENA]   Summary:        (none)
+[ARENA]   Used MCP: false
+[ARENA] Run summary written to: /mnt/agent/work/3303fb6b47f20d72/test-experiments/build/test-logs/test/dpaia-arena-run-dpaia__spring__boot__microshop-18-claude-none.json
+[ARENA] claude+none — dpaia__spring__boot__microshop-18
+[ARENA]   Used MCP:       false
+[ARENA]   exec_code:      0
+[ARENA]   Read/Edit/Write: 128/5/14
+[ARENA]   Glob/Grep/Bash: 0/0/56

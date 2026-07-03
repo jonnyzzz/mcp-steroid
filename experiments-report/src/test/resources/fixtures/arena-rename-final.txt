@@ -1,0 +1,48 @@
+[22:03:43] :		 [:test-experiments:test]     [ARENA] claude+mcp — keycloak__rename_safety
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Claimed fix:    true
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Used MCP:       true
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Exit code:      0
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Agent time:     459s
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Tokens in/out:  3822/25730
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Cost:           $1.3568725000000001
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Turns:          14
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   exec_code:      8
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Read/Edit/Write: 0/0/0
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Glob/Grep/Bash: 0/0/0
+[22:03:43] :		 [:test-experiments:test]     [ARENA]   Summary:        renameDone=true buildGreen=true
+[ARENA] claude+mcp — keycloak__rename_safety
+[ARENA]   Claimed fix:    true
+[ARENA]   Used MCP:       true
+[ARENA]   Exit code:      0
+[ARENA]   Agent time:     459s
+[ARENA]   Tokens in/out:  3822/25730
+[ARENA]   Cost:           $1.3568725000000001
+[ARENA]   Turns:          14
+[ARENA]   exec_code:      8
+[ARENA]   Read/Edit/Write: 0/0/0
+[ARENA]   Glob/Grep/Bash: 0/0/0
+[ARENA]   Summary:        renameDone=true buildGreen=true
+[22:31:50] :		 [:test-experiments:test]     [ARENA] claude+none — keycloak__rename_safety
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Claimed fix:    false
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Used MCP:       false
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Exit code:      1
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Agent time:     1089s
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Tokens in/out:  0/0
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Cost:           $0.80209375
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Turns:          1
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   exec_code:      0
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Read/Edit/Write: 3/0/2
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Glob/Grep/Bash: 0/0/14
+[22:31:50] :		 [:test-experiments:test]     [ARENA]   Summary:        renameDone=false buildGreen=null
+[ARENA] claude+none — keycloak__rename_safety
+[ARENA]   Claimed fix:    false
+[ARENA]   Used MCP:       false
+[ARENA]   Exit code:      1
+[ARENA]   Agent time:     1089s
+[ARENA]   Tokens in/out:  0/0
+[ARENA]   Cost:           $0.80209375
+[ARENA]   Turns:          1
+[ARENA]   exec_code:      0
+[ARENA]   Read/Edit/Write: 3/0/2
+[ARENA]   Glob/Grep/Bash: 0/0/14
+[ARENA]   Summary:        renameDone=false buildGreen=null

@@ -1,0 +1,39 @@
+[21:18:25] :		 [:test-experiments:test]     [ARENA] claude+mcp — keycloak__rename_safety
+[21:18:25] :		 [:test-experiments:test]     [ARENA]   Claimed fix:    false
+[21:18:25] :		 [:test-experiments:test]     [ARENA]   Used MCP:       true
+[21:18:25] :		 [:test-experiments:test]     [ARENA]   Exit code:      1
+[21:18:25] :		 [:test-experiments:test]     [ARENA]   Agent time:     2s
+[21:18:25] :		 [:test-experiments:test]     [ARENA]   Tokens in/out:  0/0
+[21:18:25] :		 [:test-experiments:test]     [ARENA]   Cost:           $0.0
+[21:18:25] :		 [:test-experiments:test]     [ARENA]   Turns:          1
+[21:18:25] :		 [:test-experiments:test]     [ARENA]   Summary:        renameDone=false buildGreen=null
+[ARENA] claude+mcp — keycloak__rename_safety
+[ARENA]   Claimed fix:    false
+[ARENA]   Used MCP:       true
+[ARENA]   Exit code:      1
+[ARENA]   Agent time:     2s
+[ARENA]   Tokens in/out:  0/0
+[ARENA]   Cost:           $0.0
+[ARENA]   Turns:          1
+[ARENA]   Summary:        renameDone=false buildGreen=null
+[21:33:27] :		 [:test-experiments:test]     [ARENA] claude+none — keycloak__rename_safety
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Claimed fix:    false
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Used MCP:       false
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Exit code:      1
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Agent time:     412s
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Tokens in/out:  2632/12782
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Cost:           $0.9208205
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Turns:          23
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   exec_code:      0
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Read/Edit/Write: 1/1/0
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Glob/Grep/Bash: 0/0/15
+[21:33:27] :		 [:test-experiments:test]     [ARENA]   Summary:        renameDone=false buildGreen=null
+[ARENA] claude+none — keycloak__rename_safety
+[ARENA]   Used MCP:       false
+[ARENA]   Agent time:     412s
+[ARENA]   Tokens in/out:  2632/12782
+[ARENA]   Cost:           $0.9208205
+[ARENA]   Turns:          23
+[ARENA]   exec_code:      0
+[ARENA]   Read/Edit/Write: 1/1/0
+[ARENA]   Glob/Grep/Bash: 0/0/15

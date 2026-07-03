@@ -36,7 +36,26 @@ object InputReader {
         } else {
             readFlat(root)
         }
-        return mergeRuns(runs)
+        return mergeRuns(latestBuildOnly(runs))
+    }
+
+    /**
+     * Keep, per (scenario, agent, mode), only the runs of the LATEST build. The fetch cache is
+     * incremental — superseded builds' folders stay on disk — and [mergeRuns] merges *sources of one
+     * run*, so without this cut a stale build's crashed run leaks fields into (or entirely shadows)
+     * the newest build's data. Observed on KeycloakRename_Claude 2026-07-02: a superseded 429-crash
+     * leg (2s, 0/0 tokens) displaced the fresh successful run on the rendered dashboard. Runs without
+     * a buildId (flat/local layout) are never dropped.
+     */
+    private fun latestBuildOnly(runs: List<AgentRun>): List<AgentRun> {
+        val latest = HashMap<Triple<String, String, McpMode>, Long>()
+        for (r in runs) {
+            val id = r.buildId ?: continue
+            latest.merge(Triple(r.scenario, r.agent, r.mode), id, ::maxOf)
+        }
+        return runs.filter { r ->
+            r.buildId == null || r.buildId == latest[Triple(r.scenario, r.agent, r.mode)]
+        }
     }
 
     /** Every collected build's `meta.json` (collector layout only) — for the coverage view. */
@@ -82,6 +101,11 @@ object InputReader {
         // (scenario, agent) for this build: the log/summary tells us; meta.json is the fallback.
         val ctx = selfId.firstOrNull()?.let { it.scenario to it.agent } ?: readMeta(dir)
 
+        // Every run parsed inside this folder belongs to THIS build — stamp its identity so
+        // latest-build selection can tell fresh runs from a superseded build's leftovers. The folder
+        // name (`<configId>__<buildId>`) is the fallback when meta.json is missing.
+        val (buildConfigId, buildId) = readBuildIdentity(dir)
+
         val ndjsonRuns = if (ctx == null) emptyList() else files
             .filter { it.name.lowercase().endsWith(".ndjson") }
             .mapNotNull { f ->
@@ -99,7 +123,32 @@ object InputReader {
                 )
             }
 
-        return selfId + ndjsonRuns
+        return (selfId + ndjsonRuns).map { r ->
+            r.copy(
+                buildConfigId = r.buildConfigId ?: buildConfigId,
+                buildId = r.buildId ?: buildId,
+            )
+        }
+    }
+
+    /** (buildConfigId, buildId) from meta.json, falling back to the `<configId>__<buildId>` dir name. */
+    private fun readBuildIdentity(dir: File): Pair<String?, Long?> {
+        val meta = File(dir, "meta.json").takeIf { it.isFile }
+        if (meta != null) {
+            val o = runCatching { json.parseToJsonElement(meta.readText()).jsonObject }.getOrNull()
+            if (o != null) {
+                val cfg = o["buildConfigId"]?.jsonPrimitive?.contentOrNull
+                val bid = o["buildId"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                if (cfg != null || bid != null) return cfg to bid
+            }
+        }
+        val name = dir.name
+        val sep = name.lastIndexOf("__")
+        if (sep > 0) {
+            val bid = name.substring(sep + 2).toLongOrNull()
+            if (bid != null) return name.substring(0, sep) to bid
+        }
+        return name to null
     }
 
     /** mcp / none from a path segment (run dir names like `runs/mcp` or `run-…-none`). */

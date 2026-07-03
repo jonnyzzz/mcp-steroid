@@ -121,6 +121,9 @@ object HtmlRenderer {
     private fun runCell(r: AgentRun?): String {
         if (r == null) return "<span class=\"missing\">— no run —</span>"
         val bits = mutableListOf<String>()
+        // A crashed leg leads with the tooling failure so its raw numbers (0/0 tokens, a partial
+        // duration) read as "what the broken run left behind", not as a genuine task outcome.
+        if (r.agentCrashed()) bits += "<span class=\"bad\">⚠ agent failed (exit ${r.exitCode})</span>"
         r.claimedFix?.let { bits += if (it) "<span class=\"ok\">✔ fix</span>" else "<span class=\"bad\">✗ no fix</span>" }
         r.buildSuccess?.let { bits += if (it) "<span class=\"ok\">build ✔</span>" else "<span class=\"bad\">build ✗</span>" }
         if (r.testsRun != null) bits += "tests ${r.testsRun - (r.testsFail ?: 0)}/${r.testsRun}"
