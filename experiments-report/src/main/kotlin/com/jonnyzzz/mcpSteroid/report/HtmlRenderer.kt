@@ -87,7 +87,7 @@ object HtmlRenderer {
         sb.append("</section>\n")
     }
 
-    // ── Primary: per-agent with/without tables ──────────────────────────────────
+    // ── Primary: per-agent with/without tables, grouped into scenario buckets ───
     private fun renderComparisons(sb: StringBuilder, report: Report) {
         val byAgent = report.comparisons.groupBy { it.agent }.toSortedMap()
         for ((agent, comps) in byAgent) {
@@ -95,23 +95,30 @@ object HtmlRenderer {
             sb.append("<table>\n<thead><tr>")
             sb.append("<th>task</th><th>verdict</th><th>with MCP</th><th>without MCP</th><th>Δ agent time</th><th>Δ cost</th>")
             sb.append("</tr></thead>\n<tbody>\n")
-            for (c in comps) {
-                sb.append("<tr>")
-                sb.append("<td class=\"task\">").append(esc(c.scenario)).append("</td>")
-                sb.append("<td>").append(verdictBadge(c.verdict)).append("</td>")
-                sb.append("<td>").append(runCell(c.withMcp)).append("</td>")
-                sb.append("<td>").append(runCell(c.without)).append("</td>")
-                sb.append("<td class=\"num\">").append(durationDelta(c.durationDeltaMs)).append("</td>")
-                sb.append("<td class=\"num\">").append(costDelta(c.costDeltaUsd)).append("</td>")
-                sb.append("</tr>\n")
-                val toolDiff = renderToolDiff(c.withMcp, c.without)
-                if (toolDiff.isNotEmpty()) {
-                    sb.append("<tr class=\"detail\"><td colspan=\"6\">").append(toolDiff).append("</td></tr>\n")
-                }
-                val summary = c.withMcp?.summary ?: c.without?.summary
-                if (!summary.isNullOrBlank()) {
-                    sb.append("<tr class=\"detail\"><td colspan=\"6\"><span class=\"detail-label\">summary:</span> ")
-                        .append(esc(summary)).append("</td></tr>\n")
+            // Scenario buckets in display order (IDE power leads, DPAIA gets its dedicated heading);
+            // a bucket with no rows renders no heading.
+            val byBucket = comps.groupBy { scenarioBucket(it.scenario) }
+            for (bucket in ScenarioBucket.entries) {
+                val rows = byBucket[bucket] ?: continue
+                sb.append("<tr class=\"bucket\"><td colspan=\"6\">").append(esc(bucket.title)).append("</td></tr>\n")
+                for (c in rows) {
+                    sb.append("<tr>")
+                    sb.append("<td class=\"task\">").append(esc(c.scenario)).append("</td>")
+                    sb.append("<td>").append(verdictBadge(c.verdict)).append("</td>")
+                    sb.append("<td>").append(runCell(c.withMcp)).append("</td>")
+                    sb.append("<td>").append(runCell(c.without)).append("</td>")
+                    sb.append("<td class=\"num\">").append(durationDelta(c.durationDeltaMs)).append("</td>")
+                    sb.append("<td class=\"num\">").append(costDelta(c.costDeltaUsd)).append("</td>")
+                    sb.append("</tr>\n")
+                    val toolDiff = renderToolDiff(c.withMcp, c.without)
+                    if (toolDiff.isNotEmpty()) {
+                        sb.append("<tr class=\"detail\"><td colspan=\"6\">").append(toolDiff).append("</td></tr>\n")
+                    }
+                    val summary = c.withMcp?.summary ?: c.without?.summary
+                    if (!summary.isNullOrBlank()) {
+                        sb.append("<tr class=\"detail\"><td colspan=\"6\"><span class=\"detail-label\">summary:</span> ")
+                            .append(esc(summary)).append("</td></tr>\n")
+                    }
                 }
             }
             sb.append("</tbody>\n</table>\n</section>\n")
@@ -288,6 +295,7 @@ object HtmlRenderer {
         .seg.helped { fill:#2f9e44; } .seg.hurt { fill:#e03131; }
         .seg.neutral { fill:#5c636e; } .seg.incomplete { fill:#e8950c; }
         .missing { color:var(--grey); font-style:italic; }
+        tr.bucket td { background:var(--bg2, #f3f4f6); font-weight:600; text-transform:uppercase; font-size:11px; letter-spacing:.06em; color:var(--grey); padding-top:14px; }
         .empty { color:var(--mut); }
         footer { padding:16px 28px; color:var(--mut); font-size:12px; }
     """.trimIndent()
