@@ -6,6 +6,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.platform.ide.progress.withBackgroundProgress
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
@@ -53,7 +54,16 @@ class ExecutionManager(
         exec: ExecCodeParams,
         mcpProgressReporter: McpProgressReporter,
     ): ToolCallResult {
-        return coroutineScope {
+        // The execution runs as a VISIBLE, cancellable IDE background task
+        // (com.intellij.platform.ide.progress.withBackgroundProgress — the coroutine-native
+        // progress API). Cancellation is fully platform-handled: the Cancel button cancels
+        // this coroutine (PlatformTaskSupport subscribes to the task entity and calls
+        // context.cancel()), and when the coroutine ends for ANY reason — completion,
+        // failure, script timeout, or the HTTP request coroutine being cancelled on client
+        // disconnect (this suspend fun is a child of the Ktor request coroutine; structured
+        // concurrency propagates) — the task disappears from the status bar automatically.
+        // No manual wiring is needed or wanted.
+        return withBackgroundProgress(project, "devrig -- MCP Steroid task", cancellable = true) { coroutineScope {
             val executionId = project.executionStorage.writeNewExecution(exec)
             withContext(CoroutineName("mcp-steroid-$executionId")) {
                 log.info("Starting execution $executionId-${exec.taskId}-${exec.reason}...")
@@ -121,7 +131,7 @@ class ExecutionManager(
 
                 builder.build()
             }
-        }
+        } }
     }
 
     private fun responseBuilder(parentScope: CoroutineScope, executionId: ExecutionId, mcpProgress: McpProgressReporter) = object : ExecutionResultBuilder {

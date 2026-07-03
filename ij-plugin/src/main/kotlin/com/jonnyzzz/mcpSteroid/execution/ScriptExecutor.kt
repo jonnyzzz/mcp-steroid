@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.execution
 
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
@@ -252,6 +253,12 @@ class ScriptExecutor(
             resultBuilder.logRemappedException("Execution timed out", e, evalResult.lineMapping)
             resultBuilder.reportFailed("Execution timed out after ${exec.timeout} seconds")
         } catch (e: CancellationException) {
+            throw e
+        } catch (e: ProcessCanceledException) {
+            // Control-flow exception (Logger contract): rethrow, never report as a script
+            // failure. On current platforms PCE extends CancellationException, so the CE
+            // branch above already covers it — this branch is explicit defense for any
+            // PCE that does not.
             throw e
         } catch (t: Throwable) {
             // #156: never report an empty error. A messageless throwable (e.g. the bare

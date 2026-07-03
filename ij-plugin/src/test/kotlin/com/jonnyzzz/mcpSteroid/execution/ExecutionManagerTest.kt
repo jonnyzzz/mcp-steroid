@@ -10,6 +10,10 @@ import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.server.NoOpProgressReporter
 import com.jonnyzzz.mcpSteroid.setSystemPropertyForTest
 import com.jonnyzzz.mcpSteroid.testExecParams
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -49,6 +53,31 @@ class ExecutionManagerTest : BasePlatformTestCase() {
         )
         assertFalse("non_modal should pass the non-modal gate headless: ${getTextContent(result)}", result.isError)
         assertTrue("Should have output", getTextContent(result).contains("hi non_modal"))
+    }
+
+    fun testParentCoroutineCancellationUnwindsExecution(): Unit = timeoutRunBlocking(60.seconds) {
+        // The execution coroutine is a CHILD of the HTTP request coroutine (executeWithProgress
+        // is a plain suspend fun — no scope hop), so a client disconnect cancels the Ktor
+        // request coroutine and structured concurrency must unwind the running execution —
+        // and with it the visible background task (the platform removes it when the
+        // coroutine ends, PlatformTaskSupport). Simulate the disconnect by cancelling the
+        // calling coroutine mid-script.
+        val manager = project.service<ExecutionManager>()
+        val started = CompletableDeferred<Unit>()
+        val job = launch {
+            started.complete(Unit)
+            manager.executeWithProgress(
+                testExecParams("kotlinx.coroutines.delay(60_000)", timeout = 55),
+                NoOpProgressReporter,
+            )
+        }
+        started.await()
+        delay(2_000) // let the execution get past compile into the script
+        val took = kotlin.time.measureTime { job.cancelAndJoin() }
+        assertTrue(
+            "cancelling the parent coroutine must unwind the execution promptly, took $took",
+            took < 15.seconds,
+        )
     }
 
     fun testExecuteWithProgressSuccess(): Unit = timeoutRunBlocking(30.seconds) {
