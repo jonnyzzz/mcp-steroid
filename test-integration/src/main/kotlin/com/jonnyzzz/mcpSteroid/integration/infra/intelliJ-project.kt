@@ -176,6 +176,27 @@ sealed class IntelliJProject{
         override val openFileOnStart: String = "mockwebserver/src/main/kotlin/okhttp3/mockwebserver/RecordedRequest.kt"
     }
 
+    /**
+     * github.com/jonnyzzz/x11k — a single-module Kotlin/JVM headless X11 server (~97k LOC, Gradle
+     * 9.6, Kotlin 2.4.0, `jvmToolchain(25)`, JUnit Jupiter + kotlin-test), pinned to a fixed
+     * commit because every x11k experiment scores against ground truth derived AT this revision
+     * (kotlinc `extraWarnings` sites, `XSyncProtocolTest.kt` call-site line numbers, `X11State.kt`
+     * line counts). The repo's Docker-based tests (Xvfb parity, IntelliJ smoke) need
+     * docker-in-docker and are NOT exercised — experiments build/test only the in-process suites.
+     * When bumping the pin, re-derive every dependent ground-truth list at the new commit.
+     */
+    object X11kPinnedProject : ProjectFromRemoteGit(
+        "https://github.com/jonnyzzz/x11k.git",
+        // main @ 2026-07-03
+        gitRef = "cfdf1f7d171df2581b63f7dfe675c343f6c86882",
+    ) {
+        // build.gradle.kts pins jvmToolchain(25) + JvmTarget.JVM_25; the container ships temurin-25.
+        override val jdkVersion: String = "25"
+        override val buildSystems: Set<ProjectBuildSystem> =
+            setOf(ProjectBuildSystem(BuildSystem.GRADLE, "settings.gradle.kts"))
+        override val openFileOnStart: String = "README.md"
+    }
+
     /** A real Android (Gradle) project, used to exercise Android Studio. Google's official base template. */
     object AndroidSampleProject : ProjectFromRemoteGit("https://github.com/android/architecture-templates.git")
 
