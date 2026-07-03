@@ -3,7 +3,6 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.ide.GeneralSettings
 import com.intellij.ide.trustedProjects.TrustedProjects
-import com.intellij.openapi.application.readAction
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
@@ -33,12 +32,14 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
             logger.info("steroid_open_project received backend_name='$it' on a direct IDE connection; ignoring (routing applies only via devrig).")
         }
 
-        // Check if project is already open
-        val existingProject = readAction {
-            ProjectManager.getInstance().openProjects.find { project ->
+        // Check if project is already open. Lock-free (#214): getOpenProjects() is documented
+        // safe outside a read action when each project is checked for isDisposed — a suspend
+        // readAction here would park behind any pending write action and wedge the tool.
+        val existingProject = ProjectManager.getInstance().openProjects
+            .filter { !it.isDisposed }
+            .find { project ->
                 project.basePath?.let { Path.of(it).toAbsolutePath().normalize() == projectPath.normalize() } == true
             }
-        }
 
         if (existingProject != null) {
             return ToolCallResult.builder()

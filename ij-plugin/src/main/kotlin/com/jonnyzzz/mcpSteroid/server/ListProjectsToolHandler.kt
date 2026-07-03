@@ -1,7 +1,6 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
-import com.intellij.openapi.application.readAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.IdeInfo
@@ -39,14 +38,15 @@ class SelfBackendDescription(
     val projects: List<ListedProject>,
 )
 
-suspend fun describeSelfBackend(): SelfBackendDescription {
+fun describeSelfBackend(): SelfBackendDescription {
     val ide = IdeInfo.ofApplication()
     val pid = ProcessHandle.current().pid()
     val selfBackendName = backendNameForMarker(pid = pid, build = ide.build)
 
-    val openProjects = readAction {
-        ProjectManager.getInstance().openProjects.toList()
-    }
+    // Lock-free (#214): ProjectManager.getOpenProjects() is documented safe outside a read
+    // action when each project is filtered for isDisposed — this keeps steroid_list_projects /
+    // steroid_list_windows responsive while a hung read action blocks a pending write action.
+    val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDisposed }
 
     val listedProjects = openProjects.map { project ->
         ListedProject(
