@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.execution
 
 import com.intellij.openapi.progress.EmptyProgressIndicatorBase
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.StandardProgressIndicator
 
 /**
@@ -34,6 +35,12 @@ class McpExecutionProgressIndicator : EmptyProgressIndicatorBase(), StandardProg
 
     override fun cancel() {
         cancelled = true
+        // Platform convention for every concrete indicator (EmptyProgressIndicator,
+        // AbstractProgressIndicatorBase do the same): notify ProgressManager so
+        // static ProgressManager.checkCanceled() pollers observe the cancellation
+        // deterministically — without this, CoreProgressManager may keep
+        // CheckCanceledBehavior.NONE and a blocked worker never notices.
+        ProgressManager.canceled(this)
     }
 
     override fun isCanceled(): Boolean = cancelled
