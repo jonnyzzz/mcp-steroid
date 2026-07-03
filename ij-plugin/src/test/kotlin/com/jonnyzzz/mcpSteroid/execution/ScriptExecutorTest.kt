@@ -207,6 +207,81 @@ class ScriptExecutorTest : BasePlatformTestCase() {
     }
 
     /**
+     * #213: `progressIndicator` is usable from script code (compiles through the CodeButcher
+     * wrapping) and is NOT cancelled during a normal run.
+     */
+    fun testProgressIndicatorNotCancelledDuringNormalScript(): Unit = timeoutRunBlocking(60.seconds) {
+        val code = """
+            println("indicator cancelled: " + progressIndicator.isCanceled)
+        """.trimIndent()
+
+        val builder = TestResultBuilder()
+        executor.executeWithProgress(nextExecutionId(), testExecParams(code), builder)
+
+        // A running script must never observe its own indicator as cancelled.
+        assertFalse(
+            "progressIndicator must not be cancelled during a normal run",
+            builder.messages.any { it.contains("indicator cancelled: true") }
+        )
+        // Engine-tolerant per this class's convention: assert the printed value only
+        // when the script actually ran.
+        if (!builder.isFailed) {
+            assertTrue(
+                "script should have printed the indicator state:\n${builder.messages}",
+                builder.messages.any { it.contains("indicator cancelled: false") }
+            )
+        }
+    }
+
+    /**
+     * #213: the execution timeout must cancel the per-execution `progressIndicator`, so a
+     * script blocked in an indicator-polling loop (the `InspectionEngine.inspectEx` shape —
+     * `ProgressManager.runProcess(task, indicator)` installs the indicator on the thread and
+     * the task polls `ProgressManager.checkCanceled()`) unwinds promptly instead of running
+     * to the end of its work.
+     *
+     * Without the ScriptExecutor watcher wiring, the loop below would spin its full 120 s
+     * hard cap and blow this test's 60 s harness bound — the test passing at all proves the
+     * job-cancellation → indicator bridge fired and the loop unwound via
+     * ProcessCanceledException.
+     */
+    fun testTimeoutCancelsProgressIndicatorAndUnwindsBlockingLoop(): Unit = timeoutRunBlocking(60.seconds) {
+        val code = """
+            import com.intellij.openapi.progress.ProgressManager
+
+            ProgressManager.getInstance().runProcess(
+                Runnable {
+                    // 120s hard cap so a broken bridge fails the harness bound instead of hanging forever
+                    val deadline = System.nanoTime() + 120_000_000_000L
+                    while (System.nanoTime() < deadline) {
+                        ProgressManager.checkCanceled()
+                    }
+                },
+                progressIndicator,
+            )
+            println("UNREACHABLE: the blocking loop was not cancelled")
+        """.trimIndent()
+
+        val builder = TestResultBuilder()
+        executor.executeWithProgress(nextExecutionId(), testExecParams(code, timeout = 2), builder)
+
+        assertTrue("Should fail (timeout or engine unavailable)", builder.isFailed)
+        assertFalse(
+            "the blocking loop must be cancelled, not run to completion:\n${builder.messages}",
+            builder.messages.any { it.contains("UNREACHABLE") }
+        )
+        // Engine-tolerant: assert the timeout wording only when the script reached runtime
+        // (an environment without the script engine fails earlier with a different message).
+        val failure = builder.failureMessage ?: ""
+        if (failure.contains("timed out")) {
+            assertTrue(
+                "timeout failure must carry the configured timeout: $failure",
+                failure.contains("2 seconds")
+            )
+        }
+    }
+
+    /**
      * #156: a messageless throwable (the bare NullPointerException from `!!`) must never
      * produce an empty "Unexpected error during execution: " FAILED line — the summary
      * must carry the exception class so the agent (and the hint engine) can react.

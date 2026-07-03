@@ -18,7 +18,6 @@ import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.QuickFix
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
-import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.util.PairProcessor
 
@@ -66,7 +65,7 @@ val problems: List<ProblemDescriptor> = readAction {
         false,
         false,
         true,
-        EmptyProgressIndicator(),
+        progressIndicator, // the execution's cancellable indicator (cancelled on script timeout/cancel)
         PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true }
     )
     map.values.flatten()
@@ -146,7 +145,6 @@ call (`PsiManager`, the profile manager, `smartReadAction`):
 import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
-import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
@@ -181,7 +179,7 @@ val problems: List<ProblemDescriptor> = smartReadAction(target) {
         false,
         false,
         true,
-        EmptyProgressIndicator(),
+        progressIndicator, // the execution's cancellable indicator (cancelled on script timeout/cancel)
         PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true }
     ).values.flatten()
 }

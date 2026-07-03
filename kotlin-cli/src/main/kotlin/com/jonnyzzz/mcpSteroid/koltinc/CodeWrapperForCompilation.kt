@@ -21,6 +21,9 @@ object CodeWrapperForCompilation {
         "import com.intellij.openapi.editor.*",
         "import com.intellij.openapi.fileEditor.*",
         "import com.intellij.openapi.command.*",
+        // The type of McpScriptContext.progressIndicator (#213) — imported so fenced
+        // examples/scripts can name the type (e.g. a typed val) without an explicit import.
+        "import com.intellij.openapi.progress.ProgressIndicator",
         "import com.intellij.psi.*",
         "import com.intellij.psi.search.*",
         "import com.intellij.psi.search.searches.*",

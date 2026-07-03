@@ -9,6 +9,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.psi.PsiDocumentManager
@@ -235,16 +236,41 @@ class ScriptExecutor(
     ) {
         try {
             withTimeout(exec.timeout.seconds) {
-                val capturedBlocks = evalResult.result
-                for ((index, block) in capturedBlocks.withIndex()) {
-                    yield()
-                    if (capturedBlocks.size > 1) {
-                        log.info("Executing block #${index + 1}/${capturedBlocks.size} for $executionId")
-                        context.progress("Executing block ${index + 1} of ${capturedBlocks.size}...")
+                // Bridge the execution job's cancellation into the per-execution progress
+                // indicator (#213). `Job.invokeOnCompletion(onCancelling = true)` — the
+                // platform's own bridge in coroutines.kt — is @InternalCoroutinesApi, so use a
+                // plain watcher coroutine instead: when the timeout (or an outer cancel) fires,
+                // the watcher's suspended continuation is resumed immediately — it does not
+                // wait for siblings — and cancels the indicator, so a blocking indicator-polling
+                // API (e.g. InspectionEngine.inspectEx in runInspectionsDirectly) observes it
+                // within one checkCanceled() and unwinds, letting withTimeout actually return.
+                // UNDISPATCHED so the watcher is suspended in awaitCancellation() before any
+                // script code runs. On normal completion the watcher itself is cancelled
+                // cleanly in the finally below with `completedNormally` already set, so the
+                // indicator of a successfully finished script stays NOT cancelled.
+                var completedNormally = false
+                val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        if (!completedNormally) context.progressIndicator.cancel()
                     }
-                    block(context)
                 }
-                log.info("Execution $executionId completed normally")
+                try {
+                    val capturedBlocks = evalResult.result
+                    for ((index, block) in capturedBlocks.withIndex()) {
+                        yield()
+                        if (capturedBlocks.size > 1) {
+                            log.info("Executing block #${index + 1}/${capturedBlocks.size} for $executionId")
+                            context.progress("Executing block ${index + 1} of ${capturedBlocks.size}...")
+                        }
+                        block(context)
+                    }
+                    completedNormally = true
+                    log.info("Execution $executionId completed normally")
+                } finally {
+                    watcher.cancel()
+                }
             }
         } catch (e: TimeoutCancellationException) {
             // Timeout - report as error (must be caught before CancellationException since it's a subclass)
@@ -252,6 +278,14 @@ class ScriptExecutor(
             resultBuilder.logRemappedException("Execution timed out", e, evalResult.lineMapping)
             resultBuilder.reportFailed("Execution timed out after ${exec.timeout} seconds")
         } catch (e: CancellationException) {
+            throw e
+        } catch (e: ProcessCanceledException) {
+            // Never catch PCE (root CLAUDE.md / ij-plugin CLAUDE.md): it is control flow, not a
+            // script error — reporting it as "Unexpected error" would mask a cancellation. On
+            // current platforms ProcessCanceledException (and its subclass
+            // CeProcessCanceledException) extends CancellationException, so the catch above
+            // already rethrows it; this explicit clause keeps the invariant should the
+            // hierarchy ever differ, and documents the rule at the catch site.
             throw e
         } catch (t: Throwable) {
             // #156: never report an empty error. A messageless throwable (e.g. the bare

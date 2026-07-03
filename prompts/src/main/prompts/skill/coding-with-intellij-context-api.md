@@ -15,7 +15,8 @@ These names exist on `McpScriptContext` (or among the default imports) — use t
 `findFile`, `findPsiFile`, `findProjectFile`, `findProjectFiles`,
 `findProjectPsiFile`, `runInspectionsDirectly`, `projectScope`, `allScope`,
 `waitForSmartMode`, `project`, `println`, `printJson`, `printCsv`,
-`printToon`, `progress`, `printException`, `takeIdeScreenshot`, `disposable`.
+`printToon`, `progress`, `printException`, `takeIdeScreenshot`, `disposable`,
+`progressIndicator`.
 
 These names **do not exist** — do not write them. Use the replacement on the right:
 
@@ -39,6 +40,8 @@ the name and the right-hand column is the recipe.
 //   params: JsonElement       — Original tool execution parameters (JSON)
 //   disposable: Disposable   — Parent Disposable for resource cleanup
 //   isDisposed: Boolean      — Check if context is disposed
+//   progressIndicator: ProgressIndicator — the execution's cancellable indicator (cancelled on
+//     timeout/client cancel); pass it to IntelliJ APIs that take an explicit ProgressIndicator
 println("Project: ${project.name}, disposed: $isDisposed")
 ```
 
@@ -250,7 +253,8 @@ if (buildFile != null) {
 
     // To target a SPECIFIC inspection (e.g. DuplicatedCode), do not use
     // runInspectionsDirectly — it runs the full enabled-set. Construct the
-    // inspection class directly and call InspectionEngine.inspectEx; see
+    // inspection class directly and call InspectionEngine.inspectEx with the
+    // context's `progressIndicator` (so the sweep honors the script timeout); see
     // mcp-steroid://ide/inspect-and-fix (single inspection + quick fix) or
     // mcp-steroid://ide/find-duplicates (DuplicatedCode across the project).
 }

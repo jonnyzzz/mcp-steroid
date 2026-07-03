@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.execution
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
@@ -52,6 +53,39 @@ interface McpScriptContext {
 
     /** Allows to check if the context is disposed */
     val isDisposed: Boolean
+
+    /**
+     * The per-execution cancellable progress indicator this script executes under.
+     *
+     * It is cancelled the moment the execution's coroutine job is cancelled — script timeout
+     * (the `timeout` tool argument), client cancel, or disposal. Pass it to any IntelliJ API
+     * that takes an explicit `ProgressIndicator` parameter (e.g. `InspectionEngine.inspectEx`),
+     * so a blocking, indicator-polling operation unwinds promptly when the execution is
+     * cancelled. NEVER construct `EmptyProgressIndicator()` in a script — nobody ever cancels
+     * it, so the operation ignores the execution timeout and runs to the end.
+     *
+     * The ambient story, honestly: indicators are thread-bound, so a suspend script body cannot
+     * have one installed globally. Implicit `ProgressManager.checkCanceled()` calls in blocking
+     * sections already observe the coroutine job (suspend `readAction` installs a job-bound
+     * thread context); for blocking code that needs an *ambient* indicator, the public bridge is
+     * `coroutineToIndicator { indicator -> ... }`. This property is for APIs that take the
+     * indicator as an explicit argument.
+     *
+     * ```kotlin
+     * val results = readAction {
+     *     InspectionEngine.inspectEx(
+     *         toolWrappers, psiFile, psiFile.textRange, psiFile.textRange,
+     *         false, false, true,
+     *         progressIndicator,   // execution-cancellation reaches the sweep
+     *         PairProcessor.alwaysTrue(),
+     *     )
+     * }
+     * ```
+     *
+     * (New context member gated by PHILOSOPHY.md Tenet 3; justified in #213 — the execution's
+     * cancellation is plugin-internal state no IntelliJ API call or recipe can hand a script.)
+     */
+    val progressIndicator: ProgressIndicator
 
     // ============================================================
     // Output Methods

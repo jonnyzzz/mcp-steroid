@@ -163,7 +163,6 @@ Submit this as a single `steroid_execute_code` call. Adjust `targetExtensions` t
 import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
-import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.psi.PsiManager
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
@@ -219,7 +218,7 @@ for (vf in files) {
             false,
             false,
             true,
-            EmptyProgressIndicator(),
+            progressIndicator, // the execution's cancellable indicator (cancelled on script timeout/cancel)
             PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true },
         ).values.flatten()
 

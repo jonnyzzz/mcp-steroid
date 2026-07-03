@@ -233,7 +233,7 @@ Built-in helpers available in every script (no imports needed):
 
 | Category | APIs |
 |----------|------|
-| **Properties** | `project`, `disposable`, `isDisposed` |
+| **Properties** | `project`, `disposable`, `isDisposed`, `progressIndicator` (the execution's cancellable indicator — pass to APIs that take an explicit `ProgressIndicator`) |
 | **Output (prose / JSON)** | `println()`, `printJson()`, `progress()`, `printException()` |
 | **Output (token-efficient tabular)** | `printCsv(headers, rows, dictColumns)` — CSV with optional path-dictionary preamble; `printToon(records)` — TOON (array-of-records) form |
 | **Read/Write** | `readAction { }`, `writeAction { }`, `smartReadAction { }` |

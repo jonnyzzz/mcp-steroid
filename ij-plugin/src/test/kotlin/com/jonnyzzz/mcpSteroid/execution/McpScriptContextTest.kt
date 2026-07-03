@@ -145,6 +145,16 @@ class McpScriptContextTest : BasePlatformTestCase() {
         assertTrue("Should be disposed after dispose()", context.isDisposed)
     }
 
+    fun testProgressIndicatorNotCancelledForLiveContext() {
+        // #213: the per-execution indicator starts life un-cancelled and stays so during a
+        // normal run — only the ScriptExecutor watcher (job cancellation) cancels it.
+        val (context, _) = createContext()
+
+        assertFalse("A live context's progressIndicator must not be cancelled", context.progressIndicator.isCanceled)
+        // Same instance across reads — a per-execution indicator, not a fresh one per access.
+        assertSame(context.progressIndicator, context.progressIndicator)
+    }
+
     fun testFindProjectFilesByGlob(): Unit = timeoutRunBlocking(30.seconds) {
         val (context, _) = createContext()
 

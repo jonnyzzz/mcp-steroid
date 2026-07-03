@@ -9,7 +9,7 @@ import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiManager
 import com.intellij.util.PairProcessor
@@ -108,6 +108,14 @@ class McpScriptContextImpl(
 
     override val isDisposed: Boolean
         get() = disposed.get()
+
+    /**
+     * Sticky-cancel, per-execution indicator. [ScriptExecutor.executeCodeBlocks] bridges the
+     * execution job's cancellation into it (watcher coroutine), so blocking indicator-polling
+     * APIs the script hands it to (e.g. [runInspectionsDirectly]'s `inspectEx`) unwind when
+     * the execution times out or is cancelled.
+     */
+    override val progressIndicator: ProgressIndicator = McpExecutionProgressIndicator()
 
     private fun checkDisposed() {
         if (disposed.get()) {
@@ -510,7 +518,10 @@ class McpScriptContextImpl(
                 false,  // isOnTheFly = false (batch mode)
                 false,  // inspectInjectedPsi
                 true,   // ignoreSuppressedElements
-                EmptyProgressIndicator(),
+                // The execution's cancellable indicator (#179/#213): inspectEx installs it on its
+                // worker threads, so a script timeout / client cancel reaches every checkCanceled()
+                // inside the inspections and the sweep unwinds instead of running to the end.
+                progressIndicator,
                 PairProcessor.alwaysTrue()
             )
 
