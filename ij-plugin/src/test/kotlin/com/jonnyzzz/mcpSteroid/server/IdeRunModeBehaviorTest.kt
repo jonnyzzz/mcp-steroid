@@ -5,12 +5,13 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.prompts.generated.McpSteroidInfoPrompt
 
 /**
- * Integration coverage for the #212 run-mode handling through the REAL production
- * functions and the REAL server-instructions prompt — with the normal-UI mode as the
- * primary case: a normal desktop IDE must see zero behavior difference (no warning,
- * byte-identical instructions, a plain mode line).
+ * Behavior coverage for the #212 run-mode handling through the real production functions
+ * and the real server-instructions prompt, per mode — normal UI first: a normal desktop
+ * IDE must see zero behavior difference (no warning, byte-identical instructions, a plain
+ * mode line). The REAL-IDE end-to-end check lives in the test-integration module:
+ * IdeRunModeNormalUiIntegrationTest (Docker IDE with an X display).
  */
-class IdeRunModeIntegrationTest : BasePlatformTestCase() {
+class IdeRunModeBehaviorTest : BasePlatformTestCase() {
 
     override fun runInDispatchThread(): Boolean = false
 
