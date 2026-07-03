@@ -6,6 +6,7 @@ import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.TestResultBuilder
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
+import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.testExecParams
 import kotlin.time.Duration.Companion.seconds
 
@@ -204,6 +205,66 @@ class ScriptExecutorTest : BasePlatformTestCase() {
 
         // Should fail due to timeout (or error if engine not available)
         assertTrue("Should fail", builder.isFailed)
+    }
+
+    /**
+     * #215: when an execution times out (suspected deadlock), a native IntelliJ diagnostic
+     * dump (JVM threads + kotlinx coroutines) must be written INTO the per-execution storage
+     * folder (`.idea/mcp-steroid/eid_...`), and the tool result must mention ONLY that file's
+     * path — never any dump content.
+     *
+     * The dump is captured from a `Job.invokeOnCompletion(onCancelling = true)` handler on the
+     * `withTimeout` job, so it fires even if the body is wedged. This test wedges the body with a
+     * non-cancellable `Thread.sleep` (not `delay`) under a short timeout, mirroring the #177
+     * deadlock reproducer.
+     *
+     * Engine-tolerant per this class's convention: the file/message assertions apply only when
+     * the run actually reached the timeout path (failure message carries "Execution timed out
+     * after"); an environment without the script engine fails earlier with a different message.
+     */
+    fun testTimeoutWritesDiagnosticDumpToExecutionFolder(): Unit = timeoutRunBlocking(60.seconds) {
+        val wedgedCode = """
+            println("Starting")
+            Thread.sleep(30000) // non-interruptible; outlives the 1s timeout
+            println("Done")
+        """.trimIndent()
+
+        val executionId = nextExecutionId()
+        val builder = TestResultBuilder()
+        executor.executeWithProgress(executionId, testExecParams(wedgedCode, timeout = 1), builder)
+
+        assertTrue("Should fail (timeout or engine-missing)", builder.isFailed)
+
+        val failure = builder.failureMessage ?: ""
+        if (failure.startsWith("Execution timed out after")) {
+            val dumpFile = project.executionStorage
+                .resolveExecutionPath(executionId, TimeoutDiagnosticDump.FILE_NAME)
+            assertTrue(
+                "Diagnostic dump must be written into the execution folder: $dumpFile",
+                java.nio.file.Files.isRegularFile(dumpFile)
+            )
+
+            val dumpText = java.nio.file.Files.readString(dumpFile)
+            // The native combined dump must include both a thread dump and the coroutine section.
+            assertTrue(
+                "Dump must contain thread-dump content:\n$dumpText",
+                dumpText.contains("java.lang.Thread.State") || dumpText.contains("\" ") || dumpText.contains("at ")
+            )
+            assertTrue(
+                "Dump must contain the coroutine-dump section header:\n$dumpText",
+                dumpText.contains("Coroutine dump")
+            )
+
+            // The failure message mentions ONLY the path — no dump content leaks into the result.
+            assertTrue(
+                "Failure message must mention the dump-folder path:\n$failure",
+                failure.contains(dumpFile.toString()) || failure.contains(dumpFile.parent.toString())
+            )
+            assertFalse(
+                "Failure message must NOT contain dump content (thread/coroutine frames):\n$failure",
+                failure.contains("Coroutine dump") || failure.contains("java.lang.Thread.State")
+            )
+        }
     }
 
     /**
