@@ -81,36 +81,80 @@ fun scoreRenameSafety(output: String): RenameSafetyScore {
 }
 
 data class InspectionScore(
+    /** The agent's self-reported `ISSUES_FOUND:` count (informational only — never trusted for the verdict). */
     val issuesFound: Int?,
-    val mentionsRedundantCast: Boolean,
-    val mentionsTargetFile: Boolean,
-    /** True when the agent detected a meaningful number of the (semantic) redundant-cast issues. */
+    /** `file simple name → line numbers` parsed from the agent's `ISSUE: <path>:<line>` markers. */
+    val reportedLines: Map<String, Set<Int>>,
+    /** Total number of reported `file:line` pairs. */
+    val reportedCount: Int,
+    /** Ground-truth `file:line` pairs the agent actually hit (±1 line tolerance, each consumed once). */
+    val matchedLines: Map<String, Set<Int>>,
+    val matchedCount: Int,
+    /** True when enough ground-truth pairs were hit AND the answer is not a shotgun spam of cast lines. */
     val detected: Boolean,
 )
 
 /**
- * Score an "run IDE inspections + report issues" answer. The target is the redundant casts after
- * `instanceof` in Keycloak's `ValidatorConfig.java`. With MCP the agent runs IntelliJ's inspection
- * (semantic type-narrowing → finds them exactly); grep/shell cannot determine a cast is redundant.
+ * Score a "run IDE inspections + report issues" answer against a known ground truth of `file:line`
+ * pairs (for the Keycloak scenario: the genuinely redundant casts found by `javac -Xlint:cast` on
+ * the pinned 26.6.4 tag). With MCP the agent runs IntelliJ's RedundantCast inspection (type
+ * inference → exact findings); grep sees cast syntax but cannot determine redundancy.
+ *
+ * The verdict is evidence-based, NOT self-report-based: CI builds 991971406/991971408 showed the
+ * old count-only scorer rewarding a hallucinated "ISSUES_FOUND: 17" (produced with zero tool calls)
+ * and rejecting a truthful "ISSUES_FOUND: 0". Now:
+ *  - each reported `ISSUE: <path>:<line>` is matched against [expected] by file simple name and
+ *    line (±1 tolerance for multi-line expressions; each expected line consumes at most one
+ *    reported line and vice versa);
+ *  - `detected` requires at least [minMatches] true positives AND at most `3 × |expected|` total
+ *    reported pairs — listing every cast in every candidate file cannot win by luck.
  *
  * Expected markers:
  *   ISSUES_FOUND: <count>
- *   ISSUE: <description>            (the redundant-cast lines; ideally mentioning the file)
+ *   ISSUE: <path>:<line> — <description>
  *
- * @param minIssues the lower bound of redundant casts that must be reported to count as detected.
+ * @param expected ground truth: file simple name → the line numbers of the real issues.
+ * @param minMatches how many ground-truth pairs must be hit to count as detected.
  */
-fun scoreInspections(output: String, minIssues: Int, targetFile: String): InspectionScore {
-    val count = findMarkerValue(output, "ISSUES_FOUND", "Issues found")
+fun scoreInspections(output: String, expected: Map<String, Set<Int>>, minMatches: Int): InspectionScore {
+    // Strip markdown code/bold marks so `path.java:112` and **path.java:112** parse the same.
+    // Underscores are NOT stripped — they are significant in marker names (ISSUES_FOUND) and paths.
+    val text = output.replace(Regex("[`*]"), "")
+    val count = findMarkerValue(text, "ISSUES_FOUND", "Issues found")
         ?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }
-    val mentionsCast = output.contains("redundant cast", ignoreCase = true) ||
-        output.contains("redundant type cast", ignoreCase = true) ||
-        output.contains("unnecessary cast", ignoreCase = true)
-    val mentionsFile = output.contains(targetFile, ignoreCase = true)
+
+    // Every `ISSUE:` marker line contributes one (file simple name, line) pair. The file-name
+    // pattern has no `/`, so it naturally captures the last path segment.
+    val reported = mutableMapOf<String, MutableList<Int>>()
+    Regex("""(?im)^\s*[-•>#\s]*ISSUE\s*:\s*(.+)$""").findAll(text).forEach { issue ->
+        val m = Regex("""([\w$.-]+\.java)\s*:\s*(\d+)""").find(issue.groupValues[1]) ?: return@forEach
+        reported.getOrPut(m.groupValues[1]) { mutableListOf() }.add(m.groupValues[2].toInt())
+    }
+    val reportedCount = reported.values.sumOf { it.size }
+
+    // Greedy bipartite match per file: exact line first, then ±1; each reported line consumed once.
+    val matched = mutableMapOf<String, MutableSet<Int>>()
+    for ((file, expectedLines) in expected) {
+        val available = reported[file]?.toMutableList() ?: continue
+        for (tolerance in 0..1) {
+            for (expectedLine in expectedLines.sorted()) {
+                if (expectedLine in (matched[file] ?: emptySet<Int>())) continue
+                val hit = available.firstOrNull { kotlin.math.abs(it - expectedLine) <= tolerance } ?: continue
+                available.remove(hit)
+                matched.getOrPut(file) { mutableSetOf() }.add(expectedLine)
+            }
+        }
+    }
+    val matchedCount = matched.values.sumOf { it.size }
+    val expectedCount = expected.values.sumOf { it.size }
+
     return InspectionScore(
         issuesFound = count,
-        mentionsRedundantCast = mentionsCast,
-        mentionsTargetFile = mentionsFile,
-        detected = mentionsCast && mentionsFile && (count ?: 0) >= minIssues,
+        reportedLines = reported.mapValues { it.value.toSet() },
+        reportedCount = reportedCount,
+        matchedLines = matched,
+        matchedCount = matchedCount,
+        detected = matchedCount >= minMatches && reportedCount <= 3 * expectedCount,
     )
 }
 
