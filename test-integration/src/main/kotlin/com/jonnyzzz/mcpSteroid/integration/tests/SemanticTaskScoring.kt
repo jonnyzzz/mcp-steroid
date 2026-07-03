@@ -300,6 +300,107 @@ fun scoreInspections(output: String, expected: Map<String, Set<Int>>, minMatches
     )
 }
 
+data class CompileTriageScore(
+    /** The agent's self-reported `ERRORS_FOUND:` count (informational only — never trusted for the verdict). */
+    val errorsFound: Int?,
+    /** `file simple name → line numbers` parsed from the agent's `FIXED: <path>:<line>` markers. */
+    val reportedFixes: Map<String, Set<Int>>,
+    /** Total number of reported `file:line` fix pairs. */
+    val reportedCount: Int,
+    /** Seeded `file:line` sites the agent actually fixed (±1 line tolerance, each consumed once). */
+    val matchedSites: Map<String, Set<Int>>,
+    val matchedCount: Int,
+    /** Seeded sites the agent did NOT report fixing. */
+    val missingSites: Map<String, Set<Int>>,
+    /** The post-fix bounded-build result the agent reported (null if it never reported one). */
+    val buildGreen: Boolean?,
+    /** Every seeded site was fixed (regardless of build state / spam). */
+    val allSitesFixed: Boolean,
+    /** All seeded sites fixed AND build green AND no shotgun spam — the full win. */
+    val safe: Boolean,
+)
+
+/**
+ * Score a COMPILE-ERROR TRIAGE (time-to-green) run against the KNOWN seeded breakage: a patch applied
+ * at IDE start plants deterministic single-line compile errors across modules, and the agent must make
+ * the project compile again. With MCP the IDE's red-code analysis lists every error with resolved
+ * types instantly (all modules at once); without MCP the agent pays a multi-minute `mvn` cycle per
+ * iteration — and Maven stops at the first failing module, hiding the downstream errors entirely.
+ *
+ * The verdict is evidence-based, NOT self-report-based (the lesson from [scoreInspections], CI builds
+ * 991971406/991971408, where a hallucinated count won):
+ *  - each reported `FIXED: <path>:<line>` is matched against [seededSites] by file simple name and
+ *    line (±1 tolerance; each seeded line consumes at most one reported line and vice versa) — the
+ *    agent must fix each error AT ITS SEEDED SITE, so papering over a symptom elsewhere (e.g. a cast
+ *    at the error line instead of restoring the declaration) does not count;
+ *  - `safe` additionally requires the reported bounded build to be SUCCESS and at most
+ *    `3 × |seeded|` total FIXED lines — carpet-editing the tree cannot win by luck.
+ *
+ * Expected markers (scored identically for both modes):
+ *   ERRORS_FOUND: <count>
+ *   FIXED: <path>:<line> — <what was wrong and the correct type>
+ *   BUILD_AFTER_FIX: SUCCESS | FAILURE
+ *
+ * @param seededSites ground truth: file simple name → the line numbers of the seeded edits.
+ */
+fun scoreCompileTriage(output: String, seededSites: Map<String, Set<Int>>): CompileTriageScore {
+    // Strip markdown code/bold marks so `path.java:112` and **path.java:112** parse the same.
+    // Underscores are NOT stripped — they are significant in marker names (ERRORS_FOUND) and paths.
+    val text = output.replace(Regex("[`*]"), "")
+    val count = findMarkerValue(text, "ERRORS_FOUND", "Errors found")
+        ?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }
+
+    // Every `FIXED:` marker line contributes one (file simple name, line) pair. The file-name
+    // pattern has no `/`, so it naturally captures the last path segment.
+    val reported = mutableMapOf<String, MutableList<Int>>()
+    Regex("""(?im)^\s*[-•>#\s]*FIXED\s*:\s*(.+)$""").findAll(text).forEach { fix ->
+        val m = Regex("""([\w$.-]+\.java)\s*:\s*(\d+)""").find(fix.groupValues[1]) ?: return@forEach
+        reported.getOrPut(m.groupValues[1]) { mutableListOf() }.add(m.groupValues[2].toInt())
+    }
+    val reportedCount = reported.values.sumOf { it.size }
+
+    // Greedy bipartite match per file: exact line first, then ±1; each reported line consumed once.
+    val matched = mutableMapOf<String, MutableSet<Int>>()
+    for ((file, seededLines) in seededSites) {
+        val available = reported[file]?.toMutableList() ?: continue
+        for (tolerance in 0..1) {
+            for (seededLine in seededLines.sorted()) {
+                if (seededLine in (matched[file] ?: emptySet<Int>())) continue
+                val hit = available.firstOrNull { kotlin.math.abs(it - seededLine) <= tolerance } ?: continue
+                available.remove(hit)
+                matched.getOrPut(file) { mutableSetOf() }.add(seededLine)
+            }
+        }
+    }
+    val matchedCount = matched.values.sumOf { it.size }
+    val seededCount = seededSites.values.sumOf { it.size }
+    val missing = seededSites
+        .mapValues { (file, lines) -> lines - (matched[file] ?: emptySet()) }
+        .filterValues { it.isNotEmpty() }
+
+    val build = findMarkerValue(text, "BUILD_AFTER_FIX", "Build after fix")
+    val buildGreen = build?.let {
+        when {
+            it.contains("SUCCESS", ignoreCase = true) || it.equals("pass", ignoreCase = true) || it.equals("green", ignoreCase = true) -> true
+            it.contains("FAIL", ignoreCase = true) || it.contains("error", ignoreCase = true) || it.contains("broke", ignoreCase = true) -> false
+            else -> null
+        }
+    }
+
+    val allSitesFixed = matchedCount == seededCount
+    return CompileTriageScore(
+        errorsFound = count,
+        reportedFixes = reported.mapValues { it.value.toSet() },
+        reportedCount = reportedCount,
+        matchedSites = matched.mapValues { it.value.toSet() },
+        matchedCount = matchedCount,
+        missingSites = missing,
+        buildGreen = buildGreen,
+        allSitesFixed = allSitesFixed,
+        safe = allSitesFixed && buildGreen == true && reportedCount <= 3 * seededCount,
+    )
+}
+
 data class SsrOptionalGetScore(
     /** The OPTIONAL_GET_MATCHES total the agent reported (null if it never reported one). */
     val reportedCount: Int?,
