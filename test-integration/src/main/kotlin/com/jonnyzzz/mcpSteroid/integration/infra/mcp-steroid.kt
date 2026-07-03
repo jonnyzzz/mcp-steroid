@@ -80,6 +80,18 @@ private const val INDEXING_POLL_BUDGET_MS = 60 * 60 * 1000L
 /** Pure: does this tool-result text say the IDE is still indexing (so we should call again)? */
 internal fun isIndexingInProgress(text: String): Boolean = text.contains(INDEXING_IN_PROGRESS_MARKER)
 
+/**
+ * Pure: does this tool-result text say the addressed project name does not exist (server-side)?
+ *
+ * On Gradle projects whose `rootProject.name` differs from the checkout folder, the IDE RENAMES the
+ * project when the Gradle sync lands (`project-home` → e.g. `x-m90g7r9u`) — racing the driver's
+ * name resolution. A request that resolved the name a moment too early gets this error even though
+ * the project is open and healthy (observed on the x11k builds 993299640/993296335/993298537). The
+ * caller re-resolves and retries; a name that no longer changes means it is NOT the rename race and
+ * the error is genuine.
+ */
+internal fun isProjectNotFound(text: String): Boolean = text.contains("Project not found:")
+
 /** The message the plugin logs (SteroidsMcpServer) when its MCP web server cannot start. */
 internal const val MCP_SERVER_STARTUP_FAILURE_MARKER = "Failed to start MCP server"
 
@@ -507,7 +519,13 @@ try {
         taskId: String = "integration-test",
         reason: String = "Integration test execution",
         timeout: Int = 600,
-        projectName: String = resolveProjectName(),
+        /**
+         * Explicit project name, or null (default) to resolve the project at [IntelliJDriver.getGuestProjectDir]
+         * FRESH ON EVERY ATTEMPT. Per-attempt resolution matters: on Gradle projects whose `rootProject.name`
+         * differs from the checkout folder, the IDE renames the project when the sync lands, racing a
+         * name resolved once at call entry (see [isProjectNotFound]).
+         */
+        projectName: String? = null,
         /**
          * How exec_code treats IDE modality around the script. Mindfully defaulted to [ModalMode.DEFAULT]
          * and always sent explicitly on the wire, so every driver-issued exec_code makes a deliberate
@@ -522,8 +540,18 @@ try {
         // retrying a genuine crash for the whole budget. The last "busy" signal is a clean INDEXING IN
         // PROGRESS result → null → call again.
         waitForValue(INDEXING_POLL_BUDGET_MS, "exec_code '$taskId' to run (IDE busy with import/indexing)") {
-            mcpExecuteCodeOnce(code, taskId, reason, timeout, projectName, modal)
-                .takeUnless { isIndexingInProgress(it.stdout) }
+            val name = projectName ?: resolveProjectName()
+            val result = mcpExecuteCodeOnce(code, taskId, reason, timeout, name, modal)
+            when {
+                isIndexingInProgress(result.stdout) -> null // busy — call again
+                // Rename race: the addressed name vanished server-side. When the CALLER pinned the name
+                // or a fresh resolution still returns the same name, it is a genuine error — surface it.
+                // Otherwise the project was renamed under us (Gradle sync landing) — call again with the
+                // re-resolved name.
+                isProjectNotFound(result.stdout) &&
+                    projectName == null && resolveProjectName() != name -> null
+                else -> result
+            }
         }
 
     private fun mcpExecuteCodeOnce(
