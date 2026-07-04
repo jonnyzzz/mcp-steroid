@@ -40,7 +40,7 @@ func fakeMcpHTTP(t *testing.T) *httptest.Server {
 func TestHttpMcpClientSessionAndPost(t *testing.T) {
 	srv := fakeMcpHTTP(t)
 	defer srv.Close()
-	c := newHttpMcpClient(srv.URL)
+	c := newHttpMcpClient(srv.URL, nil)
 
 	body, err := c.post([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
 	if err != nil {

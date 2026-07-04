@@ -11,8 +11,8 @@ import (
 // responses from b.reader exactly as it does for the stdio devrig backend; a pump goroutine bridges
 // those pipes to HTTP POSTs. b.shutdown stops the goroutine and closes the response side so the
 // proxy's backend pump observes EOF.
-func newHTTPBackend(baseURL, protocolVersion string) (*backend, error) {
-	c := newHttpMcpClient(baseURL)
+func newHTTPBackend(mcpURL string, headers map[string]string, protocolVersion string) (*backend, error) {
+	c := newHttpMcpClient(mcpURL, headers)
 
 	// MCP handshake over HTTP: initialize (captures the session), then notifications/initialized.
 	initReq, _ := json.Marshal(map[string]any{

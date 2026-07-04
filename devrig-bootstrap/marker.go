@@ -10,7 +10,8 @@ import (
 
 // ideEndpoint is a running IDE's Streamable-HTTP MCP endpoint discovered from a pid marker.
 type ideEndpoint struct {
-	baseURL   string
+	mcpURL    string
+	headers   map[string]string // e.g. {"Authorization": "Bearer <token>"} — forwarded on every POST
 	pid       int64
 	createdAt string
 }
@@ -20,11 +21,14 @@ type ideEndpoint struct {
 var markerFileRegex = regexp.MustCompile(`^(\d+)\.mcp-steroid$`)
 
 // pidMarkerShape is the minimal subset of PidMarker (schema 1) the bootstrap reads.
+// Field names mirror mcp-steroid-server/.../McpSteroidServerInfo.kt: the URL is `mcpUrl`
+// (NOT `baseUrl`) and `headers` carries the bearer token the plugin expects.
 type pidMarkerShape struct {
 	Pid              int64  `json:"pid"`
 	CreatedAt        string `json:"createdAt"`
 	McpSteroidServer *struct {
-		BaseURL string `json:"baseUrl"`
+		McpURL  string            `json:"mcpUrl"`
+		Headers map[string]string `json:"headers"`
 	} `json:"mcpSteroidServer"`
 }
 
@@ -54,10 +58,15 @@ func discoverIdeEndpoints(home string) []ideEndpoint {
 			os.Stderr.WriteString("devrig-bootstrap: skipping malformed marker " + e.Name() + ": " + jerr.Error() + "\n")
 			continue
 		}
-		if m.McpSteroidServer == nil || m.McpSteroidServer.BaseURL == "" {
+		if m.McpSteroidServer == nil || m.McpSteroidServer.McpURL == "" {
 			continue
 		}
-		out = append(out, ideEndpoint{baseURL: m.McpSteroidServer.BaseURL, pid: m.Pid, createdAt: m.CreatedAt})
+		out = append(out, ideEndpoint{
+			mcpURL:    m.McpSteroidServer.McpURL,
+			headers:   m.McpSteroidServer.Headers,
+			pid:       m.Pid,
+			createdAt: m.CreatedAt,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].createdAt != out[j].createdAt {

@@ -10,7 +10,7 @@ func TestHTTPBackendHandshakeAndForward(t *testing.T) {
 	srv := fakeMcpHTTP(t) // reused from httpmcp_test.go
 	defer srv.Close()
 
-	b, err := newHTTPBackend(srv.URL, "2024-11-05")
+	b, err := newHTTPBackend(srv.URL, nil, "2024-11-05")
 	if err != nil {
 		t.Fatalf("newHTTPBackend: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestHTTPBackendHandshakeAndForward(t *testing.T) {
 func TestHTTPBackendShutdownUnblocksReader(t *testing.T) {
 	srv := fakeMcpHTTP(t)
 	defer srv.Close()
-	b, err := newHTTPBackend(srv.URL, "2024-11-05")
+	b, err := newHTTPBackend(srv.URL, nil, "2024-11-05")
 	if err != nil {
 		t.Fatalf("newHTTPBackend: %v", err)
 	}

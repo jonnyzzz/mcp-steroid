@@ -19,7 +19,7 @@ type proxy struct {
 
 	// startBackend/startHTTPBackend are injectable for tests; production uses the real spawners.
 	startBackend     func(home, ver string) (*backend, error)
-	startHTTPBackend func(baseURL, ver string) (*backend, error)
+	startHTTPBackend func(mcpURL string, headers map[string]string, ver string) (*backend, error)
 
 	mu       sync.Mutex
 	backend  *backend
@@ -146,7 +146,7 @@ func (p *proxy) watchForIde() {
 		}
 		for _, ep := range discoverIdeEndpoints(p.home) {
 			if err := p.swapToIde(ep); err != nil {
-				os.Stderr.WriteString("devrig-bootstrap: Tier-1 IDE swap failed for " + ep.baseURL + ": " + err.Error() + "\n")
+				os.Stderr.WriteString("devrig-bootstrap: Tier-1 IDE swap failed for " + ep.mcpURL + ": " + err.Error() + "\n")
 				continue
 			}
 			return // swapped
@@ -194,7 +194,7 @@ func (p *proxy) swapToIde(ep ideEndpoint) error {
 	ver := p.protoVer
 	p.mu.Unlock()
 
-	b, err := p.startHTTPBackend(ep.baseURL, ver)
+	b, err := p.startHTTPBackend(ep.mcpURL, ep.headers, ver)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (p *proxy) swapToIde(ep ideEndpoint) error {
 
 	go p.pumpBackend(b)
 	p.emitListChanged()
-	os.Stderr.WriteString("devrig-bootstrap: Tier 1 active — bridged to running IDE at " + ep.baseURL + "\n")
+	os.Stderr.WriteString("devrig-bootstrap: Tier 1 active — bridged to running IDE at " + ep.mcpURL + "\n")
 	return nil
 }
 

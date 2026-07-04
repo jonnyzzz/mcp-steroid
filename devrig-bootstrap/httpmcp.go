@@ -12,12 +12,13 @@ import (
 // The plugin's transport is request/response JSON (no server->client SSE), so this only POSTs.
 type httpMcpClient struct {
 	url       string
+	headers   map[string]string // static headers (e.g. Authorization) sent on every request
 	sessionID string
 	http      *http.Client
 }
 
-func newHttpMcpClient(url string) *httpMcpClient {
-	return &httpMcpClient{url: url, http: &http.Client{Timeout: 30 * time.Second}}
+func newHttpMcpClient(url string, headers map[string]string) *httpMcpClient {
+	return &httpMcpClient{url: url, headers: headers, http: &http.Client{Timeout: 30 * time.Second}}
 }
 
 // post sends one JSON-RPC message and returns the response body (nil for 202/empty).
@@ -29,6 +30,9 @@ func (c *httpMcpClient) post(raw []byte) ([]byte, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
 	if c.sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", c.sessionID)
 	}

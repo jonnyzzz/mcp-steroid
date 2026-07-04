@@ -14,7 +14,8 @@ func writeMarker(t *testing.T, home string, pid int64, createdAt, baseURL string
 	}
 	body := `{"schema":1,"pid":` + itoa(pid) + `,"createdAt":"` + createdAt + `"`
 	if baseURL != "" {
-		body += `,"mcpSteroidServer":{"baseUrl":"` + baseURL + `"}`
+		// Real plugin schema: mcpSteroidServer.mcpUrl (+ a bearer auth header).
+		body += `,"mcpSteroidServer":{"mcpUrl":"` + baseURL + `","headers":{"Authorization":"Bearer tkn-` + itoa(pid) + `"}}`
 	}
 	body += `}`
 	if err := os.WriteFile(filepath.Join(dir, itoa(pid)+".mcp-steroid"), []byte(body), 0o644); err != nil {
@@ -54,8 +55,11 @@ func TestDiscoverIdeEndpointsNewestFirstAndFilters(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("want 2 endpoints, got %d: %+v", len(got), got)
 	}
-	if got[0].pid != 200 || got[0].baseURL != "http://127.0.0.1:6316/mcp" {
+	if got[0].pid != 200 || got[0].mcpURL != "http://127.0.0.1:6316/mcp" {
 		t.Fatalf("newest must be first, got %+v", got[0])
+	}
+	if got[0].headers["Authorization"] != "Bearer tkn-200" {
+		t.Fatalf("auth header must be parsed, got %+v", got[0].headers)
 	}
 	if got[1].pid != 100 {
 		t.Fatalf("older must be second, got %+v", got[1])
