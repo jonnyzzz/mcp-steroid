@@ -5,6 +5,9 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Comparator
@@ -15,7 +18,8 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
     override fun runInDispatchThread(): Boolean = false
 
     fun testWriteCreatesMarkerUnderManagedMarkersDirectory() = withTemporaryUserHome { userHome ->
-        val writer = ServerUrlWriter()
+        val scope = CoroutineScope(SupervisorJob())
+        val writer = ServerUrlWriter(scope)
         try {
             writer.writeServerUrlToUserHome("http://localhost:6315/mcp")
 
@@ -44,11 +48,13 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
             )
         } finally {
             Disposer.dispose(writer)
+            scope.cancel()
         }
     }
 
     fun testWriteCleansStaleMarkersInManagedDirectory() = withTemporaryUserHome { userHome ->
-        val writer = ServerUrlWriter()
+        val scope = CoroutineScope(SupervisorJob())
+        val writer = ServerUrlWriter(scope)
         try {
             val deadPid = deadPid()
             val markerDir = PidMarker.markerDirectory(userHome)
@@ -63,6 +69,35 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
             assertTrue("current marker should remain", Files.isRegularFile(currentMarker))
         } finally {
             Disposer.dispose(writer)
+            scope.cancel()
+        }
+    }
+
+    fun testHeartbeatRecreatesDeletedMarker() = withTemporaryUserHome { userHome ->
+        val originalInterval = ServerUrlWriter.markerHeartbeatMs
+        ServerUrlWriter.markerHeartbeatMs = 30 // drive the heartbeat fast for the test
+        val scope = CoroutineScope(SupervisorJob())
+        val writer = ServerUrlWriter(scope)
+        try {
+            writer.writeServerUrlToUserHome("http://localhost:6315/mcp")
+            val markerFile = PidMarker.markerDirectory(userHome)
+                .resolve(PidMarker.markerFileNameFor(ProcessHandle.current().pid()))
+            assertTrue("marker should exist after initial write", Files.isRegularFile(markerFile))
+
+            // Simulate `rm -rf ~/.mcp-steroid` mid-session: delete the marker.
+            Files.delete(markerFile)
+            assertFalse(Files.exists(markerFile))
+
+            // The heartbeat must re-create it within a few intervals.
+            val deadline = System.currentTimeMillis() + 5_000
+            while (!Files.exists(markerFile) && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20)
+            }
+            assertTrue("heartbeat should re-create the deleted marker", Files.isRegularFile(markerFile))
+        } finally {
+            Disposer.dispose(writer)
+            scope.cancel()
+            ServerUrlWriter.markerHeartbeatMs = originalInterval
         }
     }
 
