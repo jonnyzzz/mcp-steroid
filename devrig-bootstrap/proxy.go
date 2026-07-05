@@ -21,6 +21,10 @@ type proxy struct {
 	startBackend     func(home, ver string) (*backend, error)
 	startHTTPBackend func(mcpURL string, headers map[string]string, ver string) (*backend, error)
 
+	// onSwapToDevrig, if set, is called once after a successful Tier-2 swap (used to remove the
+	// transient status-line bar now that devrig is live).
+	onSwapToDevrig func()
+
 	mu       sync.Mutex
 	backend  *backend
 	tier     int // 0 none, 1 ide (HTTP), 2 devrig (stdio)
@@ -245,6 +249,9 @@ func (p *proxy) swapToDevrig() error {
 	go p.pumpBackend(b)
 	p.emitListChanged()
 	os.Stderr.WriteString("devrig-bootstrap: Tier 2 active — swapped to devrig mcp\n")
+	if p.onSwapToDevrig != nil {
+		p.onSwapToDevrig()
+	}
 	return nil
 }
 

@@ -311,3 +311,46 @@ func TestProxyTierOneThenTierTwo(t *testing.T) {
 	}
 	clientInW.Close()
 }
+
+func TestProxyInvokesOnSwapToDevrig(t *testing.T) {
+	home := t.TempDir()
+	old := swapPollInterval
+	swapPollInterval = 10 * time.Millisecond
+	defer func() { swapPollInterval = old }()
+
+	clientInR, clientInW := io.Pipe()
+	clientOutR, clientOutW := io.Pipe()
+	p := newProxy(clientInR, clientOutW, home)
+	p.startBackend = func(h, ver string) (*backend, error) {
+		toDevR, toDevW := io.Pipe()
+		fromDevR, fromDevW := io.Pipe()
+		go fakeDevrig(toDevR, fromDevW)
+		b := newBackend(toDevW, fromDevR)
+		if err := b.handshake(ver); err != nil {
+			return nil, err
+		}
+		b.shutdown = func() { toDevW.Close() }
+		return b, nil
+	}
+	fired := make(chan struct{}, 1)
+	p.onSwapToDevrig = func() { fired <- struct{}{} }
+	go func() { _ = p.run() }()
+
+	msgs := make(chan rpcMessage, 64)
+	go collectLines(clientOutR, msgs)
+	enc := json.NewEncoder(clientInW)
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"protocolVersion": "2024-11-05"}})
+	waitFor(t, msgs, 3*time.Second, func(m rpcMessage) bool { return m.isResponse() && string(m.ID) == "1" })
+	enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+	binDir := filepath.Join(home, ".mcp-steroid", "bin")
+	os.MkdirAll(binDir, 0o755)
+	os.WriteFile(filepath.Join(binDir, "devrig"), []byte("#!/bin/sh\n"), 0o755)
+
+	select {
+	case <-fired:
+	case <-time.After(3 * time.Second):
+		t.Fatal("onSwapToDevrig was not invoked after Tier-2 swap")
+	}
+	clientInW.Close()
+}
