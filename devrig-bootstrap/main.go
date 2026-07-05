@@ -8,6 +8,13 @@ import (
 func main() {
 	home := homeDir()
 
+	// Status-line mode: print the one-line progress segment and exit. Invoked by Claude's statusLine
+	// command every refresh; must be fast, stdout-only, exit 0.
+	if len(os.Args) > 1 && os.Args[1] == statuslineFlag {
+		fmt.Fprintln(os.Stdout, statusLineRender(home, os.Getenv("NO_COLOR") == ""))
+		return
+	}
+
 	// Detached supervisor role: run a single install attempt (heartbeating the lock and recording the
 	// outcome) and exit. Spawned by spawnDetachedInstaller so the download outlives this Claude session.
 	if os.Getenv(installerRoleEnv) == "1" {
