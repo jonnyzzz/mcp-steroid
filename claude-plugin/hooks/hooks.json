@@ -1,5 +1,5 @@
 {
-  "description": "Nudge the user to run /devrig:setup when devrig is not yet installed or registered.",
+  "description": "Nudge to /devrig:setup when devrig is missing, and show download progress passively.",
   "hooks": {
     "SessionStart": [
       {
@@ -7,6 +7,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/check-devrig"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/devrig-progress"
           }
         ]
       }

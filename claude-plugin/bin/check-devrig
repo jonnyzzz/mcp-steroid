@@ -11,6 +11,15 @@ FAILED="$HOME/.mcp-steroid/markers/bootstrap-install.failed"
 
 # Installed -> the launcher proxies the real server; nothing to say.
 if [ -x "$DEVRIG" ] || [ -f "$DEVRIG_WIN" ]; then
+  # Self-heal: if a transient progress bar was left in settings.json (e.g. after a hard kill), remove it.
+  # The --remove-statusline call is a no-op unless the statusLine is ours, so a user's own bar is safe.
+  if grep -q '"statusLine"' "$HOME/.claude/settings.json" 2>/dev/null; then
+    ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
+    os=$(uname -s | tr '[:upper:]' '[:lower:]'); case "$os" in darwin) os=darwin;; linux) os=linux;; esac
+    arch=$(uname -m); case "$arch" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; esac
+    BOOT="$ROOT/bin/bootstrap-$os-$arch"
+    [ -x "$BOOT" ] && "$BOOT" --remove-statusline >/dev/null 2>&1
+  fi
   exit 0
 fi
 
