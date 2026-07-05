@@ -20,8 +20,11 @@ running IntelliJ-based IDE from Claude via the devrig bridge.
    binary (~500 MB) starts **downloading in the background**. No restart needed to
    begin.
 3. **The download runs detached — you can keep working, close, or restart Claude**
-   and it keeps going in the background. Check progress anytime: `/devrig:status`
-   or just ask for "devrig status".
+   and it keeps going in the background. **Progress shows automatically** — no command
+   to run: if you have no Claude status line, a `devrig 41% · 210/500 MB` bar appears
+   (and disappears once devrig is live); if you already have a status line, a short
+   `⏳ devrig …%` line shows on each turn instead. Your existing status line is never
+   modified. You can also ask for "devrig status" anytime.
 4. **If an IDE with the MCP Steroid plugin is already open, its tools activate
    within seconds — no download wait.** The bootstrap bridges to the running
    IDE's built-in MCP endpoint and fires `notifications/tools/list_changed`, so
