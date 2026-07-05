@@ -66,6 +66,15 @@ forgot to regenerate them.
 | `httpmcp.go` | `httpMcpClient`: minimal Streamable-HTTP MCP client (POST + `Mcp-Session-Id`) for the IDE endpoint |
 | `httpbackend.go` | `newHTTPBackend`: presents a running IDE's HTTP endpoint as a `backend` so the proxy forwards to it unchanged |
 | `proxy.go` | `proxy`: tiered hot-swap MCP proxy — Tier 1 (`swapToIde`) then Tier 2 (`swapToDevrig`); forwards client↔backend traffic, ID-prefixes server-initiated requests, fires `tools/list_changed` at each swap |
+| `statusline.go` | `--statusline` mode: prints the one-line progress segment (`devrig 41% · 210/500 MB` / `devrig ✓` / `devrig ⚠`). One source of truth for both the status-line bar and the hook |
+| `settings.go` | add-only/remove-only editor for `~/.claude/settings.json` `statusLine`; bar-vs-hook detection (`shouldUseHookMode`); `statusline.owner` marker |
+
+**Passive progress (issue #225).** While downloading, the bootstrap surfaces progress automatically —
+no command to run. On startup it picks a mode: if you have **no** status line anywhere it **adds** a
+transient `statusLine` to `~/.claude/settings.json` running `<bootstrap> --statusline` (`refreshInterval:2`,
+removed on Tier-2 swap / exit / signal, and self-healed by the SessionStart hook's `--remove-statusline`);
+if you **already** have a status line it touches nothing and the plugin's `UserPromptSubmit` hook shows a
+per-turn `⏳ …` line instead. The chosen mode is recorded in `~/.mcp-steroid/markers/statusline.owner`.
 
 Tunable constants: `approxInstallMB` (progress total, `progress.go`),
 `heartbeatInterval` / `installLockStaleAfter` (`status.go`), installer URLs
