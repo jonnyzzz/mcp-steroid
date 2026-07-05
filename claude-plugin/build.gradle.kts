@@ -105,6 +105,7 @@ val verifyPluginFiles = tasks.register("verifyPluginFiles") {
             "bin/install-devrig",
             "bin/install-devrig.ps1",
             "bin/check-devrig",
+            "bin/devrig-progress",
             "bin/devrig-mcp.cmd",
             "bin/bootstrap-darwin-arm64",
             "bin/bootstrap-darwin-amd64",
