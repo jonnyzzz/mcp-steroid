@@ -9,15 +9,21 @@ DEVRIG="$HOME/.mcp-steroid/bin/devrig"
 DEVRIG_WIN="$HOME/.mcp-steroid/bin/devrig.cmd"
 FAILED="$HOME/.mcp-steroid/markers/bootstrap-install.failed"
 
+# Resolve the bundled bootstrap binary for this OS/arch (used to query the size and manage the bar).
+ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
+os=$(uname -s | tr '[:upper:]' '[:lower:]'); case "$os" in darwin) os=darwin;; linux) os=linux;; esac
+arch=$(uname -m); case "$arch" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; esac
+BOOT="$ROOT/bin/bootstrap-$os-$arch"
+
+# Total download size in MB — single source of truth is approxInstallMB in the bootstrap.
+SIZE=611
+[ -x "$BOOT" ] && SIZE=$("$BOOT" --install-size-mb 2>/dev/null || echo 611)
+
 # Installed -> the launcher proxies the real server; nothing to say.
 if [ -x "$DEVRIG" ] || [ -f "$DEVRIG_WIN" ]; then
   # Self-heal: if a transient progress bar was left in settings.json (e.g. after a hard kill), remove it.
   # The --remove-statusline call is a no-op unless the statusLine is ours, so a user's own bar is safe.
   if grep -q '"statusLine"' "$HOME/.claude/settings.json" 2>/dev/null; then
-    ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
-    os=$(uname -s | tr '[:upper:]' '[:lower:]'); case "$os" in darwin) os=darwin;; linux) os=linux;; esac
-    arch=$(uname -m); case "$arch" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; esac
-    BOOT="$ROOT/bin/bootstrap-$os-$arch"
     [ -x "$BOOT" ] && "$BOOT" --remove-statusline >/dev/null 2>&1
   fi
   exit 0
@@ -37,6 +43,11 @@ EOF
   exit 0
 fi
 
+# Downloading -> install the status-line bar NOW, at session start, so the instance that TRIGGERED the
+# download shows the bar itself (not only other already-running instances that live-reload settings.json).
+# This is a no-op / hook-mode when the user already has a status line (see applyStatusLineMode).
+[ -x "$BOOT" ] && "$BOOT" --install-statusline >/dev/null 2>&1
+
 # Is a running IDE with the MCP Steroid plugin already reachable? If so, the bootstrap bridges to its
 # HTTP MCP endpoint (Tier 1) and the user has full IDE tools NOW, while the download continues. The
 # plugin advertises the endpoint in ~/.mcp-steroid/markers/<pid>.mcp-steroid (mcpSteroidServer.baseUrl).
@@ -49,23 +60,23 @@ done
 # Downloading in the background -> reassure the user; the download is detached and tools activate
 # automatically. Do NOT mention /devrig:setup here.
 if [ "$IDE_UP" = "1" ]; then
-  cat <<'EOF'
+  cat <<EOF
 {
-  "systemMessage": "⚡ Your open IDE's tools are available now — the full devrig toolset (~500 MB) is still downloading in the background and will activate automatically on your next message when it finishes. No need to wait or restart. Ask me for devrig status anytime.",
+  "systemMessage": "⚡ Your open IDE's tools are available now — the full devrig toolset (~${SIZE} MB) is still downloading in the background and will activate automatically on your next message when it finishes. No need to wait or restart. Ask me for devrig status anytime.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "A running IDE with the MCP Steroid plugin is reachable, so the bootstrap has bridged to its HTTP MCP endpoint (Tier 1): the user ALREADY has the open IDE's tools. Meanwhile the ~500 MB devrig download continues in a DETACHED process (survives quit/restart). When it completes, the bootstrap fires tools/list_changed a second time and swaps to the full devrig backend (Tier 2, adds cross-backend/managed features) automatically on the user's next message — no restart. Call devrig_status for download progress. Do not tell the user to run any manual install command."
+    "additionalContext": "A running IDE with the MCP Steroid plugin is reachable, so the bootstrap has bridged to its HTTP MCP endpoint (Tier 1): the user ALREADY has the open IDE's tools. Meanwhile the ~${SIZE} MB devrig download continues in a DETACHED process (survives quit/restart). When it completes, the bootstrap fires tools/list_changed a second time and swaps to the full devrig backend (Tier 2, adds cross-backend/managed features) automatically on the user's next message — no restart. Call devrig_status for download progress. Do not tell the user to run any manual install command."
   }
 }
 EOF
   exit 0
 fi
-cat <<'EOF'
+cat <<EOF
 {
-  "systemMessage": "⏳ devrig is installing in the background (~500 MB). It keeps downloading even if you close or restart Claude — no need to wait around. When it finishes, the full IDE toolset activates automatically on your next message — no restart needed. Ask me for devrig status anytime to see progress.",
+  "systemMessage": "⏳ devrig is installing in the background (~${SIZE} MB). It keeps downloading even if you close or restart Claude — no need to wait around. When it finishes, the full IDE toolset activates automatically on your next message — no restart needed. Ask me for devrig status anytime to see progress.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~500 MB devrig binary downloads in the background. The download runs in a DETACHED process, so it continues even if the user quits or restarts Claude — you do NOT need to tell them to keep Claude open. Call the devrig_status tool to report download progress when the user asks. Once the download finishes, the bootstrap fires tools/list_changed and the full IDE toolset activates automatically on the user's next message — no restart needed. While it is still downloading, do not tell the user to run any manual install command -- just let it finish."
+    "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~${SIZE} MB devrig binary downloads in the background. The download runs in a DETACHED process, so it continues even if the user quits or restarts Claude — you do NOT need to tell them to keep Claude open. Call the devrig_status tool to report download progress when the user asks. Once the download finishes, the bootstrap fires tools/list_changed and the full IDE toolset activates automatically on the user's next message — no restart needed. While it is still downloading, do not tell the user to run any manual install command -- just let it finish."
   }
 }
 EOF
