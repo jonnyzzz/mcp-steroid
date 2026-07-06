@@ -1,13 +1,23 @@
 #!/bin/sh
 :; # ===== POSIX sh (Windows cmd skips :; lines) =====
-:; # UserPromptSubmit hook: show devrig download progress inline ONLY when the bootstrap chose "hook"
-:; # mode (the user already has a status line). Stdout is the JSON hook channel — nothing else on it.
+:; # UserPromptSubmit hook. Two jobs, by the bootstrap-chosen mode:
+:; #   bar  (user has no status line): RE-ASSERT the bar now. The bar was written during this instance's
+:; #        startup — before its settings-watcher armed — so the instance that triggered the download
+:; #        missed the change and doesn't render it. Re-writing on the first prompt (watcher now armed)
+:; #        makes it appear. Emit no visible text (the bar shows the progress).
+:; #   hook (user already has a status line): show an inline "⏳ …" progress line instead.
+:; # Stdout is the JSON hook channel — nothing else on it.
 :; OWNER="$HOME/.mcp-steroid/markers/statusline.owner"
-:; [ -f "$OWNER" ] && [ "$(cat "$OWNER" 2>/dev/null)" = "hook" ] || { echo '{}'; exit 0; }
+:; MODE=""; [ -f "$OWNER" ] && MODE=$(cat "$OWNER" 2>/dev/null)
 :; ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
 :; os=$(uname -s | tr '[:upper:]' '[:lower:]'); case "$os" in darwin) os=darwin;; linux) os=linux;; esac
 :; arch=$(uname -m); case "$arch" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; esac
 :; BOOT="$ROOT/bin/bootstrap-$os-$arch"
+:; if [ "$MODE" = "bar" ]; then
+:;   [ -x "$BOOT" ] && "$BOOT" --install-statusline >/dev/null 2>&1
+:;   echo '{}'; exit 0
+:; fi
+:; [ "$MODE" = "hook" ] || { echo '{}'; exit 0; }
 :; SEG=""; [ -x "$BOOT" ] && SEG=$(NO_COLOR=1 "$BOOT" --statusline 2>/dev/null)
 :; if [ -n "$SEG" ] && printf '%s' "$SEG" | grep -q '%'; then
 :;   printf '{"systemMessage":"⏳ %s","hookSpecificOutput":{"hookEventName":"UserPromptSubmit"}}\n' "$SEG"
@@ -20,12 +30,16 @@ rem ===== Windows cmd =====
 set "OWNER=%USERPROFILE%\.mcp-steroid\markers\statusline.owner"
 set "MODE="
 if exist "%OWNER%" set /p MODE=<"%OWNER%"
-if not "%MODE%"=="hook" ( echo {} & exit /b 0 )
 set "ROOT=%CLAUDE_PLUGIN_ROOT%"
 if "%ROOT%"=="" set "ROOT=%~dp0.."
 set "ARCH=amd64"
 if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "ARCH=arm64"
 set "BOOT=%ROOT%\bin\bootstrap-windows-%ARCH%.exe"
+if "%MODE%"=="bar" (
+  if exist "%BOOT%" "%BOOT%" --install-statusline >nul 2>&1
+  echo {} & exit /b 0
+)
+if not "%MODE%"=="hook" ( echo {} & exit /b 0 )
 if not exist "%BOOT%" ( echo {} & exit /b 0 )
 for /f "delims=" %%S in ('set NO_COLOR=1 ^& "%BOOT%" --statusline 2^>nul') do set "SEG=%%S"
 if not defined SEG ( echo {} & exit /b 0 )
