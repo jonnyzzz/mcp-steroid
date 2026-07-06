@@ -33,7 +33,7 @@ fi
 if [ -f "$FAILED" ]; then
   cat <<'EOF'
 {
-  "systemMessage": "❌ devrig couldn't finish installing. Run /devrig:setup to retry, then restart Claude.",
+  "systemMessage": "❌ devrig install failed. Run /devrig:setup to retry.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
     "additionalContext": "The devrig background install failed (~/.mcp-steroid/markers/bootstrap-install.failed exists). Tell the user to run /devrig:setup to retry the download, then restart Claude. Use the devrig_status tool for the failure detail."
@@ -62,7 +62,7 @@ done
 if [ "$IDE_UP" = "1" ]; then
   cat <<EOF
 {
-  "systemMessage": "⚡ Your open IDE's tools are available now — the full devrig toolset (~${SIZE} MB) is still downloading in the background and will activate automatically on your next message when it finishes. No need to wait or restart. Ask me for devrig status anytime.",
+  "systemMessage": "⚡ IDE tools ready now — full devrig toolset (~${SIZE} MB) still downloading in the background, activates automatically when done.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
     "additionalContext": "A running IDE with the MCP Steroid plugin is reachable, so the bootstrap has bridged to its HTTP MCP endpoint (Tier 1): the user ALREADY has the open IDE's tools. Meanwhile the ~${SIZE} MB devrig download continues in a DETACHED process (survives quit/restart). When it completes, the bootstrap fires tools/list_changed a second time and swaps to the full devrig backend (Tier 2, adds cross-backend/managed features) automatically on the user's next message — no restart. Call devrig_status for download progress. Do not tell the user to run any manual install command."
@@ -73,7 +73,7 @@ EOF
 fi
 cat <<EOF
 {
-  "systemMessage": "⏳ devrig is installing in the background (~${SIZE} MB). It keeps downloading even if you close or restart Claude — no need to wait around. When it finishes, the full IDE toolset activates automatically on your next message — no restart needed. Ask me for devrig status anytime to see progress.",
+  "systemMessage": "⏳ devrig downloading (~${SIZE} MB) in the background — activates automatically when done, no restart needed.",
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
     "additionalContext": "The devrig MCP server is registered (plugin .mcp.json) and currently running in bootstrap mode while the ~${SIZE} MB devrig binary downloads in the background. The download runs in a DETACHED process, so it continues even if the user quits or restarts Claude — you do NOT need to tell them to keep Claude open. Call the devrig_status tool to report download progress when the user asks. Once the download finishes, the bootstrap fires tools/list_changed and the full IDE toolset activates automatically on the user's next message — no restart needed. While it is still downloading, do not tell the user to run any manual install command -- just let it finish."
