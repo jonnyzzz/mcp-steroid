@@ -40,6 +40,51 @@ running IntelliJ-based IDE from Claude via the devrig bridge.
 The downloaded binary lands at `~/.mcp-steroid/bin/devrig`; once present, the
 launcher routes to it and the bootstrap is no longer used.
 
+## Messages you'll see
+
+Every user-facing string the plugin can show, by trigger. The `~611 MB` figure and the `%`/MB numbers
+come from the single `approxInstallMB` constant (`../devrig-bootstrap/progress.go`). Claude prefixes hook
+messages with its own label (e.g. `SessionStart:startup says:`) — that prefix is not ours to change.
+
+**At session start** — `SessionStart` hook (`bin/check-devrig`); fires on a new session / restart / resume,
+not on `/reload-plugins`:
+
+| State | Message |
+|---|---|
+| devrig already installed | *(silent)* |
+| downloading, an IDE with the MCP Steroid plugin is open | ⚡ IDE tools ready now — full devrig toolset (~611 MB) still downloading in the background, activates automatically when done. |
+| downloading, no IDE open | ⏳ devrig downloading (~611 MB) in the background — activates automatically when done, no restart needed. |
+| last install failed | ❌ devrig install failed. Run /devrig:setup to retry. |
+
+**On each message while downloading** — `UserPromptSubmit` hook (`bin/devrig-progress`):
+
+| Mode | Message |
+|---|---|
+| hook mode (you already have a status line) | ⏳ devrig 41% · 250/611 MB |
+| bar mode (you have no status line) | *(silent — the status-line bar shows it instead)* |
+
+**Always-visible status-line bar** — bar mode only (`bootstrap --statusline`), refreshed ~every 2s:
+
+| State | Bar |
+|---|---|
+| downloading | `devrig 41% · 250/611 MB` (yellow) |
+| just finished | `devrig ✓` (green, briefly, then removed) |
+| failed | `devrig ⚠ /devrig:setup` (red) |
+
+**On demand** — the `devrig_status` tool (ask "devrig status" or run `/devrig:status`):
+
+| State | Message |
+|---|---|
+| installed | ✅ devrig active — full IDE toolset available. |
+| installing | ⏳ devrig 210/611 MB (12s) — downloading in the background, activates automatically when done. |
+| installing, IDE open | *(same, plus)* … IDE tools available now. |
+| failed | ❌ devrig install failed: `<reason>`. Run /devrig:setup to retry. |
+| starting (nothing downloaded yet) | ⏳ devrig starting — activates automatically when ready. |
+
+The `SessionStart` and `UserPromptSubmit` hooks also attach a longer `additionalContext` that only the
+model sees (never shown to you) — guidance such as "the download is detached, don't tell the user to run
+manual commands."
+
 ## Editing rules (read before changing files here)
 
 - **Bootstrap binaries are committed to `bin/bootstrap-*`.** After any change to
