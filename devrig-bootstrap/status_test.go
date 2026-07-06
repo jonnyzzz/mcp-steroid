@@ -54,7 +54,7 @@ func TestStatusMessage(t *testing.T) {
 		{"installing", func(h string) {
 			os.MkdirAll(markersDir(h), 0o755)
 			os.WriteFile(lockPath(h), []byte("1"), 0o644)
-		}, []string{"Downloading devrig", "of ~" + itoa(approxInstallMB) + " MB", "keeps downloading", "no restart"}},
+		}, []string{"devrig", itoa(approxInstallMB) + " MB", "downloading", "activates automatically"}},
 		{"failed", func(h string) {
 			os.MkdirAll(markersDir(h), 0o755)
 			os.WriteFile(failedMarkerPath(h), []byte("network down"), 0o644)
@@ -85,7 +85,7 @@ func TestStatusMessageMentionsRunningIdeFastPath(t *testing.T) {
 	os.WriteFile(lockPath(home), []byte("1"), 0o644)
 	writeMarker(t, home, 555, "2026-07-03T12:00:00Z", "http://127.0.0.1:6315/mcp")
 	msg := statusMessage(home)
-	if !strings.Contains(msg, "already available") {
+	if !strings.Contains(msg, "IDE tools available now") {
 		t.Fatalf("installing message must mention the open-IDE fast path, got: %s", msg)
 	}
 }
