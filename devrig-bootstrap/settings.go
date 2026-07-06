@@ -31,33 +31,42 @@ func statuslineOwner(home string) string {
 	return strings.TrimSpace(string(b))
 }
 
-// fileHasStatusLine reports whether path parses as JSON with a "statusLine" key.
-// The bool "parsed" is false when the file exists but does not parse (caller decides how to treat it).
-func fileHasStatusLine(path string) (has bool, parsed bool) {
+// fileStatusLine inspects a settings file's statusLine. `present` is true if a statusLine key exists;
+// `ours` is true if that statusLine is the devrig bar (command carries the statuslineFlag sentinel);
+// `parsed` is false when the file exists but does not parse (caller decides how to treat that).
+func fileStatusLine(path string) (present, ours, parsed bool) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return false, true // absent == cleanly "no statusLine"
+		return false, false, true // absent == cleanly "no statusLine"
 	}
 	var m map[string]json.RawMessage
 	if json.Unmarshal(b, &m) != nil {
-		return false, false // present but unparseable
+		return false, false, false // present but unparseable
 	}
-	_, ok := m["statusLine"]
-	return ok, true
+	raw, ok := m["statusLine"]
+	if !ok {
+		return false, false, true
+	}
+	return true, bytes.Contains(raw, []byte(statuslineFlag)), true
 }
 
-// shouldUseHookMode is true when we must NOT install a bar: a statusLine already exists in user,
-// project, or local settings, or the user settings file is present-but-unparseable.
+// shouldUseHookMode is true when we must NOT install a bar: a FOREIGN statusLine already exists in user,
+// project, or local settings, or the user settings file is present-but-unparseable. Our OWN bar does not
+// count — otherwise re-asserting it (to nudge a late-arming watcher) would flip us into hook mode.
 func shouldUseHookMode(home, cwd string) bool {
-	if has, parsed := fileHasStatusLine(claudeSettingsPath(home)); has || !parsed {
-		return true
+	present, ours, parsed := fileStatusLine(claudeSettingsPath(home))
+	if !parsed {
+		return true // don't risk clobbering an unparseable user file
+	}
+	if present && !ours {
+		return true // a foreign user status line
 	}
 	for _, p := range []string{
 		filepath.Join(cwd, ".claude", "settings.json"),
 		filepath.Join(cwd, ".claude", "settings.local.json"),
 	} {
-		if has, _ := fileHasStatusLine(p); has {
-			return true
+		if pr, _, _ := fileStatusLine(p); pr {
+			return true // any project/local status line is foreign to us
 		}
 	}
 	return false
@@ -73,16 +82,18 @@ func ourStatusLine(selfPath string) map[string]any {
 	}
 }
 
-// installStatusLine adds our statusLine to the user settings.json when none is present. Atomic,
-// idempotent, preserves all other keys. No-op if a statusLine (foreign or ours) already exists.
+// installStatusLine ensures our statusLine is present in the user settings.json. If none exists it adds
+// ours; if ours is already there it RE-WRITES it (atomic temp+rename bumps the file so an instance whose
+// settings-watcher armed after the initial write still gets a change event and renders the bar); a
+// FOREIGN statusLine is never touched. Atomic, preserves all other keys.
 func installStatusLine(home, selfPath string) error {
 	path := claudeSettingsPath(home)
 	m, err := loadSettingsMap(path)
 	if err != nil {
 		return err
 	}
-	if _, ok := m["statusLine"]; ok {
-		return nil // foreign or ours already there — never overwrite
+	if raw, ok := m["statusLine"]; ok && !bytes.Contains(raw, []byte(statuslineFlag)) {
+		return nil // foreign status line — never overwrite
 	}
 	sl, _ := json.Marshal(ourStatusLine(selfPath))
 	m["statusLine"] = sl

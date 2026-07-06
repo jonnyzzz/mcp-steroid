@@ -42,6 +42,22 @@ func TestInstallStatusLineAddsWhenAbsentAndPreservesKeys(t *testing.T) {
 	}
 }
 
+func TestInstallStatusLineRewritesWhenOurs(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".claude"), 0o755)
+	// A stale ours-bar pointing at an old binary path -> re-writing must update it to the new path
+	// (and, in production, bump the file so a late-arming watcher fires).
+	os.WriteFile(claudeSettingsPath(home),
+		[]byte(`{"statusLine":{"type":"command","command":"/old/boot `+statuslineFlag+`"}}`), 0o644)
+	if err := installStatusLine(home, "/new/boot"); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	cmd := string(readSettings(t, home)["statusLine"])
+	if !strings.Contains(cmd, "/new/boot") || strings.Contains(cmd, "/old/boot") {
+		t.Fatalf("ours status line should be rewritten to the new path, got %s", cmd)
+	}
+}
+
 func TestInstallStatusLineSkipsWhenForeignPresent(t *testing.T) {
 	home := t.TempDir()
 	os.MkdirAll(filepath.Join(home, ".claude"), 0o755)
@@ -84,11 +100,19 @@ func TestShouldUseHookMode(t *testing.T) {
 	if shouldUseHookMode(home, cwd) {
 		t.Fatal("no statusLine anywhere -> bar mode expected")
 	}
-	// user has one -> hook mode
+	// user has a FOREIGN one -> hook mode
 	os.MkdirAll(filepath.Join(home, ".claude"), 0o755)
 	os.WriteFile(claudeSettingsPath(home), []byte(`{"statusLine":{"type":"command","command":"x"}}`), 0o644)
 	if !shouldUseHookMode(home, cwd) {
-		t.Fatal("user statusLine -> hook mode expected")
+		t.Fatal("foreign user statusLine -> hook mode expected")
+	}
+	// user has OUR bar -> NOT hook mode (so re-asserting the bar doesn't flip us to hook)
+	homeOurs, cwdOurs := t.TempDir(), t.TempDir()
+	os.MkdirAll(filepath.Join(homeOurs, ".claude"), 0o755)
+	os.WriteFile(claudeSettingsPath(homeOurs),
+		[]byte(`{"statusLine":{"type":"command","command":"/boot `+statuslineFlag+`"}}`), 0o644)
+	if shouldUseHookMode(homeOurs, cwdOurs) {
+		t.Fatal("our own bar must NOT count as a user status line")
 	}
 	// project local has one -> hook mode
 	home2, cwd2 := t.TempDir(), t.TempDir()
