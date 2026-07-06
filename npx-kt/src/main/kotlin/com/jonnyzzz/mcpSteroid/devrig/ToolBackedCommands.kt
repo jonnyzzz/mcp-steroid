@@ -1,0 +1,247 @@
+/* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
+package com.jonnyzzz.mcpSteroid.devrig
+
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRouteNotFoundException
+import com.jonnyzzz.mcpSteroid.devrig.server.StubMcpSteroidTools
+import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
+import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
+import com.jonnyzzz.mcpSteroid.server.FeedbackParams
+import com.jonnyzzz.mcpSteroid.server.InputParams
+import com.jonnyzzz.mcpSteroid.server.ModalMode
+import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
+import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
+import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
+import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
+import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.Base64
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+
+/**
+ * Shared execution for `devrig` subcommands that map 1:1 onto a bridge tool handler and return a
+ * [ToolCallResult]. The handler is resolved from [StubMcpSteroidTools] — the SAME wiring the
+ * `devrig mcp` stdio proxy uses — so the CLI never reimplements tool logic. Routing/bridge failures
+ * are turned into meaningful exit codes + agent-usable stderr messages.
+ */
+private inline fun DevrigServices.runToolCall(
+    commandName: String,
+    json: Boolean,
+    crossinline block: suspend (StubMcpSteroidTools) -> ToolCallResult,
+): Int {
+    val tools = StubMcpSteroidTools(this)
+    val result = try {
+        runBlocking(Dispatchers.IO) { block(tools) }
+    } catch (e: ProjectRouteNotFoundException) {
+        System.err.println("${e.message} — run `devrig list_projects` to see valid project_name keys")
+        return CliExit.USAGE
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        System.err.println("devrig $commandName failed to reach a backend: ${e.message}")
+        return CliExit.UNAVAILABLE
+    }
+    return result.renderTo(command = commandName, json = json, out = mcpStdout)
+}
+
+/** Reads inline `--code` or the `--code-file` path; returns null (after printing) on a bad file. */
+private fun resolveCodeArg(inline: String?, file: String?): String? {
+    if (!inline.isNullOrBlank()) return inline
+    val path = Path.of(file!!)
+    if (!Files.isRegularFile(path)) {
+        System.err.println("--code-file not found or not a regular file: $path")
+        return null
+    }
+    return Files.readString(path)
+}
+
+// ----------------------------------- execute_code -----------------------------------
+
+fun DevrigServices.runExecuteCodeCommand(command: DevrigCommand.DevrigCommandExecuteCode): Int {
+    val code = resolveCodeArg(command.code, command.codeFile) ?: return CliExit.USAGE
+    val modal = command.modal?.let { wire ->
+        ModalMode.entries.firstOrNull { it.wire == wire }
+            ?: run {
+                System.err.println(
+                    "invalid --modal '$wire'. Valid: ${ModalMode.entries.joinToString(" | ") { it.wire }}"
+                )
+                return CliExit.USAGE
+            }
+    } ?: ModalMode.DEFAULT
+    val params = ExecCodeParams(
+        taskId = command.taskId!!,
+        code = code,
+        reason = command.reason!!,
+        timeout = command.timeout ?: 600,
+        modal = modal,
+    )
+    return runToolCall("execute_code", command.json) { tools ->
+        tools.handler<ExecuteCodeToolHandler>()
+            .executeCode(command.projectName!!, params, stderrProgressReporter())
+    }
+}
+
+// ----------------------------------- execute_feedback -----------------------------------
+
+fun DevrigServices.runFeedbackCommand(command: DevrigCommand.DevrigCommandFeedback): Int {
+    val code: String? = when {
+        !command.code.isNullOrBlank() -> command.code
+        !command.codeFile.isNullOrBlank() -> resolveCodeArg(null, command.codeFile) ?: return CliExit.USAGE
+        else -> null
+    }
+    val params = FeedbackParams(
+        taskId = command.taskId!!,
+        successRating = command.successRating!!,
+        explanation = command.explanation,
+        code = code,
+    )
+    return runToolCall("execute_feedback", command.json) { tools ->
+        tools.handler<ExecuteFeedbackToolHandler>().handleFeedback(command.projectName!!, params)
+    }
+}
+
+// ----------------------------------- input -----------------------------------
+
+fun DevrigServices.runInputCommand(command: DevrigCommand.DevrigCommandInput): Int {
+    // The devrig bridge forwards the raw sequence string verbatim (the IDE re-parses it), so we do
+    // not need a client-side parse here; pass an empty parsed list and the raw string.
+    val params = InputParams(
+        taskId = command.taskId!!,
+        reason = command.reason!!,
+        windowId = command.windowId!!,
+        sequence = emptyList(),
+        rawSequence = command.sequence,
+    )
+    return runToolCall("input", command.json) { tools ->
+        tools.handler<VisionInputToolHandler>().handleInputSequence(command.projectName!!, params)
+    }
+}
+
+// ----------------------------------- take_screenshot -----------------------------------
+
+fun DevrigServices.runScreenshotCommand(command: DevrigCommand.DevrigCommandScreenshot): Int {
+    val params = ScreenshotParams(
+        taskId = command.taskId!!,
+        reason = command.reason!!,
+        windowId = command.windowId,
+    )
+    val tools = StubMcpSteroidTools(this)
+    val result = try {
+        runBlocking(Dispatchers.IO) {
+            tools.handler<VisionScreenshotToolHandler>()
+                .screenshotWindow(command.projectName!!, params, stderrProgressReporter())
+        }
+    } catch (e: ProjectRouteNotFoundException) {
+        System.err.println("${e.message} — run `devrig list_projects` to see valid project_name keys")
+        return CliExit.USAGE
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        System.err.println("devrig take_screenshot failed to reach a backend: ${e.message}")
+        return CliExit.UNAVAILABLE
+    }
+
+    // --out: pull the first image out of the result and write the raw PNG bytes to disk.
+    if (!command.out.isNullOrBlank() && !result.isError) {
+        val image = result.content.filterIsInstance<ContentItem.Image>().firstOrNull()
+        if (image == null) {
+            System.err.println("--out given but the screenshot result carried no image payload")
+        } else {
+            try {
+                val bytes = Base64.getDecoder().decode(image.data)
+                val outPath = Path.of(command.out)
+                Files.write(outPath, bytes)
+                System.err.println("Saved screenshot (${bytes.size} bytes, ${image.mimeType}) to ${outPath.toAbsolutePath()}")
+            } catch (e: Exception) {
+                System.err.println("failed to write --out=${command.out}: ${e.message}")
+                return CliExit.USAGE
+            }
+        }
+    }
+    return result.renderTo(command = "take_screenshot", json = command.json, out = mcpStdout)
+}
+
+// ----------------------------------- open_project -----------------------------------
+
+fun DevrigServices.runOpenProjectCommand(command: DevrigCommand.DevrigCommandOpenProject): Int {
+    val params = OpenProjectParams(
+        projectPath = command.projectPath!!,
+        trustProject = command.trustProject,
+        backendName = command.backendName,
+    )
+    val tools = StubMcpSteroidTools(this)
+    val result = try {
+        runBlocking(Dispatchers.IO) {
+            tools.handler<OpenProjectToolHandler>().handleOpenProject(params, stderrProgressReporter())
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        System.err.println("devrig open_project failed to reach a backend: ${e.message}")
+        return CliExit.UNAVAILABLE
+    }
+
+    val exit = result.renderTo(command = "open_project", json = command.json, out = mcpStdout)
+    if (exit != CliExit.OK || !command.wait) return exit
+
+    // --wait: poll list_windows until the freshly-opened project is ready. Best-effort; progress
+    // goes to stderr so stdout keeps just the open_project result.
+    val ready = waitForProjectReady(command.projectPath)
+    if (!ready) {
+        System.err.println("open_project: --wait timed out before the project became ready")
+        return CliExit.UNAVAILABLE
+    }
+    System.err.println("open_project: project is initialized and ready")
+    return CliExit.OK
+}
+
+/**
+ * Polls `list_windows` until a window for [projectPath] is initialized, not indexing, and has no
+ * modal dialog — or the timeout elapses. Returns true when ready. Kept simple for the spike: fixed
+ * cadence, bounded attempts, all diagnostics on stderr.
+ */
+private fun DevrigServices.waitForProjectReady(
+    projectPath: String,
+    attempts: Int = 60,
+    intervalMs: Long = 2000,
+): Boolean {
+    val target = try {
+        Path.of(projectPath).toRealPath().toString()
+    } catch (e: Exception) {
+        projectPath
+    }
+    repeat(attempts) { attempt ->
+        val response = try {
+            runBlocking(Dispatchers.IO) {
+                StubMcpSteroidTools(this@waitForProjectReady)
+                    .handler<com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler>()
+                    .collectListWindowsResponse()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println("open_project --wait: poll ${attempt + 1} failed: ${e.message}")
+            null
+        }
+        val window = response?.windows?.firstOrNull { w ->
+            val wp = w.projectPath ?: return@firstOrNull false
+            wp == projectPath || wp == target
+        }
+        if (window != null &&
+            window.projectInitialized == true &&
+            window.indexingInProgress != true &&
+            !window.modalDialogShowing
+        ) {
+            return true
+        }
+        System.err.println("open_project --wait: not ready yet (poll ${attempt + 1}/$attempts)")
+        Thread.sleep(intervalMs)
+    }
+    return false
+}

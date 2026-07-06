@@ -59,6 +59,40 @@ fun printHelp(out: PrintStream) : Int {
                                          provisioned. With id (for example port-63342),
                                          print manual MCP Steroid plugin install
                                          instructions for that IDE.
+
+        MCP tools as CLI (same tools as the `devrig mcp` server, callable from the shell):
+
+          devrig prompt <uri> [--project_name <key>]
+                                         fetch a mcp-steroid:// guide by URI (steroid_fetch_resource).
+                                         Works without a running IDE for bundled docs; pass
+                                         --project_name for IDE-specific content.
+          devrig fetch_resource --uri=<uri> [--project_name <key>]
+                                         canonical form of `devrig prompt`.
+
+          devrig execute_code --project_name=<key> --code-file=<path> --task_id=<id> --reason=<text>
+                              [--code=<inline>] [--modal=<mode>] [--timeout=<sec>] [--json]
+                                         run a Kotlin script in the IDE (steroid_execute_code).
+
+          devrig list_projects [--json]  list open projects (steroid_list_projects; shares
+                                         output with `devrig project`). Exposes project_name,
+                                         the routing key for the other commands.
+          devrig list_windows  [--json]  list IDE windows + readiness + background tasks
+                                         (steroid_list_windows).
+
+          devrig open_project --project_path=<abs> --task_id=<id> --reason=<text>
+                              [--backend_name=<id>] [--trust_project] [--wait] [--json]
+                                         open a project (steroid_open_project); --wait polls until ready.
+
+          devrig take_screenshot --project_name=<key> --task_id=<id> --reason=<text>
+                              [--window_id=<win>] [--out=<file.png>] [--json]
+                                         capture a screenshot (steroid_take_screenshot).
+          devrig input --project_name=<key> --window_id=<win> --task_id=<id> --reason=<text>
+                              --sequence=<steps> [--json]
+                                         send keyboard/mouse input (steroid_input).
+          devrig execute_feedback --project_name=<key> --task_id=<id> --success_rating=<0..1>
+                              --explanation=<text> [--execution_id=<id>] [--code-file=<path>] [--json]
+                                         rate an execution (steroid_execute_feedback).
+
           devrig --version | -v          print the devrig version and exit
           devrig --help    | -h          print this help and exit
 

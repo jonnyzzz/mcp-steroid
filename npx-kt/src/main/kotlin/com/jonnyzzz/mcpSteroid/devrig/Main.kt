@@ -149,14 +149,39 @@ private fun DevrigCommand.runsTool(): Boolean = when (this) {
     is DevrigCommand.DevrigCommandBackendProvision,
     is DevrigCommand.DevrigCommandProject,
     is DevrigCommand.DevrigCommandInstall,
-    is DevrigCommand.DevrigCommandInstallDevrig -> true
+    is DevrigCommand.DevrigCommandInstallDevrig,
+    is DevrigCommand.DevrigCommandFetchResource,
+    is DevrigCommand.DevrigCommandExecuteCode,
+    is DevrigCommand.DevrigCommandListProjects,
+    is DevrigCommand.DevrigCommandListWindows,
+    is DevrigCommand.DevrigCommandOpenProject,
+    is DevrigCommand.DevrigCommandScreenshot,
+    is DevrigCommand.DevrigCommandInput,
+    is DevrigCommand.DevrigCommandFeedback -> true
     is DevrigCommand.DevrigCommandHelp,
     is DevrigCommand.DevrigCommandVersion,
     is DevrigCommand.DevrigCommandParseError -> false
 }
 
+/**
+ * The MCP-as-CLI tool commands emit data (markdown, JSON, tool output) to stdout that must stay
+ * clean for piping, so they never print the human headliner banner — unlike the interactive
+ * `project` / `backend` / `install` listings.
+ */
+private fun DevrigCommand.isMcpAsCliToolCommand(): Boolean = when (this) {
+    is DevrigCommand.DevrigCommandFetchResource,
+    is DevrigCommand.DevrigCommandExecuteCode,
+    is DevrigCommand.DevrigCommandListProjects,
+    is DevrigCommand.DevrigCommandListWindows,
+    is DevrigCommand.DevrigCommandOpenProject,
+    is DevrigCommand.DevrigCommandScreenshot,
+    is DevrigCommand.DevrigCommandInput,
+    is DevrigCommand.DevrigCommandFeedback -> true
+    else -> false
+}
+
 private fun DevrigCommand.printsHeadliner(): Boolean =
-    runsTool() && this !is DevrigCommand.MCP && !json
+    runsTool() && this !is DevrigCommand.MCP && !json && !isMcpAsCliToolCommand()
 
 suspend fun DevrigServices.mainImplMcp(
     onServerReady: (McpServerCore) -> Unit = {},
