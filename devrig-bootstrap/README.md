@@ -1,7 +1,7 @@
 # devrig-bootstrap
 
 A tiny Go MCP server bundled inside the Claude plugin. While the real `devrig`
-binary (~500 MB, needs a JDK) is not yet installed, the plugin launches this
+binary (~611 MB, needs a JDK) is not yet installed, the plugin launches this
 instead so Claude sees a **green** MCP server (never "✗ Failed to connect"). It:
 
 - serves a minimal MCP server exposing one tool, `devrig_status`;
@@ -19,7 +19,7 @@ instead so Claude sees a **green** MCP server (never "✗ Failed to connect"). I
     `~/.mcp-steroid/markers/<pid>.mcp-steroid` (`mcpSteroidServer.baseUrl`). The
     bootstrap bridges to it over Streamable HTTP and proxies the full IDE
     toolset immediately, on the IDE's own JBR;
-  - **Tier 2 (after the ~500 MB download)** — spawns `devrig mcp`, swaps to it
+  - **Tier 2 (after the ~611 MB download)** — spawns `devrig mcp`, swaps to it
     (superseding Tier 1), adding cross-backend routing and managed-backend
     lifecycle. If no IDE is open, the proxy goes Tier 0 → Tier 2 directly, exactly
     as before;
@@ -66,7 +66,7 @@ forgot to regenerate them.
 | `httpmcp.go` | `httpMcpClient`: minimal Streamable-HTTP MCP client (POST + `Mcp-Session-Id`) for the IDE endpoint |
 | `httpbackend.go` | `newHTTPBackend`: presents a running IDE's HTTP endpoint as a `backend` so the proxy forwards to it unchanged |
 | `proxy.go` | `proxy`: tiered hot-swap MCP proxy — Tier 1 (`swapToIde`) then Tier 2 (`swapToDevrig`); forwards client↔backend traffic, ID-prefixes server-initiated requests, fires `tools/list_changed` at each swap |
-| `statusline.go` | `--statusline` mode: prints the one-line progress segment (`devrig 41% · 210/500 MB` / `devrig ✓` / `devrig ⚠`). One source of truth for both the status-line bar and the hook |
+| `statusline.go` | `--statusline` mode: prints the one-line progress segment (`devrig 41% · 250/611 MB` / `devrig ✓` / `devrig ⚠`). One source of truth for both the status-line bar and the hook |
 | `settings.go` | add-only/remove-only editor for `~/.claude/settings.json` `statusLine`; bar-vs-hook detection (`shouldUseHookMode`); `statusline.owner` marker |
 
 **Passive progress (issue #225).** While downloading, the bootstrap surfaces progress automatically —

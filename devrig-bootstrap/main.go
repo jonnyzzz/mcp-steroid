@@ -26,6 +26,21 @@ func main() {
 		return
 	}
 
+	// Install mode: decide bar vs hook and (in bar mode) install the bar now, then exit. Invoked by the
+	// SessionStart hook so a freshly-started instance writes the bar as EARLY as possible — before its
+	// first interaction — so the instance that triggered the download shows the bar itself, not just
+	// other already-running instances. Idempotent with the MCP server's own manageStatusLine.
+	if len(os.Args) > 1 && os.Args[1] == "--install-statusline" {
+		applyStatusLineMode(home)
+		return
+	}
+
+	// Print the total install size in MB (single source: approxInstallMB) for the SessionStart hook copy.
+	if len(os.Args) > 1 && os.Args[1] == "--install-size-mb" {
+		fmt.Fprintf(os.Stdout, "%d\n", approxInstallMB)
+		return
+	}
+
 	// Detached supervisor role: run a single install attempt (heartbeating the lock and recording the
 	// outcome) and exit. Spawned by spawnDetachedInstaller so the download outlives this Claude session.
 	if os.Getenv(installerRoleEnv) == "1" {
@@ -61,10 +76,11 @@ func main() {
 	}
 }
 
-// manageStatusLine decides bar vs hook mode and, in bar mode, installs the transient status-line bar.
-// Returns an idempotent cleanup func that removes the bar. Bar mode requires: devrig not yet installed
-// AND the user has no status line anywhere.
-func manageStatusLine(home string) func() {
+// applyStatusLineMode decides bar vs hook mode and applies it: in bar mode it installs the bar into
+// ~/.claude/settings.json (when devrig is not yet installed AND the user has no status line anywhere);
+// when devrig is already installed it self-heals any stale bar. Records the chosen mode in the owner
+// marker and returns it. Idempotent — safe to call from both the SessionStart hook and the MCP server.
+func applyStatusLineMode(home string) string {
 	cwd, _ := os.Getwd()
 	mode := "hook"
 	if installState(home) != "installed" && !shouldUseHookMode(home, cwd) {
@@ -80,6 +96,13 @@ func manageStatusLine(home string) func() {
 		_ = removeStatusLine(home)
 	}
 	writeStatuslineOwner(home, mode)
+	return mode
+}
+
+// manageStatusLine applies the status-line mode and returns an idempotent cleanup func that removes the
+// bar (bar mode only) when the MCP server exits or devrig goes live.
+func manageStatusLine(home string) func() {
+	mode := applyStatusLineMode(home)
 	return func() {
 		if mode == "bar" {
 			_ = removeStatusLine(home)

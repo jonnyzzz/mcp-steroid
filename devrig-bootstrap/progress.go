@@ -7,9 +7,11 @@ import (
 	"time"
 )
 
-// Approximate total install size (devrig binary + bundled JDK) for the progress readout.
-// Measured ~440 MB on macOS/arm64; rounded up so the readout doesn't exceed the total.
-const approxInstallMB = 500
+// approxInstallMB is the SINGLE SOURCE OF TRUTH for the total install size (devrig app + bundled JDK)
+// shown in every progress readout — the status-line bar, the devrig_status message, and (via
+// `bootstrap --install-size-mb`) the SessionStart hook copy. Change it here and all texts update.
+// Measured ~611 MB on macOS/arm64 (devrig app ~233 MB + Corretto JDK ~378 MB).
+const approxInstallMB = 611
 
 func markersDir(home string) string { return filepath.Join(home, ".mcp-steroid", "markers") }
 

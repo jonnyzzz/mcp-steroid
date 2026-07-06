@@ -54,7 +54,7 @@ func TestStatusMessage(t *testing.T) {
 		{"installing", func(h string) {
 			os.MkdirAll(markersDir(h), 0o755)
 			os.WriteFile(lockPath(h), []byte("1"), 0o644)
-		}, []string{"Downloading devrig", "of ~500 MB", "keeps downloading", "no restart"}},
+		}, []string{"Downloading devrig", "of ~" + itoa(approxInstallMB) + " MB", "keeps downloading", "no restart"}},
 		{"failed", func(h string) {
 			os.MkdirAll(markersDir(h), 0o755)
 			os.WriteFile(failedMarkerPath(h), []byte("network down"), 0o644)
