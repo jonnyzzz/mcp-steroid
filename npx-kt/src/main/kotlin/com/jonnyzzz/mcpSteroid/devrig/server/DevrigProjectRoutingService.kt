@@ -44,6 +44,12 @@ class DevrigProjectRoutingService(
         routeProject(exposedProjectName) ?: throw ProjectRouteNotFoundException(exposedProjectName)
 
     /**
+     * Detects which open project the agent's working directory belongs to. See [selectProjectByCwd].
+     * Used by devrig to resolve a tool call that omits `project_name` (task #226).
+     */
+    fun detectProject(dirs: List<Path>): ProjectDetection = selectProjectByCwd(routes(), dirs)
+
+    /**
      * All discovered backends as (backend_name, ide) pairs, for list_projects summaries and error
      * messages. De-duped by backend_name (keep-first + WARN), mirroring `backendRowsWithStableIds`.
      */
