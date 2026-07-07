@@ -164,6 +164,10 @@ fun InputSchemaElement<Nothing>.array(items: JsonObjectBuilder.() -> Unit) = Inp
     }
 )
 
+/** Marks a parameter required in the emitted schema without changing its parsed (nullable) type. */
+fun <R> InputSchemaElement<R>.markRequired(): InputSchemaElement<R> =
+    copy(spec = spec.copy(required = true))
+
 fun <R : Any> InputSchemaElement<R?>.required(): InputSchemaElement<R> {
     val that = this
     return InputSchemaElement(

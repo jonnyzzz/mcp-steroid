@@ -75,11 +75,14 @@ data class ExecCodeParams(
 /**
  * Handler for the steroid_execute_code MCP tool.
  */
-class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBase() {
+class ExecuteCodeToolSpec(
+    val projectNameRequired: Boolean = true,
+    val handler: () -> ExecuteCodeToolHandler,
+) : McpToolBase() {
     override val name = "steroid_execute_code"
     override val description get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
 
-    val projectName = CommonToolParams.projectName().registerToSchema()
+    val projectName = CommonToolParams.projectName(projectNameRequired).registerToSchema()
 
     val code = InputSchemaElement.param("code")
         .description("Kotlin suspend method body")
@@ -123,7 +126,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val projectName = context[projectName]
+        val projectName = context[projectName].orEmpty()
         val code = context[code]
         val taskId = context[taskId]
         val reason = context[reason]

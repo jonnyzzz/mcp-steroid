@@ -11,16 +11,16 @@ abstract class McpSteroidTools {
      * routing param). Each caller registers its own `OpenProjectToolSpec(...)` after this call,
      * using the public [handler] accessor to resolve the [OpenProjectToolHandler].
      */
-    fun registerAll(server: McpServerCore) {
+    fun registerAll(server: McpServerCore, projectNameRequired: Boolean = true) {
         val tools = server.toolRegistry
 
         tools.registerTool(ListProjectsToolSpec { handler<ListProjectsToolHandler>() })
         tools.registerTool(ListWindowsToolSpec { handler<ListWindowsToolHandler>() })
-        tools.registerTool(ExecuteCodeToolSpec { handler<ExecuteCodeToolHandler>() })
-        tools.registerTool(ExecuteFeedbackToolSpec { handler<ExecuteFeedbackToolHandler>() })
-        tools.registerTool(VisionScreenshotToolSpec { handler<VisionScreenshotToolHandler>() })
-        tools.registerTool(VisionInputToolSpec { handler<VisionInputToolHandler>() })
-        tools.registerTool(FetchResourceToolHandler { handler<PromptsContextHandler>() })
+        tools.registerTool(ExecuteCodeToolSpec(projectNameRequired) { handler<ExecuteCodeToolHandler>() })
+        tools.registerTool(ExecuteFeedbackToolSpec(projectNameRequired) { handler<ExecuteFeedbackToolHandler>() })
+        tools.registerTool(VisionScreenshotToolSpec(projectNameRequired) { handler<VisionScreenshotToolHandler>() })
+        tools.registerTool(VisionInputToolSpec(projectNameRequired) { handler<VisionInputToolHandler>() })
+        tools.registerTool(FetchResourceToolHandler(projectNameRequired) { handler<PromptsContextHandler>() })
     }
 
     inline fun <reified T : Any> handler(): T = handler(T::class.java)
