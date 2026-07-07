@@ -117,9 +117,19 @@ agents that lost their MCP tools in a session. Keeping PR1 IDE-free also keeps i
       attempts/interval), quiet on stdout under `--json`.
 - [x] `list_projects` reconciled: human = `devrig project`; `--json` = unified envelope via the MCP handler.
 
+## Round 3 — Docker live-IDE smoke (written; needs Docker to run)
+
+- [x] `CliDevrigToolsIntegrationTest` (`:test-integration`, opt-in — excluded from default runs) drives the
+      deployed `devrig` binary as a plain CLI against a real dockerized IDE: `list_projects --json`
+      (envelope + routing key), `execute_code` (marker printed by the IDE), `fetch_resource --project_name`.
+      **Executed & green** — BUILD SUCCESSFUL, all 3 cases pass end-to-end against a live IDE container
+      (~9 min). Run with: `./gradlew :test-integration:test --tests '*CliDevrigToolsIntegrationTest*'`.
+      Confirmed: the devrig bridge translates the exposed routing key (`demo-project-<hash>` from
+      `list_projects`) to the IDE's internal `project_name` before forwarding — agents only ever use the
+      exposed key.
+
 ## Follow-ups / open questions
 
-- [ ] **Docker live-IDE smoke suite** (`CliDevrigToolsIntegrationTest`, opt-in) — the remaining item.
 - [ ] Per-command `--help` (finding #2) — or explicitly accept the global banner and document it.
 - [ ] `open_project --wait`: reuse the monitor's push stream instead of a sleep-poll loop.
 - [ ] Agent-usable docs: add a `mcp-steroid://` article (or extend the skill) describing the CLI
