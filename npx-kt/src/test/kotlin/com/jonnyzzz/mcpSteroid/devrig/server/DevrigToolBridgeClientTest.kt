@@ -181,7 +181,7 @@ class DevrigToolBridgeClientTest {
             )
         )
         val route = routing.routes().single()
-        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(httpClient), routing, testBeacon(tempDir))
+        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(httpClient), testProjectResolver(routing), testBeacon(tempDir))
 
         val result = handler.executeCode(
             projectName = route.exposedProjectName,
@@ -221,7 +221,7 @@ class DevrigToolBridgeClientTest {
             )
         )
         val route = routing.routes().single()
-        val handler = DevrigExecuteFeedbackToolHandler(DevrigToolBridgeClient(httpClient),routing, testBeacon(tempDir))
+        val handler = DevrigExecuteFeedbackToolHandler(DevrigToolBridgeClient(httpClient), testProjectResolver(routing), testBeacon(tempDir))
 
         val result = handler.handleFeedback(
             projectName = route.exposedProjectName,
@@ -256,7 +256,7 @@ class DevrigToolBridgeClientTest {
             )
         )
         val route = routing.routes().single()
-        val handler = DevrigVisionScreenshotToolHandler(DevrigToolBridgeClient(httpClient), routing)
+        val handler = DevrigVisionScreenshotToolHandler(DevrigToolBridgeClient(httpClient), testProjectResolver(routing))
 
         val result = handler.screenshotWindow(
             projectName = route.exposedProjectName,
@@ -296,7 +296,7 @@ class DevrigToolBridgeClientTest {
             ),
         )
         val route = routing.routes().single { it.route.pid == 43L }
-        val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(httpClient), routing)
+        val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(httpClient), testProjectResolver(routing))
 
         val result = handler.handleInputSequence(
             projectName = route.exposedProjectName,
@@ -610,7 +610,7 @@ class DevrigToolBridgeClientTest {
         )
         val route = routing.routes().single()
         val progressMessages = mutableListOf<String>()
-        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(httpClient), routing, testBeacon(tempDir))
+        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(httpClient), testProjectResolver(routing), testBeacon(tempDir))
 
         val result = handler.executeCode(
             projectName = route.exposedProjectName,
