@@ -53,7 +53,7 @@ class CliToolSupportTest {
         assertTrue(out.text().contains("[image: image/png, 9 bytes]"), out.text())
 
         val obj = Json.parseToJsonElement(result.toEnvelopeJson("shot")).jsonObject
-        val item = obj["content"]!!.jsonArray.first().jsonObject
+        val item = obj["data"]!!.jsonObject["content"]!!.jsonArray.first().jsonObject
         assertEquals("image", item["type"]!!.jsonPrimitive.content)
         assertEquals(9, item["bytes"]!!.jsonPrimitive.int)
     }

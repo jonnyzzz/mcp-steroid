@@ -86,11 +86,21 @@ fun ToolCallResult.renderTo(
 }
 
 /**
- * Stable machine-readable envelope for a tool-backed command's result. Kept intentionally simple
- * (no MCP-schema echo): `tool` identity, the `command`, the `isError` flag, and the `content` items.
- * Image blobs are summarized (mimeType + byte count) rather than inlined so stdout stays usable.
+ * The single, unified `--json` envelope shared by EVERY `devrig` MCP-as-CLI command:
+ *
+ * ```json
+ * { "tool": {"name":"devrig","version":"..."}, "command": "<name>", "isError": <bool>, "data": { ... } }
+ * ```
+ *
+ * `data` holds the command-specific payload: `{content:[...]}` for tool-result commands (fetch_resource,
+ * execute_code, …), `{projects:[...]}` for list_projects, `{windows,backgroundTasks}` for list_windows.
+ * One outer shape keeps agents and tests from special-casing per command. The [Json] instance is shared
+ * so encoding stays consistent.
  */
-fun ToolCallResult.toEnvelopeJson(command: String): String {
+val CLI_ENVELOPE_JSON: Json = Json { prettyPrint = true; encodeDefaults = true; explicitNulls = false }
+
+/** Wraps a command-specific [data] object in the unified envelope and renders it to a string. */
+fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String {
     val payload = buildJsonObject {
         put("tool", buildJsonObject {
             put("name", "devrig")
@@ -98,6 +108,17 @@ fun ToolCallResult.toEnvelopeJson(command: String): String {
         })
         put("command", command)
         put("isError", isError)
+        put("data", data)
+    }
+    return CLI_ENVELOPE_JSON.encodeToString(JsonObject.serializer(), payload)
+}
+
+/**
+ * Envelope for a tool-backed command's [ToolCallResult]: `data:{content:[...]}`. Image blobs are
+ * summarized (mimeType + byte count) rather than inlined so stdout stays usable.
+ */
+fun ToolCallResult.toEnvelopeJson(command: String): String {
+    val data = buildJsonObject {
         putJsonArray("content") {
             for (item in content) {
                 add(buildJsonObject {
@@ -122,10 +143,8 @@ fun ToolCallResult.toEnvelopeJson(command: String): String {
             }
         }
     }
-    return ENVELOPE_JSON.encodeToString(JsonObject.serializer(), payload)
+    return cliEnvelopeJson(command, isError, data)
 }
-
-private val ENVELOPE_JSON = Json { prettyPrint = true; encodeDefaults = true; explicitNulls = false }
 
 private fun ContentItem.Image.decodedByteCount(): Int =
     try {

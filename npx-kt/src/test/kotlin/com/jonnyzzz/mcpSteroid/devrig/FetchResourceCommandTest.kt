@@ -91,7 +91,7 @@ class FetchResourceCommandTest {
         assertEquals("devrig", obj["tool"]!!.jsonObject["name"]!!.jsonPrimitive.content)
         assertEquals("fetch_resource", obj["command"]!!.jsonPrimitive.content)
         assertEquals(false, obj["isError"]!!.jsonPrimitive.booleanOrNull)
-        val content = obj["content"]!!.jsonArray
+        val content = obj["data"]!!.jsonObject["content"]!!.jsonArray
         assertTrue(content.isNotEmpty(), "envelope must carry the resolved content")
         assertEquals("text", content.first().jsonObject["type"]!!.jsonPrimitive.content)
     }

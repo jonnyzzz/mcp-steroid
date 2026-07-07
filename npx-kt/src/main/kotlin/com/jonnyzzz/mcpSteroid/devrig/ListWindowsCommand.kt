@@ -4,25 +4,28 @@ package com.jonnyzzz.mcpSteroid.devrig
 import com.jonnyzzz.mcpSteroid.devrig.server.StubMcpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
+import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import java.io.PrintStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 /**
  * `devrig list_windows [--json]` — the CLI face of `steroid_list_windows`.
  *
- * Like `devrig project`, this returns a typed response (not a [com.jonnyzzz.mcpSteroid.mcp.ToolCallResult])
- * so it uses its own renderers rather than the shared `renderTo` envelope. The data comes from the
- * existing [ListWindowsToolHandler] bridge implementation — one source of truth with the MCP tool.
+ * Returns a typed response (not a [com.jonnyzzz.mcpSteroid.mcp.ToolCallResult]) so it has its own human
+ * renderer, but `--json` uses the SAME unified envelope as every other command ([cliEnvelopeJson]). The
+ * data comes from the existing [ListWindowsToolHandler] bridge implementation — one source of truth with
+ * the MCP tool. `tools` is defaulted so tests can inject a fake snapshot.
  */
-fun DevrigServices.runListWindowsCommand(command: DevrigCommand.DevrigCommandListWindows): Int {
+fun DevrigServices.runListWindowsCommand(
+    command: DevrigCommand.DevrigCommandListWindows,
+    tools: McpSteroidTools = StubMcpSteroidTools(this),
+): Int {
     val response = try {
         runBlocking(Dispatchers.IO) {
-            StubMcpSteroidTools(this@runListWindowsCommand)
-                .handler<ListWindowsToolHandler>()
-                .collectListWindowsResponse()
+            tools.handler<ListWindowsToolHandler>().collectListWindowsResponse()
         }
     } catch (e: CancellationException) {
         throw e
@@ -32,17 +35,19 @@ fun DevrigServices.runListWindowsCommand(command: DevrigCommand.DevrigCommandLis
     }
 
     if (command.json) {
-        renderListWindowsJson(response, mcpStdout)
+        mcpStdout.println(listWindowsEnvelopeJson(response))
     } else {
         renderListWindowsText(response, mcpStdout)
     }
     return CliExit.OK
 }
 
-private val LIST_WINDOWS_JSON = Json { prettyPrint = true; encodeDefaults = true; explicitNulls = false }
-
-fun renderListWindowsJson(response: ListWindowsResponse, out: PrintStream) {
-    out.println(LIST_WINDOWS_JSON.encodeToString(ListWindowsResponse.serializer(), response))
+/** Wraps the windows response in the unified `{tool, command, isError, data}` envelope. */
+fun listWindowsEnvelopeJson(response: ListWindowsResponse): String {
+    val data = CLI_ENVELOPE_JSON
+        .encodeToJsonElement(ListWindowsResponse.serializer(), response)
+        .jsonObject
+    return cliEnvelopeJson(command = "list_windows", isError = false, data = data)
 }
 
 fun renderListWindowsText(response: ListWindowsResponse, out: PrintStream) {

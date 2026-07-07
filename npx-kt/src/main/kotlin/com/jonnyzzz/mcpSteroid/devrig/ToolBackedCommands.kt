@@ -5,12 +5,13 @@ import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRouteNotFoundException
 import com.jonnyzzz.mcpSteroid.devrig.server.StubMcpSteroidTools
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
-import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
+import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
+import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
@@ -25,17 +26,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
 /**
- * Shared execution for `devrig` subcommands that map 1:1 onto a bridge tool handler and return a
- * [ToolCallResult]. The handler is resolved from [StubMcpSteroidTools] — the SAME wiring the
- * `devrig mcp` stdio proxy uses — so the CLI never reimplements tool logic. Routing/bridge failures
- * are turned into meaningful exit codes + agent-usable stderr messages.
+ * `devrig` subcommands that map 1:1 onto a bridge tool handler and return a [ToolCallResult].
+ *
+ * The handlers are resolved from an [McpSteroidTools] — in production [StubMcpSteroidTools], the SAME
+ * wiring the `devrig mcp` stdio proxy uses, so the CLI never reimplements tool logic. Each command takes
+ * `tools` as a defaulted parameter purely so tests can inject a fake and assert the args→`*Params`→render
+ * glue without a live IDE (payload→wire mapping is covered by DevrigToolBridgeClientTest).
+ */
+
+/**
+ * Runs [block] against [tools], turning routing/bridge failures into meaningful exit codes + agent-usable
+ * stderr messages, then renders the [ToolCallResult].
  */
 private inline fun DevrigServices.runToolCall(
     commandName: String,
     json: Boolean,
-    crossinline block: suspend (StubMcpSteroidTools) -> ToolCallResult,
+    tools: McpSteroidTools,
+    crossinline block: suspend (McpSteroidTools) -> ToolCallResult,
 ): Int {
-    val tools = StubMcpSteroidTools(this)
     val result = try {
         runBlocking(Dispatchers.IO) { block(tools) }
     } catch (e: ProjectRouteNotFoundException) {
@@ -63,8 +71,15 @@ private fun resolveCodeArg(inline: String?, file: String?): String? {
 
 // ----------------------------------- execute_code -----------------------------------
 
-fun DevrigServices.runExecuteCodeCommand(command: DevrigCommand.DevrigCommandExecuteCode): Int {
-    val code = resolveCodeArg(command.code, command.codeFile) ?: return CliExit.USAGE
+fun DevrigServices.runExecuteCodeCommand(
+    command: DevrigCommand.DevrigCommandExecuteCode,
+    tools: McpSteroidTools = StubMcpSteroidTools(this),
+): Int {
+    // `--code-file=-` reads the script from stdin so agents can pipe a snippet without a temp file.
+    val code = when {
+        command.codeFile == "-" -> mcpStdin.readBytes().decodeToString()
+        else -> resolveCodeArg(command.code, command.codeFile) ?: return CliExit.USAGE
+    }
     val modal = command.modal?.let { wire ->
         ModalMode.entries.firstOrNull { it.wire == wire }
             ?: run {
@@ -81,15 +96,18 @@ fun DevrigServices.runExecuteCodeCommand(command: DevrigCommand.DevrigCommandExe
         timeout = command.timeout ?: 600,
         modal = modal,
     )
-    return runToolCall("execute_code", command.json) { tools ->
-        tools.handler<ExecuteCodeToolHandler>()
+    return runToolCall("execute_code", command.json, tools) { t ->
+        t.handler<ExecuteCodeToolHandler>()
             .executeCode(command.projectName!!, params, stderrProgressReporter())
     }
 }
 
 // ----------------------------------- execute_feedback -----------------------------------
 
-fun DevrigServices.runFeedbackCommand(command: DevrigCommand.DevrigCommandFeedback): Int {
+fun DevrigServices.runFeedbackCommand(
+    command: DevrigCommand.DevrigCommandFeedback,
+    tools: McpSteroidTools = StubMcpSteroidTools(this),
+): Int {
     val code: String? = when {
         !command.code.isNullOrBlank() -> command.code
         !command.codeFile.isNullOrBlank() -> resolveCodeArg(null, command.codeFile) ?: return CliExit.USAGE
@@ -101,14 +119,17 @@ fun DevrigServices.runFeedbackCommand(command: DevrigCommand.DevrigCommandFeedba
         explanation = command.explanation,
         code = code,
     )
-    return runToolCall("execute_feedback", command.json) { tools ->
-        tools.handler<ExecuteFeedbackToolHandler>().handleFeedback(command.projectName!!, params)
+    return runToolCall("execute_feedback", command.json, tools) { t ->
+        t.handler<ExecuteFeedbackToolHandler>().handleFeedback(command.projectName!!, params)
     }
 }
 
 // ----------------------------------- input -----------------------------------
 
-fun DevrigServices.runInputCommand(command: DevrigCommand.DevrigCommandInput): Int {
+fun DevrigServices.runInputCommand(
+    command: DevrigCommand.DevrigCommandInput,
+    tools: McpSteroidTools = StubMcpSteroidTools(this),
+): Int {
     // The devrig bridge forwards the raw sequence string verbatim (the IDE re-parses it), so we do
     // not need a client-side parse here; pass an empty parsed list and the raw string.
     val params = InputParams(
@@ -118,20 +139,22 @@ fun DevrigServices.runInputCommand(command: DevrigCommand.DevrigCommandInput): I
         sequence = emptyList(),
         rawSequence = command.sequence,
     )
-    return runToolCall("input", command.json) { tools ->
-        tools.handler<VisionInputToolHandler>().handleInputSequence(command.projectName!!, params)
+    return runToolCall("input", command.json, tools) { t ->
+        t.handler<VisionInputToolHandler>().handleInputSequence(command.projectName!!, params)
     }
 }
 
 // ----------------------------------- take_screenshot -----------------------------------
 
-fun DevrigServices.runScreenshotCommand(command: DevrigCommand.DevrigCommandScreenshot): Int {
+fun DevrigServices.runScreenshotCommand(
+    command: DevrigCommand.DevrigCommandScreenshot,
+    tools: McpSteroidTools = StubMcpSteroidTools(this),
+): Int {
     val params = ScreenshotParams(
         taskId = command.taskId!!,
         reason = command.reason!!,
         windowId = command.windowId,
     )
-    val tools = StubMcpSteroidTools(this)
     val result = try {
         runBlocking(Dispatchers.IO) {
             tools.handler<VisionScreenshotToolHandler>()
@@ -149,33 +172,46 @@ fun DevrigServices.runScreenshotCommand(command: DevrigCommand.DevrigCommandScre
 
     // --out: pull the first image out of the result and write the raw PNG bytes to disk.
     if (!command.out.isNullOrBlank() && !result.isError) {
-        val image = result.content.filterIsInstance<ContentItem.Image>().firstOrNull()
-        if (image == null) {
-            System.err.println("--out given but the screenshot result carried no image payload")
-        } else {
-            try {
-                val bytes = Base64.getDecoder().decode(image.data)
-                val outPath = Path.of(command.out)
-                Files.write(outPath, bytes)
-                System.err.println("Saved screenshot (${bytes.size} bytes, ${image.mimeType}) to ${outPath.toAbsolutePath()}")
-            } catch (e: Exception) {
-                System.err.println("failed to write --out=${command.out}: ${e.message}")
-                return CliExit.USAGE
-            }
-        }
+        val written = writeScreenshotOut(result, command.out)
+        if (!written) return CliExit.USAGE
     }
     return result.renderTo(command = "take_screenshot", json = command.json, out = mcpStdout)
 }
 
+/** Decodes the first image in [result] and writes it to [out]; returns false (after printing) on failure. */
+private fun writeScreenshotOut(result: ToolCallResult, out: String): Boolean {
+    val image = result.content.filterIsInstance<ContentItem.Image>().firstOrNull()
+    if (image == null) {
+        System.err.println("--out given but the screenshot result carried no image payload")
+        return true // not a usage error — the call succeeded, there was just nothing to save
+    }
+    return try {
+        val bytes = Base64.getDecoder().decode(image.data)
+        val outPath = Path.of(out).toAbsolutePath()
+        outPath.parent?.let { Files.createDirectories(it) }
+        Files.write(outPath, bytes)
+        System.err.println("Saved screenshot (${bytes.size} bytes, ${image.mimeType}) to $outPath")
+        true
+    } catch (e: Exception) {
+        System.err.println("failed to write --out=$out: ${e.message}")
+        false
+    }
+}
+
 // ----------------------------------- open_project -----------------------------------
 
-fun DevrigServices.runOpenProjectCommand(command: DevrigCommand.DevrigCommandOpenProject): Int {
+fun DevrigServices.runOpenProjectCommand(
+    command: DevrigCommand.DevrigCommandOpenProject,
+    tools: McpSteroidTools = StubMcpSteroidTools(this),
+    // Exposed for tests so the --wait poll loop can run with a fast cadence.
+    waitAttempts: Int = 60,
+    waitIntervalMs: Long = 2000,
+): Int {
     val params = OpenProjectParams(
         projectPath = command.projectPath!!,
         trustProject = command.trustProject,
         backendName = command.backendName,
     )
-    val tools = StubMcpSteroidTools(this)
     val result = try {
         runBlocking(Dispatchers.IO) {
             tools.handler<OpenProjectToolHandler>().handleOpenProject(params, stderrProgressReporter())
@@ -190,9 +226,9 @@ fun DevrigServices.runOpenProjectCommand(command: DevrigCommand.DevrigCommandOpe
     val exit = result.renderTo(command = "open_project", json = command.json, out = mcpStdout)
     if (exit != CliExit.OK || !command.wait) return exit
 
-    // --wait: poll list_windows until the freshly-opened project is ready. Best-effort; progress
-    // goes to stderr so stdout keeps just the open_project result.
-    val ready = waitForProjectReady(command.projectPath)
+    // --wait: poll list_windows until the freshly-opened project is ready. Best-effort; all progress
+    // goes to stderr so stdout keeps just the open_project result (clean for --json / pipes).
+    val ready = waitForProjectReady(command.projectPath, tools, attempts = waitAttempts, intervalMs = waitIntervalMs)
     if (!ready) {
         System.err.println("open_project: --wait timed out before the project became ready")
         return CliExit.UNAVAILABLE
@@ -203,11 +239,12 @@ fun DevrigServices.runOpenProjectCommand(command: DevrigCommand.DevrigCommandOpe
 
 /**
  * Polls `list_windows` until a window for [projectPath] is initialized, not indexing, and has no
- * modal dialog — or the timeout elapses. Returns true when ready. Kept simple for the spike: fixed
- * cadence, bounded attempts, all diagnostics on stderr.
+ * modal dialog — or the timeout elapses. Returns true when ready. Fixed cadence, bounded attempts,
+ * all diagnostics on stderr.
  */
 private fun DevrigServices.waitForProjectReady(
     projectPath: String,
+    tools: McpSteroidTools,
     attempts: Int = 60,
     intervalMs: Long = 2000,
 ): Boolean {
@@ -219,9 +256,7 @@ private fun DevrigServices.waitForProjectReady(
     repeat(attempts) { attempt ->
         val response = try {
             runBlocking(Dispatchers.IO) {
-                StubMcpSteroidTools(this@waitForProjectReady)
-                    .handler<com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler>()
-                    .collectListWindowsResponse()
+                tools.handler<ListWindowsToolHandler>().collectListWindowsResponse()
             }
         } catch (e: CancellationException) {
             throw e

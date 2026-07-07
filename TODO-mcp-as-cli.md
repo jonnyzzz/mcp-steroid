@@ -101,13 +101,28 @@ Rationale: the write/IDE-driving commands (PR2/PR3) carry the real risk (need a 
 verify, and `--wait`/`--out` semantics deserve their own review), while PR1 is low-risk and unblocks
 agents that lost their MCP tools in a session. Keeping PR1 IDE-free also keeps its CI fast.
 
+## Round 2 — hardening all tools (done)
+
+- [x] **Unified `--json` envelope** `{tool, command, isError, data}` across ALL commands (finding #1
+      resolved). `data` = `{content:[...]}` for tool-results, `{projects:[...]}` / `{windows,backgroundTasks}`
+      for listers. `CliToolSupport.cliEnvelopeJson` is the single writer.
+- [x] **Injectable handlers for testability**: each tool-command takes
+      `tools: McpSteroidTools = StubMcpSteroidTools(this)`; `FakeMcpSteroidTools` + recording handlers
+      drive **glue tests** for execute_code / feedback / input / take_screenshot / open_project, plus
+      list_windows / list_projects (args→`*Params`→render→exit; no IDE). Bridge payload→wire mapping stays
+      covered by `DevrigToolBridgeClientTest`.
+- [x] `execute_code --code-file=-` reads the script from stdin.
+- [x] `take_screenshot --out` creates parent dirs, writes decoded PNG, reports abs path; no-image case noted.
+- [x] `open_project --wait` poll loop is test-friendly (injected `ListWindowsToolHandler`, small
+      attempts/interval), quiet on stdout under `--json`.
+- [x] `list_projects` reconciled: human = `devrig project`; `--json` = unified envelope via the MCP handler.
+
 ## Follow-ups / open questions
 
-- [ ] Decide the unified `--json` envelope (finding #1) and apply to list_windows/list_projects.
-- [ ] Make `StubMcpSteroidTools` accept an injectable `DevrigToolBridgeClient` → fake-bridge unit tests
-      for execute_code/feedback/input/screenshot/open_project payload mapping.
+- [ ] **Docker live-IDE smoke suite** (`CliDevrigToolsIntegrationTest`, opt-in) — the remaining item.
 - [ ] Per-command `--help` (finding #2) — or explicitly accept the global banner and document it.
 - [ ] `open_project --wait`: reuse the monitor's push stream instead of a sleep-poll loop.
 - [ ] Agent-usable docs: add a `mcp-steroid://` article (or extend the skill) describing the CLI
       mapping so agents discover `devrig <tool>` the same way they discover the MCP tools.
-- [ ] Consider `devrig execute_code --code-file=-` (read from stdin) for piping snippets.
+- [ ] Optional client-side `input` sequence validation via `InputSequenceParser` (currently the IDE
+      re-parses the raw sequence).

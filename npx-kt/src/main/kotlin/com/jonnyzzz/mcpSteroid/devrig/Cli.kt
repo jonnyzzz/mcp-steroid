@@ -689,10 +689,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             // MCP-as-CLI (epic #188)
             is DevrigCommand.DevrigCommandFetchResource -> runFetchResourceCommand(command)
             is DevrigCommand.DevrigCommandExecuteCode -> runExecuteCodeCommand(command)
-            is DevrigCommand.DevrigCommandListProjects -> runProjectCommand(
-                // list_projects shares the project render path; project_name is exposed in both.
-                DevrigCommand.DevrigCommandProject(debug = command.debug, json = command.json),
-            )
+            is DevrigCommand.DevrigCommandListProjects -> runListProjectsCommand(command)
             is DevrigCommand.DevrigCommandListWindows -> runListWindowsCommand(command)
             is DevrigCommand.DevrigCommandOpenProject -> runOpenProjectCommand(command)
             is DevrigCommand.DevrigCommandScreenshot -> runScreenshotCommand(command)
