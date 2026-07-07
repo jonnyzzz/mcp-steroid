@@ -167,15 +167,23 @@ class ProjectCommandRenderTest {
     // ----------------------------- skipped (port IDEs) ---------------------
 
     @Test
-    fun `port-only IDE appears in skipped footer and not in projects list`() {
-        val ide = markerIde(pid = 1L)
+    fun `port-only IDE (no matching marker) appears in skipped footer and not in projects list`() {
+        val ide = markerIde(pid = 1L) // build IU-253.21581.142
+        // A genuinely plugin-less IDE: a different product/build, so no marker represents it.
         val text = render(
             routes = listOf(route("a", "/a", ide)),
-            portIdes = setOf(portIde(port = 63342)),
+            portIdes = setOf(portIde(
+                port = 63342,
+                productFullName = "GoLand 2024.1",
+                productName = "GoLand",
+                buildNumber = "GO-241.18034.62",
+                baselineVersion = 241,
+                edition = "GO",
+            )),
         )
         assertTrue(text.contains("Skipped 1 backend with MCP Steroid not installed:"),
             "expected no-plugin footer; got:\n$text")
-        assertTrue(text.contains("IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342): MCP Steroid: not installed"),
+        assertTrue(text.contains("GoLand 2024.1 (build GO-241.18034.62, port 63342): MCP Steroid: not installed"),
             "expected port IDE identity; got:\n$text")
     }
 
@@ -184,5 +192,38 @@ class ProjectCommandRenderTest {
         val ide = markerIde(pid = 1L)
         val text = render(routes = listOf(route("a", "/a", ide)))
         assertTrue(!text.contains("Skipped"), "no skipped footer expected; got:\n$text")
+    }
+
+    // ------------- skipped-footer dedup: same IDE must not be listed twice -------------
+
+    @Test
+    fun `port IDE duplicating a marker (same build) is deduped from the footer`() {
+        val ide = markerIde(pid = 1L) // build IU-253.21581.142
+        // The SAME running IDE, seen via its built-in web-server port — /api/about reports the build
+        // WITHOUT the product prefix. It must be recognised as the marker's IDE and NOT re-listed as
+        // "not installed" (regression for the devrig-project duplicate-IDE bug).
+        val text = render(
+            routes = listOf(route("a", "/a", ide)),
+            portIdes = setOf(portIde(port = 63342, buildNumber = "253.21581.142")),
+        )
+        assertTrue(!text.contains("Skipped"),
+            "a port IDE that duplicates a marker must not appear in a skipped footer; got:\n$text")
+        assertTrue(!text.contains("not installed"),
+            "no 'not installed' line for an IDE that actually has the plugin; got:\n$text")
+    }
+
+    @Test
+    fun `footer keeps genuinely plugin-less IDEs and drops only marker duplicates`() {
+        val ide = markerIde(pid = 1L) // build IU-253.21581.142
+        val duplicate = portIde(port = 63342, buildNumber = "253.21581.142")  // same IDE as marker → dropped
+        val pluginLess = portIde(                                              // different IDE → kept
+            port = 63343, productFullName = "PyCharm 2024.3", productName = "PyCharm",
+            buildNumber = "PY-243.12345.6", baselineVersion = 243, edition = "PC",
+        )
+        val text = render(routes = listOf(route("a", "/a", ide)), portIdes = setOf(duplicate, pluginLess))
+        assertTrue(text.contains("Skipped 1 backend with MCP Steroid not installed:"),
+            "exactly the one plugin-less IDE should remain in the footer; got:\n$text")
+        assertTrue(text.contains("port 63343"), "the genuinely plugin-less IDE must stay; got:\n$text")
+        assertTrue(!text.contains("port 63342"), "the marker duplicate must be dropped; got:\n$text")
     }
 }

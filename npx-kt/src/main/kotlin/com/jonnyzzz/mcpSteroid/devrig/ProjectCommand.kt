@@ -53,7 +53,17 @@ fun renderProjectOutput3(
     val routesByIde: Map<DiscoveredIde, List<ProjectRoute>> = routes.groupBy { it.route }
     val reachableIdeCount = routesByIde.keys.size
 
-    if (routes.isEmpty() && portIdes.isEmpty()) {
+    // Drop port-discovered IDEs that a marker already represents (same normalised build): it is the
+    // SAME running IDE, seen a second time via its built-in web-server port, so listing it again as
+    // "MCP Steroid: not installed" is a duplicate. Mirrors the dedup `devrig backend` already does
+    // (see BackendCommand). Port IDEs with an unknown build are kept — we cannot prove they are dupes.
+    val markerBuilds = routes.mapNotNull { normaliseBuildForDedup(it.route.ide.build) }.toSet()
+    val skippedPortIdes = portIdes.filterTo(LinkedHashSet()) { portIde ->
+        val norm = normaliseBuildForDedup(portIde.buildNumber)
+        norm == null || norm !in markerBuilds
+    }
+
+    if (routes.isEmpty() && skippedPortIdes.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
         out.println()
         return
@@ -61,7 +71,7 @@ fun renderProjectOutput3(
 
     if (routes.isEmpty()) {
         out.println("No open projects across $reachableIdeCount backend(s).")
-        renderPortSkippedFooter(portIdes, out)
+        renderPortSkippedFooter(skippedPortIdes, out)
         out.println()
         return
     }
@@ -80,7 +90,7 @@ fun renderProjectOutput3(
         if (index < routes.lastIndex) out.println()
     }
 
-    renderPortSkippedFooter(portIdes, out)
+    renderPortSkippedFooter(skippedPortIdes, out)
     out.println()
 }
 
