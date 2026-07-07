@@ -35,7 +35,10 @@ running IntelliJ-based IDE from Claude via the devrig bridge.
    for cross-backend/managed features. If no IDE was open, this is the point the
    tools first appear.)
 6. `/devrig:setup` is only needed to **retry a failed download** or to fetch the
-   binary immediately instead of waiting.
+   binary immediately instead of waiting. Run **`/devrig:help`** anytime for
+   copy-paste example prompts showing what the whole-IDE bridge can do — Claude
+   also shows a one-time welcome with a few examples on the first session after
+   devrig goes live.
 
 The downloaded binary lands at `~/.mcp-steroid/bin/devrig`; once present, the
 launcher routes to it and the bootstrap is no longer used.
@@ -51,7 +54,8 @@ not on `/reload-plugins`:
 
 | State | Message |
 |---|---|
-| devrig already installed | *(silent)* |
+| devrig just installed (first session only, once) | ✅ devrig is live — Claude can now drive your JetBrains IDE. Try “run the tests in the open IDE”, “find duplicates in this file”, or “show the compilation errors”. Run /devrig:help for more. |
+| devrig already installed (welcomed before) | *(silent)* |
 | downloading, an IDE with the MCP Steroid plugin is open | ⚡ IDE tools ready now — full devrig toolset (~611 MB) still downloading in the background, activates automatically when done. |
 | downloading, no IDE open | ⏳ devrig downloading (~611 MB) in the background — activates automatically when done, no restart needed. |
 | last install failed | ❌ devrig install failed. Run /devrig:setup to retry. |
@@ -116,6 +120,7 @@ manual commands."
 | Progress total ("~N MB") | `../devrig-bootstrap/progress.go` (`approxInstallMB`) | the number shown in `devrig_status` |
 | Wedge reclaim timing | `../devrig-bootstrap/status.go` (`heartbeatInterval`, `installLockStaleAfter`) | how fast a dead/interrupted download is retried |
 | User-facing messages | `bin/check-devrig` (hook) + `../devrig-bootstrap/status.go` | what the user sees while installing/failed/done |
+| First-run welcome + example prompts | `bin/check-devrig` (installed branch) + `commands/help.md` | the one-time welcome (gated by `~/.mcp-steroid/markers/welcomed`) and the `/devrig:help` command |
 
 ## Run a locally built devrig (your code changes, not the release)
 

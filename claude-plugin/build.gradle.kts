@@ -113,6 +113,7 @@ val verifyPluginFiles = tasks.register("verifyPluginFiles") {
             "bin/bootstrap-linux-arm64",
             "bin/bootstrap-windows-amd64.exe",
             "bin/bootstrap-windows-arm64.exe",
+            "commands/help.md",
             "commands/setup.md",
             "commands/status.md",
             "commands/uninstall.md",
@@ -360,22 +361,27 @@ val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
             return out
         }
 
-        fun makeHome(name: String, launcher: String?, failed: Boolean = false): java.io.File {
+        fun makeHome(name: String, launcher: String?, failed: Boolean = false, welcomed: Boolean = false): java.io.File {
             val home = work.get().asFile.resolve(name)
             home.deleteRecursively()
             val bin = home.resolve(".mcp-steroid/bin").apply { mkdirs() }
             if (launcher != null) {
                 bin.resolve(launcher).apply { writeText("#!/bin/sh\n"); setExecutable(true) }
             }
+            val markers = home.resolve(".mcp-steroid/markers")
             if (failed) {
-                home.resolve(".mcp-steroid/markers").apply { mkdirs() }
-                    .resolve("bootstrap-install.failed").writeText("network down")
+                markers.apply { mkdirs() }.resolve("bootstrap-install.failed").writeText("network down")
+            }
+            // The one-time welcome fires only when this marker is absent; pre-create it to model a
+            // returning user who was already welcomed on a previous session.
+            if (welcomed) {
+                markers.apply { mkdirs() }.resolve("welcomed").writeText("")
             }
             return home
         }
 
-        // 1. Windows-style working install: launcher is devrig.cmd -> hook must stay SILENT.
-        val winOut = runHook(makeHome("windows", "devrig.cmd"))
+        // 1. Windows-style working install, already welcomed -> hook must stay SILENT.
+        val winOut = runHook(makeHome("windows", "devrig.cmd", welcomed = true))
         if (winOut.isNotBlank()) {
             throw GradleException(
                 "check-devrig falsely nagged on a working WINDOWS install (launcher devrig.cmd present). " +
@@ -383,10 +389,29 @@ val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
             )
         }
 
-        // 2. POSIX-style working install: launcher is devrig -> hook must stay SILENT.
-        val posixOut = runHook(makeHome("posix", "devrig"))
+        // 2. POSIX-style working install, already welcomed -> hook must stay SILENT.
+        val posixOut = runHook(makeHome("posix", "devrig", welcomed = true))
         if (posixOut.isNotBlank()) {
             throw GradleException("check-devrig falsely nagged on a working POSIX install. Output:\n$posixOut")
+        }
+
+        // 2b. First session after install (no `welcomed` marker) -> emit a ONE-TIME welcome that points
+        //     at /devrig:help, never at /devrig:setup, and never claims a background download. Then it
+        //     must write the marker and stay SILENT on every later session (idempotent).
+        val firstRunHome = makeHome("first-run", "devrig")
+        val welcomeOut = runHook(firstRunHome)
+        if (!welcomeOut.contains("systemMessage") || !welcomeOut.contains("/devrig:help")) {
+            throw GradleException("check-devrig must welcome the user and point at /devrig:help on the first session after install. Output:\n$welcomeOut")
+        }
+        if (welcomeOut.contains("/devrig:setup") || welcomeOut.contains("background")) {
+            throw GradleException("the first-run welcome must not mention /devrig:setup or a background download. Output:\n$welcomeOut")
+        }
+        if (!firstRunHome.resolve(".mcp-steroid/markers/welcomed").exists()) {
+            throw GradleException("check-devrig must write the ~/.mcp-steroid/markers/welcomed marker after welcoming.")
+        }
+        val secondRunOut = runHook(firstRunHome)
+        if (secondRunOut.isNotBlank()) {
+            throw GradleException("check-devrig must stay silent on sessions after the one-time welcome. Output:\n$secondRunOut")
         }
 
         // 3. Nothing installed, no failure -> report background download, and must NOT surface /devrig:setup.
@@ -458,6 +483,33 @@ val validateUninstallCommand = tasks.register("validateUninstallCommand") {
         }
         if (!content.contains(".mcp-steroid")) {
             throw GradleException("uninstall.md: must remove the ~/.mcp-steroid install directory")
+        }
+    }
+}
+
+// Validates the /devrig:help discoverability command lists copy-paste example prompts and stays read-only
+val validateHelpCommand = tasks.register("validateHelpCommand") {
+    group = "verification"
+    description = "Validate commands/help.md structure"
+
+    val command = projectDir.resolve("commands/help.md")
+    inputs.file(command)
+
+    doLast {
+        val content = command.readText()
+        if (!content.startsWith("---")) {
+            throw GradleException("help.md: must start with YAML frontmatter")
+        }
+        if (!content.contains("description:")) {
+            throw GradleException("help.md: frontmatter must include a description")
+        }
+        // The point of #227: give the user copy-paste example prompts for the whole-IDE bridge.
+        if (!content.contains("run the tests in the open IDE") || !content.contains("find duplicates in this file")) {
+            throw GradleException("help.md: must include the copy-paste example prompts that show what the bridge can do")
+        }
+        // Discoverability is read-only — it must not run or register anything.
+        if (!content.contains("read-only", ignoreCase = true)) {
+            throw GradleException("help.md: must state it is read-only (it explains capabilities; it does not run anything unprompted)")
         }
     }
 }
@@ -631,6 +683,7 @@ tasks.named("check") {
     dependsOn(validateSetupCommand)
     dependsOn(validateStatusCommand)
     dependsOn(validateUninstallCommand)
+    dependsOn(validateHelpCommand)
     dependsOn(validateHooksJson)
     dependsOn(validateCheckDevrig)
     dependsOn(validateCheckDevrigRuns)
