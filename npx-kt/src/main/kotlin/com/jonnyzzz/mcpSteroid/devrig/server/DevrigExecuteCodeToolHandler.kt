@@ -10,7 +10,7 @@ import kotlinx.serialization.json.put
 
 class DevrigExecuteCodeToolHandler(
     private val bridge: DevrigToolBridgeClient,
-    private val routing: DevrigProjectRoutingService,
+    private val resolver: DevrigProjectResolver,
     private val beacon: DevrigBeacon,
 ) : ExecuteCodeToolHandler {
     override suspend fun executeCode(
@@ -18,7 +18,7 @@ class DevrigExecuteCodeToolHandler(
         execCodeParams: ExecCodeParams,
         callProgress: McpProgressReporter,
     ): ToolCallResult {
-        val route = routing.requireProject(projectName)
+        val route = resolver.resolve(projectName)
         // Version-base skew check on every routed exec_code call (devrig scenario only; stderr).
         BackendVersionSkew.warnOnExecCode(pid = route.route.pid, pluginVersion = route.route.plugin.version)
         val result = bridge.callProjectTool(route, "steroid_execute_code", callProgress) {

@@ -48,6 +48,8 @@ suspend fun runStubStdioMcpServer(
         ),
         // Fire a once-per-session analytics beacon recording client (agent) + server versions.
         onSessionInitialized = { session, serverInfo, clientProtocolVersion ->
+            // Capture the single stdio session so cwd auto-detection can query the client's MCP roots (#226).
+            services.mcpClientSession = session
             services.beacon.capture(
                 event = "session_initialized",
                 properties = mapOf(
@@ -65,7 +67,9 @@ suspend fun runStubStdioMcpServer(
     onServerReady(server)
 
     val tools = StubMcpSteroidTools(services)
-    tools.registerAll(server)
+    // devrig auto-detects the project from the agent's working directory (#226), so project_name is
+    // advertised as optional on this surface.
+    tools.registerAll(server, projectNameRequired = false)
     // devrig routes to one of several discovered IDEs, so its steroid_open_project advertises the
     // required `backend_name` routing param (includeBackendName = true). registerAll() no longer
     // registers open_project; each surface registers its own spec.
