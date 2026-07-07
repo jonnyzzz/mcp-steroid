@@ -2,6 +2,7 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.description
+import com.jonnyzzz.mcpSteroid.mcp.markRequired
 import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
 import com.jonnyzzz.mcpSteroid.mcp.string
@@ -12,12 +13,21 @@ import com.jonnyzzz.mcpSteroid.mcp.string
  * `.registerToSchema()` to attach it to their tool's input schema.
  */
 object CommonToolParams {
-    /** Required `project_name` used to dispatch a tool call to an already-open IDE project. */
-    fun projectName() =
-        InputSchemaElement.param("project_name")
-            .description("Project name (from steroid_list_projects)")
+    /**
+     * `project_name` used to dispatch a tool call to an already-open IDE project. Required by default
+     * (in-IDE surface). devrig registers it with [requiredInSchema] = false so the agent can omit it and
+     * have the project auto-detected from the working directory (task #226).
+     */
+    fun projectName(requiredInSchema: Boolean = true): InputSchemaElement<String?> {
+        val base = InputSchemaElement.param("project_name")
+            .description(
+                if (requiredInSchema) "Project name (from steroid_list_projects)"
+                else "Project name. Omit to auto-detect from your working directory; pass it " +
+                    "(from steroid_list_projects) only to disambiguate or override."
+            )
             .string()
-            .required()
+        return if (requiredInSchema) base.markRequired() else base
+    }
 
     /** Required `task_id` used to group related executions in audit logs. */
     fun taskId() =
