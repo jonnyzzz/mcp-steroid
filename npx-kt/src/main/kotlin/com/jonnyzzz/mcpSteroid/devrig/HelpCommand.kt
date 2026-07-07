@@ -1,9 +1,63 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.server.executeCodeGuideUris
 import java.io.PrintStream
 
 fun printVersion(out: PrintStream) : Int {
     out.println(DevrigVersionMetadata.getDevrigVersion())
+    return 0
+}
+
+/**
+ * Layered help: `devrig help <topic>` / `devrig <cmd> --help`. A [topic] gives a concise per-command
+ * entry that ends with `devrig prompt <uri>` pointers so an agent drills only as deep as it needs;
+ * an unknown/absent topic falls back to the global banner.
+ */
+fun printTopicHelp(topic: String?, out: PrintStream): Int = when (topic) {
+    "execute_code" -> printExecuteCodeHelp(out)
+    else -> printHelp(out)
+}
+
+/**
+ * Concise entry point for `devrig execute_code` — the flags + the must-know rules for a first call,
+ * then a "go deeper" list into the `mcp-steroid://` article graph (fetch with `devrig prompt <uri>`).
+ * Deliberately short: the full reference stays fetch-on-demand, not inlined here.
+ */
+fun printExecuteCodeHelp(out: PrintStream): Int {
+    out.print(
+        """
+        devrig execute_code — run a Kotlin script inside the target IDE (steroid_execute_code).
+
+        Usage:
+          devrig execute_code --project_name=<key> (--code-file=<path> | --code=<inline> | --code-file=-)
+                              --task_id=<id> --reason=<text> [--modal=<mode>] [--timeout=<sec>] [--json]
+
+        Required:
+          --project_name   routing key from `devrig list_projects` (NOT the folder name)
+          --code-file      path to a .kts file; pass "-" to read the script from stdin
+          --code           inline script (alternative to --code-file)
+          --task_id        groups related calls in audit logs
+          --reason         full task description
+
+        Optional:
+          --modal          smart_non_modal (default) | non_modal | unleashed
+          --timeout        script timeout in seconds (default 600)
+          --json           emit the unified {tool, command, isError, data} envelope
+
+        Must know (first call):
+          - the script is a Kotlin SUSPEND body — never use runBlocking
+          - PSI reads go in readAction { }, writes in writeAction { }
+          - nothing is auto-printed: end with println(...) / printJson(...) to see output
+          - route by project_name (get it from `devrig list_projects`), not the folder name
+
+        Go deeper — fetch only what you need:
+        """.trimIndent() + "\n"
+    )
+    for ((uri, blurb) in executeCodeGuideUris()) {
+        out.println("  devrig prompt $uri")
+        out.println("      $blurb")
+    }
+    out.println()
     return 0
 }
 

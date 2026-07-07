@@ -18,6 +18,7 @@ import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.DebuggerSkillPromptArtic
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.SkillPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.TestSkillPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJPromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeToolDescriptionPromptArticle
 import com.jonnyzzz.mcpSteroid.thisLogger
 
 /**
@@ -106,4 +107,17 @@ fun canonicalResourceEntryPoints(): List<String> = listOf(
     FindDuplicatesPromptArticle().uri,
     InspectAndFixPromptArticle().uri,
     CodingWithIntelliJPromptArticle().uri,
+)
+
+/**
+ * Layered "go deeper" guide URIs for the `devrig execute_code` CLI help — ordered shallow→deep so an
+ * agent can fetch only as far as it needs (`devrig prompt <uri>`). Built from the generated article
+ * classes (no hardcoded `mcp-steroid://` literals), so a renamed/removed article breaks the build.
+ * Each pair is `uri to one-line-what-you-get`.
+ */
+fun executeCodeGuideUris(): List<Pair<String, String>> = listOf(
+    ExecuteCodeToolDescriptionPromptArticle().uri to "full tool guide: decision tree, threading rules, multi-file edits, output rules",
+    CodingWithIntelliJPromptArticle().uri to "IntelliJ API reference: PSI, VFS, refactorings, patterns, examples",
+    TestSkillPromptArticle().uri to "running/inspecting tests via the IDE runner",
+    DebuggerSkillPromptArticle().uri to "breakpoints, debug sessions, threads",
 )

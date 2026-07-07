@@ -165,6 +165,8 @@ sealed interface DevrigCommand {
     ) : DevrigCommand
 
     data class DevrigCommandHelp(
+        /** Optional per-command topic (e.g. "execute_code") for layered help; null = the global banner. */
+        val topic: String? = null,
         override val debug: Boolean = false,
         override val json: Boolean = false,
     ) : DevrigCommand
@@ -243,6 +245,12 @@ private abstract class DevrigCliktCommand(
         } else {
             command
         }
+    }
+
+    /** Select layered help for a specific [topic] (bypasses the generic --help→global-banner rule). */
+    protected fun selectHelpTopic(topic: String?) {
+        val options = options()
+        selected.command = DevrigCommand.DevrigCommandHelp(topic = topic, debug = options.debug, json = options.json)
     }
 }
 
@@ -406,7 +414,7 @@ private class ExecuteCodeCliCommand(
 
     override fun run() {
         val options = options()
-        if (options.help) { select(helpFor(options)); return }
+        if (options.help) { selectHelpTopic("execute_code"); return }
         requireArg(projectName, "--project_name", "devrig list_projects")
         if (code.isNullOrBlank() && codeFile.isNullOrBlank()) {
             throw UsageError(
@@ -582,9 +590,11 @@ private class HelpCommand(
     selected: SelectedDevrigCommand,
     parent: DevrigCliktCommand,
 ) : DevrigCliktCommand("help", selected, parent) {
+    // `devrig help` → global banner; `devrig help <topic>` (e.g. execute_code) → layered per-command help.
+    private val topic by argument("topic").optional()
+
     override fun run() {
-        val options = options()
-        select(DevrigCommand.DevrigCommandHelp(debug = options.debug, json = options.json))
+        selectHelpTopic(topic)
     }
 }
 
@@ -672,7 +682,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
     return try {
         when (command) {
             is DevrigCommand.MCP -> error("runCli called with DevrigCommand.MCP")
-            is DevrigCommand.DevrigCommandHelp -> printHelp(mcpStdout)
+            is DevrigCommand.DevrigCommandHelp -> printTopicHelp(command.topic, mcpStdout)
             is DevrigCommand.DevrigCommandVersion -> printVersion(mcpStdout)
             is DevrigCommand.DevrigCommandParseError -> {
                 System.err.println(command.text)
