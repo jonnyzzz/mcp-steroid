@@ -1,12 +1,14 @@
 {
   "name": "devrig",
   "description": "Give AI the whole JetBrains IDE, not just the files — run code, debug, refactor, and inspect any running IntelliJ-based IDE from Claude via the devrig bridge.",
-  "version": "0.0.0-dev",
+  "version": "0.100.0",
+  "keywords": ["jetbrains", "intellij", "ide", "mcp", "devrig", "debugging"],
   "author": {
     "name": "Eugene Petrenko",
     "email": "mcp@jonnyzzz.com"
   },
   "homepage": "https://mcp-steroid.jonnyzzz.com",
   "repository": "https://github.com/jonnyzzz/mcp-steroid",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "eula": "https://github.com/jonnyzzz/mcp-steroid/blob/main/EULA"
 }

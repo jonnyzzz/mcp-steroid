@@ -8,6 +8,29 @@ plugins {
 
 val pluginVersion = version.toString()
 
+// The devrig Claude plugin is published from the committed source tree via the repo-root
+// marketplace.json (source: "./claude-plugin"), so the marketplace reads plugin.json straight
+// from git -- NOT from the built ZIP. Claude Code only surfaces an update when the manifest
+// `version` string CHANGES, so it must track the released VERSION. `syncClaudePluginVersion`
+// writes it; `validatePluginJson` guards against drift.
+val pluginJsonFile = projectDir.resolve(".claude-plugin/plugin.json")
+val versionFile = rootProject.projectDir.resolve("VERSION")
+
+// Claude Code wants semver; the root VERSION may be two-part (e.g. "0.100"). Normalize to X.Y.Z.
+fun normalizeToSemver(raw: String): String {
+    val v = raw.trim()
+    return when {
+        Regex("""^\d+\.\d+\.\d+$""").matches(v) -> v
+        Regex("""^\d+\.\d+$""").matches(v) -> "$v.0"
+        else -> throw GradleException("VERSION '$v' is not X.Y or X.Y.Z; cannot derive a plugin.json semver")
+    }
+}
+
+// The lone place the manifest version is rewritten -- shared by syncClaudePluginVersion and the
+// ZIP-staging preparePluginFiles so both use identical replace semantics.
+fun patchPluginJsonVersion(json: String, newVersion: String): String =
+    json.replace(Regex(""""version"\s*:\s*"[^"]*""""), """"version": "$newVersion"""")
+
 val bootstrapBins by configurations.creating { isCanBeResolved = true; isCanBeConsumed = false }
 dependencies { bootstrapBins(project(mapOf("path" to ":devrig-bootstrap", "configuration" to "bootstrapBinaries"))) }
 
@@ -32,12 +55,11 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
         val out = outputDir.get().asFile
         out.mkdirs()
 
-        // .claude-plugin/plugin.json -- inject version
+        // .claude-plugin/plugin.json -- inject the full build version for the ZIP channel (the
+        // committed source keeps the released semver; this only affects the staged/zipped copy).
         val pluginDir = out.resolve(".claude-plugin").also { it.mkdirs() }
         val pluginJson = sourceDir.resolve(".claude-plugin/plugin.json").readText()
-        pluginDir.resolve("plugin.json").writeText(
-            pluginJson.replace(Regex(""""version"\s*:\s*"[^"]*""""), """"version": "$pluginVersion"""")
-        )
+        pluginDir.resolve("plugin.json").writeText(patchPluginJsonVersion(pluginJson, pluginVersion))
 
         // bin/ -- copy everything from the committed source bin/ (the bootstrap-* binaries are
         // committed there too; see updateBundledBinaries/verifyBundledBinariesUpToDate). Windows
@@ -139,8 +161,8 @@ val validatePluginJson = tasks.register("validatePluginJson") {
     group = "verification"
     description = "Validate .claude-plugin/plugin.json structure"
 
-    val pluginJsonFile = projectDir.resolve(".claude-plugin/plugin.json")
     inputs.file(pluginJsonFile)
+    inputs.file(versionFile)
 
     doLast {
         @Suppress("UNCHECKED_CAST")
@@ -153,6 +175,25 @@ val validatePluginJson = tasks.register("validatePluginJson") {
         val name = json["name"].toString()
         if (name != "devrig") {
             throw GradleException("plugin.json: expected name 'devrig', got '$name'")
+        }
+
+        // Version must be a real semver that tracks the released VERSION. Claude Code only offers a
+        // marketplace update when this string changes, so a stale placeholder pins every install
+        // forever. The committed value must equal the current VERSION normalized to X.Y.Z.
+        val manifestVersion = json["version"].toString()
+        if (!Regex("""^\d+\.\d+\.\d+$""").matches(manifestVersion)) {
+            throw GradleException(
+                "plugin.json: version '$manifestVersion' is not semver X.Y.Z. " +
+                    "Run: ./gradlew :claude-plugin:syncClaudePluginVersion"
+            )
+        }
+        val expected = normalizeToSemver(versionFile.readText())
+        if (manifestVersion != expected) {
+            throw GradleException(
+                "plugin.json version '$manifestVersion' does not match VERSION-derived '$expected'. " +
+                    "The manifest version must track the released VERSION so marketplace users receive updates. " +
+                    "Run: ./gradlew :claude-plugin:syncClaudePluginVersion  (then commit claude-plugin/.claude-plugin/plugin.json)"
+            )
         }
     }
 }
@@ -623,6 +664,29 @@ val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRun
 }
 
 claudePluginZip.configure { finalizedBy(verifyPluginFiles) }
+
+// Rewrites the committed .claude-plugin/plugin.json `version` to the current VERSION (normalized
+// to semver). Run this during a release, in the same commit as the VERSION bump, so the change
+// lands on main and marketplace `/plugin update` picks up the released version. Writes into the
+// tracked source tree on purpose (mirrors updateBundledBinaries); guarded by validatePluginJson.
+val syncClaudePluginVersion = tasks.register("syncClaudePluginVersion") {
+    group = "claude-plugin"
+    description = "Sync .claude-plugin/plugin.json version from the root VERSION file"
+    // No outputs declared: like updateBundledBinaries this writes into the tracked source tree on
+    // purpose, so it always runs and never becomes an implicit dependency of the validators.
+    inputs.file(versionFile)
+    doLast {
+        val target = normalizeToSemver(versionFile.readText())
+        val current = pluginJsonFile.readText()
+        val patched = patchPluginJsonVersion(current, target)
+        if (patched != current) {
+            pluginJsonFile.writeText(patched)
+            logger.lifecycle("plugin.json version -> $target")
+        } else {
+            logger.lifecycle("plugin.json version already $target")
+        }
+    }
+}
 
 // Refreshes the committed bin/bootstrap-* from a fresh :devrig-bootstrap build. Run this after
 // changing the Go sources, then commit the updated binaries. Not part of build/check (it writes
