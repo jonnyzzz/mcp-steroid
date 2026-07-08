@@ -7,7 +7,7 @@ allowed-tools:
 
 Completely remove devrig: unregister the `devrig` MCP server from Claude and delete the
 installed binary + bundled JDK under `~/.mcp-steroid`. This is **destructive and not
-reversible** — reinstalling later means downloading devrig again (~300 MB).
+reversible** — reinstalling later means downloading devrig again (~611 MB).
 
 Do the following:
 
