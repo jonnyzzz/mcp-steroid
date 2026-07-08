@@ -204,6 +204,21 @@ echo "0.92.0" > VERSION
 git add VERSION && git commit -m "release: bump version to 0.92.0"
 ```
 
+**Then sync the Claude plugin manifest** so marketplace users receive the update. The `devrig`
+Claude plugin is published from the committed tree (`.claude-plugin/marketplace.json` →
+`source: "./claude-plugin"`), and Claude Code only offers `/plugin update` when the manifest
+`version` string changes. Run:
+
+```bash
+./gradlew :claude-plugin:syncClaudePluginVersion
+git add claude-plugin/.claude-plugin/plugin.json
+git commit --amend --no-edit   # fold into the version-bump commit
+```
+
+`syncClaudePluginVersion` rewrites `claude-plugin/.claude-plugin/plugin.json`'s `version` to the
+new `VERSION` (normalized to semver). Forgetting it fails CI: `validatePluginJson` asserts the
+manifest version matches the VERSION-derived semver.
+
 ### Stage 4: Website Release Page + Homepage Update
 
 **4a. Release page** — create `website/content/releases/<version>.md` following the
