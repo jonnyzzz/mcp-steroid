@@ -1,0 +1,66 @@
+#!/bin/sh
+:; # ===== POSIX sh (Windows cmd skips :; lines) =====
+:; # PostToolUse hook (issue #246). A devrig / steroid_* tool just returned. Scan the tool result for a
+:; # known RECOVERABLE failure signature and inject a ONE-LINE, MODEL-ONLY recovery hint (additionalContext,
+:; # no visible banner — consistent with issue #245) so the agent takes the right next step instead of
+:; # retrying the same call blindly. Four conditions, checked most-fundamental-first:
+:; #   1. no IDE reachable (also transport-level connect failures)   -> open an IDE / start a backend, then retry
+:; #   2. wrong / ambiguous / stale project_name                     -> steroid_list_projects, pass exact name
+:; #   3. indexing / dumb mode                                       -> smartReadAction {} / awaitConfiguration, retry
+:; #   4. modal dialog blocking the EDT                              -> modal=smart_non_modal / closeModalDialogs()
+:; # It stays SILENT ({}) on success and on any UNRECOGNIZED error: the plugin's own ExecutionSuggestionService
+:; # already appends compile/threading tips INSIDE execute_code results, so this hook only fills the gap it
+:; # cannot reach — routing / IDE-state failures, including transport errors that carry no plugin hint at all.
+:; # Stdout is the hook data channel -> emit ONLY JSON. Must exit 0 (a non-blocking PostToolUse hook).
+:; IN=$(cat 2>/dev/null)
+:; emit() { printf '%s\n' "$1"; exit 0; }
+:; # 1. No IDE at all (fundamental — check before project routing, which can present as a side effect).
+:; if printf '%s' "$IN" | grep -qiE 'No IntelliJ IDE with the MCP Steroid plugin is running|no reachable backend|not routable|connection refused|ECONNREFUSED|failed to connect'; then
+:;   emit '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"RECOVERY: No JetBrains IDE with the MCP Steroid plugin is reachable. Do NOT fall back to grep/sed/Bash. Ask the user to open their project in IntelliJ, or start a managed IDE with the devrig backend CLI (see mcp-steroid://open-project/managing-backends), then retry the same call."}}'
+:; fi
+:; # 2. Project routing: missing, ambiguous, or stale project_name.
+:; if printf '%s' "$IN" | grep -qiE 'No open project matches your working directory|Multiple open projects match your working directory|Project not found:|is no longer present; call steroid_list_projects'; then
+:;   emit '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"RECOVERY: The project could not be resolved (missing, ambiguous, or stale project_name). Call steroid_list_projects once, then pass the exact project_name from its response on your next call — do not retry blindly."}}'
+:; fi
+:; # 3. Indexing / dumb mode: indices not ready.
+:; if printf '%s' "$IN" | grep -qiE 'Dumb mode|IndexNotReadyException|did not reach smart mode'; then
+:;   emit '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"RECOVERY: The IDE is indexing (dumb mode), so index-backed PSI is not ready. Wrap index-dependent reads in smartReadAction { }, and after opening/importing/syncing a project call Observation.awaitConfiguration(project) before querying indices; then retry."}}'
+:; fi
+:; # 4. Modal dialog is blocking the EDT.
+:; if printf '%s' "$IN" | grep -qiE 'requires a non-modal IDE|modal dialog appeared while the script|modal dialog likely blocks the EDT|modal dialog is present'; then
+:;   emit '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"RECOVERY: A modal dialog is blocking the IDE. Re-run steroid_execute_code with modal=smart_non_modal (it sweeps dialogs first), or call closeModalDialogs() at the start of your script. If your script opens a dialog on purpose, call allowModalDialog() first."}}'
+:; fi
+:; # No recognized recoverable signature -> stay silent.
+:; echo '{}'
+:; exit 0
+@echo off
+rem ===== Windows cmd =====
+rem Same four recovery branches as the POSIX section above. findstr consumes stdin once, so capture the
+rem PostToolUse payload to a temp file and scan it four times. Labels (not parenthesized if-blocks) so the
+rem parentheses inside each additionalContext echo literally. Always exit /b 0 (non-blocking PostToolUse).
+setlocal
+set "TMPIN=%TEMP%\devrig-recover-%RANDOM%%RANDOM%.json"
+more > "%TMPIN%" 2>nul
+findstr /i /c:"No IntelliJ IDE with the MCP Steroid plugin is running" /c:"no reachable backend" /c:"not routable" /c:"connection refused" /c:"ECONNREFUSED" /c:"failed to connect" "%TMPIN%" >nul && goto :noide
+findstr /i /c:"No open project matches your working directory" /c:"Multiple open projects match your working directory" /c:"Project not found:" /c:"is no longer present; call steroid_list_projects" "%TMPIN%" >nul && goto :project
+findstr /i /c:"Dumb mode" /c:"IndexNotReadyException" /c:"did not reach smart mode" "%TMPIN%" >nul && goto :indexing
+findstr /i /c:"requires a non-modal IDE" /c:"modal dialog appeared while the script" /c:"modal dialog likely blocks the EDT" /c:"modal dialog is present" "%TMPIN%" >nul && goto :modal
+del "%TMPIN%" >nul 2>&1
+echo {}
+exit /b 0
+:noide
+del "%TMPIN%" >nul 2>&1
+echo {"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"RECOVERY: No JetBrains IDE with the MCP Steroid plugin is reachable. Do NOT fall back to grep/sed/Bash. Ask the user to open their project in IntelliJ, or start a managed IDE with the devrig backend CLI (see mcp-steroid://open-project/managing-backends), then retry the same call."}}
+exit /b 0
+:project
+del "%TMPIN%" >nul 2>&1
+echo {"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"RECOVERY: The project could not be resolved (missing, ambiguous, or stale project_name). Call steroid_list_projects once, then pass the exact project_name from its response on your next call - do not retry blindly."}}
+exit /b 0
+:indexing
+del "%TMPIN%" >nul 2>&1
+echo {"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"RECOVERY: The IDE is indexing (dumb mode), so index-backed PSI is not ready. Wrap index-dependent reads in smartReadAction { }, and after opening/importing/syncing a project call Observation.awaitConfiguration(project) before querying indices; then retry."}}
+exit /b 0
+:modal
+del "%TMPIN%" >nul 2>&1
+echo {"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"RECOVERY: A modal dialog is blocking the IDE. Re-run steroid_execute_code with modal=smart_non_modal (it sweeps dialogs first), or call closeModalDialogs() at the start of your script. If your script opens a dialog on purpose, call allowModalDialog() first."}}
+exit /b 0

@@ -1,6 +1,17 @@
 {
-  "description": "Nudge to /devrig:setup when devrig is missing, and show download progress passively.",
+  "description": "Nudge to /devrig:setup when devrig is missing, show download progress passively, and steer recovery when a devrig tool hits a recoverable error.",
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__devrig__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/devrig-recover"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

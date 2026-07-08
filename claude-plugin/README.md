@@ -85,6 +85,22 @@ not on `/reload-plugins`:
 | failed | ❌ devrig install failed: `<reason>`. Run /devrig:setup to retry. |
 | starting (nothing downloaded yet) | ⏳ devrig starting — activates automatically when ready. |
 
+**After a devrig tool call fails recoverably** — `PostToolUse` hook (`bin/devrig-recover`), scoped to the
+devrig MCP tools (matcher `mcp__devrig__.*`). It scans the tool result for a known recoverable signature and
+injects a one-line, **model-only** recovery hint (never a visible banner) so the agent takes the right next
+step instead of retrying blindly. Silent on success and on errors it does not own:
+
+| Signature in the result | Hint steers the model to |
+|---|---|
+| no IDE reachable / transport connect failure | open the project in IntelliJ (or start a managed backend), then retry — never fall back to grep/sed |
+| wrong / ambiguous / stale `project_name` | call `steroid_list_projects`, then pass the exact `project_name` |
+| indexing / dumb mode | `smartReadAction { }` + `Observation.awaitConfiguration(project)`, then retry |
+| modal dialog blocking the EDT | re-run with `modal=smart_non_modal`, or `closeModalDialogs()` |
+
+Compile/threading tips inside `steroid_execute_code` results are **not** this hook's job — the plugin's own
+`ExecutionSuggestionService` already appends those; `devrig-recover` only fills the routing / IDE-state gap
+it cannot reach (including transport errors that carry no plugin hint at all).
+
 The `SessionStart` and `UserPromptSubmit` hooks also attach a longer `additionalContext` that only the
 model sees (never shown to you) — guidance such as "the download is detached, don't tell the user to run
 manual commands."
