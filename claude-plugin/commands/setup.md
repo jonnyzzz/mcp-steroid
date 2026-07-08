@@ -1,5 +1,5 @@
 ---
-description: Pre-download the devrig IDE bridge now (~300 MB). Optional — the plugin downloads it automatically in the background.
+description: Pre-download the devrig IDE bridge now (~611 MB). Optional — the plugin downloads it automatically in the background.
 disable-model-invocation: true
 allowed-tools:
   - Bash
@@ -7,7 +7,7 @@ allowed-tools:
 
 The **devrig** plugin already registers its MCP server automatically (via the
 bundled `.mcp.json`) and downloads the devrig binary in the background on first
-use. Run this command only to **fetch the ~300 MB binary now** instead of waiting
+use. Run this command only to **fetch the ~611 MB binary now** instead of waiting
 for the background download.
 
 Do the following:
