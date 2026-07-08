@@ -163,4 +163,25 @@ class GitDriver(
                 .description("git apply patch in $repoDir")
         }.awaitForProcessFinish().assertExitCode(0, "git apply patch")
     }
+
+    /**
+     * Generate a diff of changes in a repository.
+     *
+     * @param repoDir guest path of the repository
+     * @return the diff output as a string in unified diff format, suitable for applyPatch()
+     */
+    fun diff(repoDir: String): String {
+        println("[GIT] Generating diff for $repoDir...")
+        val result = driver.startProcessInContainer {
+            this
+                .args("git", "-C", repoDir, "diff")
+                .timeoutSeconds(30)
+                .quietly()
+                .description("git diff in $repoDir")
+        }.awaitForProcessFinish()
+
+        result.assertExitCode(0, "git diff")
+        return result.stdout
+    }
+
 }

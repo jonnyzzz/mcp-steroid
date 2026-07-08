@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.git.GitDriver
+import java.io.File
 
 /**
  * Manages the execution of a dpaia arena test case inside a Docker container
@@ -349,6 +350,7 @@ class ArenaTestRunner(
         timeoutSeconds: Long = 1800,
         prewarm: ((projectDir: String) -> Unit)? = null,
         predeployedProjectDir: String? = null,
+        logDir: File? = null,
     ): ArenaTestResult {
         println("[ARENA] ========================================")
         println("[ARENA] Running: ${testCase.instanceId}")
@@ -388,6 +390,8 @@ class ArenaTestRunner(
 
         // Step 5: Evaluate
         val evaluation = evaluate(testCase, agentResult)
+        val diff = git.diff(projectDir)
+        logDir?.resolve("agent-result.patch")?.writeText(diff)
 
         println("[ARENA] ========================================")
         println("[ARENA] Result for ${testCase.instanceId}:")

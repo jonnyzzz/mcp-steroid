@@ -89,5 +89,7 @@ object TeamCityServiceMessages {
         // included in the zip too (duplicates the standalone copies) so the
         // zip stays a self-contained offline record of the whole session.
         println("##teamcity[publishArtifacts '${escape("$base/** => $runName.zip")}']")
+        // Agent-produced patch, to be used for evaluation
+        println("##teamcity[publishArtifacts '${escape("$base/agent-result.patch => $runName.patch")}']")
     }
 }
