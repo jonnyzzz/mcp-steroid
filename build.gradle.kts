@@ -170,6 +170,25 @@ dependencies {
 }
 
 /**
+ * Root configuration that resolves the devrig distribution .zip produced by :npx-kt (its
+ * `distZip`, exposed via the `devrig-package` usage). Consumed by [buildPluginOnCI] so the
+ * devrig binary is published as a CI artifact alongside the plugin. :npx-kt's distZip bundles
+ * :ij-plugin's plugin .zip, so resolving both configurations still drives :ij-plugin:buildPlugin
+ * exactly once within a single Gradle invocation.
+ */
+val devrigZip by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "devrig-package"))
+    }
+}
+
+dependencies {
+    devrigZip(project(":npx-kt"))
+}
+
+/**
  * CI entry point that builds the plugin and publishes the resulting .zip(s) as build artifacts.
  *
  * Depends on :ij-plugin's plugin-zip configuration (so Gradle drives the buildPlugin task for us),
@@ -183,18 +202,23 @@ dependencies {
  */
 val buildPluginOnCI by tasks.registering {
     group = "ci"
-    description = "Build the plugin distribution and publish its binaries via TeamCity service messages."
+    description = "Build the plugin + devrig distributions and publish their binaries via TeamCity service messages."
     inputs.files(pluginZip)
+    inputs.files(devrigZip)
     outputs.upToDateWhen { false }
 
     doLast {
-        val zips = pluginZip.files
-        require(zips.isNotEmpty()) {
+        val pluginZips = pluginZip.files
+        require(pluginZips.isNotEmpty()) {
             "No plugin .zip resolved from :ij-plugin's plugin-zip configuration"
         }
-        zips.forEach { zip ->
-            require(zip.isFile) { "Plugin zip not a file: ${zip.absolutePath}" }
-            logger.lifecycle("Plugin binary: ${zip.absolutePath} (${zip.length()} bytes)")
+        val devrigZips = devrigZip.files
+        require(devrigZips.isNotEmpty()) {
+            "No devrig .zip resolved from :npx-kt's devrig-package configuration"
+        }
+        (pluginZips + devrigZips).forEach { zip ->
+            require(zip.isFile) { "Distribution zip not a file: ${zip.absolutePath}" }
+            logger.lifecycle("Release binary: ${zip.absolutePath} (${zip.length()} bytes)")
             // TeamCity service message — ignored by GitHub Actions runners.
             // See https://www.jetbrains.com/help/teamcity/service-messages.html#Publishing+Artifacts+while+the+Build+is+Still+in+Progress
             println("##teamcity[publishArtifacts '${zip.absolutePath}']")
