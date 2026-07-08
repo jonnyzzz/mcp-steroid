@@ -362,6 +362,16 @@ val validateCheckDevrig = tasks.register("validateCheckDevrig") {
             throw GradleException("check-devrig: must emit a top-level systemMessage when devrig is absent")
         if (!content.contains("background"))
             throw GradleException("check-devrig: downloading message must describe the background download, not a registration nag")
+        // Live-session charter (issue #245): once devrig is installed, EVERY session must carry the
+        // model-only "drive the whole IDE via devrig" charter as additionalContext. Guard its key pieces.
+        if (!content.contains("EXTREMELY_IMPORTANT"))
+            throw GradleException("check-devrig: the live-session charter must be wrapped in an <EXTREMELY_IMPORTANT> block")
+        if (!content.contains("steroid_execute_code") || !content.contains("steroid_fetch_resource"))
+            throw GradleException("check-devrig: the charter must name devrig's instruments (steroid_execute_code, steroid_fetch_resource, ...)")
+        if (!content.contains("mcp-steroid://prompt/skill"))
+            throw GradleException("check-devrig: the charter must point the agent at the mcp-steroid://prompt/skill recipe index")
+        if (!content.contains("additionalContext"))
+            throw GradleException("check-devrig: the charter must be injected as model-only additionalContext")
         // The failure branch detects the marker and is the ONLY place /devrig:setup is surfaced.
         if (!content.contains("bootstrap-install.failed"))
             throw GradleException("check-devrig: must detect the failure marker (bootstrap-install.failed)")
@@ -421,20 +431,22 @@ val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
             return home
         }
 
-        // 1. Windows-style working install, already welcomed -> hook must stay SILENT.
-        val winOut = runHook(makeHome("windows", "devrig.cmd", welcomed = true))
-        if (winOut.isNotBlank()) {
-            throw GradleException(
-                "check-devrig falsely nagged on a working WINDOWS install (launcher devrig.cmd present). " +
-                    "It must recognize the .cmd launcher. Output:\n$winOut"
-            )
+        // Every live session (installed + already welcomed) must carry the MODEL-ONLY charter: it holds
+        // additionalContext (so the agent keeps using devrig) but NO visible systemMessage (issue #245).
+        fun assertLiveCharter(out: String, label: String) {
+            if (!out.contains("additionalContext"))
+                throw GradleException("check-devrig must inject the devrig charter as additionalContext on a live $label session. Output:\n$out")
+            if (!out.contains("EXTREMELY_IMPORTANT") || !out.contains("steroid_execute_code"))
+                throw GradleException("check-devrig charter on a live $label session must be the <EXTREMELY_IMPORTANT> block naming devrig's tools. Output:\n$out")
+            if (out.contains("systemMessage"))
+                throw GradleException("check-devrig charter on a returning $label session must be model-only (no visible systemMessage). Output:\n$out")
         }
 
-        // 2. POSIX-style working install, already welcomed -> hook must stay SILENT.
-        val posixOut = runHook(makeHome("posix", "devrig", welcomed = true))
-        if (posixOut.isNotBlank()) {
-            throw GradleException("check-devrig falsely nagged on a working POSIX install. Output:\n$posixOut")
-        }
+        // 1. Windows-style working install, already welcomed -> model-only charter (recognizes .cmd launcher).
+        assertLiveCharter(runHook(makeHome("windows", "devrig.cmd", welcomed = true)), "Windows")
+
+        // 2. POSIX-style working install, already welcomed -> model-only charter.
+        assertLiveCharter(runHook(makeHome("posix", "devrig", welcomed = true)), "POSIX")
 
         // 2b. First session after install (no `welcomed` marker) -> emit a ONE-TIME welcome that points
         //     at /devrig:help, never at /devrig:setup, and never claims a background download. Then it
@@ -450,10 +462,10 @@ val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
         if (!firstRunHome.resolve(".mcp-steroid/markers/welcomed").exists()) {
             throw GradleException("check-devrig must write the ~/.mcp-steroid/markers/welcomed marker after welcoming.")
         }
+        // After the one-time welcome, later sessions drop the visible systemMessage but STILL carry the
+        // model-only charter every time (issue #245) -- the whole point is to keep re-asserting devrig.
         val secondRunOut = runHook(firstRunHome)
-        if (secondRunOut.isNotBlank()) {
-            throw GradleException("check-devrig must stay silent on sessions after the one-time welcome. Output:\n$secondRunOut")
-        }
+        assertLiveCharter(secondRunOut, "returning")
 
         // 3. Nothing installed, no failure -> report background download, and must NOT surface /devrig:setup.
         val emptyOut = runHook(makeHome("empty", null))
@@ -663,6 +675,99 @@ val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRun
     }
 }
 
+// Validates bin/devrig-progress (the UserPromptSubmit hook). Content-only guards: once devrig is LIVE
+// (issue #245) an IDE-shaped prompt must re-remind the model that the IDE bridge exists, via MODEL-ONLY
+// additionalContext (no visible systemMessage). NB: this hook writes JSON to stdout on purpose (stdout is
+// the hook data channel), so the stderr-only MCP-launcher rule does NOT apply here.
+val validateDevrigProgress = tasks.register("validateDevrigProgress") {
+    group = "verification"
+    description = "Validate bin/devrig-progress live-phase nudge correctness"
+
+    val script = projectDir.resolve("bin/devrig-progress")
+    inputs.file(script)
+
+    doLast {
+        val content = script.readText()
+        if (!content.contains(".mcp-steroid/bin/devrig"))
+            throw GradleException("devrig-progress: must detect the LIVE state via the installed ~/.mcp-steroid/bin/devrig launcher")
+        if (!content.contains("additionalContext"))
+            throw GradleException("devrig-progress: live-phase nudge must inject model-only additionalContext")
+        // Model-only: the live-phase nudge must NOT surface a top-level systemMessage. The word may still
+        // appear in the download-progress branch below, so require the nudge JSON to be additionalContext-only.
+        if (!content.contains("prefer") || !content.contains("devrig"))
+            throw GradleException("devrig-progress: nudge must tell the model a JetBrains IDE is connected via devrig and to prefer its tools")
+        if (!content.contains("steroid_execute_code") || !content.contains("steroid_fetch_resource"))
+            throw GradleException("devrig-progress: nudge must point at steroid_execute_code and steroid_fetch_resource")
+        if (!content.contains("mcp-steroid://prompt/skill"))
+            throw GradleException("devrig-progress: nudge must point at the mcp-steroid://prompt/skill recipe index")
+        if (!content.contains("exit 0"))
+            throw GradleException("devrig-progress: must exit 0 (a non-blocking UserPromptSubmit hook)")
+    }
+}
+
+// Behaviorally runs bin/devrig-progress against synthetic HOMEs with the hook JSON piped on stdin, proving:
+// live + IDE-shaped prompt -> additionalContext (no systemMessage); live + off-topic prompt -> silent {};
+// not-live -> the new branch never fires. POSIX sh; disables itself on a Windows agent (no `sh`).
+val validateDevrigProgressRuns = tasks.register("validateDevrigProgressRuns") {
+    group = "verification"
+    description = "Run bin/devrig-progress against synthetic live/not-live HOMEs (stdin-piped prompts)"
+
+    enabled = !System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+
+    val script = projectDir.resolve("bin/devrig-progress")
+    inputs.file(script)
+    val work = layout.buildDirectory.dir("devrig-progress-test")
+    outputs.dir(work)
+
+    doLast {
+        fun runHook(home: java.io.File, stdin: String): String {
+            val proc = ProcessBuilder("sh", script.absolutePath)
+                .directory(home)
+                .also { it.environment()["HOME"] = home.absolutePath }
+                .redirectErrorStream(false)
+                .start()
+            proc.outputStream.bufferedWriter().use { it.write(stdin) }
+            val out = proc.inputStream.bufferedReader().readText()
+            proc.waitFor()
+            if (proc.exitValue() != 0)
+                throw GradleException("devrig-progress must exit 0; got ${proc.exitValue()} for HOME=$home")
+            return out
+        }
+
+        fun makeHome(name: String, live: Boolean): java.io.File {
+            val home = work.get().asFile.resolve(name)
+            home.deleteRecursively()
+            val bin = home.resolve(".mcp-steroid/bin").apply { mkdirs() }
+            if (live) bin.resolve("devrig").apply { writeText("#!/bin/sh\n"); setExecutable(true) }
+            return home
+        }
+
+        // 1. LIVE + IDE-shaped prompt -> model-only additionalContext, and NO visible systemMessage.
+        val liveHome = makeHome("live", live = true)
+        val ideOut = runHook(liveHome, """{"prompt":"run the tests in the open IDE"}""")
+        if (!ideOut.contains("additionalContext"))
+            throw GradleException("devrig-progress must inject additionalContext for an IDE-shaped prompt when live. Output:\n$ideOut")
+        if (ideOut.contains("systemMessage"))
+            throw GradleException("devrig-progress live nudge must be model-only (no systemMessage). Output:\n$ideOut")
+
+        // 2. LIVE + off-topic prompt -> stay SILENT ({} only).
+        val offOut = runHook(liveHome, """{"prompt":"what is the capital of France"}""")
+        if (offOut.contains("additionalContext"))
+            throw GradleException("devrig-progress must NOT nudge on a non-IDE prompt. Output:\n$offOut")
+
+        // 2b. LIVE + a search/navigation prompt -> the expanded keyword set (issue #245 follow-up) must fire.
+        val searchOut = runHook(liveHome, """{"prompt":"where is this class defined and who calls it"}""")
+        if (!searchOut.contains("additionalContext"))
+            throw GradleException("devrig-progress must nudge on code-navigation prompts (expanded keywords). Output:\n$searchOut")
+
+        // 3. NOT live (no launcher) -> live branch must never fire, even on an IDE-shaped prompt. With no
+        //    statusline.owner marker and no reachable bootstrap, the hook stays silent.
+        val notLiveOut = runHook(makeHome("notlive", live = false), """{"prompt":"run the tests in the open IDE"}""")
+        if (notLiveOut.contains("additionalContext"))
+            throw GradleException("devrig-progress must not inject the live nudge before devrig is installed. Output:\n$notLiveOut")
+    }
+}
+
 claudePluginZip.configure { finalizedBy(verifyPluginFiles) }
 
 // Rewrites the committed .claude-plugin/plugin.json `version` to the current VERSION (normalized
@@ -755,4 +860,6 @@ tasks.named("check") {
     dependsOn(validateMcpJson)
     dependsOn(validateDevrigMcpLauncher)
     dependsOn(validateDevrigMcpLauncherRuns)
+    dependsOn(validateDevrigProgress)
+    dependsOn(validateDevrigProgressRuns)
 }
