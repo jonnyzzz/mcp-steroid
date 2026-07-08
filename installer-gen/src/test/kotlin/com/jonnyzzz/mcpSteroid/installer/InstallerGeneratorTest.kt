@@ -55,10 +55,18 @@ class InstallerGeneratorTest {
 
     @Test
     fun `validateScriptTable rejects a non-hex sha256 and an absolute javaHome`() {
-        val badSha = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "ZZZ", "zip", "h") }.toTypedArray())
+        val badSha = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "ZZZ", "zip", "h", 1L) }.toTypedArray())
         assertFailsWith<IllegalArgumentException> { validateScriptTable(badSha) }
-        val absHome = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "a".repeat(64), "zip", "/abs") }.toTypedArray())
+        val absHome = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "a".repeat(64), "zip", "/abs", 1L) }.toTypedArray())
         assertFailsWith<IllegalArgumentException> { validateScriptTable(absHome) }
+    }
+
+    @Test
+    fun `validateScriptTable rejects a non-positive size`() {
+        // size feeds the pre-download disk-space check (#228); a 0/negative size would make it meaningless.
+        val zeroSize = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "a".repeat(64), "zip", "h", 0L) }.toTypedArray())
+        val ex = assertFailsWith<IllegalArgumentException> { validateScriptTable(zeroSize) }
+        assertTrue(ex.message!!.contains("size must be a positive byte count"), ex.message!!)
     }
 
     // ── render pipeline: scripts bake the table + carry the musl guard, no leftover placeholders ─
@@ -67,6 +75,7 @@ class InstallerGeneratorTest {
     private val devrig = DevrigEntry(
         url = "https://example.com/devrig-1.0.zip", sha256 = "b".repeat(64),
         launcherPosix = "devrig-1.0-abc1234/bin/devrig", launcherWindows = "devrig-1.0-abc1234/bin/devrig.bat",
+        size = 233_000_000L,
     )
 
     @Test
@@ -237,6 +246,42 @@ class InstallerGeneratorTest {
         assertTrue(failure.message!!.contains("must be ASCII-only"), failure.message!!)
     }
 
+    @Test
+    fun `rendered scripts carry the error-resilience machinery (disk precheck, retry+backoff, timeouts)`() {
+        // Issue #228: the generated installers must precheck disk space, retry transient failures with
+        // backoff, and bound the network with timeouts. Assert the machinery is baked into both scripts.
+        val table = jdkScriptTable(fullModel()) // art() has size=1 → every arm bakes jdk_size='1'
+        val scripts = renderInstallerScripts(table, devrig, "1.2.3")
+
+        // -- install.sh --
+        // sizes threaded through for the disk check
+        assertTrue(scripts.sh.contains("DEVRIG_SIZE='233000000'"), "install.sh missing baked DEVRIG_SIZE")
+        assertTrue(scripts.sh.contains("jdk_size='1'"), "install.sh missing per-platform jdk_size")
+        // disk precheck: computes need vs df availability and fails with a clear message
+        assertTrue(scripts.sh.contains("df -Pk"), "install.sh missing df-based disk check")
+        assertTrue(scripts.sh.contains("insufficient disk space"), "install.sh missing clear disk-space error")
+        // retry loop + growing backoff + final give-up
+        assertTrue(scripts.sh.contains("DL_ATTEMPTS=3"), "install.sh missing retry-attempts config")
+        assertTrue(scripts.sh.contains("attempt \$ia_attempt/\$DL_ATTEMPTS failed"), "install.sh missing retry log")
+        assertTrue(scripts.sh.contains("after \$DL_ATTEMPTS attempts"), "install.sh missing final give-up message")
+        // network timeouts / stall detection (so the retry loop can fire instead of hanging)
+        assertTrue(scripts.sh.contains("--connect-timeout 30"), "install.sh curl missing connect timeout")
+        assertTrue(scripts.sh.contains("--speed-limit 1024 --speed-time 30"), "install.sh curl missing stall detection")
+        assertTrue(scripts.sh.contains("wget -q --timeout=30 --tries=1"), "install.sh wget missing timeout")
+        // cleanup-on-exit trap for this run's staging
+        assertTrue(scripts.sh.contains("trap 'rm -rf \"\$BINARIES_DIR\"/.tmp.\$\$.*"), "install.sh missing cleanup trap")
+
+        // -- install.ps1 (ASCII-only) --
+        assertTrue(scripts.ps.contains("\$DevrigSize   = 233000000"), "install.ps1 missing baked DevrigSize")
+        assertTrue(scripts.ps.contains("JdkSize = 1"), "install.ps1 missing per-platform JdkSize")
+        assertTrue(scripts.ps.contains("AvailableFreeSpace"), "install.ps1 missing DriveInfo disk check")
+        assertTrue(scripts.ps.contains("insufficient disk space"), "install.ps1 missing clear disk-space error")
+        assertTrue(scripts.ps.contains("\$DlAttempts   = 3"), "install.ps1 missing retry-attempts config")
+        assertTrue(scripts.ps.contains("-TimeoutSec 1800"), "install.ps1 missing request timeout")
+        assertTrue(scripts.ps.contains("after \$DlAttempts attempts"), "install.ps1 missing final give-up message")
+        assertTrue(scripts.ps.contains("function Remove-Staging"), "install.ps1 missing staging cleanup")
+    }
+
     // ── devrig resolution: local override path (no network) ──────────────────────────────────────
 
     @Test
@@ -256,6 +301,7 @@ class InstallerGeneratorTest {
         val devrig = resolveDevrig(flags, noNetwork, version = "1.0")
         assertEquals("https://example.com/devrig-1.0.zip", devrig.url)
         assertEquals(sha256Hex(Files.readAllBytes(zip)), devrig.sha256)
+        assertEquals(Files.readAllBytes(zip).size.toLong(), devrig.size) // size computed from the bytes (#228)
         // Computed + asserted from the real zip (NOT assumed devrig-<version>).
         assertEquals("devrig-1.0-abc1234/bin/devrig", devrig.launcherPosix)
         assertEquals("devrig-1.0-abc1234/bin/devrig.bat", devrig.launcherWindows)
@@ -328,8 +374,19 @@ class InstallerGeneratorTest {
         assertFailsWith<IllegalArgumentException> {
             validateDevrig(DevrigEntry(
                 url = "https://example.com/PLACEHOLDER.zip", sha256 = "b".repeat(64),
-                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat",
+                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat", size = 1L,
             ))
         }
+    }
+
+    @Test
+    fun `validateDevrig rejects a non-positive size`() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            validateDevrig(DevrigEntry(
+                url = "https://example.com/devrig-1.0.zip", sha256 = "b".repeat(64),
+                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat", size = 0L,
+            ))
+        }
+        assertTrue(ex.message!!.contains("size must be a positive byte count"), ex.message!!)
     }
 }

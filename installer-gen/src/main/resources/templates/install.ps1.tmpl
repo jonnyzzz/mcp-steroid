@@ -28,6 +28,11 @@ $Version      = '@@VERSION@@'
 $DevrigUrl    = '@@DEVRIG_URL@@'
 $DevrigSha256 = '@@DEVRIG_SHA256@@'
 $DevrigFormat = '@@DEVRIG_FORMAT@@'
+# devrig-dist archive byte length - used (with the per-platform JDK size) for the pre-download
+# disk-space check, so a full disk fails early and clearly instead of mid-stream.
+$DevrigSize   = @@DEVRIG_SIZE@@
+# Download resilience (#228): re-download a failed OR corrupted (sha-mismatch) artifact this many times.
+$DlAttempts   = 3
 # The devrig launcher subpath INSIDE the unpacked dist (computed + asserted by the generator from the
 # real zip - `devrig-<version>-<hash>\bin\devrig.bat`). The script runs this and lets devrig register
 # itself (`devrig install devrig`), so the script never writes the launcher/PATH.
@@ -39,7 +44,17 @@ $Platforms = @{
 }
 
 function Write-Log([string]$m) { [Console]::Error.WriteLine("[mcp-steroid] $m") }
-function Fail([string]$m) { Write-Log "ERROR: $m"; exit 1 }
+# Remove THIS run's staging so a broken download never leaks hundreds of MB. Guard the $BinariesDir
+# lookup: Fail (which calls this) can run before $BinariesDir is defined, and StrictMode errors on an
+# undefined variable. PowerShell does not reliably run finally{} on `exit`, so cleanup lives here.
+function Remove-Staging {
+  $bd = Get-Variable -Name BinariesDir -ValueOnly -ErrorAction SilentlyContinue
+  if ($bd) {
+    Get-ChildItem -Path $bd -Filter ".tmp.$PID.*" -ErrorAction SilentlyContinue |
+      ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
+  }
+}
+function Fail([string]$m) { Remove-Staging; Write-Log "ERROR: $m"; exit 1 }
 
 # Home resolution: USERPROFILE -> HOME -> GetFolderPath (so pwsh-on-Linux tests can locate it too).
 $InstallRoot = $env:USERPROFILE
@@ -91,6 +106,18 @@ Get-ChildItem -Path $BinariesDir -Filter '.tmp.*' -ErrorAction SilentlyContinue 
   Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } |
   ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
 
+# -- preflight: disk space (#228) --
+# Fail early + clearly if the volume backing ~\.mcp-steroid cannot hold the download + unpack, rather
+# than dying mid-stream. Estimate the need as (devrig + jdk) archive bytes x3 (archive + unpacked tree
+# + slack).
+$needBytes = ([long]$DevrigSize + [long]$p.JdkSize) * 3
+$driveRoot = [System.IO.Path]::GetPathRoot((Resolve-Path $BinariesDir).Path)
+$availBytes = (New-Object System.IO.DriveInfo($driveRoot)).AvailableFreeSpace
+if ($availBytes -lt $needBytes) {
+  Fail ("insufficient disk space in {0}: need ~{1} MB (download + unpack), have ~{2} MB free - free up space and re-run" -f `
+    $BinariesDir, [long]($needBytes / 1MB), [long]($availBytes / 1MB))
+}
+
 function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fmt) {
   $sha12  = $sha.Substring(0, 12)
   $name   = "$kind-$key-$Version-$sha12"
@@ -104,10 +131,29 @@ function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fm
   Remove-Item -Recurse -Force $tmpZip, $tmpUnpack -ErrorAction SilentlyContinue
 
   Write-Log "downloading $kind ($url)..."
-  Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing
-  $actual = (Get-FileHash -Algorithm SHA256 -Path $tmpZip).Hash.ToLowerInvariant()
-  if ($actual -ne $sha) { Fail "SHA-256 mismatch for ${kind}: expected $sha, got $actual" }
-  Write-Log "SHA-256 verified: $sha"
+  # Retry download+verify as a unit (transient network failure OR sha mismatch both re-download), with
+  # growing backoff; only the final failure is fatal. -TimeoutSec is a generous hard ceiling: PowerShell
+  # has no stall-only timeout (unlike curl's --speed-time), so a very slow link relies on this ceiling.
+  # install.sh is the primary macOS/Linux path.
+  $attempt = 1
+  $backoff = 2
+  while ($true) {
+    $err = $null
+    try {
+      Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing -TimeoutSec 1800
+      $actual = (Get-FileHash -Algorithm SHA256 -Path $tmpZip).Hash.ToLowerInvariant()
+      if ($actual -eq $sha) { Write-Log "SHA-256 verified: $sha"; break }
+      $err = "SHA-256 mismatch for ${kind}: expected $sha, got $actual"
+    } catch {
+      $err = "download failed: $url ($($_.Exception.Message))"
+    }
+    Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
+    if ($attempt -ge $DlAttempts) { Fail "$err (after $DlAttempts attempts)" }
+    Write-Log "attempt $attempt/$DlAttempts failed ($err); retrying in ${backoff}s..."
+    Start-Sleep -Seconds $backoff
+    $attempt++
+    $backoff = $backoff * 3
+  }
 
   New-Item -ItemType Directory -Force -Path $tmpUnpack | Out-Null
   Expand-Archive -Path $tmpZip -DestinationPath $tmpUnpack -Force
