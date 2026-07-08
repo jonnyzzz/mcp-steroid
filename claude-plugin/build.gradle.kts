@@ -323,6 +323,16 @@ val validateHooksJson = tasks.register("validateHooksJson") {
             ?: throw GradleException("hooks.json: missing 'hooks.SessionStart' array")
         val group = sessionStart.firstOrNull() as? Map<*, *>
             ?: throw GradleException("hooks.json: 'hooks.SessionStart' has no matcher-group entries")
+        // Issue #247: the charter must re-fire after compaction (SessionStart source "compact") to
+        // restore the dropped IDE framing. That only happens if the matcher stays match-all -- an
+        // omitted matcher, or "" / "*". Scoping it to e.g. "startup" would silently regress #247.
+        val matcher = group["matcher"]?.toString()
+        if (matcher != null && matcher != "" && matcher != "*" && !matcher.contains("compact")) {
+            throw GradleException(
+                "hooks.json: SessionStart matcher '$matcher' would skip the 'compact' source, dropping the " +
+                    "devrig charter after compaction (issue #247). Leave the matcher unset, or use \"\" / \"*\"."
+            )
+        }
         // Each event entry holds a nested 'hooks' array of {type, command} actions (settings.json shape).
         val actions = group["hooks"] as? List<*>
             ?: throw GradleException("hooks.json: SessionStart entry must contain a nested 'hooks' array")
