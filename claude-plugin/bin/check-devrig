@@ -27,21 +27,30 @@ if [ -x "$DEVRIG" ] || [ -f "$DEVRIG_WIN" ]; then
   if grep -q '"statusLine"' "$HOME/.claude/settings.json" 2>/dev/null; then
     [ -x "$BOOT" ] && "$BOOT" --remove-statusline >/dev/null 2>&1
   fi
-  # First run after install -> welcome the user ONCE with copy-paste examples, then never again. The
-  # marker guards it so every later session stays silent. Curly quotes keep the example prompts inside
-  # the JSON string without escaping.
+  # The devrig usage charter (issue #245 / #222) -- injected as MODEL-ONLY additionalContext on EVERY
+  # live session so the agent keeps driving the WHOLE IDE instead of drifting back to Grep/Bash. Built by
+  # appending single-quoted chunks: each uses curly quotes “ ” ‘ ’ + backticks (never a straight " or ')
+  # and literal \n line breaks, so it embeds verbatim in the JSON string below (printf %s leaves the
+  # backslashes untouched; \n is a valid JSON escape → the model sees real newlines). Keep it free of the
+  # tokens “background” and “/devrig:setup”, which belong only to the download/failure branches.
+  CHARTER='<EXTREMELY_IMPORTANT>\nA JetBrains IDE is connected to this session through devrig (MCP Steroid). You are not limited to reading and editing files — you can drive the WHOLE running IDE: its compiler, test runner, debugger, inspections, refactorings, and PSI-level code model.\n\n'
+  CHARTER="$CHARTER"'## The mandate\nFor ANY task that touches code intelligence, builds, tests, debugging, refactoring, code navigation, or diagnostics you MUST default to devrig IDE tools over shell Grep/Bash or hand-editing. If there is even a chance the IDE can do it better, use the IDE. This is not optional — the IDE has semantic understanding that grep and sed do not.\n\n'
+  CHARTER="$CHARTER"'## The instruments — and when to use each\n- `steroid_execute_code` — THE primary tool. Runs Kotlin in the IDE runtime with full IntelliJ API access: build, run/tests, inspections, refactoring, debugging, PSI navigation, and the `applyPatch { }` DSL for atomic multi-file edits. Reach for this first for almost everything.\n- `steroid_fetch_resource` — fetch a mcp-steroid:// recipe guide BEFORE writing execute_code when unsure of the API. Start at mcp-steroid://prompt/skill (the index); then overviews mcp-steroid://ide/overview, mcp-steroid://debugger/overview, mcp-steroid://lsp/overview, mcp-steroid://test/overview, mcp-steroid://vcs/overview; the deep API skill mcp-steroid://skill/coding-with-intellij; and task guides like mcp-steroid://skill/structural-search, mcp-steroid://ide/find-duplicates, mcp-steroid://ide/inspect-and-fix, mcp-steroid://ide/action-discovery, mcp-steroid://ide/project-dependencies.\n- `steroid_list_projects` — list open projects and backends; get the project_name (and choose a backend) before execute_code.\n- `steroid_list_windows` — list IDE windows; disambiguate when several are open.\n- `steroid_open_project` — open a project that is not open yet (asynchronous — poll steroid_list_windows until it is ready).\n- `steroid_take_screenshot` — heavy; debugging and tricky-config only, never routine automation.\n- `steroid_input` — sends keyboard/mouse events; debugging only — prefer execute_code.\n- `steroid_execute_feedback` — after an execute_code run, rate the result (0.00–1.00) with a short note so the tool improves.\n- `devrig_status` — reports install/download progress; use it when the user asks about setup or the IDE tools are not connected yet.\n\n'
+  CHARTER="$CHARTER"'## Map the task to the tool\n- Build / run / tests → IDE run configurations via execute_code (not raw ./gradlew or mvn in Bash); read failures, results, and statistics from the test tool window.\n- Errors / warnings → IDE inspections and the inspection summary (not grepping logs).\n- Find code / definitions / callers → PSI, project search, find-usages, call/type hierarchy (not grep or rg).\n- Pattern-based search or bulk edit by code shape → Structural Search & Replace (SSR), not regex/sed — matches by AST, not text.\n- Semantic code intel (completion, type/param info, hover, document/workspace symbols) → the LSP tools.\n- Rename / extract method or interface / change signature / introduce variable / move / inline / safe-delete / pull-up or push-down members → IDE refactorings (never sed or hand edits).\n- Editing 2+ sites → the `applyPatch { }` DSL inside execute_code (atomic, PSI-committed), not chained manual edits.\n- Debugging → real breakpoints (incl. inline), stepping, thread dumps, expression evaluation — locally or by attaching to a running/remote JVM.\n- Duplicate / copy-pasted code → find-duplicates.\n- Module / library dependencies, classpath → project-dependencies.\n- Any IDE menu/action you cannot script directly → action discovery, then invoke it.\n- Code-linked git history / blame / who-changed-this-line → IDE VCS annotations & history (PSI-linked), not raw `git log`/`git blame`.\n\n'
+  CHARTER="$CHARTER"'## Red flags — these thoughts mean STOP and use the IDE\n- “I’ll just grep for it real quick” → use IDE project search / find-usages; it is semantic and accurate.\n- “A quick sed or manual edit is fine” → use a refactoring or `applyPatch { }`.\n- “I’ll run the tests in Bash” → use the IDE run configuration via execute_code.\n- “I don’t know the IDE API for this” → steroid_fetch_resource the recipe first; do not fall back to shell.\n\n'
+  CHARTER="$CHARTER"'## The only carve-out\nPlain VCS porcelain (git status/add/commit/push) and files outside any open project are fine via shell. But when history is about the code — blame, who-changed-this-line, file/line history — use the IDE VCS annotations (mcp-steroid://vcs/overview); they link back to PSI, not just text.\n\n'
+  CHARTER="$CHARTER"'## If no IDE is connected, bring one up — do not fall back to shell\nThese tools route to a running JetBrains IDE that has the MCP Steroid plugin. If none is reachable, devrig can start one itself: use the `devrig backend` CLI to download / provision / start a managed IDE (`devrig backend download <id>`, `devrig backend provision <id>`, `devrig backend start <id>` — ids like idea-ultimate, pycharm-pro, goland, rider), then poll steroid_list_projects until the backend is routable and call steroid_open_project. See mcp-steroid://open-project/managing-backends for the full recipe. This is heavyweight (a download can take minutes) and only one managed backend runs at a time, so if the user already has their own IDE open, prefer that; if a fresh download is clearly unwanted, ask them first rather than silently reverting to Grep/Bash.\n\n'
+  CHARTER="$CHARTER"'## Guardrails\nDo not run anything unprompted — act only on the user’s actual request.\n</EXTREMELY_IMPORTANT>'
+
+  # First run after install -> ALSO show a ONE-TIME visible welcome (systemMessage) with copy-paste
+  # examples; the marker guards it so later sessions drop the banner. The charter rides along every time.
   if [ ! -f "$WELCOMED" ]; then
     mkdir -p "$HOME/.mcp-steroid/markers" 2>/dev/null
     : > "$WELCOMED" 2>/dev/null
-    cat <<'EOF'
-{
-  "systemMessage": "✅ devrig is live — Claude can now drive your JetBrains IDE. Try “run the tests in the open IDE”, “find duplicates in this file”, or “show the compilation errors”. Run /devrig:help for more.",
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "devrig is installed and the full IDE toolset is available. This is the user's first session since install — they may not know what the whole-IDE bridge can do. If they seem unsure how to start, suggest copy-paste example prompts such as “run the tests in the open IDE”, “find duplicates in this file”, “show the compilation errors in the project”, or “rename this symbol across the project”, and mention the /devrig:help command lists more. Do not run anything unprompted; only act on the user's actual request. A JetBrains IDE with the MCP Steroid plugin must be open for the IDE tools to connect."
-  }
-}
-EOF
+    printf '{"systemMessage":"✅ devrig is live — Claude can now drive your JetBrains IDE. Try “run the tests in the open IDE”, “find duplicates in this file”, or “show the compilation errors”. Run /devrig:help for more.","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$CHARTER"
+  else
+    # Every later live session: model-only charter (no visible systemMessage), so it keeps re-asserting.
+    printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$CHARTER"
   fi
   exit 0
 fi
