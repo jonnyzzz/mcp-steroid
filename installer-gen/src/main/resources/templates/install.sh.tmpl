@@ -18,6 +18,9 @@ VERSION='@@VERSION@@'
 DEVRIG_URL='@@DEVRIG_URL@@'
 DEVRIG_SHA256='@@DEVRIG_SHA256@@'
 DEVRIG_FORMAT='@@DEVRIG_FORMAT@@'
+# devrig-dist archive byte length — used (with the per-platform JDK size) for the pre-download
+# disk-space check, so a full disk fails early and clearly instead of mid-stream.
+DEVRIG_SIZE='@@DEVRIG_SIZE@@'
 # The devrig launcher subpath INSIDE the unpacked dist (computed + asserted by the generator from the
 # real zip — `devrig-<version>-<hash>/bin/devrig`). The script runs this launcher and lets devrig itself
 # register `~/.mcp-steroid/bin` + PATH (`devrig install devrig`), so the script never writes the wrapper.
@@ -26,6 +29,10 @@ DEVRIG_BINSUB='@@DEVRIG_BINSUB@@'
 STEROID_HOME="$HOME/.mcp-steroid"
 BIN_DIR="$STEROID_HOME/bin"
 BINARIES_DIR="$STEROID_HOME/binaries"
+
+# Download resilience (#228): re-download a failed OR corrupted (sha-mismatch) artifact this many times,
+# with growing backoff, before giving up. A transient network blip no longer aborts the whole install.
+DL_ATTEMPTS=3
 
 log()  { printf '%s\n' "[mcp-steroid] $*" >&2; }
 fail() { log "ERROR: $*"; exit 1; }
@@ -57,10 +64,30 @@ install_artifact() {
   ia_unpack="$BINARIES_DIR/.tmp.$$.${ia_kind}.unpack"
   rm -rf "$ia_tmp" "$ia_unpack"
   log "downloading ${ia_kind} ($ia_url)..."
-  fetch "$ia_url" "$ia_tmp" || fail "download failed: $ia_url"
-  actual=$($sha_tool "$ia_tmp" | awk '{print $1}')
-  [ "$actual" = "$ia_sha" ] || fail "SHA-256 mismatch for ${ia_kind}: expected $ia_sha, got $actual"
-  log "SHA-256 verified: $ia_sha"
+  # Retry the download+verify as a unit: a transient network failure OR a corrupted (sha-mismatch)
+  # transfer both re-download, up to $DL_ATTEMPTS times with growing backoff. Only the final failure is
+  # fatal. `fetch` carries connect + stall timeouts (below) so a dead connection fails — and thus
+  # retries — instead of hanging forever.
+  ia_attempt=1
+  ia_backoff=2
+  while : ; do
+    if fetch "$ia_url" "$ia_tmp"; then
+      actual=$($sha_tool "$ia_tmp" | awk '{print $1}')
+      if [ "$actual" = "$ia_sha" ]; then
+        log "SHA-256 verified: $ia_sha"
+        break
+      fi
+      ia_err="SHA-256 mismatch for ${ia_kind}: expected $ia_sha, got $actual"
+    else
+      ia_err="download failed: $ia_url"
+    fi
+    rm -f "$ia_tmp"
+    [ "$ia_attempt" -ge "$DL_ATTEMPTS" ] && fail "$ia_err (after $DL_ATTEMPTS attempts)"
+    log "attempt $ia_attempt/$DL_ATTEMPTS failed ($ia_err); retrying in ${ia_backoff}s..."
+    sleep "$ia_backoff"
+    ia_attempt=$((ia_attempt + 1))
+    ia_backoff=$((ia_backoff * 3))
+  done
   mkdir -p "$ia_unpack"
   case "$ia_fmt" in
     zip)    unzip -q "$ia_tmp" -d "$ia_unpack" ;;   # unzip presence guaranteed by the preflight below
@@ -107,7 +134,7 @@ main() {
   fi
 
   # ── BAKED-IN per-platform JDK table (devrig coordinates are universal, set above) ──
-  jdk_url=''; jdk_sha256=''; jdk_format=''; jdk_javahome=''
+  jdk_url=''; jdk_sha256=''; jdk_format=''; jdk_javahome=''; jdk_size=''
   case "$key" in
 @@PLATFORM_CASE_SH@@
     macos-x64) fail "Intel macOS (x86_64) is not supported — MCP Steroid ships an Apple-silicon (arm64) JDK only. Use an arm64 Mac." ;;
@@ -143,17 +170,35 @@ main() {
   fi
 
   # Bind the concrete download + checksum tools now that the preflight proved one of each exists.
+  # Both carry timeouts so the retry loop above can actually fire: --connect-timeout caps a dead-host
+  # connect, and --speed-limit/--speed-time (curl) / --timeout (wget read timeout) abort a STALLED
+  # transfer without capping a legitimately slow — but progressing — ~600 MB download.
   if command -v curl >/dev/null 2>&1; then
-    fetch() { curl -fsSL "$1" -o "$2"; }
+    fetch() { curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 30 "$1" -o "$2"; }
   else
-    fetch() { wget -q "$1" -O "$2"; }
+    fetch() { wget -q --timeout=30 --tries=1 "$1" -O "$2"; }
   fi
   if command -v sha256sum >/dev/null 2>&1; then sha_tool="sha256sum"; else sha_tool="shasum -a 256"; fi
 
   mkdir -p "$BIN_DIR" "$BINARIES_DIR"
+  # Clean up THIS run's staging on any exit (success or failure/interrupt) so a broken download never
+  # leaks hundreds of MB. Complements the next-run stale-.tmp sweep below. $$ is the (stable) parent
+  # shell PID — the same value install_artifact uses to name its .tmp.$$.* staging, so the glob matches.
+  trap 'rm -rf "$BINARIES_DIR"/.tmp.$$.* 2>/dev/null || true' EXIT
   # Sweep orphaned staging from runs killed before cleanup (different $$ each run).
   find "$BINARIES_DIR" -maxdepth 1 -name '.tmp.*' -mtime +0 -exec rm -rf {} + 2>/dev/null \
     || log "WARNING: could not sweep stale .tmp.* entries"
+
+  # ── preflight: disk space (#228) ──
+  # Fail early + clearly if the volume backing ~/.mcp-steroid cannot hold the download + unpack, rather
+  # than dying mid-stream. Estimate the need as (devrig + jdk) archive bytes x3 (archive + unpacked tree
+  # + slack). `df -Pk` reports POSIX 1024-byte-block availability; compare in KiB to avoid byte overflow.
+  # If df output is unparseable we do NOT block the install (only fail when we positively know it won't fit).
+  need_kib=$(( (DEVRIG_SIZE + jdk_size) * 3 / 1024 ))
+  avail_kib=$(df -Pk "$BINARIES_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
+  if [ -n "$avail_kib" ] && [ "$avail_kib" -lt "$need_kib" ]; then
+    fail "insufficient disk space in $BINARIES_DIR: need ~$((need_kib / 1024)) MB (download + unpack), have ~$((avail_kib / 1024)) MB free — free up space and re-run"
+  fi
 
   devrig_target=$(install_artifact devrig "$DEVRIG_URL" "$DEVRIG_SHA256" "$DEVRIG_FORMAT")
   jdk_target=$(install_artifact jdk "$jdk_url" "$jdk_sha256" "$jdk_format")

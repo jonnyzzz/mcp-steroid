@@ -22,8 +22,11 @@ val POSIX_PLATFORMS = listOf("macos-arm64", "linux-arm64", "linux-x64")
 val WINDOWS_PLATFORMS = listOf("windows-x64", "windows-arm64")
 val ALL_PLATFORMS = POSIX_PLATFORMS + WINDOWS_PLATFORMS
 
-/** The per-platform values baked into the scripts (derived from a [JdkArtifact]). */
-data class JdkScriptEntry(val url: String, val sha256: String, val format: String, val javaHome: String)
+/**
+ * The per-platform values baked into the scripts (derived from a [JdkArtifact]). [size] is the archive
+ * byte length; the scripts use it (plus devrig's) for the pre-download disk-space check (#228).
+ */
+data class JdkScriptEntry(val url: String, val sha256: String, val format: String, val javaHome: String, val size: Long)
 
 data class DevrigEntry(
     val url: String,
@@ -35,6 +38,8 @@ data class DevrigEntry(
      */
     val launcherPosix: String,
     val launcherWindows: String,
+    /** The devrig-dist zip byte length; baked into the scripts for the disk-space check (#228). */
+    val size: Long,
     val format: String = "zip",
 )
 
@@ -56,7 +61,7 @@ internal fun JdkPlatform.scriptKey(): String {
 /** Adapt the resolved [JdkModel] into the platform-keyed table the scripts bake in, and validate it. */
 internal fun jdkScriptTable(model: JdkModel): Map<String, JdkScriptEntry> {
     val table = model.jdks.associate {
-        it.platform.scriptKey() to JdkScriptEntry(it.url, it.sha256, it.archive.extension, it.javaHome)
+        it.platform.scriptKey() to JdkScriptEntry(it.url, it.sha256, it.archive.extension, it.javaHome, it.size)
     }
     validateScriptTable(table)
     return table
@@ -77,6 +82,9 @@ internal fun validateScriptTable(table: Map<String, JdkScriptEntry>) {
             "$key: bad javaHome (must be non-blank, no leading/trailing slash): '${e.javaHome}'"
         }
         require(e.url.startsWith("https://") || e.url.startsWith("http://")) { "$key: url must be absolute http(s), got '${e.url}'" }
+        // size feeds the scripts' pre-download disk-space check (#228); a non-positive value would make
+        // the check meaningless (need ~0 MB), so reject it at generation time.
+        require(e.size > 0) { "$key: size must be a positive byte count, got ${e.size}" }
         requireShellSafe("$key url", e.url)
         requireShellSafe("$key javaHome", e.javaHome)
     }
@@ -103,6 +111,7 @@ internal fun validateDevrig(e: DevrigEntry) {
     }
     require(e.sha256.matches(Regex("[0-9a-f]{64}"))) { "devrig sha256 must be 64 lowercase hex, got '${e.sha256}'" }
     require(e.format == "zip") { "devrig: unexpected format '${e.format}'" }
+    require(e.size > 0) { "devrig size must be a positive byte count, got ${e.size}" }
     requireShellSafe("devrig url", e.url)
     // The launcher subpaths are derived from devrig-zip ENTRY NAMES (attacker-controlled if the zip is
     // crafted) and baked into the single-quoted DEVRIG_BINSUB assignment in both scripts — validate them
@@ -124,6 +133,7 @@ private fun renderShCase(table: Map<String, JdkScriptEntry>): String = buildStri
         appendLine("    jdk_sha256='${j.sha256}'")
         appendLine("    jdk_format='${j.format}'")
         appendLine("    jdk_javahome='${j.javaHome}'")
+        appendLine("    jdk_size='${j.size}'")
         appendLine("    ;;")
     }
 }.trimEnd('\n')
@@ -137,6 +147,7 @@ private fun renderPsTable(table: Map<String, JdkScriptEntry>): String = buildStr
         appendLine("    JdkSha256 = '${j.sha256}'")
         appendLine("    JdkFormat = '${j.format}'")
         appendLine("    JdkJavaHome = '${j.javaHome}'")
+        appendLine("    JdkSize = ${j.size}")
         appendLine("  }")
     }
 }.trimEnd('\n')
@@ -201,7 +212,10 @@ internal fun resolveDevrig(flags: Map<String, List<String>>, http: HttpFetcher):
         u to http.getBytes(u)
     }
     val (posix, win) = devrigLaunchers(bytes)
-    return DevrigEntry(url = url, sha256 = sha256Hex(bytes), launcherPosix = posix, launcherWindows = win)
+    return DevrigEntry(
+        url = url, sha256 = sha256Hex(bytes), launcherPosix = posix, launcherWindows = win,
+        size = bytes.size.toLong(),
+    )
 }
 
 /**
@@ -252,6 +266,7 @@ internal fun renderInstallerScripts(table: Map<String, JdkScriptEntry>, devrig: 
         "DEVRIG_URL" to devrig.url,
         "DEVRIG_SHA256" to devrig.sha256,
         "DEVRIG_FORMAT" to devrig.format,
+        "DEVRIG_SIZE" to devrig.size.toString(),
     )
     // DEVRIG_BINSUB differs per OS (POSIX `…/bin/devrig` vs Windows `…/bin/devrig.bat`), so it is injected
     // per-template from the computed+asserted launcher subpaths.
