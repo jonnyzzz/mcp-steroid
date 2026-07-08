@@ -128,6 +128,7 @@ val verifyPluginFiles = tasks.register("verifyPluginFiles") {
             "bin/install-devrig.ps1",
             "bin/check-devrig",
             "bin/devrig-progress",
+            "bin/devrig-recover",
             "bin/devrig-mcp.cmd",
             "bin/bootstrap-darwin-arm64",
             "bin/bootstrap-darwin-amd64",
@@ -347,6 +348,36 @@ val validateHooksJson = tasks.register("validateHooksJson") {
         }
         if (!command.contains("\${CLAUDE_PLUGIN_ROOT}")) {
             throw GradleException("hooks.json: SessionStart command must locate the script via \${CLAUDE_PLUGIN_ROOT}")
+        }
+
+        // Issue #246: the PostToolUse hook injects a recovery hint after a recoverable devrig tool
+        // error. It must be scoped to the devrig MCP tools (matcher `mcp__devrig__.*`) so it never
+        // fires on unrelated tools, and it must run bin/devrig-recover via ${CLAUDE_PLUGIN_ROOT}.
+        val postToolUse = hooks["PostToolUse"] as? List<*>
+            ?: throw GradleException("hooks.json: missing 'hooks.PostToolUse' array (issue #246 recovery hint)")
+        val ptuGroup = postToolUse.firstOrNull() as? Map<*, *>
+            ?: throw GradleException("hooks.json: 'hooks.PostToolUse' has no matcher-group entries")
+        val ptuMatcher = ptuGroup["matcher"]?.toString().orEmpty()
+        // Anchored on the devrig MCP server prefix so only `mcp__devrig__*` tool results are scanned.
+        if (!ptuMatcher.contains("mcp__devrig__")) {
+            throw GradleException(
+                "hooks.json: PostToolUse matcher '$ptuMatcher' must target the devrig MCP tools " +
+                    "(contain 'mcp__devrig__') so the recovery hint never fires on unrelated tools."
+            )
+        }
+        val ptuActions = ptuGroup["hooks"] as? List<*>
+            ?: throw GradleException("hooks.json: PostToolUse entry must contain a nested 'hooks' array")
+        val ptuAction = ptuActions.firstOrNull() as? Map<*, *>
+            ?: throw GradleException("hooks.json: PostToolUse 'hooks' array has no entries")
+        if (ptuAction["type"]?.toString() != "command") {
+            throw GradleException("hooks.json: PostToolUse hook must be type 'command'")
+        }
+        val ptuCommand = ptuAction["command"]?.toString().orEmpty()
+        if (!ptuCommand.contains("devrig-recover")) {
+            throw GradleException("hooks.json: PostToolUse command '$ptuCommand' must run devrig-recover")
+        }
+        if (!ptuCommand.contains("\${CLAUDE_PLUGIN_ROOT}")) {
+            throw GradleException("hooks.json: PostToolUse command must locate the script via \${CLAUDE_PLUGIN_ROOT}")
         }
     }
 }
@@ -778,6 +809,124 @@ val validateDevrigProgressRuns = tasks.register("validateDevrigProgressRuns") {
     }
 }
 
+// Validates bin/devrig-recover (the PostToolUse hook, issue #246). Content-only guards: it must scan the
+// tool result for each recoverable signature and inject a MODEL-ONLY recovery hint (additionalContext, no
+// systemMessage). NB: this hook writes JSON to stdout on purpose (stdout is the hook data channel), so the
+// stderr-only MCP-launcher rule does NOT apply here.
+val validateDevrigRecover = tasks.register("validateDevrigRecover") {
+    group = "verification"
+    description = "Validate bin/devrig-recover PostToolUse recovery-hint correctness"
+
+    val script = projectDir.resolve("bin/devrig-recover")
+    inputs.file(script)
+
+    doLast {
+        val content = script.readText()
+        // Recovery hints steer the model, not the user: additionalContext only, never a visible banner.
+        if (!content.contains("additionalContext"))
+            throw GradleException("devrig-recover: must inject the recovery hint as additionalContext")
+        if (content.contains("systemMessage"))
+            throw GradleException("devrig-recover: recovery hints must be model-only (no visible systemMessage)")
+        if (!content.contains("PostToolUse"))
+            throw GradleException("devrig-recover: additionalContext must set hookEventName to PostToolUse")
+        // All four recoverable conditions from issue #246 must be recognized.
+        if (!content.contains("No IntelliJ IDE with the MCP Steroid plugin is running"))
+            throw GradleException("devrig-recover: must recognize the no-IDE-reachable signature")
+        if (!content.contains("No open project matches your working directory") ||
+            !content.contains("Project not found:"))
+            throw GradleException("devrig-recover: must recognize the project-routing signatures")
+        if (!content.contains("Dumb mode") || !content.contains("did not reach smart mode"))
+            throw GradleException("devrig-recover: must recognize the indexing/dumb-mode signatures")
+        if (!content.contains("requires a non-modal IDE"))
+            throw GradleException("devrig-recover: must recognize the modal-dialog signature")
+        // The hints must name the concrete next action for each condition.
+        if (!content.contains("steroid_list_projects"))
+            throw GradleException("devrig-recover: project hint must point at steroid_list_projects")
+        if (!content.contains("smartReadAction"))
+            throw GradleException("devrig-recover: indexing hint must point at smartReadAction { }")
+        if (!content.contains("modal=smart_non_modal"))
+            throw GradleException("devrig-recover: modal hint must point at modal=smart_non_modal")
+        if (!content.contains("exit 0"))
+            throw GradleException("devrig-recover: must exit 0 (a non-blocking PostToolUse hook)")
+    }
+}
+
+// Behaviorally runs bin/devrig-recover with a synthetic PostToolUse payload piped on stdin, proving each
+// recoverable signature yields the right MODEL-ONLY hint and a benign result stays silent ({}). POSIX sh;
+// disables itself on a Windows agent (no `sh`) — the same sanctioned Gradle-task-level skip as the sibling
+// hook runners.
+val validateDevrigRecoverRuns = tasks.register("validateDevrigRecoverRuns") {
+    group = "verification"
+    description = "Run bin/devrig-recover against synthetic PostToolUse payloads (stdin-piped)"
+
+    enabled = !System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+
+    val script = projectDir.resolve("bin/devrig-recover")
+    inputs.file(script)
+    val work = layout.buildDirectory.dir("devrig-recover-test")
+    outputs.dir(work)
+
+    doLast {
+        fun runHook(stdin: String): String {
+            val proc = ProcessBuilder("sh", script.absolutePath)
+                .redirectErrorStream(false)
+                .start()
+            proc.outputStream.bufferedWriter().use { it.write(stdin) }
+            val out = proc.inputStream.bufferedReader().readText()
+            proc.waitFor()
+            if (proc.exitValue() != 0)
+                throw GradleException("devrig-recover must exit 0; got ${proc.exitValue()}")
+            return out
+        }
+
+        // Wraps an error phrase in a realistic PostToolUse tool_response envelope.
+        fun payload(errorText: String): String =
+            """{"tool_name":"mcp__devrig__steroid_execute_code","tool_response":{"content":[{"type":"text","text":"$errorText"}],"isError":true}}"""
+
+        fun assertHint(out: String, mustContain: String, label: String) {
+            if (!out.contains("additionalContext"))
+                throw GradleException("devrig-recover must inject additionalContext for the $label case. Output:\n$out")
+            if (out.contains("systemMessage"))
+                throw GradleException("devrig-recover $label hint must be model-only (no systemMessage). Output:\n$out")
+            if (!out.contains(mustContain))
+                throw GradleException("devrig-recover $label hint must mention '$mustContain'. Output:\n$out")
+        }
+
+        // 1. No IDE reachable -> steer to opening an IDE / starting a backend, never to grep/sed.
+        assertHint(
+            runHook(payload("No IntelliJ IDE with the MCP Steroid plugin is running. Open your project in IntelliJ, then retry.")),
+            "backend", "no-IDE",
+        )
+        // 2. Project routing (not-found / ambiguous / stale) -> steroid_list_projects + exact project_name.
+        assertHint(
+            runHook(payload("Project not found: \\\"foo\\\". Available projects: [bar, baz]")),
+            "steroid_list_projects", "project-not-found",
+        )
+        assertHint(
+            runHook(payload("Multiple open projects match your working directory (/tmp/x): a, b. Pass project_name.")),
+            "steroid_list_projects", "project-ambiguous",
+        )
+        // 3. Indexing / dumb mode -> smartReadAction { } / awaitConfiguration.
+        assertHint(
+            runHook(payload("waitForSmartMode did not reach smart mode within 60s — indexing may be stuck.")),
+            "smartReadAction", "indexing",
+        )
+        // 4. Modal dialog -> modal=smart_non_modal / closeModalDialogs().
+        assertHint(
+            runHook(payload("A modal dialog appeared while the script was running — closed 1 dialog(s) and failed the run.")),
+            "modal=smart_non_modal", "modal",
+        )
+        // 5. Benign success -> stay silent ({} only, no hint).
+        val benign = runHook("""{"tool_name":"mcp__devrig__steroid_execute_code","tool_response":{"content":[{"type":"text","text":"BUILD SUCCESSFUL in 3s"}],"isError":false}}""")
+        if (benign.contains("additionalContext"))
+            throw GradleException("devrig-recover must stay silent on a successful result. Output:\n$benign")
+        // 6. Unrecognized error -> also silent (ExecutionSuggestionService owns compile/threading tips).
+        val unknown = runHook(payload("Unresolved reference: fooBar"))
+        if (unknown.contains("additionalContext"))
+            throw GradleException("devrig-recover must NOT fire on errors it does not own (e.g. compile errors). Output:\n$unknown")
+    }
+}
+
 claudePluginZip.configure { finalizedBy(verifyPluginFiles) }
 
 // Rewrites the committed .claude-plugin/plugin.json `version` to the current VERSION (normalized
@@ -872,4 +1021,6 @@ tasks.named("check") {
     dependsOn(validateDevrigMcpLauncherRuns)
     dependsOn(validateDevrigProgress)
     dependsOn(validateDevrigProgressRuns)
+    dependsOn(validateDevrigRecover)
+    dependsOn(validateDevrigRecoverRuns)
 }

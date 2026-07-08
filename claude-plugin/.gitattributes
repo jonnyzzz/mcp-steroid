@@ -2,3 +2,5 @@
 bin/devrig-mcp.cmd text eol=lf
 # Bundled Go bootstrap binaries are binary — never normalize line endings/encoding.
 bin/bootstrap-* binary
+# The PostToolUse recovery hook is a sh/cmd polyglot — keep LF so the shebang works.
+bin/devrig-recover text eol=lf
