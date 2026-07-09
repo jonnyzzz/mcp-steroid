@@ -39,6 +39,7 @@ include(":ocr-tesseract")
 
 include(":test-helper")
 include(":test-integration")
+include(":test-integration-windows")
 include(":test-experiments")
 
 include(":npx")

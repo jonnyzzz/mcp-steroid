@@ -409,6 +409,22 @@ val ciIntegrationTests by tasks.registering {
 }
 
 /**
+ * Aggregator for the Windows-only behaviour suite ([:test-integration-windows]). Invoked by
+ * TeamCity's dedicated Windows build config (see `~/Work/mcp-steroid-teamcity`,
+ * `builds/_18_windows_tests.kt`). The suite's own `test` task is gated `enabled = isWindows`, so on
+ * macOS/Linux this aggregator resolves to a skipped task — safe to invoke from any host.
+ *
+ * Covers, on a real Windows agent: (1) how Claude Code's Windows build resolves + launches a plugin's
+ * stdio MCP `command` and hooks (jonnyzzz/mcp-steroid#253), and (2) that the generated `install.ps1`
+ * is valid, parseable Windows PowerShell (#254).
+ */
+val ciWindowsTests by tasks.registering {
+    group = "ci"
+    description = "Run the Windows-only behaviour tests: :test-integration-windows:test (Claude launch + installer scripts)."
+    dependsOn(":test-integration-windows:test")
+}
+
+/**
  * Ordered task paths for the devrig (`:npx-kt`) CI aggregator — the standalone stdio MCP
  * entrypoint that agents launch directly (`devrig mpc`), as opposed to the IDE's HTTP
  * transport. Historically `npx-kt` was in [nonPluginTestSubprojects] with NO CI coverage;
