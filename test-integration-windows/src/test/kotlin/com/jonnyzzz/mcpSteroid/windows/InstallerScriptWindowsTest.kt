@@ -1,11 +1,13 @@
 package com.jonnyzzz.mcpSteroid.windows
 
+import com.jonnyzzz.mcpSteroid.testHelper.process.RunProcessRequest
+import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
@@ -65,16 +67,19 @@ class InstallerScriptWindowsTest {
                 "[System.Management.Automation.Language.Parser]::ParseFile('${script.absolutePathString().replace("\\", "\\\\")}', [ref]\$null, [ref]\$errs); " +
                 "if (\$errs -and \$errs.Count -gt 0) { \$errs | ForEach-Object { [Console]::Error.WriteLine(\$_.ToString()) }; exit 1 } else { exit 0 }"
 
-        val out = cacheDir.resolve("installer-parse-out.txt")
-        val proc = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", parseCmd)
-            .redirectErrorStream(true)
-            .redirectOutput(out.toFile())
-            .start()
-        val finished = proc.waitFor(2, java.util.concurrent.TimeUnit.MINUTES)
-        assertTrue(finished) { "PowerShell parse of install.ps1 did not finish in time" }
-        val exit = proc.exitValue()
-        val output = if (Files.exists(out)) out.readText() else ""
-        assertEquals(0, exit) { "install.ps1 failed to parse under Windows PowerShell 5.1:\n$output" }
+        // Parse via the shared process-runner util (RunProcessRequest → ProcessRunner).
+        val result = RunProcessRequest(
+            args = listOf("powershell", "-NoProfile", "-NonInteractive", "-Command", parseCmd),
+        )
+            .withTimeout(Duration.ofMinutes(2))
+            .withLogPrefix("ps-parse")
+            .withDescription("PowerShell 5.1 AST parse of install.ps1")
+            .startProcess()
+            .awaitForProcessFinish()
+
+        assertEquals(0, result.exitCode) {
+            "install.ps1 failed to parse under Windows PowerShell 5.1:\n${result.stdout}\n${result.stderr}"
+        }
     }
 
     @Test

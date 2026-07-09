@@ -9,6 +9,11 @@ repositories {
 }
 
 dependencies {
+    // Shared process-runner util (RunProcessRequest / ProcessRunner) — the same pipeline every other
+    // process-driving test in the repo uses: consistent [prefix] logging, timeout + destroyForcibly,
+    // captured stdout/stderr in the returned ProcessResult.
+    implementation(project(":test-helper"))
+
     implementation(platform("org.junit:junit-bom:5.11.4"))
     implementation("org.junit.jupiter:junit-jupiter-api")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")

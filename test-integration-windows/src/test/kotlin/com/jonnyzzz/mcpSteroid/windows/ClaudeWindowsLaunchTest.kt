@@ -1,5 +1,7 @@
 package com.jonnyzzz.mcpSteroid.windows
 
+import com.jonnyzzz.mcpSteroid.testHelper.process.RunProcessRequest
+import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -10,6 +12,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
@@ -56,24 +59,27 @@ class ClaudeWindowsLaunchTest {
         val logFile = fakeHome.resolve("portable-probe.log")
         Files.deleteIfExists(logFile)
 
-        val pb = ProcessBuilder(
-            claudeExe.absolutePathString(),
-            "--plugin-dir", pluginDir.absolutePathString(),
-            "-p", "reply with OK",
+        // Drive Claude through the repo's shared process-runner util (RunProcessRequest → ProcessRunner):
+        // consistent [claude-win] logging, timeout + destroyForcibly, captured stdout/stderr.
+        val result = RunProcessRequest(
+            args = listOf(
+                claudeExe.absolutePathString(),
+                "--plugin-dir", pluginDir.absolutePathString(),
+                "-p", "reply with OK",
+            ),
         )
-        pb.environment()["USERPROFILE"] = fakeHome.toString()
-        pb.environment()["HOME"] = fakeHome.toString()
-        pb.redirectOutput(fakeHome.resolve("claude-stdout.txt").toFile())
-        pb.redirectError(fakeHome.resolve("claude-stderr.txt").toFile())
-
-        val proc = pb.start()
-        // Claude fails auth quickly, but MCP servers + hooks spawn during init first. Bound it anyway.
-        if (!proc.waitFor(3, java.util.concurrent.TimeUnit.MINUTES)) {
-            proc.destroyForcibly()
-        }
+            // Override only HOME/USERPROFILE (isolated fake home) — ProcessRunner inherits the rest of
+            // the environment (PATH, SystemRoot, …) which Claude needs.
+            .withEnvironment(mapOf("USERPROFILE" to fakeHome.toString(), "HOME" to fakeHome.toString()))
+            // Claude fails auth quickly, but MCP servers + hooks spawn during init first. Bound it anyway.
+            .withTimeout(Duration.ofMinutes(3))
+            .withLogPrefix("claude-win")
+            .withDescription("claude --plugin-dir <probe> -p (Windows launch probe)")
+            .startProcess()
+            .awaitForProcessFinish()
 
         logLines = if (Files.exists(logFile)) logFile.readText().lines() else emptyList()
-        println("[probe] claude exit=${runCatching { proc.exitValue() }.getOrDefault(-1)}")
+        println("[probe] claude exit=${result.exitCode}")
         println("[probe] portable-probe.log:\n${if (logLines.isEmpty()) "(empty / not created)" else logLines.joinToString("\n")}")
     }
 
