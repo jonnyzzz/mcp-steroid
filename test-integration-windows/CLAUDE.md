@@ -5,8 +5,20 @@ against the real Windows build of the tools:
 
 | Test | Verifies |
 |---|---|
-| `ClaudeWindowsLaunchTest` | How Claude Code's **Windows** build resolves + launches a plugin stdio MCP `command` and hooks: an extensionless `${CLAUDE_PLUGIN_ROOT}/bin/probe` resolves via cross-spawn/PATHEXT to the `.cmd` sibling (script-only launcher, no native binary); a bare name does NOT resolve (plugin `bin/` not on the MCP subprocess PATH); the extensionless Unix script is never run. Live counterpart to jonnyzzz/mcp-steroid#253. |
+| `ClaudeWindowsLaunchTest` | How Claude Code's **Windows** build resolves + launches a plugin stdio MCP `command`: an extensionless `${CLAUDE_PLUGIN_ROOT}/bin/probe` resolves via cross-spawn/PATHEXT to the `.cmd` sibling (script-only launcher, no native binary); a bare name does NOT resolve (plugin `bin/` not on the MCP subprocess PATH); the extensionless Unix script is never run. Live counterpart to jonnyzzz/mcp-steroid#253. |
 | `InstallerScriptWindowsTest` | The generated `install.ps1` (from `:installer-gen`) is ASCII-only and **parses** under Windows PowerShell 5.1. See #254. |
+
+## Confirmed on a real `windows-latest` run (#253)
+
+- ✅ **Script-only launcher works**: the extensionless MCP `command` resolves to `probe.cmd` and runs
+  via `cmd.exe` (cross-spawn/PATHEXT). No native binary needed for the MCP server.
+- ✅ **Bare command name is dead** (plugin `bin/` not on the MCP subprocess PATH) and the extensionless
+  **Unix** script is never executed on Windows.
+- ⚠️ **Plugin hooks do NOT run in `claude -p` on Windows** — neither an extensionless nor an explicit
+  `.cmd` SessionStart hook fired, while the same headless `-p` + no-login flow DOES run them on Linux.
+  This is a Claude-Code headless-Windows platform trait, not a launcher property, so the hook is
+  **recorded for diagnostics but not asserted** (a `-p`-based harness can't validly observe it). Real
+  plugin hooks on Windows need separate, non-`-p` verification.
 
 ## Why the whole suite is gated at the Gradle task level
 
@@ -32,6 +44,6 @@ everywhere.
 ```
 
 `ClaudeWindowsLaunchTest` downloads the official `win32-x64` `claude.exe` (cached under
-`build/windows-test-cache/`) and needs **no API key** — Claude spawns plugin MCP servers + hooks during
+`build/windows-test-cache/`) and needs **no API key** — Claude spawns plugin MCP servers during
 session init, before the `-p` turn fails auth. TeamCity wiring lives in the separate
 `~/Work/mcp-steroid-teamcity` repo (`builds/_18_windows_tests.kt`).

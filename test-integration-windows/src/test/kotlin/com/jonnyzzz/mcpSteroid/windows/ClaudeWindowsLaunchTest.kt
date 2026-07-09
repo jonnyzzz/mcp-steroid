@@ -36,10 +36,13 @@ import kotlin.io.path.writeText
  *    subprocess PATH (Option B is dead; matches the Linux finding). (Tag `mcp-bare` must be absent.)
  *  - The extensionless Unix `probe` shell script is NEVER executed on Windows (cross-spawn skips the
  *    exact no-extension name and only tries PATHEXT candidates). (Tag `UNIX-*` must be absent.)
- *  - Whether a `SessionStart` hook (exec-form) resolves the same way. (Tag `hook-sessionstart`.)
  *
- * No API key is needed: Claude spawns plugin MCP servers + hooks during session init, before the
- * `-p` turn fails auth. The probe just appends a line to `%USERPROFILE%\portable-probe.log` and exits.
+ * Hooks are recorded for diagnostics but NOT asserted — the real Windows runs showed `claude -p` does
+ * not run plugin hooks on Windows at all (a headless-Windows platform trait, not a launcher property);
+ * see the diagnostic test's KDoc below.
+ *
+ * No API key is needed: Claude spawns plugin MCP servers during session init, before the `-p` turn
+ * fails auth. The probe just appends a line to `%USERPROFILE%\portable-probe.log` and exits.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ClaudeWindowsLaunchTest {
@@ -88,7 +91,7 @@ class ClaudeWindowsLaunchTest {
         assertTrue(logLines.isNotEmpty()) {
             "probe log is empty — Claude never spawned the MCP server. See claude-stderr.txt in the cache dir."
         }
-        assertTrue(logLines.any { it.contains("tag=mcp-fullpath") }) {
+        assertTrue(logLines.any { it.contains("mcp-fullpath") }) {
             "Expected the extensionless MCP command \${CLAUDE_PLUGIN_ROOT}/bin/probe to resolve to probe.cmd " +
                 "and run (tag=mcp-fullpath). Log:\n${logLines.joinToString("\n")}"
         }
@@ -100,19 +103,26 @@ class ClaudeWindowsLaunchTest {
 
     @Test
     fun `bare command name does not resolve (plugin bin not on MCP subprocess PATH)`() {
-        assertTrue(logLines.none { it.contains("tag=mcp-bare") }) {
+        assertTrue(logLines.none { it.contains("mcp-bare") }) {
             "The bare command name 'probe' resolved and launched — this would mean the plugin bin/ IS on " +
                 "the MCP subprocess PATH on Windows, contradicting the Linux finding. Log:\n${logLines.joinToString("\n")}"
         }
     }
 
+    /**
+     * Hooks are NOT asserted here. The probe registers two SessionStart hook forms (extensionless +
+     * explicit `.cmd`) and the [runClaudeOnceAndCaptureProbeLog] setup prints the full probe log, so
+     * whether a hook fired is visible in CI output for diagnostics. But we do not fail the build on it:
+     * the real Windows runs (jonnyzzz/mcp-steroid#253) established that **`claude -p` does not execute
+     * plugin hooks on Windows at all** (neither form fired, while MCP servers did) — the same headless
+     * `-p` + no-login flow DOES run them on Linux. That is a Claude-Code headless-Windows platform trait,
+     * not a property of the plugin launcher, and it is not observable through a `-p`-based harness. The
+     * launcher behaviour we CAN and DO assert is MCP-server resolution above.
+     */
     @Test
-    fun `SessionStart hook (exec-form) launches`() {
-        assertTrue(logLines.any { it.contains("tag=hook-sessionstart") }) {
-            "The exec-form SessionStart hook (command + args, extensionless) did not launch on Windows. " +
-                "This reveals hooks resolve differently from MCP (possibly Bun-native spawn, not cross-spawn). " +
-                "Log:\n${logLines.joinToString("\n")}"
-        }
+    fun `hooks fired are recorded for diagnostics (not asserted - see kdoc)`() {
+        val hookLines = logLines.filter { it.contains("hook-") }
+        println("[probe] SessionStart hook lines observed on this host: ${if (hookLines.isEmpty()) "(none)" else hookLines}")
     }
 
     // --- helpers -------------------------------------------------------------------------------------
@@ -162,13 +172,16 @@ class ClaudeWindowsLaunchTest {
             }
             """.trimIndent(),
         )
-        // Exec-form SessionStart hook (command + args, extensionless).
+        // SessionStart hooks in BOTH forms so the log tells us which resolves on Windows: an extensionless
+        // command (like MCP) and an explicit `.cmd`. On Linux both fire; on Windows the first run showed
+        // only the explicit form is reliable.
         root.resolve("hooks/hooks.json").writeText(
             """
             {
               "hooks": {
                 "SessionStart": [ { "hooks": [
-                  { "type": "command", "command": "${'$'}{CLAUDE_PLUGIN_ROOT}/bin/probe", "args": ["hook-sessionstart"] }
+                  { "type": "command", "command": "${'$'}{CLAUDE_PLUGIN_ROOT}/bin/probe", "args": ["hook-extensionless"] },
+                  { "type": "command", "command": "${'$'}{CLAUDE_PLUGIN_ROOT}/bin/probe.cmd", "args": ["hook-cmd"] }
                 ] } ]
               }
             }
@@ -176,10 +189,12 @@ class ClaudeWindowsLaunchTest {
         )
         // The Windows probe: a pure batch script that records how it was launched, then exits.
         // (No JSON-RPC handshake — the launch + log line is what we assert; Claude marking the server
-        //  "failed" afterwards is irrelevant.)
+        //  "failed" afterwards is irrelevant.) `%~1` strips the surrounding quotes that cross-spawn's
+        // cmd.exe wrapping adds to the argument, so the tag logs clean (e.g. `tag=mcp-fullpath`).
         root.resolve("bin/probe.cmd").writeText(
             "@echo off\r\n" +
-                ">>\"%USERPROFILE%\\portable-probe.log\" echo LAUNCHED tag=%1 root=%CLAUDE_PLUGIN_ROOT%\r\n" +
+                "set \"TAG=%~1\"\r\n" +
+                ">>\"%USERPROFILE%\\portable-probe.log\" echo LAUNCHED tag=%TAG% root=%CLAUDE_PLUGIN_ROOT%\r\n" +
                 "exit /b 0\r\n",
         )
         // Negative control: the extensionless Unix shell script. On Windows, cross-spawn must NOT run
