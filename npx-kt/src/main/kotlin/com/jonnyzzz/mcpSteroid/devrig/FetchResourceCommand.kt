@@ -23,15 +23,19 @@ fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandF
     val uri = command.uri
     if (uri.isNullOrBlank()) {
         // Defensive: the parser already rejects a blank URI; keep a clean error if reached directly.
-        System.err.println("missing <uri>. Example:\n  ${fetchResourceUsageExample()}")
-        return CliExit.USAGE
+        return renderCliError(
+            command.commandName, "missing <uri>. Example:\n  ${fetchResourceUsageExample()}",
+            command.json, CliExit.USAGE, mcpStdout,
+        )
     }
 
     val context = try {
         resolvePromptsContext(command.projectName)
     } catch (e: PromptsContextResolutionException) {
-        System.err.println(e.message)
-        return CliExit.USAGE
+        return renderCliError(
+            command.commandName, e.message ?: "failed to resolve project context",
+            command.json, CliExit.USAGE, mcpStdout,
+        )
     }
 
     val payload = resolveResourcePayload(uri, context)
@@ -40,7 +44,8 @@ fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandF
     } else {
         ToolCallResult.errorResult(resourceNotFoundMessage(uri))
     }
-    return result.renderTo(command = "fetch_resource", json = command.json, out = mcpStdout)
+    // Echo the alias the user actually typed ("prompt" vs "fetch_resource") into the `--json` envelope.
+    return result.renderTo(command = command.commandName, json = command.json, out = mcpStdout)
 }
 
 /**

@@ -36,8 +36,10 @@ fun DevrigServices.runListProjectsCommand(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        System.err.println("devrig list_projects failed to reach a backend: ${e.message}")
-        return CliExit.UNAVAILABLE
+        return renderCliError(
+            "list_projects", "devrig list_projects failed to reach a backend: ${e.message}",
+            command.json, CliExit.UNAVAILABLE, mcpStdout,
+        )
     }
     mcpStdout.println(listProjectsEnvelopeJson(response))
     return CliExit.OK

@@ -94,6 +94,15 @@ class McpAsCliParseTest {
         assertTrue(err.text.contains("only one of"), err.text)
     }
 
+    @Test
+    fun `execute_code rejects a non-positive timeout`() {
+        for (bad in listOf("0", "-1")) {
+            val err = parseError("execute_code", "--project_name=k", "--code=x", "--task_id=t", "--reason=r", "--timeout=$bad")
+            assertTrue(err.text.contains("timeout"), err.text)
+            assertTrue(err.text.contains("positive"), err.text)
+        }
+    }
+
     // ------------------------------ listings ------------------------------
 
     @Test

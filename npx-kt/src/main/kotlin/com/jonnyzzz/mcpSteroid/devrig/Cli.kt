@@ -88,6 +88,8 @@ sealed interface DevrigCommand {
     data class DevrigCommandFetchResource(
         val uri: String? = null,
         val projectName: String? = null,
+        /** The alias the user typed ("prompt" or "fetch_resource"); echoed into the `--json` envelope. */
+        val commandName: String = "fetch_resource",
         override val debug: Boolean = false,
         override val json: Boolean = false,
     ) : DevrigCommand
@@ -177,7 +179,12 @@ sealed interface DevrigCommand {
     ) : DevrigCommand
 
     data class DevrigCommandParseError(
+        /** Full formatted help/usage text (printed to stderr in the human, non-`--json` path). */
         val text: String,
+        /** Concise one-line message (used as the `--json` error-envelope payload). */
+        val message: String = text,
+        /** Best-effort subcommand name (first non-flag token) echoed into the `--json` envelope. */
+        val commandName: String = "devrig",
         override val debug: Boolean = false,
         override val json: Boolean = false,
     ) : DevrigCommand
@@ -190,7 +197,22 @@ fun parseDevrigCommand(rawArgs: Array<String>): DevrigCommand {
         root.parse(rawArgs)
         selected.command ?: DevrigCommand.DevrigCommandHelp()
     } catch (e: CliktError) {
-        DevrigCommand.DevrigCommandParseError(root.getFormattedHelp(e) ?: e.message ?: "Invalid arguments")
+        // The exception aborts parsing before the `--json`/command flags are captured on a variant, so
+        // recover both directly from the raw tokens to keep the `--json` error envelope contract intact.
+        val formatted = root.getFormattedHelp(e)
+        // Our own UsageErrors carry a concise `message`; clikt-internal errors (e.g. NoSuchOption) leave it
+        // blank and only put the specifics in the formatted help ("Error: no such option --nope") — lift
+        // that line so the `--json` envelope isn't a useless "Invalid arguments".
+        val message = e.message?.takeIf { it.isNotBlank() }
+            ?: formatted?.lineSequence()?.map { it.trim() }
+                ?.firstOrNull { it.startsWith("Error:") }?.removePrefix("Error:")?.trim()
+            ?: "Invalid arguments"
+        DevrigCommand.DevrigCommandParseError(
+            text = formatted ?: message,
+            message = message,
+            commandName = rawArgs.firstOrNull { !it.startsWith("-") } ?: "devrig",
+            json = rawArgs.any { it == "--json" },
+        )
     }
 }
 
@@ -375,7 +397,8 @@ private class PromptCliCommand(
             throw UsageError("missing <uri>. Example:\n  ${fetchResourceUsageExample()}")
         }
         select(DevrigCommand.DevrigCommandFetchResource(
-            uri = uri, projectName = projectName, debug = options.debug, json = options.json,
+            uri = uri, projectName = projectName, commandName = "prompt",
+            debug = options.debug, json = options.json,
         ))
     }
 }
@@ -394,7 +417,8 @@ private class FetchResourceCliCommand(
             throw UsageError("missing --uri. Example:\n  devrig fetch_resource --uri=${canonicalResourceEntryPointOrPlaceholder()}")
         }
         select(DevrigCommand.DevrigCommandFetchResource(
-            uri = uri, projectName = projectName, debug = options.debug, json = options.json,
+            uri = uri, projectName = projectName, commandName = "fetch_resource",
+            debug = options.debug, json = options.json,
         ))
     }
 }
@@ -425,6 +449,9 @@ private class ExecuteCodeCliCommand(
         if (!code.isNullOrBlank() && !codeFile.isNullOrBlank()) {
             throw UsageError("pass only one of --code / --code-file, not both")
         }
+        // Reject a non-positive timeout up front: dispatching with 0/-1 would start the script and then
+        // immediately fail with "timed out after 0 seconds" (Codex Round-4 finding).
+        timeout?.let { if (it <= 0) throw UsageError("--timeout must be a positive number of seconds (got $it)") }
         requireArg(taskId, "--task_id", null)
         requireArg(reason, "--reason", null)
         select(DevrigCommand.DevrigCommandExecuteCode(
@@ -685,8 +712,14 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandHelp -> printTopicHelp(command.topic, mcpStdout)
             is DevrigCommand.DevrigCommandVersion -> printVersion(mcpStdout)
             is DevrigCommand.DevrigCommandParseError -> {
-                System.err.println(command.text)
-                64
+                // `--json` consumers must be able to parse usage/parse failures too — emit the unified
+                // isError envelope; otherwise print the full formatted help to stderr. Exit stays 64.
+                if (command.json) {
+                    renderCliError(command.commandName, command.message, json = true, exit = CliExit.USAGE, out = mcpStdout)
+                } else {
+                    System.err.println(command.text)
+                    CliExit.USAGE
+                }
             }
             is DevrigCommand.DevrigCommandBackend -> runBackendCommand(command)
             is DevrigCommand.DevrigCommandBackendDownload -> runBackendDownloadCommand(command)

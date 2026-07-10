@@ -131,8 +131,71 @@ agents that lost their MCP tools in a session. Keeping PR1 IDE-free also keeps i
 ## Follow-ups / open questions
 
 - [ ] Per-command `--help` (finding #2) — or explicitly accept the global banner and document it.
+      **Update (Round 4):** `execute_code --help` now returns real per-command help (usage, required
+      options, first-call rules, resource pointers). Confirm the other commands and close this out.
 - [ ] `open_project --wait`: reuse the monitor's push stream instead of a sleep-poll loop.
 - [ ] Agent-usable docs: add a `mcp-steroid://` article (or extend the skill) describing the CLI
       mapping so agents discover `devrig <tool>` the same way they discover the MCP tools.
 - [ ] Optional client-side `input` sequence validation via `InputSequenceParser` (currently the IDE
-      re-parses the raw sequence).
+      re-parses the raw sequence). **Round 4 confirms this is needed** — see the stack-trace leak below.
+
+## Round 4 — Codex edge-case bug hunt (2026-07-07)
+
+Source: `docs/mcp-as-cli/mcp-as-cli-codex-findings.md` — Codex drove `devrig-dev` (`…e6c62445`) against a
+live host IDE, 22 shell probes across all 8 commands. Full reproducers are in that file. Triage:
+
+**Status (2026-07-08): all Round-4 findings below are FIXED** (`:npx-kt`; `./gradlew :npx-kt:test` green,
+spot-checked with `devrig-dev`). Contract decisions taken: (1) relative `--project_path` is **resolved
+against cwd**; (2) every failure — usage/parse AND runtime — **emits the `isError:true` envelope** under
+`--json` (exit codes unchanged: 64 usage, 69 unavailable). New shared writer `renderCliError`
+(`CliToolSupport.kt`) is the single place that routes an error to a stderr line or a `--json` envelope.
+
+### High — correctness / dangerous
+- [x] **`open_project` accepts a relative `--project_path` and resolves it against `/`, not the caller's
+      cwd.** FIXED: `runOpenProjectCommand` now normalizes `Path.of(projectPath).toAbsolutePath()
+      .normalize()` against the caller's cwd before forwarding (and for the `--wait` poll). Pinned by
+      `CliErrorEnvelopeTest."open_project resolves a relative --project_path against cwd"`.
+
+### High — `--json` contract holes (the dominant theme)
+Two distinct classes used to escape the `{tool, command, isError, data}` envelope even with `--json`:
+- [x] **(a) Client-side usage / parse / validation errors → stderr-only, exit 64, no envelope.** FIXED
+      (contract: emit envelope). `parseDevrigCommand` now records the concise message + best-effort
+      command name and whether `--json` was requested (detected from raw tokens, since the exception
+      aborts flag capture); `runCli`'s `DevrigCommandParseError` branch emits the `isError` envelope under
+      `--json`, else prints the full help to stderr — exit stays 64. clikt-internal errors (unknown flag)
+      get their specific "Error:" line lifted into the message. `--code-file` missing/non-regular now
+      throws `CodeArgException` → enveloped. `--timeout`/`--success_rating` type errors ride the same path.
+- [x] **(b) Runtime tool/bridge errors that SHOULD be enveloped but aren't.** FIXED: every pre-render
+      catch (`runToolCall` for execute_code/feedback/input, `runScreenshotCommand`, `runOpenProjectCommand`,
+      list_windows/list_projects) routes through `renderCliError(..., command.json, ...)` →
+      `ProjectRouteNotFoundException` = enveloped USAGE(64), generic failure = enveloped UNAVAILABLE(69).
+      Pinned by `CliErrorEnvelopeTest` (stale project_name + bridge failure + `--out` write failure).
+
+### Medium — error-message quality
+- [x] **`input` validation errors leak full server stack traces.** FIXED: `runInputCommand` validates the
+      sequence client-side with `InputSequenceParser` before dispatch; on failure it returns the concise
+      parser message + accepted-syntax hint via `renderCliError` (no stack, no round-trip). Still forwards
+      the raw sequence on success (IDE stays the parsing source of truth). Verified: envelope text carries
+      no `com.jonnyzzz.mcpSteroid.vision` / stack frames.
+- [x] **`execute_code --timeout <= 0` is not validated client-side.** FIXED: `ExecuteCodeCliCommand`
+      rejects a non-positive `--timeout` with a `UsageError` before dispatching (rides the F2 envelope
+      path under `--json`).
+
+### Medium — `take_screenshot --out` reporting
+- [x] **The `--out` path is under-reported in the envelope.** FIXED: `writeScreenshotOut` returns the
+      written absolute path; `runScreenshotCommand` appends a `Saved --out: <abs>` text item to the
+      rendered result so the real destination appears in both human output and the `--json` envelope
+      `data`. Relative `--out` policy = resolved-against-cwd + reported (the abs path communicates it).
+      Write failures are enveloped (finding b).
+
+### Low — rough edge
+- [x] **`prompt --json` reports `"command": "fetch_resource"`.** FIXED: `DevrigCommandFetchResource`
+      carries `commandName` (set to `prompt` / `fetch_resource` by the respective clikt command);
+      `runFetchResourceCommand` echoes it into `renderTo`. Pinned by two `FetchResourceCommandTest` cases.
+
+### Confirmed OK (no action)
+Per-command `execute_code --help`; `--json` success envelopes; `list_projects`/`list_windows` +
+routing key; `fetch_resource` (bundled, `--project_name`, unknown/empty/bad-scheme URI); `code-file=-`
+stdin incl. empty + >1 MB; unknown-flag "Did you mean" suggestion; `success_rating` range check;
+`take_screenshot` bad/no window_id; `input press:ESCAPE` + bad window_id; `open_project` nonexistent
+path + already-open-with-backend + `--wait`; `list_projects --json | jq` (no banner leak).

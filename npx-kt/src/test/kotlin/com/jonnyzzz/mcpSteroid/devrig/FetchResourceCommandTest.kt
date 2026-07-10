@@ -97,6 +97,22 @@ class FetchResourceCommandTest {
     }
 
     @Test
+    fun `prompt alias reports command prompt in the --json envelope, not fetch_resource`() {
+        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = knownUri, commandName = "prompt", json = true))
+        assertEquals(0, result.exit)
+        val obj = Json.parseToJsonElement(result.stdout).jsonObject
+        assertEquals("prompt", obj["command"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `fetch_resource alias reports command fetch_resource in the --json envelope`() {
+        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = knownUri, commandName = "fetch_resource", json = true))
+        assertEquals(0, result.exit)
+        val obj = Json.parseToJsonElement(result.stdout).jsonObject
+        assertEquals("fetch_resource", obj["command"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun `unknown uri fails with entry-point hints on stderr, clean stdout`() {
         val result = run(DevrigCommand.DevrigCommandFetchResource(uri = "mcp-steroid://does/not/exist"))
         assertEquals(CliExit.TOOL_ERROR, result.exit)

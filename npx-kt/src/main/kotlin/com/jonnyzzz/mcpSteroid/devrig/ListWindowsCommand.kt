@@ -30,8 +30,10 @@ fun DevrigServices.runListWindowsCommand(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        System.err.println("devrig list_windows failed to reach a backend: ${e.message}")
-        return CliExit.UNAVAILABLE
+        return renderCliError(
+            "list_windows", "devrig list_windows failed to reach a backend: ${e.message}",
+            command.json, CliExit.UNAVAILABLE, mcpStdout,
+        )
     }
 
     if (command.json) {

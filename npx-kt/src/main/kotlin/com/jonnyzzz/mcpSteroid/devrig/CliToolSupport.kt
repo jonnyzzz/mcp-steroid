@@ -99,6 +99,40 @@ fun ToolCallResult.renderTo(
  */
 val CLI_ENVELOPE_JSON: Json = Json { prettyPrint = true; encodeDefaults = true; explicitNulls = false }
 
+/**
+ * Renders a CLI-level failure (usage/parse, routing, or bridge error) consistently, so a `--json`
+ * consumer can parse EVERY failure the same way it parses success:
+ *  - `--json` → emits the unified `{tool, command, isError:true, data:{content:[{type,text}]}}` envelope
+ *    on [out] (stdout), matching [ToolCallResult.toEnvelopeJson]'s shape.
+ *  - otherwise → prints [message] to [err] (stderr), keeping stdout clean.
+ *
+ * Returns [exit] verbatim so callers keep their meaningful [CliExit] codes (USAGE / UNAVAILABLE / …);
+ * the exit code is independent of the `--json` toggle.
+ */
+fun renderCliError(
+    command: String,
+    message: String,
+    json: Boolean,
+    exit: Int,
+    out: PrintStream,
+    err: PrintStream = System.err,
+): Int {
+    if (json) {
+        val data = buildJsonObject {
+            putJsonArray("content") {
+                add(buildJsonObject {
+                    put("type", "text")
+                    put("text", message)
+                })
+            }
+        }
+        out.println(cliEnvelopeJson(command, isError = true, data = data))
+    } else {
+        err.println(message)
+    }
+    return exit
+}
+
 /** Wraps a command-specific [data] object in the unified envelope and renders it to a string. */
 fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String {
     val payload = buildJsonObject {
