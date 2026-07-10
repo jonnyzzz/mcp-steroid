@@ -5,20 +5,34 @@ against the real Windows build of the tools:
 
 | Test | Verifies |
 |---|---|
-| `ClaudeWindowsLaunchTest` | How Claude Code's **Windows** build resolves + launches a plugin stdio MCP `command`: an extensionless `${CLAUDE_PLUGIN_ROOT}/bin/probe` resolves via cross-spawn/PATHEXT to the `.cmd` sibling (script-only launcher, no native binary); a bare name does NOT resolve (plugin `bin/` not on the MCP subprocess PATH); the extensionless Unix script is never run. Live counterpart to jonnyzzz/mcp-steroid#253. |
+| `ClaudeWindowsLaunchTest` | How Claude Code's **Windows** build resolves + launches a plugin stdio MCP `command` (extensionless → `.cmd` via cross-spawn/PATHEXT; bare name doesn't resolve) **and every candidate hook form** (exec x3 + shell x3). Live counterpart to jonnyzzz/mcp-steroid#253. |
 | `InstallerScriptWindowsTest` | The generated `install.ps1` (from `:installer-gen`) is ASCII-only and **parses** under Windows PowerShell 5.1. See #254. |
 
-## Confirmed on a real `windows-latest` run (#253)
+## Confirmed on real Windows — cross-validated on TeamCity **and** GitHub `windows-latest` (#253)
 
-- ✅ **Script-only launcher works**: the extensionless MCP `command` resolves to `probe.cmd` and runs
-  via `cmd.exe` (cross-spawn/PATHEXT). No native binary needed for the MCP server.
-- ✅ **Bare command name is dead** (plugin `bin/` not on the MCP subprocess PATH) and the extensionless
-  **Unix** script is never executed on Windows.
-- ⚠️ **Plugin hooks do NOT run in `claude -p` on Windows** — neither an extensionless nor an explicit
-  `.cmd` SessionStart hook fired, while the same headless `-p` + no-login flow DOES run them on Linux.
-  This is a Claude-Code headless-Windows platform trait, not a launcher property, so the hook is
-  **recorded for diagnostics but not asserted** (a `-p`-based harness can't validly observe it). Real
-  plugin hooks on Windows need separate, non-`-p` verification.
+Probe log format: `LAUNCHED tag=<tag> via=<cmd|sh|shell|script>`.
+
+**MCP stdio (script-only, zero deps):**
+- ✅ extensionless `${CLAUDE_PLUGIN_ROOT}/bin/<stem>` resolves to `<stem>.cmd` via cross-spawn/PATHEXT
+  (`via=cmd`); the extensionless Unix script is NOT run on Windows.
+- ✅ bare command name does NOT resolve (plugin `bin/` isn't on the MCP subprocess PATH).
+
+**Hooks — the full matrix (corrects the earlier "hooks don't run on Windows" claim: they DO):**
+
+| Hook form | Fires on Windows? |
+|---|:-:|
+| exec-form, extensionless path | ❌ (direct spawn, not runnable) |
+| exec-form, `.cmd` path | ❌ (direct spawn can't launch a `.cmd`) |
+| exec-form, `cmd /c <.cmd>` | ✅ (`cmd.exe` is a real exe) |
+| shell-form, default (Git Bash) inline cmd | ✅ |
+| shell-form, `"shell":"powershell"` | ✅ |
+| **shell-form → `#!/bin/sh` script (the devrig hook form)** | ✅ (runs via Git Bash) |
+
+**Key:** devrig's shipped hooks (`check-devrig`, `devrig-progress`, `devrig-recover`) are shell-form
+`sh` scripts → they **work on Windows via Git Bash**. The one dependency is **Git Bash on Windows**
+(default hook shell for `sh`); absent it, an `sh` hook fails (and PowerShell can't run it). MCP has no
+such dependency. Exec-form hooks are only viable for scripts via the `cmd /c` wrapper — prefer
+shell-form.
 
 ## Why the whole suite is gated at the Gradle task level
 
