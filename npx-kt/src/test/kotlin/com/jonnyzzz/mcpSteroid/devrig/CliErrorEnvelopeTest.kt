@@ -6,6 +6,10 @@ import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
+import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
+import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
+import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
+import com.jonnyzzz.mcpSteroid.server.ListedWindow
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
@@ -104,6 +108,9 @@ class CliErrorEnvelopeTest {
 
     @Test
     fun `--out success surfaces the written absolute path in the --json envelope`() {
+        // Desired contract (#6): the saved destination is a STRUCTURED `data.savedOut` field (an absolute
+        // path), not a human string buried in the content array. Supersedes the Round-4 "Saved --out:"
+        // content-text approach.
         val outFile = home.resolve("shots/ok.png")
         val cmd = DevrigCommand.DevrigCommandScreenshot(
             projectName = "k", taskId = "t", reason = "r", out = outFile.toString(), json = true,
@@ -113,38 +120,200 @@ class CliErrorEnvelopeTest {
         }
         assertEquals(CliExit.OK, run.exit)
         assertFalse(envIsError(run), run.stdout)
-        assertTrue(envContentText(run).contains(outFile.toAbsolutePath().normalize().toString()), run.stdout)
+        val savedOut = run.envelope()["data"]!!.jsonObject["savedOut"]!!.jsonPrimitive.content
+        assertEquals(outFile.toAbsolutePath().normalize().toString(), savedOut)
     }
 
     @Test
-    fun `--out write failure under --json is an enveloped error`() {
-        // Point --out at the home DIRECTORY: Files.write on a directory fails, exercising the write path.
+    fun `--out write failure under --json is an enveloped IO error`() {
+        // Point --out at the home DIRECTORY: Files.write on a directory fails. A genuine write failure is
+        // an I/O error (74), not a usage error (64) — the path string was fine, the write was not (#4/#6).
         val cmd = DevrigCommand.DevrigCommandScreenshot(
             projectName = "k", taskId = "t", reason = "r", out = home.toString(), json = true,
         )
         val run = runCliCommand(homePaths()) {
             runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(imageResult())))
         }
-        assertEquals(CliExit.USAGE, run.exit)
+        assertEquals(CliExit.IO_ERROR, run.exit)
         assertTrue(envIsError(run), run.stdout)
         assertTrue(envContentText(run).contains("failed to write --out"), run.stdout)
     }
 
-    // ------------------------------ finding: input stack-trace leak ------------------------------
+    @Test
+    fun `--out requested but no image is a data error, never a silent success`() {
+        val cmd = DevrigCommand.DevrigCommandScreenshot(
+            projectName = "k", taskId = "t", reason = "r", out = home.resolve("x.png").toString(), json = true,
+        )
+        val noImage = ToolCallResult(content = listOf(ContentItem.Text("screenshot taken, tree saved")))
+        val run = runCliCommand(homePaths()) {
+            runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(noImage)))
+        }
+        assertEquals(CliExit.DATA_ERROR, run.exit)
+        assertTrue(envIsError(run), run.stdout)
+        assertTrue(envContentText(run).contains("no image to save"), run.stdout)
+    }
 
     @Test
-    fun `invalid --sequence fails client-side with a concise enveloped message and no stack trace`() {
+    fun `--out with an undecodable image payload is a data error`() {
+        val cmd = DevrigCommand.DevrigCommandScreenshot(
+            projectName = "k", taskId = "t", reason = "r", out = home.resolve("x.png").toString(), json = true,
+        )
+        val bad = ToolCallResult(content = listOf(ContentItem.Image(data = "!!!not base64!!!", mimeType = "image/png")))
+        val run = runCliCommand(homePaths()) {
+            runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(bad)))
+        }
+        assertEquals(CliExit.DATA_ERROR, run.exit)
+        assertTrue(envIsError(run), run.stdout)
+        assertTrue(envContentText(run).contains("not valid base64"), run.stdout)
+    }
+
+    // ------------------------------ #5: input raw forwarding + no stack-trace leak ------------------------------
+
+    @Test
+    fun `input forwards an unrecognized step verbatim (version skew, no client-side rejection)`() {
+        // A step this devrig's parser would not recognize must still be forwarded raw — a newer plugin
+        // may support it. devrig is NOT a second source of truth for input syntax.
+        val rec = RecordingInput()
         val cmd = DevrigCommand.DevrigCommandInput(
-            projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "not-json", json = true,
+            projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "warp:9000", json = true,
         )
         val run = runCliCommand(homePaths()) {
-            runInputCommand(cmd, fakeTools(VisionInputToolHandler::class.java to RecordingInput()))
+            runInputCommand(cmd, fakeTools(VisionInputToolHandler::class.java to rec))
         }
-        assertEquals(CliExit.USAGE, run.exit)
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("warp:9000", rec.params!!.rawSequence)
+    }
+
+    @Test
+    fun `input normalizes a server stack-trace error (message kept, frames stripped)`() {
+        val serverError = ToolCallResult(
+            content = listOf(ContentItem.Text(
+                "ERROR: Unknown input step 'warp:9000'\n" +
+                    "\tat com.jonnyzzz.mcpSteroid.vision.InputSequenceParser.parse(InputSequenceParser.kt:42)\n" +
+                    "\tat com.jonnyzzz.mcpSteroid.server.VisionInputTool.call(VisionInputTool.kt:88)\n" +
+                    "\t... 12 more",
+            )),
+            isError = true,
+        )
+        val cmd = DevrigCommand.DevrigCommandInput(
+            projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "warp:9000", json = true,
+        )
+        val run = runCliCommand(homePaths()) {
+            runInputCommand(cmd, fakeTools(VisionInputToolHandler::class.java to RecordingInput(serverError)))
+        }
+        assertEquals(CliExit.TOOL_ERROR, run.exit)
         assertTrue(envIsError(run), run.stdout)
-        assertTrue(envContentText(run).contains("invalid --sequence"), run.stdout)
-        assertFalse(run.stdout.contains("\tat "), "no stack frames in stdout: ${run.stdout}")
-        assertFalse(run.stdout.contains("com.jonnyzzz.mcpSteroid.vision"), "no server internals leaked: ${run.stdout}")
+        assertTrue(envContentText(run).contains("Unknown input step 'warp:9000'"), run.stdout)
+        assertFalse(run.stdout.contains("\\tat "), "no stack frames in stdout: ${run.stdout}")
+        assertFalse(run.stdout.contains("InputSequenceParser"), "no server internals leaked: ${run.stdout}")
+        assertFalse(run.stdout.contains("... 12 more"), "no frame continuations: ${run.stdout}")
+    }
+
+    // ------------------------------ #8: execution_id is accepted but never forwarded ------------------------------
+
+    @Test
+    fun `execute_feedback does not forward --execution_id into FeedbackParams`() {
+        val rec = RecordingFeedback()
+        val cmd = DevrigCommand.DevrigCommandFeedback(
+            projectName = "k", taskId = "t", executionId = "e-42", successRating = 0.5, explanation = "x",
+        )
+        val run = runCliCommand(homePaths()) {
+            runFeedbackCommand(cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec))
+        }
+        assertEquals(CliExit.OK, run.exit)
+        // FeedbackParams has no execution_id field; the value is contextual only (matches the MCP tool).
+        assertEquals("t", rec.params!!.taskId)
+        assertEquals(0.5, rec.params!!.successRating)
+    }
+
+    // ------------------------------ #3: open_project --wait single final envelope ------------------------------
+
+    private fun readyWindow(path: String) = ListWindowsResponse(
+        windows = listOf(ListedWindow(
+            projectName = "k", projectPath = path, title = "t", isActive = true, isVisible = true,
+            bounds = null, windowId = "w",
+            modalDialogShowing = false, indexingInProgress = false, projectInitialized = true,
+        )),
+        backgroundTasks = emptyList(),
+    )
+
+    private fun notReadyWindow(path: String) = ListWindowsResponse(
+        windows = listOf(ListedWindow(
+            projectName = "k", projectPath = path, title = "t", isActive = true, isVisible = true,
+            bounds = null, windowId = "w",
+            modalDialogShowing = false, indexingInProgress = true, projectInitialized = false,
+        )),
+        backgroundTasks = emptyList(),
+    )
+
+    @Test
+    fun `open_project --wait ready emits a single success envelope`() {
+        val path = home.resolve("proj").toAbsolutePath().normalize().toString()
+        val cmd = DevrigCommand.DevrigCommandOpenProject(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
+        val run = runCliCommand(homePaths()) {
+            runOpenProjectCommand(
+                cmd,
+                fakeTools(
+                    OpenProjectToolHandler::class.java to RecordingOpenProject(),
+                    ListWindowsToolHandler::class.java to SequencedListWindows(listOf(notReadyWindow(path), readyWindow(path))),
+                ),
+                waitAttempts = 5, waitIntervalMs = 1,
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertFalse(envIsError(run), run.stdout)
+        assertOneJsonDocument(run.stdout)
+        assertTrue(envContentText(run).contains("initialized and ready"), run.stdout)
+    }
+
+    @Test
+    fun `open_project --wait timeout emits a single isError envelope, never a stale success`() {
+        val path = home.resolve("proj").toAbsolutePath().normalize().toString()
+        val cmd = DevrigCommand.DevrigCommandOpenProject(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
+        val run = runCliCommand(homePaths()) {
+            runOpenProjectCommand(
+                cmd,
+                fakeTools(
+                    OpenProjectToolHandler::class.java to RecordingOpenProject(),
+                    ListWindowsToolHandler::class.java to SequencedListWindows(listOf(notReadyWindow(path))),
+                ),
+                waitAttempts = 3, waitIntervalMs = 1,
+            )
+        }
+        assertEquals(CliExit.UNAVAILABLE, run.exit)
+        assertTrue(envIsError(run), run.stdout)
+        assertOneJsonDocument(run.stdout)
+        assertTrue(envContentText(run).contains("timed out"), run.stdout)
+    }
+
+    @Test
+    fun `open_project --wait tolerates a transient poll failure then succeeds`() {
+        val path = home.resolve("proj").toAbsolutePath().normalize().toString()
+        val cmd = DevrigCommand.DevrigCommandOpenProject(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
+        val run = runCliCommand(homePaths()) {
+            runOpenProjectCommand(
+                cmd,
+                fakeTools(
+                    OpenProjectToolHandler::class.java to RecordingOpenProject(),
+                    ListWindowsToolHandler::class.java to FlakyListWindows(failFirst = 1, then = readyWindow(path)),
+                ),
+                waitAttempts = 5, waitIntervalMs = 1,
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertFalse(envIsError(run), run.stdout)
+        assertOneJsonDocument(run.stdout)
+    }
+
+    /**
+     * Asserts [stdout] is exactly ONE JSON envelope. [Json.parseToJsonElement] reads a single element
+     * and requires EOF, so a second document (or any trailing token) makes it throw — that is the
+     * "exactly one JSON document in stdout" contract.
+     */
+    private fun assertOneJsonDocument(stdout: String) {
+        assertFalse(stdout.contains("}\n{"), "more than one JSON document in stdout: $stdout")
+        val obj = Json.parseToJsonElement(stdout.trim()).jsonObject
+        assertTrue(obj.containsKey("tool") && obj.containsKey("command"), "one envelope object: $stdout")
     }
 
     // ------------------------------ finding (dangerous): open_project relative path ------------------------------

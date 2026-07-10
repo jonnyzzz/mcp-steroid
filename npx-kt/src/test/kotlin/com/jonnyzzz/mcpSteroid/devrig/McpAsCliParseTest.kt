@@ -177,4 +177,67 @@ class McpAsCliParseTest {
         val err = parseError("execute_feedback", "--project_name=k", "--task_id=t", "--explanation=x")
         assertTrue(err.text.contains("--success_rating"), err.text)
     }
+
+    @Test
+    fun `execute_feedback still accepts --execution_id (MCP parity, contextual only)`() {
+        // #8: the flag is kept for parity with steroid_execute_feedback; it parses onto the command but
+        // FeedbackParams has no such field, so it is never forwarded (asserted in the glue tests).
+        val command = parse("execute_feedback", "--project_name=k", "--task_id=t", "--success_rating=0.5",
+            "--explanation=x", "--execution_id=e-42") as DevrigCommand.DevrigCommandFeedback
+        assertEquals("e-42", command.executionId)
+    }
+
+    // ------------------------------ #2: --modal validation at parse ------------------------------
+
+    @Test
+    fun `execute_code rejects an unknown --modal value at parse`() {
+        val err = parseError("execute_code", "--project_name=k", "--code=x", "--task_id=t", "--reason=r", "--modal=bogus")
+        assertTrue(err.text.contains("invalid --modal"), err.text)
+        assertTrue(err.text.contains("smart_non_modal"), "lists valid values: ${err.text}")
+    }
+
+    @Test
+    fun `execute_code accepts each valid --modal value`() {
+        for (wire in listOf("smart_non_modal", "non_modal", "unleashed")) {
+            val command = parse("execute_code", "--project_name=k", "--code=x", "--task_id=t", "--reason=r", "--modal=$wire")
+            assertTrue(command is DevrigCommand.DevrigCommandExecuteCode, "modal=$wire should parse: $command")
+        }
+    }
+
+    // ------------------------------ #7: reliable parse-error command name ------------------------------
+
+    @Test
+    fun `parse error recovers the command name with a global flag before the subcommand`() {
+        assertEquals("execute_code", parseError("--json", "execute_code").commandName)
+    }
+
+    @Test
+    fun `parse error recovers the command name with a global flag after the subcommand`() {
+        assertEquals("execute_code", parseError("execute_code", "--json").commandName)
+    }
+
+    @Test
+    fun `parse error recovers the command name when an option value is a separate token`() {
+        // `--project_name mykey` (space-separated); the value token must not be mistaken for the command.
+        assertEquals("execute_code", parseError("execute_code", "--project_name", "mykey").commandName)
+    }
+
+    @Test
+    fun `parse error echoes an unknown command name`() {
+        assertEquals("frobnicate", parseError("frobnicate").commandName)
+    }
+
+    @Test
+    fun `parse error on an unknown option keeps the subcommand name`() {
+        val err = parseError("list_projects", "--nope")
+        assertEquals("list_projects", err.commandName)
+        assertTrue(err.message.contains("no such option"), err.message)
+    }
+
+    @Test
+    fun `recoverCommandName is deterministic over flags, values, unknowns`() {
+        assertEquals("execute_code", recoverCommandName(arrayOf("--debug", "execute_code", "--project_name", "input")))
+        assertEquals("backend", recoverCommandName(arrayOf("backend", "download", "id1")))
+        assertEquals("devrig", recoverCommandName(arrayOf("--json")))
+    }
 }

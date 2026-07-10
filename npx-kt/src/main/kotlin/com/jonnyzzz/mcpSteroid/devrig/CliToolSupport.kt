@@ -8,7 +8,6 @@ import java.io.PrintStream
 import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -34,12 +33,48 @@ object CliExit {
      */
     const val TOOL_ERROR: Int = 1
 
-    /** Bad invocation the user can fix: missing/blank required args, unknown project_name, bad file. */
+    /** Bad invocation the user can fix: missing/blank required args, unknown project_name, malformed path. */
     const val USAGE: Int = 64
+
+    /**
+     * The command reached its target but the data it produced/received was unusable — e.g. the bridge
+     * returned a screenshot result with no image payload, or an image whose base64 could not be decoded.
+     * Distinct from [USAGE] (a fixable-input mistake) and [UNAVAILABLE] (could not reach a backend), so a
+     * `--json` consumer can tell "your fault" from "no IDE" from "bad data from the IDE".
+     * Value follows BSD sysexits `EX_DATAERR`.
+     */
+    const val DATA_ERROR: Int = 65
 
     /** The command could not reach a backend / the bridge failed (no IDE running, connection refused). */
     const val UNAVAILABLE: Int = 69
+
+    /**
+     * A genuine filesystem I/O failure the invocation cannot fix by changing an argument — a readable
+     * `--code-file` path that fails mid-read, or an `--out` target that exists as a path string but
+     * cannot be written (a directory, a permission denial). Kept distinct from [USAGE] so a malformed
+     * *path string* (fixable) is not conflated with a real write/read failure. Value follows BSD
+     * sysexits `EX_IOERR`.
+     */
+    const val IO_ERROR: Int = 74
 }
+
+/**
+ * Strips Java stack-frame noise (`\tat …` lines and the `... N more` continuations) out of a server
+ * error message so the agent sees the human-readable message, not a leaked JVM trace. Keeps every
+ * non-frame line (including `Caused by:` headers, which carry the actual cause message).
+ *
+ * Scope: apply this ONLY to a tool's error output where a trace is never the agent's own code (e.g.
+ * `input`, whose failures are IDE-side parse errors). Do NOT apply it to `execute_code`, which returns
+ * `stackTraceToString()` of the agent's OWN script on purpose — that trace is the whole point.
+ */
+fun sanitizeServerError(text: String): String =
+    text.lineSequence()
+        .filterNot { line ->
+            val t = line.trimStart()
+            t.startsWith("at ") || t.startsWith("... ") && t.endsWith(" more")
+        }
+        .joinToString("\n")
+        .trim()
 
 /** A [McpProgressReporter] that streams progress to stderr so stdout stays clean for data. */
 fun stderrProgressReporter(err: PrintStream = System.err): McpProgressReporter =
@@ -133,6 +168,26 @@ fun renderCliError(
     return exit
 }
 
+/**
+ * Renders a successful `take_screenshot` that wrote a file to `--out`, adding a **structured**
+ * `savedOut` (absolute path) key alongside the usual `content` in the `--json` envelope `data`, and a
+ * human `Saved --out: <abs>` line otherwise. The structured field lives only in the devrig-owned CLI
+ * envelope — the frozen wire DTO ([ToolCallResult]) is untouched (Tenet 5). Always [CliExit.OK]: the
+ * caller only reaches this after the file is confirmed written.
+ */
+fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, json: Boolean, out: PrintStream): Int {
+    if (json) {
+        val data = buildJsonObject {
+            for ((key, value) in result.contentDataJson()) put(key, value)
+            put("savedOut", savedOut)
+        }
+        out.println(cliEnvelopeJson("take_screenshot", isError = false, data = data))
+        return CliExit.OK
+    }
+    val withNote = ToolCallResult(content = result.content + ContentItem.Text("Saved --out: $savedOut"))
+    return withNote.renderTo(command = "take_screenshot", json = false, out = out)
+}
+
 /** Wraps a command-specific [data] object in the unified envelope and renders it to a string. */
 fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String {
     val payload = buildJsonObject {
@@ -151,33 +206,37 @@ fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String
  * Envelope for a tool-backed command's [ToolCallResult]: `data:{content:[...]}`. Image blobs are
  * summarized (mimeType + byte count) rather than inlined so stdout stays usable.
  */
-fun ToolCallResult.toEnvelopeJson(command: String): String {
-    val data = buildJsonObject {
-        putJsonArray("content") {
-            for (item in content) {
-                add(buildJsonObject {
-                    when (item) {
-                        is ContentItem.Text -> {
-                            put("type", "text")
-                            put("text", item.text)
-                        }
-                        is ContentItem.Image -> {
-                            put("type", "image")
-                            put("mimeType", item.mimeType)
-                            put("bytes", item.decodedByteCount())
-                        }
-                        is ContentItem.Resource -> {
-                            put("type", "resource")
-                            put("uri", item.resource.uri)
-                            item.resource.mimeType?.let { put("mimeType", it) }
-                            item.resource.text?.let { put("text", it) }
-                        }
+fun ToolCallResult.toEnvelopeJson(command: String): String =
+    cliEnvelopeJson(command, isError, contentDataJson())
+
+/**
+ * Builds the `data:{content:[...]}` object for a [ToolCallResult] — the same payload
+ * [toEnvelopeJson] wraps, but exposed so a command can merge command-specific keys alongside it.
+ */
+fun ToolCallResult.contentDataJson(): JsonObject = buildJsonObject {
+    putJsonArray("content") {
+        for (item in content) {
+            add(buildJsonObject {
+                when (item) {
+                    is ContentItem.Text -> {
+                        put("type", "text")
+                        put("text", item.text)
                     }
-                })
-            }
+                    is ContentItem.Image -> {
+                        put("type", "image")
+                        put("mimeType", item.mimeType)
+                        put("bytes", item.decodedByteCount())
+                    }
+                    is ContentItem.Resource -> {
+                        put("type", "resource")
+                        put("uri", item.resource.uri)
+                        item.resource.mimeType?.let { put("mimeType", it) }
+                        item.resource.text?.let { put("text", it) }
+                    }
+                }
+            })
         }
     }
-    return cliEnvelopeJson(command, isError, data)
 }
 
 private fun ContentItem.Image.decodedByteCount(): Int =

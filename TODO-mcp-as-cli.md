@@ -199,3 +199,51 @@ routing key; `fetch_resource` (bundled, `--project_name`, unknown/empty/bad-sche
 stdin incl. empty + >1 MB; unknown-flag "Did you mean" suggestion; `success_rating` range check;
 `take_screenshot` bad/no window_id; `input press:ESCAPE` + bad window_id; `open_project` nonexistent
 path + already-open-with-backend + `--wait`; `list_projects --json | jq` (no banner leak).
+
+## Round 5 — contract hardening (test-first, `:npx-kt:test` green: 1393 tests)
+
+All 9 findings below are test-pinned (`McpAsCliContractTest`, `CliErrorEnvelopeTest`,
+`McpAsCliParseTest`, `LauncherSelfHealPredicateTest`, `ExecuteCodeCommandTest`,
+`ScreenshotAndOpenProjectCommandTest`) and spot-checked with `devrig-dev` (`jq`-valid envelopes,
+exactly one JSON doc). Contract decisions taken:
+
+- **Exit codes** — added `CliExit.DATA_ERROR=65` (bridge returned unusable data: no image / undecodable
+  base64) and `CliExit.IO_ERROR=74` (genuine write/read failure) alongside the existing OK / TOOL_ERROR
+  (1) / USAGE (64) / UNAVAILABLE (69). BSD sysexits. USAGE stays for fixable input (missing arg,
+  malformed path *string*).
+
+1. **Unified `--json` error contract.** Every failure path emits exactly one
+   `{tool, command, isError:true, data}` envelope on stdout (strict-JSON valid) with a meaningful
+   non-zero exit; no stack traces on stdout, no success-then-fail. The `Main.kt` `runCli` catch-all now
+   also envelopes under `--json` (and rethrows `CancellationException`).
+2. **`execute_code --modal <unknown>`** validated at PARSE (`ExecuteCodeCliCommand`) → rides the
+   parse-error envelope (honors `--json`, exit 64). Removed the stderr-only branch in the runner.
+3. **`open_project --wait --json`** no longer prints an intermediate success envelope. Under `--wait`
+   the poll runs BEFORE any stdout; one FINAL envelope reflects the outcome — ready → success (exit 0),
+   timeout → isError UNAVAILABLE. Transient poll failures still retried; readiness contract unchanged.
+4. **Local path / IO errors normalized** through `renderCliError`: unreadable `--code-file` → IO_ERROR,
+   malformed `--code-file`/`--project_path`/`--out` path string → USAGE, `--out` write failure
+   (directory/permission) → IO_ERROR. No stack traces to `Main`.
+5. **Input single source of truth.** Removed the client-side `InputSequenceParser` rejection — the raw
+   sequence is forwarded verbatim (version-skew safe). The server stack-trace leak is fixed by
+   `sanitizeServerError` (strips JVM frames), applied ONLY to the `input` tool's error result — never
+   `execute_code`, whose trace is the agent's own script.
+6. **`take_screenshot --out` strict contract.** Exit 0 only when the file is actually written; no image
+   → DATA_ERROR, undecodable base64 → DATA_ERROR. Success exposes a STRUCTURED `data.savedOut` absolute
+   path in the `--json` envelope (devrig-owned envelope only — wire `ToolCallResult` untouched, Tenet 5).
+7. **Parse-error command name** via a closed-set subcommand scan (`recoverCommandName` +
+   `DEVRIG_SUBCOMMAND_NAMES`), replacing the `firstOrNull { !startsWith("-") }` heuristic. Covers global
+   flags before/after the subcommand, option values as separate tokens, unknown command, unknown option.
+8. **`execute_feedback --execution_id`** kept for MCP-surface parity (steroid_execute_feedback likewise
+   accepts-but-ignores it; `FeedbackParams` has no field). Help text now states it is contextual only /
+   not forwarded; a glue test pins that it never reaches `FeedbackParams`. No wire change.
+9. **Tenet 3 boundary.** `ensureBinLauncher` on-start self-heal is gated by
+   `DevrigCommand.selfHealsLauncherOnStart()` — the 8 stateless tool facades no longer mutate on-disk
+   launcher/PATH state; lifecycle commands (mcp/install/backend/project/help/version) still do. The
+   launcher integration tests use `devrig version` (lifecycle), so they are unaffected.
+
+### Remaining risks / follow-ups
+- Docker `CliDevrigToolsIntegrationTest` (opt-in, needs a live IDE) not re-run this round — the launcher
+  gating only affects tool facades, which it drives by absolute path, and unit coverage is comprehensive.
+  Re-run before a release if #9 is in scope.
+- `open_project --wait` still uses a bounded sleep-poll loop (not the monitor push stream) — unchanged.

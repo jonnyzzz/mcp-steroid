@@ -44,14 +44,17 @@ class ScreenshotAndOpenProjectCommandTest {
     }
 
     @Test
-    fun `--out with no image in result notes it but still succeeds`() {
+    fun `--out with no image in result is a data error, not a silent success`() {
+        // #6: requesting a file via --out means exit 0 requires a file to actually be written. A result
+        // with no image cannot satisfy that, so it is a DATA_ERROR — the old "note it but succeed"
+        // behavior masked a failed request.
         val rec = RecordingScreenshot(ToolCallResult(content = listOf(ContentItem.Text("no image here"))))
         val cmd = DevrigCommand.DevrigCommandScreenshot(
             projectName = "k", taskId = "t", reason = "r", out = home.resolve("y.png").toString(),
         )
         val run = runCliCommand(homePaths()) { runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec)) }
-        assertEquals(CliExit.OK, run.exit)
-        assertTrue(run.stderr.contains("no image payload"), run.stderr)
+        assertEquals(CliExit.DATA_ERROR, run.exit)
+        assertTrue(run.stderr.contains("no image to save"), run.stderr)
         assertFalse(Files.exists(home.resolve("y.png")))
     }
 

@@ -13,8 +13,36 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.double
 import com.github.ajalt.clikt.parameters.types.int
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import com.jonnyzzz.mcpSteroid.server.ModalMode
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
+
+/**
+ * The closed set of every devrig subcommand token (including nested `backend` verbs and the hidden
+ * `mpc` alias). Used to recover the command name from raw tokens when a [CliktError] aborts parsing
+ * before a variant's flags are captured — reliable precisely because the grammar is subcommand-first
+ * over this fixed set and every global flag is boolean (so an option VALUE never precedes the
+ * subcommand). Kept next to the subcommand registration in [DevrigRootCommand] so the two stay in sync.
+ */
+val DEVRIG_SUBCOMMAND_NAMES: Set<String> = setOf(
+    "mcp", "mpc", "backend", "project", "install",
+    "prompt", "fetch_resource", "execute_code", "list_projects", "list_windows",
+    "open_project", "take_screenshot", "input", "execute_feedback",
+    "help", "version",
+    // nested `backend` verbs
+    "download", "start", "stop", "provision",
+)
+
+/**
+ * Recovers the subcommand name from raw CLI tokens for a parse-error envelope. Prefers the first token
+ * that matches a known subcommand ([DEVRIG_SUBCOMMAND_NAMES]); falls back to the first non-flag token
+ * (covers an unknown command like `devrig frobnicate`), then to `"devrig"`. Deterministic and free of
+ * clikt internals, so it survives clikt version changes.
+ */
+fun recoverCommandName(rawArgs: Array<String>): String =
+    rawArgs.firstOrNull { it in DEVRIG_SUBCOMMAND_NAMES }
+        ?: rawArgs.firstOrNull { !it.startsWith("-") }
+        ?: "devrig"
 
 sealed interface DevrigCommand {
     val debug: Boolean
@@ -210,7 +238,7 @@ fun parseDevrigCommand(rawArgs: Array<String>): DevrigCommand {
         DevrigCommand.DevrigCommandParseError(
             text = formatted ?: message,
             message = message,
-            commandName = rawArgs.firstOrNull { !it.startsWith("-") } ?: "devrig",
+            commandName = recoverCommandName(rawArgs),
             json = rawArgs.any { it == "--json" },
         )
     }
@@ -452,6 +480,15 @@ private class ExecuteCodeCliCommand(
         // Reject a non-positive timeout up front: dispatching with 0/-1 would start the script and then
         // immediately fail with "timed out after 0 seconds" (Codex Round-4 finding).
         timeout?.let { if (it <= 0) throw UsageError("--timeout must be a positive number of seconds (got $it)") }
+        // Validate --modal here so an unknown value rides the parse-error envelope path (honors --json,
+        // exit 64) instead of a stderr-only message from runExecuteCodeCommand (Codex finding #2).
+        modal?.let { wire ->
+            if (ModalMode.entries.none { it.wire == wire }) {
+                throw UsageError(
+                    "invalid --modal '$wire'. Valid: ${ModalMode.entries.joinToString(" | ") { it.wire }}"
+                )
+            }
+        }
         requireArg(taskId, "--task_id", null)
         requireArg(reason, "--reason", null)
         select(DevrigCommand.DevrigCommandExecuteCode(
@@ -571,7 +608,13 @@ private class FeedbackCliCommand(
 ) : DevrigCliktCommand("execute_feedback", selected, parent) {
     private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`")
     private val taskId: String? by option("--task_id", help = "the same task_id used for the rated execution")
-    private val executionId: String? by option("--execution_id", help = "execution_id from the rated execute_code result")
+    // Accepted for parity with the steroid_execute_feedback MCP surface, which likewise documents
+    // execution_id but does not forward it (FeedbackParams has no such field). Kept so an agent/script
+    // that passes it is not rejected; the value is contextual only and is intentionally NOT forwarded.
+    private val executionId: String? by option(
+        "--execution_id",
+        help = "accepted for MCP parity; contextual only — currently NOT forwarded (matches steroid_execute_feedback)",
+    )
     private val successRating: Double? by option("--success_rating", help = "0.00 (failure) .. 1.00 (success)").double()
     private val explanation: String? by option("--explanation", help = "what worked, what didn't, what you'll try next")
     private val codeFile: String? by option("--code-file", help = "optional illustrative snippet file")

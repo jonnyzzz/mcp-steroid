@@ -75,6 +75,35 @@ fun fakeTools(vararg pairs: Pair<Class<*>, Any>): FakeMcpSteroidTools =
 fun okResult(text: String = "ok"): ToolCallResult =
     ToolCallResult(content = listOf(ContentItem.Text(text)))
 
+fun toolErrorResult(text: String = "boom"): ToolCallResult =
+    ToolCallResult(content = listOf(ContentItem.Text(text)), isError = true)
+
+// ---------------------------- throwing fakes (routing / bridge failures) ----------------------------
+
+class ThrowingExecuteCode(private val ex: Throwable) : ExecuteCodeToolHandler {
+    override suspend fun executeCode(projectName: String, execCodeParams: ExecCodeParams, callProgress: McpProgressReporter): ToolCallResult = throw ex
+}
+
+class ThrowingFeedback(private val ex: Throwable) : ExecuteFeedbackToolHandler {
+    override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult = throw ex
+}
+
+class ThrowingInput(private val ex: Throwable) : VisionInputToolHandler {
+    override suspend fun handleInputSequence(projectName: String, inputParams: InputParams): ToolCallResult = throw ex
+}
+
+class ThrowingScreenshot(private val ex: Throwable) : VisionScreenshotToolHandler {
+    override suspend fun screenshotWindow(projectName: String, screenshotParams: ScreenshotParams, mcpProgressReporter: McpProgressReporter): ToolCallResult = throw ex
+}
+
+class ThrowingOpenProject(private val ex: Throwable) : OpenProjectToolHandler {
+    override suspend fun handleOpenProject(openProjectParams: OpenProjectParams, callProgress: McpProgressReporter): ToolCallResult = throw ex
+}
+
+class ThrowingListWindows(private val ex: Throwable) : ListWindowsToolHandler {
+    override suspend fun collectListWindowsResponse(): ListWindowsResponse = throw ex
+}
+
 // ---------------------------- recording fake handlers ----------------------------
 
 class RecordingExecuteCode(private val result: ToolCallResult = okResult()) : ExecuteCodeToolHandler {
@@ -143,5 +172,18 @@ class SequencedListWindows(private val responses: List<ListWindowsResponse>) : L
         val idx = minOf(calls, responses.lastIndex)
         calls++
         return responses[idx]
+    }
+}
+
+/**
+ * Throws on the first [failFirst] poll(s) (a transient bridge failure the --wait loop must tolerate),
+ * then returns [then] on every subsequent poll.
+ */
+class FlakyListWindows(private val failFirst: Int, private val then: ListWindowsResponse) : ListWindowsToolHandler {
+    var calls: Int = 0
+    override suspend fun collectListWindowsResponse(): ListWindowsResponse {
+        val current = calls++
+        if (current < failFirst) throw RuntimeException("transient poll failure #$current")
+        return then
     }
 }

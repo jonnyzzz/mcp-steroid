@@ -50,15 +50,15 @@ class ExecuteCodeCommandTest {
     }
 
     @Test
-    fun `invalid modal is a usage error, handler not called`() {
-        val rec = RecordingExecuteCode()
-        val cmd = DevrigCommand.DevrigCommandExecuteCode(
-            projectName = "k", code = "x", taskId = "t", reason = "r", modal = "bogus",
-        )
-        val run = runCliCommand(homePaths()) { runExecuteCodeCommand(cmd, fakeTools(ExecuteCodeToolHandler::class.java to rec)) }
-        assertEquals(CliExit.USAGE, run.exit)
-        assertTrue(run.stderr.contains("invalid --modal"), run.stderr)
-        assertEquals(null, rec.params, "handler must not be called on a usage error")
+    fun `invalid modal is rejected at parse, handler never reached`() {
+        // #2: --modal is validated at PARSE now (not inside runExecuteCodeCommand), so a bad value becomes
+        // a DevrigCommandParseError that rides the unified --json envelope path — the execute_code handler
+        // is never reached. This supersedes the old stderr-only, --json-ignoring behavior.
+        val parsed = parseDevrigCommand(arrayOf(
+            "execute_code", "--project_name=k", "--code=x", "--task_id=t", "--reason=r", "--modal=bogus",
+        ))
+        assertTrue(parsed is DevrigCommand.DevrigCommandParseError, "expected parse error, got $parsed")
+        assertTrue((parsed as DevrigCommand.DevrigCommandParseError).message.contains("invalid --modal"), parsed.message)
     }
 
     @Test

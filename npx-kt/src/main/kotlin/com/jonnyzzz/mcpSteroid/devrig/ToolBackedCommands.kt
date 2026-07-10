@@ -18,8 +18,9 @@ import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
-import com.jonnyzzz.mcpSteroid.vision.InputSequenceParser
+import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.util.Base64
 import kotlinx.coroutines.CancellationException
@@ -64,17 +65,29 @@ private inline fun DevrigServices.runToolCall(
     return result.renderTo(command = commandName, json = json, out = mcpStdout)
 }
 
-/** Signals a bad `--code-file` argument (missing / not a regular file) with an agent-usable message. */
-private class CodeArgException(message: String) : RuntimeException(message)
+/**
+ * Signals a bad `--code-file`. [exit] distinguishes a fixable-input mistake ([CliExit.USAGE] — missing
+ * file, non-regular file, malformed path string) from a genuine read failure ([CliExit.IO_ERROR] — the
+ * path resolves and is a regular file but reading it throws, e.g. a permission denial).
+ */
+private class CodeArgException(message: String, val exit: Int) : RuntimeException(message)
 
-/** Reads inline `--code` or the `--code-file` path; throws [CodeArgException] on a bad file. */
+/** Reads inline `--code` or the `--code-file` path; throws [CodeArgException] on a bad/unreadable file. */
 private fun resolveCodeArg(inline: String?, file: String?): String {
     if (!inline.isNullOrBlank()) return inline
-    val path = Path.of(file!!)
-    if (!Files.isRegularFile(path)) {
-        throw CodeArgException("--code-file not found or not a regular file: $path")
+    val path = try {
+        Path.of(file!!)
+    } catch (e: InvalidPathException) {
+        throw CodeArgException("--code-file is not a valid path: $file (${e.reason})", CliExit.USAGE)
     }
-    return Files.readString(path)
+    if (!Files.isRegularFile(path)) {
+        throw CodeArgException("--code-file not found or not a regular file: $path", CliExit.USAGE)
+    }
+    return try {
+        Files.readString(path)
+    } catch (e: IOException) {
+        throw CodeArgException("--code-file could not be read: $path (${e.message})", CliExit.IO_ERROR)
+    }
 }
 
 // ----------------------------------- execute_code -----------------------------------
@@ -90,17 +103,12 @@ fun DevrigServices.runExecuteCodeCommand(
             else -> resolveCodeArg(command.code, command.codeFile)
         }
     } catch (e: CodeArgException) {
-        return renderCliError("execute_code", e.message!!, command.json, CliExit.USAGE, mcpStdout)
+        return renderCliError("execute_code", e.message!!, command.json, e.exit, mcpStdout)
     }
-    val modal = command.modal?.let { wire ->
-        ModalMode.entries.firstOrNull { it.wire == wire }
-            ?: run {
-                System.err.println(
-                    "invalid --modal '$wire'. Valid: ${ModalMode.entries.joinToString(" | ") { it.wire }}"
-                )
-                return CliExit.USAGE
-            }
-    } ?: ModalMode.DEFAULT
+    // --modal is validated at parse time (ExecuteCodeCliCommand), so a bad value never reaches here; the
+    // firstOrNull mapping is a defensive lookup that falls back to the default rather than failing.
+    val modal = command.modal?.let { wire -> ModalMode.entries.firstOrNull { it.wire == wire } }
+        ?: ModalMode.DEFAULT
     val params = ExecCodeParams(
         taskId = command.taskId!!,
         code = code,
@@ -127,7 +135,7 @@ fun DevrigServices.runFeedbackCommand(
             else -> null
         }
     } catch (e: CodeArgException) {
-        return renderCliError("execute_feedback", e.message!!, command.json, CliExit.USAGE, mcpStdout)
+        return renderCliError("execute_feedback", e.message!!, command.json, e.exit, mcpStdout)
     }
     val params = FeedbackParams(
         taskId = command.taskId!!,
@@ -146,24 +154,9 @@ fun DevrigServices.runInputCommand(
     command: DevrigCommand.DevrigCommandInput,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
 ): Int {
-    // Validate the sequence client-side so a malformed step fails fast with a concise message + syntax
-    // hint. Previously the raw string round-tripped to the IDE, whose parse failure leaked a full server
-    // stack trace into the (--json) envelope (Codex Round-4 finding). We still forward the RAW string and
-    // an empty parsed list on success — the IDE remains the single source of truth for parsing.
-    command.sequence?.let { seq ->
-        try {
-            InputSequenceParser().parse(seq)
-        } catch (e: IllegalArgumentException) {
-            return renderCliError(
-                "input",
-                "invalid --sequence: ${e.message}\n" +
-                    "Accepted steps: press:KEY[+MODS], type:TEXT, delay:MS, stick:KEY, click:BTN@x,y",
-                command.json, CliExit.USAGE, mcpStdout,
-            )
-        }
-    }
-    // The devrig bridge forwards the raw sequence string verbatim (the IDE re-parses it), so we do
-    // not need to send the parsed list; pass an empty parsed list and the raw string.
+    // Forward the RAW sequence verbatim — the IDE is the SINGLE source of truth for input syntax. devrig
+    // deliberately does NOT re-parse/validate the sequence: a newer plugin may accept steps this devrig's
+    // parser wouldn't recognize, so client-side rejection would strand a valid call on version skew.
     val params = InputParams(
         taskId = command.taskId!!,
         reason = command.reason!!,
@@ -171,10 +164,36 @@ fun DevrigServices.runInputCommand(
         sequence = emptyList(),
         rawSequence = command.sequence,
     )
-    return runToolCall("input", command.json, tools) { t ->
-        t.handler<VisionInputToolHandler>().handleInputSequence(command.projectName!!, params)
+    // The IDE's parse failure is returned as an isError result whose text is a full server stack trace;
+    // sanitize THAT (strip JVM frames) so the agent sees the message, not a leaked trace. Scoped to
+    // input — never execute_code, whose trace is the agent's own script (see sanitizeServerError).
+    val result = try {
+        runBlocking(Dispatchers.IO) {
+            tools.handler<VisionInputToolHandler>().handleInputSequence(command.projectName!!, params)
+        }
+    } catch (e: ProjectRouteNotFoundException) {
+        return renderCliError(
+            "input", "${e.message} — run `devrig list_projects` to see valid project_name keys",
+            command.json, CliExit.USAGE, mcpStdout,
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        return renderCliError(
+            "input", "devrig input failed to reach a backend: ${e.message}",
+            command.json, CliExit.UNAVAILABLE, mcpStdout,
+        )
     }
+    val rendered = if (result.isError) result.sanitizeErrorContent() else result
+    return rendered.renderTo(command = "input", json = command.json, out = mcpStdout)
 }
+
+/** Returns a copy with every Text content item's stack-frame noise stripped ([sanitizeServerError]). */
+private fun ToolCallResult.sanitizeErrorContent(): ToolCallResult = copy(
+    content = content.map { item ->
+        if (item is ContentItem.Text) ContentItem.Text(sanitizeServerError(item.text)) else item
+    },
+)
 
 // ----------------------------------- take_screenshot -----------------------------------
 
@@ -207,43 +226,56 @@ fun DevrigServices.runScreenshotCommand(
         )
     }
 
-    // --out: pull the first image out of the result and write the raw PNG bytes to disk.
-    var rendered = result
-    if (!command.out.isNullOrBlank() && !result.isError) {
-        val savedPath = try {
-            writeScreenshotOut(result, command.out)
-        } catch (e: Exception) {
-            return renderCliError(
-                "take_screenshot", "failed to write --out=${command.out}: ${e.message}",
-                command.json, CliExit.USAGE, mcpStdout,
-            )
-        }
-        // Surface the ACTUAL written destination (absolute, cwd-resolved for a relative --out) in the
-        // rendered result so it appears in both the human output and the --json envelope `data`, not
-        // just on stderr (Codex Round-4 finding).
-        if (savedPath != null) {
-            rendered = result.copy(content = result.content + ContentItem.Text("Saved --out: $savedPath"))
-        }
+    // A tool-level error (bad window_id, etc.) or a request with no --out: render the single result.
+    if (result.isError || command.out.isNullOrBlank()) {
+        return result.renderTo(command = "take_screenshot", json = command.json, out = mcpStdout)
     }
-    return rendered.renderTo(command = "take_screenshot", json = command.json, out = mcpStdout)
+
+    // --out requested: strict contract (finding #6) — exit 0 ONLY when the file is actually written.
+    // A result with no image, or an undecodable image, is a data error (65), not a silent success; a
+    // malformed --out path string is a usage error (64); a real write failure is an I/O error (74).
+    val image = result.content.filterIsInstance<ContentItem.Image>().firstOrNull()
+        ?: return renderCliError(
+            "take_screenshot",
+            "--out=${command.out} requested but the screenshot result carried no image to save",
+            command.json, CliExit.DATA_ERROR, mcpStdout,
+        )
+    val bytes = try {
+        Base64.getDecoder().decode(image.data)
+    } catch (e: IllegalArgumentException) {
+        return renderCliError(
+            "take_screenshot",
+            "--out=${command.out}: the screenshot image payload was not valid base64 (${e.message})",
+            command.json, CliExit.DATA_ERROR, mcpStdout,
+        )
+    }
+    val savedPath = try {
+        writeScreenshotOut(command.out, bytes, image.mimeType)
+    } catch (e: InvalidPathException) {
+        return renderCliError(
+            "take_screenshot", "invalid --out path: ${command.out} (${e.reason})",
+            command.json, CliExit.USAGE, mcpStdout,
+        )
+    } catch (e: IOException) {
+        return renderCliError(
+            "take_screenshot", "failed to write --out=${command.out}: ${e.message}",
+            command.json, CliExit.IO_ERROR, mcpStdout,
+        )
+    }
+    return renderScreenshotSaved(result, savedPath.toString(), command.json, mcpStdout)
 }
 
 /**
- * Decodes the first image in [result] and writes it to [out]. Returns the absolute path written, or
- * null when the result carried no image (a non-error no-op). Throws on a genuine write failure so the
- * caller can envelope it.
+ * Writes the decoded PNG [bytes] to [out] (relative paths resolve against cwd), creating parent
+ * directories. Returns the absolute path written. Throws [InvalidPathException] for a malformed path
+ * string and [IOException] for a genuine write failure (a directory target, a permission denial) so the
+ * caller can envelope each with the right exit code.
  */
-private fun writeScreenshotOut(result: ToolCallResult, out: String): Path? {
-    val image = result.content.filterIsInstance<ContentItem.Image>().firstOrNull()
-    if (image == null) {
-        System.err.println("--out given but the screenshot result carried no image payload")
-        return null // not an error — the call succeeded, there was just nothing to save
-    }
-    val bytes = Base64.getDecoder().decode(image.data)
+private fun writeScreenshotOut(out: String, bytes: ByteArray, mimeType: String): Path {
     val outPath = Path.of(out).toAbsolutePath().normalize()
     outPath.parent?.let { Files.createDirectories(it) }
     Files.write(outPath, bytes)
-    System.err.println("Saved screenshot (${bytes.size} bytes, ${image.mimeType}) to $outPath")
+    System.err.println("Saved screenshot (${bytes.size} bytes, $mimeType) to $outPath")
     return outPath
 }
 
@@ -258,8 +290,16 @@ fun DevrigServices.runOpenProjectCommand(
 ): Int {
     // Resolve a relative --project_path against the caller's cwd into an absolute path. Previously a
     // relative path (e.g. `.`) was resolved by the backend against `/`, silently opening the wrong
-    // project — the one genuinely dangerous Round-4 finding.
-    val absoluteProjectPath = Path.of(command.projectPath!!).toAbsolutePath().normalize().toString()
+    // project — the one genuinely dangerous Round-4 finding. A malformed path STRING is a fixable
+    // usage error (enveloped, not a stack trace propagated to Main).
+    val absoluteProjectPath = try {
+        Path.of(command.projectPath!!).toAbsolutePath().normalize().toString()
+    } catch (e: InvalidPathException) {
+        return renderCliError(
+            "open_project", "invalid --project_path: ${command.projectPath} (${e.reason})",
+            command.json, CliExit.USAGE, mcpStdout,
+        )
+    }
     val params = OpenProjectParams(
         projectPath = absoluteProjectPath,
         trustProject = command.trustProject,
@@ -278,18 +318,27 @@ fun DevrigServices.runOpenProjectCommand(
         )
     }
 
-    val exit = result.renderTo(command = "open_project", json = command.json, out = mcpStdout)
-    if (exit != CliExit.OK || !command.wait) return exit
+    // Without --wait, or when the open itself already errored, render that single result now.
+    if (!command.wait || result.isError) {
+        return result.renderTo(command = "open_project", json = command.json, out = mcpStdout)
+    }
 
-    // --wait: poll list_windows until the freshly-opened project is ready. Best-effort; all progress
-    // goes to stderr so stdout keeps just the open_project result (clean for --json / pipes).
+    // --wait: poll list_windows until the freshly-opened project is ready BEFORE emitting any stdout, so
+    // exactly ONE final envelope reflects the command's true outcome. Poll progress + transient poll
+    // failures go to stderr; the readiness contract is unchanged (initialized, not indexing, no modal).
+    // A timeout is a genuine failure — stdout gets a single isError envelope, never a stale success one.
     val ready = waitForProjectReady(absoluteProjectPath, tools, attempts = waitAttempts, intervalMs = waitIntervalMs)
     if (!ready) {
-        System.err.println("open_project: --wait timed out before the project became ready")
-        return CliExit.UNAVAILABLE
+        return renderCliError(
+            "open_project",
+            "open_project --wait timed out before the project became ready: $absoluteProjectPath",
+            command.json, CliExit.UNAVAILABLE, mcpStdout,
+        )
     }
-    System.err.println("open_project: project is initialized and ready")
-    return CliExit.OK
+    val readyResult = result.copy(
+        content = result.content + ContentItem.Text("open_project: project is initialized and ready"),
+    )
+    return readyResult.renderTo(command = "open_project", json = command.json, out = mcpStdout)
 }
 
 /**
@@ -297,7 +346,7 @@ fun DevrigServices.runOpenProjectCommand(
  * modal dialog — or the timeout elapses. Returns true when ready. Fixed cadence, bounded attempts,
  * all diagnostics on stderr.
  */
-private fun DevrigServices.waitForProjectReady(
+private fun waitForProjectReady(
     projectPath: String,
     tools: McpSteroidTools,
     attempts: Int = 60,
