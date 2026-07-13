@@ -409,19 +409,15 @@ val ciIntegrationTests by tasks.registering {
 }
 
 /**
- * Aggregator for the Windows-only behaviour suite ([:test-integration-windows]). Invoked by
- * TeamCity's dedicated Windows build config (see `~/Work/mcp-steroid-teamcity`,
- * `builds/_18_windows_tests.kt`). The suite's own `test` task is gated `enabled = isWindows`, so on
- * macOS/Linux this aggregator resolves to a skipped task — safe to invoke from any host.
- *
- * Covers, on a real Windows agent: (1) how Claude Code's Windows build resolves + launches a plugin's
- * stdio MCP `command` and hooks (jonnyzzz/mcp-steroid#253), and (2) that the generated `install.ps1`
- * is valid, parseable Windows PowerShell (#254).
+ * Aggregator for the cross-OS agent-launch behaviour suite ([:test-integration-agent-launch]).
+ * Invoked by TeamCity per-OS AgentLaunchTests builds (Windows + Linux) and the GitHub Actions
+ * windows/ubuntu matrix. The suite's own `test` task is gated `enabled = isWindows || isLinux`, so on
+ * macOS this aggregator resolves to a skipped task. Uses mock probe scripts (no real devrig).
  */
-val ciWindowsTests by tasks.registering {
+val ciAgentLaunchTests by tasks.registering {
     group = "ci"
-    description = "Run the Windows-only behaviour tests: :test-integration-windows:test (Claude launch + installer scripts)."
-    dependsOn(":test-integration-windows:test")
+    description = "Run the cross-OS agent-launch behaviour tests: :test-integration-agent-launch:test."
+    dependsOn(":test-integration-agent-launch:test")
 }
 
 /**
