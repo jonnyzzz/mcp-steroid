@@ -44,6 +44,37 @@ class ScreenshotAndOpenProjectCommandTest {
     }
 
     @Test
+    fun `console --out writes only the out file, never a redundant tmp image or a Saved image line`() {
+        // Regression: with the console image branch now writing files, renderScreenshotSaved must NOT
+        // re-materialize the already-saved image into ~/.mcp-steroid/tmp — the --out path is the only
+        // file the user asked for. It must print "Saved --out:", never "Saved image:".
+        val raw = ByteArray(16) { it.toByte() }
+        val b64 = Base64.getEncoder().encodeToString(raw)
+        val rec = RecordingScreenshot(
+            ToolCallResult(content = listOf(ContentItem.Image(data = b64, mimeType = "image/png"))),
+        )
+        val outFile = home.resolve("shots/only.png")
+        val hp = homePaths()
+        val cmd = DevrigCommand.DevrigCommandScreenshot(
+            projectName = "k", taskId = "t", reason = "r", out = outFile.toString(),
+        )
+        val run = runCliCommand(hp) { runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec)) }
+        assertEquals(CliExit.OK, run.exit)
+        assertTrue(Files.exists(outFile), "the --out file must be written")
+        assertArrayEquals(raw, Files.readAllBytes(outFile))
+        // No redundant tmp copy: the tmp dir must contain no `image-*` file (may not exist at all).
+        val tmpDir = home.resolve("tmp")
+        val tmpImages = if (Files.isDirectory(tmpDir)) {
+            Files.list(tmpDir).use { s -> s.filter { it.fileName.toString().startsWith("image-") }.toList() }
+        } else {
+            emptyList()
+        }
+        assertTrue(tmpImages.isEmpty(), "console --out must not create a redundant tmp image, found: $tmpImages")
+        assertFalse(run.stdout.contains("Saved image:"), run.stdout)
+        assertTrue(run.stdout.contains("Saved --out:"), run.stdout)
+    }
+
+    @Test
     fun `--out with no image in result is a data error, not a silent success`() {
         // #6: requesting a file via --out means exit 0 requires a file to actually be written. A result
         // with no image cannot satisfy that, so it is a DATA_ERROR — the old "note it but succeed"

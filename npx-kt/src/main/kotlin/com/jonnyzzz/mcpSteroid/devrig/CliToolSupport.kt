@@ -193,7 +193,11 @@ sealed interface Presentation {
         }
 
         override fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, out: PrintStream): Int {
-            val withNote = ToolCallResult(content = result.content + ContentItem.Text("Saved --out: $savedOut"))
+            // The image was ALREADY written to the explicit --out path by the caller; strip image items
+            // before re-rendering so [renderImage] does not redundantly re-materialize a `<tmpDir>/image-*`
+            // file and print a spurious "Saved image:" line ahead of the "Saved --out:" note.
+            val nonImage = result.content.filterNot { it is ContentItem.Image }
+            val withNote = ToolCallResult(content = nonImage + ContentItem.Text("Saved --out: $savedOut"))
             return render(withNote, command = "take_screenshot", out = out)
         }
     }
