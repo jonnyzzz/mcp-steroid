@@ -76,10 +76,15 @@ class McpAsCliParseTest {
     }
 
     @Test
-    fun `execute_code without project_name points at list_projects`() {
-        val err = parseError("execute_code", "--code-file=x.kts", "--task_id=t", "--reason=r")
-        assertTrue(err.text.contains("--project_name"), err.text)
-        assertTrue(err.text.contains("list_projects"), err.text)
+    fun `execute_code without project_name parses successfully, resolved later from cwd (#266 p2)`() {
+        // --project_name is optional at parse time (issue #266): a missing value is no longer a parse
+        // error here — it is resolved against the current directory at runtime by requireProjectName in
+        // runExecuteCodeCommand, which fails with a candidate-listing USAGE error (see
+        // ExecuteCodeCommandTest's cwd-inference tests) only when the cwd doesn't uniquely match one open
+        // project. Parsing must succeed and leave projectName null so that resolution point runs.
+        val command = parse("execute_code", "--code-file=x.kts", "--task_id=t", "--reason=r")
+        assertTrue(command is DevrigCommand.DevrigCommandExecuteCode, "expected a parsed command, got $command")
+        assertNull((command as DevrigCommand.DevrigCommandExecuteCode).projectName)
     }
 
     @Test

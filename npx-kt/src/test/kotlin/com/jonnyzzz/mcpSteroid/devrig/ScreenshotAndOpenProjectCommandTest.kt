@@ -89,6 +89,57 @@ class ScreenshotAndOpenProjectCommandTest {
         assertFalse(Files.exists(home.resolve("y.png")))
     }
 
+    // ------------------- --project_name cwd inference (issue #266 part 2) -------------------
+
+    @Test
+    fun `screenshot explicit project_name overrides cwd inference`() {
+        val rec = RecordingScreenshot(ToolCallResult(content = listOf(ContentItem.Text("ok"))))
+        val cmd = DevrigCommand.DevrigCommandScreenshot(
+            projectName = "explicit-key", taskId = "t", reason = "r",
+        )
+        val run = runCliCommand(homePaths()) {
+            runScreenshotCommand(
+                cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec),
+                cwd = Path.of("/home/u/proj"), routes = listOf(fakeRoute("/home/u/proj", "cwd-key")),
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("explicit-key", rec.projectName)
+    }
+
+    @Test
+    fun `screenshot blank project_name infers the single containing project`() {
+        val rec = RecordingScreenshot(ToolCallResult(content = listOf(ContentItem.Text("ok"))))
+        val cmd = DevrigCommand.DevrigCommandScreenshot(
+            projectName = null, taskId = "t", reason = "r",
+        )
+        val run = runCliCommand(homePaths()) {
+            runScreenshotCommand(
+                cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec),
+                cwd = Path.of("/home/u/proj/src"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("proj-abc", rec.projectName)
+    }
+
+    @Test
+    fun `screenshot no containing project fails with a candidate-listing usage error`() {
+        val rec = RecordingScreenshot(ToolCallResult(content = listOf(ContentItem.Text("ok"))))
+        val cmd = DevrigCommand.DevrigCommandScreenshot(
+            projectName = null, taskId = "t", reason = "r",
+        )
+        val run = runCliCommand(homePaths()) {
+            runScreenshotCommand(
+                cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec),
+                cwd = Path.of("/tmp/elsewhere"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.USAGE, run.exit)
+        assertTrue(run.stderr.contains("proj-abc"), run.stderr)
+        assertTrue(rec.projectName == null, "handler must never be invoked on a usage error")
+    }
+
     // ------------------------------ open_project ------------------------------
 
     private fun readyWindow(path: String) = ListedWindow(

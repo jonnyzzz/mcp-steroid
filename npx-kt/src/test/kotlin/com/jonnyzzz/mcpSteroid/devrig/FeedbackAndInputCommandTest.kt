@@ -57,4 +57,104 @@ class FeedbackAndInputCommandTest {
         assertEquals("press:CTRL+P, type:Main, delay:200, press:ENTER", rec.params!!.rawSequence)
         assertTrue(rec.params!!.sequence.isEmpty(), "the CLI does not pre-parse; the IDE re-parses rawSequence")
     }
+
+    // ------------------------- --project_name cwd inference (issue #266 part 2) -------------------------
+
+    @Test
+    fun `feedback explicit project_name overrides cwd inference`() {
+        val rec = RecordingFeedback()
+        val cmd = DevrigCommand.DevrigCommandFeedback(
+            projectName = "explicit-key", taskId = "t", successRating = 1.0, explanation = "e",
+        )
+        val run = runCliCommand(homePaths()) {
+            runFeedbackCommand(
+                cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec),
+                cwd = Path.of("/home/u/proj"), routes = listOf(fakeRoute("/home/u/proj", "cwd-key")),
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("explicit-key", rec.projectName)
+    }
+
+    @Test
+    fun `feedback blank project_name infers the single containing project`() {
+        val rec = RecordingFeedback()
+        val cmd = DevrigCommand.DevrigCommandFeedback(
+            projectName = null, taskId = "t", successRating = 1.0, explanation = "e",
+        )
+        val run = runCliCommand(homePaths()) {
+            runFeedbackCommand(
+                cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec),
+                cwd = Path.of("/home/u/proj/src"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("proj-abc", rec.projectName)
+    }
+
+    @Test
+    fun `feedback no containing project fails with a candidate-listing usage error`() {
+        val rec = RecordingFeedback()
+        val cmd = DevrigCommand.DevrigCommandFeedback(
+            projectName = null, taskId = "t", successRating = 1.0, explanation = "e",
+        )
+        val run = runCliCommand(homePaths()) {
+            runFeedbackCommand(
+                cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec),
+                cwd = Path.of("/tmp/elsewhere"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.USAGE, run.exit)
+        assertTrue(run.stderr.contains("proj-abc"), run.stderr)
+        assertTrue(rec.projectName == null, "handler must never be invoked on a usage error")
+    }
+
+    @Test
+    fun `input explicit project_name overrides cwd inference`() {
+        val rec = RecordingInput()
+        val cmd = DevrigCommand.DevrigCommandInput(
+            projectName = "explicit-key", windowId = "win-1", taskId = "t", reason = "r", sequence = "press:ENTER",
+        )
+        val run = runCliCommand(homePaths()) {
+            runInputCommand(
+                cmd, fakeTools(VisionInputToolHandler::class.java to rec),
+                cwd = Path.of("/home/u/proj"), routes = listOf(fakeRoute("/home/u/proj", "cwd-key")),
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("explicit-key", rec.projectName)
+    }
+
+    @Test
+    fun `input blank project_name infers the single containing project`() {
+        val rec = RecordingInput()
+        val cmd = DevrigCommand.DevrigCommandInput(
+            projectName = null, windowId = "win-1", taskId = "t", reason = "r", sequence = "press:ENTER",
+        )
+        val run = runCliCommand(homePaths()) {
+            runInputCommand(
+                cmd, fakeTools(VisionInputToolHandler::class.java to rec),
+                cwd = Path.of("/home/u/proj/src"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("proj-abc", rec.projectName)
+    }
+
+    @Test
+    fun `input no containing project fails with a candidate-listing usage error`() {
+        val rec = RecordingInput()
+        val cmd = DevrigCommand.DevrigCommandInput(
+            projectName = null, windowId = "win-1", taskId = "t", reason = "r", sequence = "press:ENTER",
+        )
+        val run = runCliCommand(homePaths()) {
+            runInputCommand(
+                cmd, fakeTools(VisionInputToolHandler::class.java to rec),
+                cwd = Path.of("/tmp/elsewhere"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.USAGE, run.exit)
+        assertTrue(run.stderr.contains("proj-abc"), run.stderr)
+        assertTrue(rec.projectName == null, "handler must never be invoked on a usage error")
+    }
 }

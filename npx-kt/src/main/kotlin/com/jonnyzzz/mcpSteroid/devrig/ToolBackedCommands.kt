@@ -1,9 +1,12 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.devrig.server.CwdProjectMatch
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRouteNotFoundException
 import com.jonnyzzz.mcpSteroid.devrig.server.StubMcpSteroidTools
 import com.jonnyzzz.mcpSteroid.devrig.server.callToolViaSpec
+import com.jonnyzzz.mcpSteroid.devrig.server.resolveProjectFromCwd
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
@@ -19,6 +22,7 @@ import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolSpec
 import java.io.IOException
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -98,13 +102,59 @@ private fun resolveCodeArg(inline: String?, file: String?): String {
     }
 }
 
+/** Renders a [CodeArgException] (bad --code-file, missing/ambiguous --project_name, …) via [presentation]. */
+private fun Presentation.renderCodeArgFailure(command: String, e: CodeArgException, out: PrintStream): Int =
+    renderError(command, e.message!!, e.exit, out)
+
+/**
+ * Effective `--project_name` for the four project-scoped commands (issue #266): [explicit] wins outright
+ * when non-blank; otherwise infers from [cwd] via [resolveProjectFromCwd] against [routes]. Throws
+ * [CodeArgException] ([CliExit.USAGE]) when inference finds no single containing project — [routes]'
+ * exposed names are listed so the agent knows what to pass explicitly instead of guessing.
+ *
+ * [cwd] and [routes] are parameters (not read from [DevrigServices] directly) purely so tests can drive
+ * inference deterministically without a live IDE; production call sites default them to the real launch
+ * directory (`user.dir`) and [DevrigServices.projectRouting].
+ */
+private fun requireProjectName(explicit: String?, cwd: Path, routes: List<ProjectRoute>): String {
+    if (!explicit.isNullOrBlank()) return explicit
+    return when (val match = resolveProjectFromCwd(cwd, routes)) {
+        is CwdProjectMatch.One -> {
+            System.err.println(
+                "devrig: --project_name omitted; inferred '${match.route.exposedProjectName}' from cwd ($cwd)",
+            )
+            match.route.exposedProjectName
+        }
+        is CwdProjectMatch.None, is CwdProjectMatch.Ambiguous -> {
+            val candidates = routes.map { it.exposedProjectName }
+            val listing = if (candidates.isEmpty()) {
+                "no projects are currently open"
+            } else {
+                "open projects: ${candidates.joinToString(", ")}"
+            }
+            throw CodeArgException(
+                "missing --project_name: the current directory ($cwd) does not uniquely match one open " +
+                    "project ($listing). Pass --project_name explicitly (get it from `devrig list_projects`).",
+                CliExit.USAGE,
+            )
+        }
+    }
+}
+
 // ----------------------------------- execute_code -----------------------------------
 
 fun DevrigServices.runExecuteCodeCommand(
     command: DevrigCommand.DevrigCommandExecuteCode,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
+    cwd: Path = Path.of(System.getProperty("user.dir")),
+    routes: List<ProjectRoute> = projectRouting.routes(),
 ): Int {
     val presentation = presentationFor(command.json)
+    val projectName = try {
+        requireProjectName(command.projectName, cwd, routes)
+    } catch (e: CodeArgException) {
+        return presentation.renderCodeArgFailure("execute_code", e, mcpStdout)
+    }
     // `--code-file=-` reads the script from stdin so agents can pipe a snippet without a temp file.
     val code = try {
         when {
@@ -112,14 +162,14 @@ fun DevrigServices.runExecuteCodeCommand(
             else -> resolveCodeArg(command.code, command.codeFile)
         }
     } catch (e: CodeArgException) {
-        return presentation.renderError("execute_code", e.message!!, e.exit, mcpStdout)
+        return presentation.renderCodeArgFailure("execute_code", e, mcpStdout)
     }
     // Map the CLI flags → tool-call JSON arguments; ExecuteCodeToolSpec.call() re-parses them into
     // ExecCodeParams (single source of truth), rather than the CLI rebuilding *Params by hand (C9/C15).
     // --modal is validated at parse time (ExecuteCodeCliCommand), so a bad value never reaches here; when
     // omitted the spec applies its own default (SMART_NON_MODAL == ModalMode.DEFAULT), preserving behavior.
     val arguments = buildJsonObject {
-        put("project_name", command.projectName!!)
+        put("project_name", projectName)
         put("code", code)
         put("task_id", command.taskId!!)
         put("reason", command.reason!!)
@@ -140,8 +190,15 @@ fun DevrigServices.runExecuteCodeCommand(
 fun DevrigServices.runFeedbackCommand(
     command: DevrigCommand.DevrigCommandFeedback,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
+    cwd: Path = Path.of(System.getProperty("user.dir")),
+    routes: List<ProjectRoute> = projectRouting.routes(),
 ): Int {
     val presentation = presentationFor(command.json)
+    val projectName = try {
+        requireProjectName(command.projectName, cwd, routes)
+    } catch (e: CodeArgException) {
+        return presentation.renderCodeArgFailure("execute_feedback", e, mcpStdout)
+    }
     val code: String? = try {
         when {
             !command.code.isNullOrBlank() -> command.code
@@ -149,7 +206,7 @@ fun DevrigServices.runFeedbackCommand(
             else -> null
         }
     } catch (e: CodeArgException) {
-        return presentation.renderError("execute_feedback", e.message!!, e.exit, mcpStdout)
+        return presentation.renderCodeArgFailure("execute_feedback", e, mcpStdout)
     }
     // Map the CLI flags → tool-call JSON arguments; ExecuteFeedbackToolSpec.call() re-parses them into
     // FeedbackParams and calls the handler (C9/C15). All required fields (project_name, task_id,
@@ -157,7 +214,7 @@ fun DevrigServices.runFeedbackCommand(
     // the spec's equivalent guards never fire — behavior is preserved. execution_id is intentionally NOT
     // forwarded (parity with the MCP surface). `code` is optional and omitted when absent.
     val arguments = buildJsonObject {
-        put("project_name", command.projectName!!)
+        put("project_name", projectName)
         put("task_id", command.taskId!!)
         put("success_rating", command.successRating!!)
         command.explanation?.let { put("explanation", it) }
@@ -177,8 +234,15 @@ fun DevrigServices.runFeedbackCommand(
 fun DevrigServices.runInputCommand(
     command: DevrigCommand.DevrigCommandInput,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
+    cwd: Path = Path.of(System.getProperty("user.dir")),
+    routes: List<ProjectRoute> = projectRouting.routes(),
 ): Int {
     val presentation = presentationFor(command.json)
+    val projectName = try {
+        requireProjectName(command.projectName, cwd, routes)
+    } catch (e: CodeArgException) {
+        return presentation.renderCodeArgFailure("input", e, mcpStdout)
+    }
     // Forward the RAW sequence verbatim — the IDE is the SINGLE source of truth for input syntax. devrig
     // deliberately does NOT re-parse/validate the sequence: a newer plugin may accept steps this devrig's
     // parser wouldn't recognize, so client-side rejection would strand a valid call on version skew.
@@ -194,7 +258,7 @@ fun DevrigServices.runInputCommand(
     // input — never execute_code, whose trace is the agent's own script (see sanitizeServerError).
     val result = try {
         runBlocking(Dispatchers.IO) {
-            tools.handler<VisionInputToolHandler>().handleInputSequence(command.projectName!!, params)
+            tools.handler<VisionInputToolHandler>().handleInputSequence(projectName, params)
         }
     } catch (e: ProjectRouteNotFoundException) {
         return presentation.renderError(
@@ -225,13 +289,20 @@ private fun ToolCallResult.sanitizeErrorContent(): ToolCallResult = copy(
 fun DevrigServices.runScreenshotCommand(
     command: DevrigCommand.DevrigCommandScreenshot,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
+    cwd: Path = Path.of(System.getProperty("user.dir")),
+    routes: List<ProjectRoute> = projectRouting.routes(),
 ): Int {
     val presentation = presentationFor(command.json)
+    val projectName = try {
+        requireProjectName(command.projectName, cwd, routes)
+    } catch (e: CodeArgException) {
+        return presentation.renderCodeArgFailure("take_screenshot", e, mcpStdout)
+    }
     // Map the CLI flags → tool-call JSON arguments; VisionScreenshotToolSpec.call() re-parses them into
     // ScreenshotParams and calls the handler (C9/C15). window_id is optional and omitted when absent. The
     // --out post-write below stays a CLI-only affordance around the call.
     val arguments = buildJsonObject {
-        put("project_name", command.projectName!!)
+        put("project_name", projectName)
         put("task_id", command.taskId!!)
         put("reason", command.reason!!)
         command.windowId?.let { put("window_id", it) }

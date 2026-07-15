@@ -130,4 +130,100 @@ class ExecuteCodeCommandTest {
         assertEquals("", run.stdout)
         assertTrue(run.stderr.contains("boom"), run.stderr)
     }
+
+    // ------------------------- --project_name cwd inference (issue #266 part 2) -------------------------
+
+    @Test
+    fun `explicit project_name overrides cwd inference`() {
+        // A route DOES contain the cwd, but --project_name was passed explicitly — the explicit value must
+        // win outright, never silently redirected to whatever the cwd happens to resolve to.
+        val rec = RecordingExecuteCode()
+        val cmd = DevrigCommand.DevrigCommandExecuteCode(
+            projectName = "explicit-key", code = "x", taskId = "t", reason = "r",
+        )
+        val cwd = Path.of("/home/u/proj")
+        val run = runCliCommand(homePaths()) {
+            runExecuteCodeCommand(
+                cmd, fakeTools(ExecuteCodeToolHandler::class.java to rec),
+                cwd = cwd, routes = listOf(fakeRoute("/home/u/proj", "cwd-inferred-key")),
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("explicit-key", rec.projectName)
+    }
+
+    @Test
+    fun `blank project_name infers the single containing project`() {
+        val rec = RecordingExecuteCode()
+        val cmd = DevrigCommand.DevrigCommandExecuteCode(
+            projectName = null, code = "x", taskId = "t", reason = "r",
+        )
+        val cwd = Path.of("/home/u/proj/src")
+        val run = runCliCommand(homePaths()) {
+            runExecuteCodeCommand(
+                cmd, fakeTools(ExecuteCodeToolHandler::class.java to rec),
+                cwd = cwd, routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("proj-abc", rec.projectName)
+    }
+
+    @Test
+    fun `no containing project fails with a candidate-listing usage error`() {
+        val rec = RecordingExecuteCode()
+        val cmd = DevrigCommand.DevrigCommandExecuteCode(
+            projectName = null, code = "x", taskId = "t", reason = "r",
+        )
+        val cwd = Path.of("/tmp/elsewhere")
+        val run = runCliCommand(homePaths()) {
+            runExecuteCodeCommand(
+                cmd, fakeTools(ExecuteCodeToolHandler::class.java to rec),
+                cwd = cwd, routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.USAGE, run.exit)
+        assertEquals("", run.stdout)
+        assertTrue(run.stderr.contains("proj-abc"), run.stderr)
+        assertTrue(run.stderr.contains("--project_name"), run.stderr)
+        assertTrue(rec.projectName == null, "handler must never be invoked on a usage error")
+    }
+
+    @Test
+    fun `ambiguous cwd match fails with a candidate-listing usage error`() {
+        val rec = RecordingExecuteCode()
+        val cmd = DevrigCommand.DevrigCommandExecuteCode(
+            projectName = "  ", code = "x", taskId = "t", reason = "r",
+        )
+        val cwd = Path.of("/home/u/proj/src")
+        val run = runCliCommand(homePaths()) {
+            runExecuteCodeCommand(
+                cmd, fakeTools(ExecuteCodeToolHandler::class.java to rec),
+                cwd = cwd,
+                routes = listOf(fakeRoute("/home/u/proj", "proj-abc"), fakeRoute("/home/u/proj", "proj-xyz")),
+            )
+        }
+        assertEquals(CliExit.USAGE, run.exit)
+        assertTrue(run.stderr.contains("proj-abc"), run.stderr)
+        assertTrue(run.stderr.contains("proj-xyz"), run.stderr)
+    }
+
+    @Test
+    fun `no containing project with --json emits the unified error envelope`() {
+        // The usage error must ride the SAME --json envelope as any other CodeArgException, not a
+        // stderr-only path — assert the JSON stdout carries isError + the USAGE-shaped message.
+        val rec = RecordingExecuteCode()
+        val cmd = DevrigCommand.DevrigCommandExecuteCode(
+            projectName = null, code = "x", taskId = "t", reason = "r", json = true,
+        )
+        val run = runCliCommand(homePaths()) {
+            runExecuteCodeCommand(
+                cmd, fakeTools(ExecuteCodeToolHandler::class.java to rec),
+                cwd = Path.of("/tmp/elsewhere"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
+            )
+        }
+        assertEquals(CliExit.USAGE, run.exit)
+        assertTrue(run.stdout.contains("\"isError\":true") || run.stdout.contains("\"isError\": true"), run.stdout)
+        assertTrue(run.stdout.contains("proj-abc"), run.stdout)
+    }
 }

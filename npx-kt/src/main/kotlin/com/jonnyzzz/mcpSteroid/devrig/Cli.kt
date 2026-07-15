@@ -456,7 +456,7 @@ private class ExecuteCodeCliCommand(
     selected: SelectedDevrigCommand,
     parent: DevrigCliktCommand,
 ) : DevrigCliktCommand("execute_code", selected, parent) {
-    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`")
+    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`; omit to infer from the current directory")
     private val codeFile: String? by option("--code-file", help = "path to a Kotlin script file (preferred)")
     private val code: String? by option("--code", help = "inline Kotlin suspend body (alternative to --code-file)")
     private val taskId: String? by option("--task_id", help = "groups related calls in audit logs")
@@ -467,7 +467,6 @@ private class ExecuteCodeCliCommand(
     override fun run() {
         val options = options()
         if (options.help) { selectHelpTopic("execute_code"); return }
-        requireArg(projectName, "--project_name", "devrig list_projects")
         if (code.isNullOrBlank() && codeFile.isNullOrBlank()) {
             throw UsageError(
                 "missing code. Pass --code-file=<path> (preferred) or --code=\"...\". Example:\n" +
@@ -550,7 +549,7 @@ private class ScreenshotCliCommand(
     selected: SelectedDevrigCommand,
     parent: DevrigCliktCommand,
 ) : DevrigCliktCommand("take_screenshot", selected, parent) {
-    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`")
+    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`; omit to infer from the current directory")
     private val taskId: String? by option("--task_id", help = "groups related calls in audit logs")
     private val reason: String? by option("--reason", help = "full task description")
     private val windowId: String? by option("--window_id", help = "target window (from `devrig list_windows`)")
@@ -559,7 +558,6 @@ private class ScreenshotCliCommand(
     override fun run() {
         val options = options()
         if (options.help) { select(helpFor(options)); return }
-        requireArg(projectName, "--project_name", "devrig list_projects")
         requireArg(taskId, "--task_id", null)
         requireArg(reason, "--reason", null)
         select(DevrigCommand.DevrigCommandScreenshot(
@@ -574,7 +572,7 @@ private class InputCliCommand(
     selected: SelectedDevrigCommand,
     parent: DevrigCliktCommand,
 ) : DevrigCliktCommand("input", selected, parent) {
-    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`")
+    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`; omit to infer from the current directory")
     private val windowId: String? by option("--window_id", help = "target window (from `devrig list_windows`)")
     private val taskId: String? by option("--task_id", help = "groups related calls in audit logs")
     private val reason: String? by option("--reason", help = "full task description")
@@ -583,7 +581,6 @@ private class InputCliCommand(
     override fun run() {
         val options = options()
         if (options.help) { select(helpFor(options)); return }
-        requireArg(projectName, "--project_name", "devrig list_projects")
         requireArg(windowId, "--window_id", "devrig list_windows")
         requireArg(taskId, "--task_id", null)
         requireArg(reason, "--reason", null)
@@ -606,7 +603,7 @@ private class FeedbackCliCommand(
     selected: SelectedDevrigCommand,
     parent: DevrigCliktCommand,
 ) : DevrigCliktCommand("execute_feedback", selected, parent) {
-    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`")
+    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`; omit to infer from the current directory")
     private val taskId: String? by option("--task_id", help = "the same task_id used for the rated execution")
     // Accepted for parity with the steroid_execute_feedback MCP surface, which likewise documents
     // execution_id but does not forward it (FeedbackParams has no such field). Kept so an agent/script
@@ -623,7 +620,6 @@ private class FeedbackCliCommand(
     override fun run() {
         val options = options()
         if (options.help) { select(helpFor(options)); return }
-        requireArg(projectName, "--project_name", "devrig list_projects")
         requireArg(taskId, "--task_id", null)
         requireArg(explanation, "--explanation", null)
         val rating = successRating

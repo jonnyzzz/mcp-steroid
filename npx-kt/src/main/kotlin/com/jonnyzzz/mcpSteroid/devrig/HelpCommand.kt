@@ -29,17 +29,19 @@ fun printExecuteCodeHelp(out: PrintStream): Int {
         devrig execute_code — run a Kotlin script inside the target IDE (steroid_execute_code).
 
         Usage:
-          devrig execute_code --project_name=<key> (--code-file=<path> | --code=<inline> | --code-file=-)
+          devrig execute_code [--project_name=<key>] (--code-file=<path> | --code=<inline> | --code-file=-)
                               --task_id=<id> --reason=<text> [--modal=<mode>] [--timeout=<sec>] [--json]
 
         Required:
-          --project_name   routing key from `devrig list_projects` (NOT the folder name)
           --code-file      path to a .kts file; pass "-" to read the script from stdin (blocks until EOF)
           --code           inline script (alternative to --code-file)
           --task_id        groups related calls in audit logs
           --reason         full task description
 
         Optional:
+          --project_name   routing key from `devrig list_projects` (NOT the folder name); omit to infer
+                            from the current directory — fails with a candidate list (exit 64) when the
+                            cwd matches zero or more than one open project
           --modal          smart_non_modal (default) | non_modal | unleashed
           --timeout        script timeout in seconds (default 600)
           --json           emit the unified {tool, command, isError, data} envelope
@@ -48,7 +50,8 @@ fun printExecuteCodeHelp(out: PrintStream): Int {
           - the script is a Kotlin SUSPEND body — never use runBlocking
           - PSI reads go in readAction { }, writes in writeAction { }
           - nothing is auto-printed: end with println(...) / printJson(...) to see output
-          - route by project_name (get it from `devrig list_projects`), not the folder name
+          - route by project_name (get it from `devrig list_projects`), not the folder name; omitted
+            --project_name is inferred from the current directory when it uniquely matches one open project
 
         Go deeper — fetch only what you need:
         """.trimIndent() + "\n"
@@ -123,10 +126,12 @@ fun printHelp(out: PrintStream) : Int {
           devrig fetch_resource --uri=<uri> [--project_name <key>]
                                          canonical form of `devrig prompt`.
 
-          devrig execute_code --project_name=<key> --code-file=<path> --task_id=<id> --reason=<text>
+          devrig execute_code [--project_name=<key>] --code-file=<path> --task_id=<id> --reason=<text>
                               [--code=<inline>] [--modal=<mode>] [--timeout=<sec>] [--json]
                                          run a Kotlin script in the IDE (steroid_execute_code).
                                          --code-file=- reads the script from stdin (blocks until EOF).
+                                         --project_name omitted → inferred from the current directory
+                                         (fails with a candidate list, exit 64, if not unique).
 
           devrig list_projects [--json]  list open projects (steroid_list_projects; shares
                                          output with `devrig project`). Exposes project_name,
@@ -138,15 +143,18 @@ fun printHelp(out: PrintStream) : Int {
                               [--backend_name=<id>] [--trust_project] [--wait] [--json]
                                          open a project (steroid_open_project); --wait polls until ready.
 
-          devrig take_screenshot --project_name=<key> --task_id=<id> --reason=<text>
+          devrig take_screenshot [--project_name=<key>] --task_id=<id> --reason=<text>
                               [--window_id=<win>] [--out=<file.png>] [--json]
                                          capture a screenshot (steroid_take_screenshot).
-          devrig input --project_name=<key> --window_id=<win> --task_id=<id> --reason=<text>
+                                         --project_name omitted → inferred from the current directory.
+          devrig input [--project_name=<key>] --window_id=<win> --task_id=<id> --reason=<text>
                               --sequence=<steps> [--json]
                                          send keyboard/mouse input (steroid_input).
-          devrig execute_feedback --project_name=<key> --task_id=<id> --success_rating=<0..1>
+                                         --project_name omitted → inferred from the current directory.
+          devrig execute_feedback [--project_name=<key>] --task_id=<id> --success_rating=<0..1>
                               --explanation=<text> [--execution_id=<id>] [--code-file=<path>] [--json]
                                          rate an execution (steroid_execute_feedback).
+                                         --project_name omitted → inferred from the current directory.
 
           devrig --version | -v          print the devrig version and exit
           devrig --help    | -h          print this help and exit

@@ -1,6 +1,11 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
@@ -71,6 +76,25 @@ class FakeMcpSteroidTools(private val handlers: Map<Class<*>, Any>) : McpSteroid
 
 fun fakeTools(vararg pairs: Pair<Class<*>, Any>): FakeMcpSteroidTools =
     FakeMcpSteroidTools(pairs.toMap())
+
+/**
+ * A [ProjectRoute] fixture for cwd-inference tests (issue #266): only [path] and [name] are meaningful
+ * (drive `resolveProjectFromCwd` matching + the exposed routing key); the [DiscoveredIde]/[IdeProjectState]
+ * fields are placeholder values, mirroring `CwdProjectResolverTest`'s `route(path, name)` helper.
+ */
+fun fakeRoute(path: String, name: String): ProjectRoute = ProjectRoute(
+    route = DiscoveredIde(
+        backendName = "backend-$name",
+        pid = 1L,
+        rpcBaseUrl = "http://127.0.0.1:4343/mcp",
+        bridgeHeaders = emptyMap(),
+        ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
+        plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+    ),
+    projectInfo = IdeProjectState(name, path),
+    exposedProjectName = name,
+    projectPath = path,
+)
 
 fun okResult(text: String = "ok"): ToolCallResult =
     ToolCallResult(content = listOf(ContentItem.Text(text)))
