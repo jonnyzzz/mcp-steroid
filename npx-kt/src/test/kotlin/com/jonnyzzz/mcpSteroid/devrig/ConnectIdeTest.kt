@@ -67,4 +67,11 @@ class ConnectIdeTest {
         assertEquals(1, code)
         assertTrue(outBuf.toString("UTF-8").contains("No running JetBrains IDE"))
     }
+
+    @Test
+    fun `install plugin response carries status and body`() {
+        val r = InstallPluginResponse(404, "nope")
+        assertEquals(404, r.statusCode)
+        assertEquals("nope", r.body)
+    }
 }
