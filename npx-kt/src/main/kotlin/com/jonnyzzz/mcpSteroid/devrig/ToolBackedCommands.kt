@@ -3,21 +3,21 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRouteNotFoundException
 import com.jonnyzzz.mcpSteroid.devrig.server.StubMcpSteroidTools
+import com.jonnyzzz.mcpSteroid.devrig.server.callToolViaSpec
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
-import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
+import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolSpec
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
-import com.jonnyzzz.mcpSteroid.server.FeedbackParams
+import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolSpec
 import com.jonnyzzz.mcpSteroid.server.InputParams
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
-import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
-import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
+import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolSpec
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
@@ -26,6 +26,8 @@ import java.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * `devrig` subcommands that map 1:1 onto a bridge tool handler and return a [ToolCallResult].
@@ -112,20 +114,24 @@ fun DevrigServices.runExecuteCodeCommand(
     } catch (e: CodeArgException) {
         return presentation.renderError("execute_code", e.message!!, e.exit, mcpStdout)
     }
-    // --modal is validated at parse time (ExecuteCodeCliCommand), so a bad value never reaches here; the
-    // firstOrNull mapping is a defensive lookup that falls back to the default rather than failing.
-    val modal = command.modal?.let { wire -> ModalMode.entries.firstOrNull { it.wire == wire } }
-        ?: ModalMode.DEFAULT
-    val params = ExecCodeParams(
-        taskId = command.taskId!!,
-        code = code,
-        reason = command.reason!!,
-        timeout = command.timeout ?: 600,
-        modal = modal,
-    )
+    // Map the CLI flags → tool-call JSON arguments; ExecuteCodeToolSpec.call() re-parses them into
+    // ExecCodeParams (single source of truth), rather than the CLI rebuilding *Params by hand (C9/C15).
+    // --modal is validated at parse time (ExecuteCodeCliCommand), so a bad value never reaches here; when
+    // omitted the spec applies its own default (SMART_NON_MODAL == ModalMode.DEFAULT), preserving behavior.
+    val arguments = buildJsonObject {
+        put("project_name", command.projectName!!)
+        put("code", code)
+        put("task_id", command.taskId!!)
+        put("reason", command.reason!!)
+        put("timeout", command.timeout ?: 600)
+        command.modal?.let { put("modal", it) }
+    }
     return runToolCall("execute_code", presentation, tools) { t ->
-        t.handler<ExecuteCodeToolHandler>()
-            .executeCode(command.projectName!!, params, stderrProgressReporter())
+        callToolViaSpec(
+            ExecuteCodeToolSpec { t.handler<ExecuteCodeToolHandler>() },
+            arguments,
+            stderrProgressReporter(),
+        )
     }
 }
 
@@ -145,14 +151,24 @@ fun DevrigServices.runFeedbackCommand(
     } catch (e: CodeArgException) {
         return presentation.renderError("execute_feedback", e.message!!, e.exit, mcpStdout)
     }
-    val params = FeedbackParams(
-        taskId = command.taskId!!,
-        successRating = command.successRating!!,
-        explanation = command.explanation,
-        code = code,
-    )
+    // Map the CLI flags → tool-call JSON arguments; ExecuteFeedbackToolSpec.call() re-parses them into
+    // FeedbackParams and calls the handler (C9/C15). All required fields (project_name, task_id,
+    // success_rating in range, explanation) are already enforced at parse time (FeedbackCliCommand), so
+    // the spec's equivalent guards never fire — behavior is preserved. execution_id is intentionally NOT
+    // forwarded (parity with the MCP surface). `code` is optional and omitted when absent.
+    val arguments = buildJsonObject {
+        put("project_name", command.projectName!!)
+        put("task_id", command.taskId!!)
+        put("success_rating", command.successRating!!)
+        command.explanation?.let { put("explanation", it) }
+        code?.let { put("code", it) }
+    }
     return runToolCall("execute_feedback", presentation, tools) { t ->
-        t.handler<ExecuteFeedbackToolHandler>().handleFeedback(command.projectName!!, params)
+        callToolViaSpec(
+            ExecuteFeedbackToolSpec { t.handler<ExecuteFeedbackToolHandler>() },
+            arguments,
+            stderrProgressReporter(),
+        )
     }
 }
 
@@ -211,15 +227,22 @@ fun DevrigServices.runScreenshotCommand(
     tools: McpSteroidTools = StubMcpSteroidTools(this),
 ): Int {
     val presentation = presentationFor(command.json)
-    val params = ScreenshotParams(
-        taskId = command.taskId!!,
-        reason = command.reason!!,
-        windowId = command.windowId,
-    )
+    // Map the CLI flags → tool-call JSON arguments; VisionScreenshotToolSpec.call() re-parses them into
+    // ScreenshotParams and calls the handler (C9/C15). window_id is optional and omitted when absent. The
+    // --out post-write below stays a CLI-only affordance around the call.
+    val arguments = buildJsonObject {
+        put("project_name", command.projectName!!)
+        put("task_id", command.taskId!!)
+        put("reason", command.reason!!)
+        command.windowId?.let { put("window_id", it) }
+    }
     val result = try {
         runBlocking(Dispatchers.IO) {
-            tools.handler<VisionScreenshotToolHandler>()
-                .screenshotWindow(command.projectName!!, params, stderrProgressReporter())
+            callToolViaSpec(
+                VisionScreenshotToolSpec { tools.handler<VisionScreenshotToolHandler>() },
+                arguments,
+                stderrProgressReporter(),
+            )
         }
     } catch (e: ProjectRouteNotFoundException) {
         return presentation.renderError(

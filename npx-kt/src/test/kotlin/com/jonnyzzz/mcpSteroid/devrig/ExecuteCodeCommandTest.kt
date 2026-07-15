@@ -38,6 +38,29 @@ class ExecuteCodeCommandTest {
     }
 
     @Test
+    fun `all CLI flags reach the tool as the exact ExecCodeParams the spec builds`() {
+        // Characterization (Task 9): the CLI now maps its flags to an `arguments` JsonObject and calls
+        // ExecuteCodeToolSpec.call(), which re-parses that JSON into ExecCodeParams. This locks that every
+        // flag — code, task_id, reason, timeout, modal — round-trips through the arguments JSON and arrives
+        // at the handler unchanged, so the spec-dispatch path preserves the args-mapping contract.
+        val rec = RecordingExecuteCode()
+        val cmd = DevrigCommand.DevrigCommandExecuteCode(
+            projectName = "proj-key", code = "println(42)", taskId = "task-9", reason = "characterize",
+            modal = "non_modal", timeout = 321,
+        )
+        val run = runCliCommand(homePaths()) {
+            runExecuteCodeCommand(cmd, fakeTools(ExecuteCodeToolHandler::class.java to rec))
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("proj-key", rec.projectName)
+        assertEquals("println(42)", rec.params!!.code)
+        assertEquals("task-9", rec.params!!.taskId)
+        assertEquals("characterize", rec.params!!.reason)
+        assertEquals(321, rec.params!!.timeout)
+        assertEquals(ModalMode.NON_MODAL, rec.params!!.modal)
+    }
+
+    @Test
     fun `modal and timeout flags are reflected`() {
         val rec = RecordingExecuteCode()
         val cmd = DevrigCommand.DevrigCommandExecuteCode(
