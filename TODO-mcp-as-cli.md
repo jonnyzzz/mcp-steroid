@@ -247,3 +247,80 @@ exactly one JSON doc). Contract decisions taken:
   gating only affects tool facades, which it drives by absolute path, and unit coverage is comprehensive.
   Re-run before a release if #9 is in scope.
 - `open_project --wait` still uses a bounded sleep-poll loop (not the monitor push stream) — unchanged.
+
+## Round 6 — PR #272 review response (plan of record)
+
+Reviewer `jonnyzzz` left `CHANGES_REQUESTED` with 18 inline comments. Agreed scope for this PR:
+**concrete fixes + bounded design fixes + the CORE of the "reuse tool machinery" redesign + issue #266**;
+the FULL schema-driven generation is a deliberate follow-up. Comment → action map:
+
+### Bucket A — concrete fixes (this PR)
+- [ ] **C16** `ToolBackedCommands.kt:79` — drop `Path.of(file!!)`; restructure so `file` is non-null by type.
+- [ ] **C5** `CliToolSupport.kt:133` — `Json { }` block over newlines, no `;`; trim over-detailed comments here + nearby.
+- [ ] **C17** `ToolBackedCommands.kt:102` — confirm `mcpStdin.readBytes()` reads to EOF (it does — `InputStream.readBytes`); document `--code-file=-` (stdin) in the `execute_code` help.
+- [ ] **C4** `CliToolSupport.kt:112` — console image render: save PNG to a temp file under `~/.mcp-steroid/`, print the absolute path (not `[image: …]`).
+
+### Bucket B — bounded design fixes (this PR)
+- [ ] **C6 + C7** `CliToolSupport.kt:217/225` — replace the hand-built `contentDataJson()` with native
+      `@Serializable` serialization of `ToolCallResult`; in `--json`, image `data` is emitted **as-is**
+      (not a byte count). Verify the sealed-`ContentItem` discriminator matches the test-pinned
+      `{type:"text"/"image"/"resource"}` envelope shape.
+- [ ] **C1 + C2** `FetchResourceToolHandler.kt:95/103` — `resolveResourcePayload` / `canonicalResourceEntryPoints`
+      return `Article` (not bare `String`); update call sites (`FetchResourceCommand`, error hints).
+- [ ] **C3** `CliToolSupport.kt:99` — replace the threaded `json: Boolean` with a `Presentation` abstraction
+      (JSON renderer vs console renderer); remove the `if (json) … else …` from the shared render code.
+
+### Bucket C — core of the redesign (this PR; comments C9 + C15)
+- [ ] Project-scoped CLI commands build an `arguments: JsonObject` from their flags and call the
+      **`ToolSpec.call(context)`** directly (same path MCP uses), removing the manual `*Params` rebuild /
+      parallel dispatch in `ToolBackedCommands.kt`. This is literally "map CLI params → tool-call JSON".
+      **Enablers confirmed present:** `McpSession()` has a no-arg ctor (used freely in tests);
+      `devrig mcp` already builds the full `toolRegistry` in-process (`StubMcpSteroidTools.registerAll`);
+      `ToolCallParams(name, arguments)` is all that's needed.
+- [ ] **Design constraint (resolve via TDD):** the bare `registry.callTool` swallows exceptions into a
+      generic `isError` result, which would REGRESS the Round-4/5 exit-code contract (`ProjectRouteNotFound`
+      → USAGE 64 vs bridge failure → UNAVAILABLE 69). So the core = call `tool.call()` and keep the CLI's
+      own exception→`renderCliError` exit-code mapping around it. Do NOT adopt `registry.callTool` verbatim.
+      Keep all ~1393 contract tests green (`McpAsCliContractTest`, `CliErrorEnvelopeTest`, `McpAsCliParseTest`).
+- [ ] CLI-only affordances stay as thin hooks around the call: `--code-file`/`--code-file=-` (stdin) →
+      resolves the `code` arg; `--out` post-processes the screenshot result; `--wait` polls; `--json` +
+      exit codes are the presentation layer (Bucket B/C3).
+
+### Bucket D-inline — comment C10 (this PR)
+- [ ] Add `DevrigPromptsContextHandler.promptsContextFromRoute(route: ProjectRoute): PromptsContext` that
+      hides the leaky `route.route.ide.build` navigation, and route BOTH `buildPromptsContext` (the MCP
+      handler, currently duplicates the chain at `DevrigPromptsContextHandler.kt:12`) AND
+      `FetchResourceCommand.resolvePromptsContext` (`:65`) through it. Inline (not a separate pre-PR).
+
+### #266 — optional `--project_name` via cwd inference (this PR, layered on Bucket C)
+- [ ] Shared "cwd → project_name" resolver over `projectRouting.routes()`: normalize cwd to absolute;
+      pick the route whose `projectPath` is the **longest path-segment-boundary prefix** of cwd
+      (`/foo/bar` must NOT match `/foo/barbaz`); nested projects → most specific wins.
+- [ ] Exactly one match → use silently (optionally note the choice on stderr). Zero or ambiguous →
+      fail fast with an agent-understandable error listing candidates + asking for explicit `--project_name`.
+- [ ] Make `--project_name` optional for `execute_code`, `take_screenshot`, `input`, `execute_feedback`;
+      an explicit value always overrides inference. Inference slots in at the single project_name-resolve
+      point created by Bucket C.
+- [ ] Unit tests: single project, nested, zero matches, ambiguity, cwd == project root. Update each
+      command's `--help`/docs (default behavior + when the name is still required).
+
+### Bucket D-reply — comments C13/C14 (no code here; reply on the PR)
+- [ ] Reply: the `selfHealsLauncherOnStart()` gating (`Main.kt:97`) is **intrinsic** to this PR — the new
+      MCP-as-CLI tool facades must not mutate launcher/PATH state (Tenet 3), and it is pinned by
+      `LauncherSelfHealPredicateTest` (Round-5 #9). Ask which of the "several related issues" to the
+      launcher logic he wants split into a separate PR, rather than extracting the load-bearing gate.
+
+### Deferred to a FOLLOW-UP PR (own design; comments C8, C11, C12)
+- Generate clikt options + per-command help + the command registration from the tool `InputSchemaElement`
+  specs, so a new MCP tool auto-registers as a CLI command. Reviewer himself frames this as
+  "next iteration / next PR". Needs: schema→clikt type adapters, help synopsis (NOT the multi-KB tool
+  description), and re-validating the frozen `--json`/exit-code contract. Open a tracking issue.
+
+### Implementation order (test-first per CLAUDE.md)
+1. Bucket A (independent, low-risk) → green.
+2. Bucket B: C1+C2 (Article) → C6+C7 (native serializer + images) → C3 (Presentation).
+3. Bucket C (core reuse) — riskiest; keep the ~1393 contract tests green throughout.
+4. Bucket D-inline C10 (`promptsContextFromRoute`).
+5. #266 (cwd inference) on top of C + C10 (shares the routing snapshot + the single resolve point).
+6. Bucket D-reply: post PR comments; open the follow-up issue for C8/C11/C12.
+7. Verify: `./gradlew :npx-kt:test` + `:mcp-steroid-server:test` green; `devrig-dev` spot-check.
