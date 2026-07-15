@@ -2,10 +2,12 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import java.io.PrintStream
 import java.util.Base64
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -197,40 +199,24 @@ fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String
     return CLI_ENVELOPE_JSON.encodeToString(JsonObject.serializer(), payload)
 }
 
-/** Envelope for a [ToolCallResult]: `data:{content:[...]}`, with images summarized to prevent bloat. */
+/** Envelope for a [ToolCallResult]: `data:{content:[...]}`, native [ContentItem] serialization. */
 fun ToolCallResult.toEnvelopeJson(command: String): String =
     cliEnvelopeJson(command, isError, contentDataJson())
 
 /**
  * Builds the `data:{content:[...]}` object for a [ToolCallResult] — the same payload
  * [toEnvelopeJson] wraps, but exposed so a command can merge command-specific keys alongside it.
+ *
+ * `content` is [ContentItem]'s own `@Serializable` shape, encoded via [McpJson] (the same
+ * `classDiscriminator = "type"` config the wire protocol uses) — not a hand-built second copy.
+ * Image items therefore carry `data` (base64) as-is, and resource items serialize to their native
+ * `{type:"resource","resource":{...}}` shape (C6, C7).
  */
 fun ToolCallResult.contentDataJson(): JsonObject = buildJsonObject {
-    putJsonArray("content") {
-        for (item in content) {
-            add(buildJsonObject {
-                when (item) {
-                    is ContentItem.Text -> {
-                        put("type", "text")
-                        put("text", item.text)
-                    }
-                    is ContentItem.Image -> {
-                        put("type", "image")
-                        put("mimeType", item.mimeType)
-                        put("bytes", item.decodedByteCount())
-                    }
-                    is ContentItem.Resource -> {
-                        put("type", "resource")
-                        put("uri", item.resource.uri)
-                        item.resource.mimeType?.let { put("mimeType", it) }
-                        item.resource.text?.let { put("text", it) }
-                    }
-                }
-            })
-        }
-    }
+    put("content", McpJson.encodeToJsonElement(ListSerializer(ContentItem.serializer()), content))
 }
 
+/** Used only by the human-readable console renderer ([renderTo]); the `--json` envelope carries `data` as-is. */
 private fun ContentItem.Image.decodedByteCount(): Int =
     try {
         Base64.getDecoder().decode(data).size

@@ -5,7 +5,6 @@ import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -43,19 +42,22 @@ class CliToolSupportTest {
     }
 
     @Test
-    fun `image renders a byte-count placeholder and the envelope reports bytes`() {
+    fun `image renders a byte-count placeholder on console and carries data as-is in the envelope`() {
         val (out, err) = buffers()
         val raw = ByteArray(9) { it.toByte() }
         val b64 = Base64.getEncoder().encodeToString(raw)
         val result = ToolCallResult(content = listOf(ContentItem.Image(data = b64, mimeType = "image/png")))
 
+        // Console rendering is untouched by this task (Task 6 replaces it with a temp-file write).
         result.renderTo("shot", json = false, out = PrintStream(out), err = PrintStream(err))
         assertTrue(out.text().contains("[image: image/png, 9 bytes]"), out.text())
 
         val obj = Json.parseToJsonElement(result.toEnvelopeJson("shot")).jsonObject
         val item = obj["data"]!!.jsonObject["content"]!!.jsonArray.first().jsonObject
         assertEquals("image", item["type"]!!.jsonPrimitive.content)
-        assertEquals(9, item["bytes"]!!.jsonPrimitive.int)
+        // C7: image data is carried as-is (base64), not summarized to a byte count.
+        assertEquals(b64, item["data"]!!.jsonPrimitive.content)
+        assertEquals("image/png", item["mimeType"]!!.jsonPrimitive.content)
     }
 
     @Test
