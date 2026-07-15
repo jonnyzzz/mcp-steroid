@@ -63,7 +63,7 @@ private fun DevrigServices.resolvePromptsContext(projectName: String?): PromptsC
             "unknown --project_name '$projectName' (get it from `devrig list_projects`)"
         )
     }
-    return DevrigPromptsContextHandler.promptsContextFromBuild(route.route.ide.build)
+    return DevrigPromptsContextHandler.promptsContextFromRoute(route)
 }
 
 private class PromptsContextResolutionException(message: String) : RuntimeException(message)

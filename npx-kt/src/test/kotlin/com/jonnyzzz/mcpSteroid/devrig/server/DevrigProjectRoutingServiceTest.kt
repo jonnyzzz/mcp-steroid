@@ -141,6 +141,24 @@ class DevrigProjectRoutingServiceTest {
     }
 
     @Test
+    fun `promptsContextFromRoute derives product and baseline from the route build`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            state(
+                pid = 42,
+                projects = listOf(IdeProjectState("mcp-steroid", projectHome.toString())),
+                build = "IU-261.1234",
+            ),
+        )
+        val route = routing.routes().single()
+
+        val context = DevrigPromptsContextHandler.promptsContextFromRoute(route)
+
+        assertEquals("IU", context.productCode)
+        assertEquals(261, context.baselineVersion)
+    }
+
+    @Test
     fun `prompt context for a stale project name surfaces the route-not-found error`() = runTest {
         assertFailsWith<ProjectRouteNotFoundException> {
             DevrigPromptsContextHandler(routingService()).buildPromptsContext("missing-project-abcdefgh")

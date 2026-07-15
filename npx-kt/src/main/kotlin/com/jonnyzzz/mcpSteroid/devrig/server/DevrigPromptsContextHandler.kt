@@ -8,11 +8,14 @@ class DevrigPromptsContextHandler(
     private val routing: DevrigProjectRoutingService,
 ) : PromptsContextHandler {
     override suspend fun buildPromptsContext(projectName: String): PromptsContext {
-        val route = routing.requireProject(projectName)
-        return promptsContextFromBuild(route.route.ide.build)
+        return promptsContextFromRoute(routing.requireProject(projectName))
     }
 
     companion object {
+        /** The only place [ProjectRoute.route]`.ide.build` is navigated to derive a [PromptsContext]. */
+        fun promptsContextFromRoute(route: ProjectRoute): PromptsContext =
+            promptsContextFromBuild(route.route.ide.build)
+
         fun promptsContextFromBuild(build: String): PromptsContext {
             val dash = build.indexOf('-')
             if (dash <= 0 || dash == build.lastIndex) return PromptsContext.Generic
