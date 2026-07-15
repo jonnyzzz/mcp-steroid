@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import java.io.PrintStream
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
 import kotlinx.serialization.builtins.ListSerializer
@@ -98,8 +99,8 @@ fun stderrProgressReporter(err: PrintStream = System.err): McpProgressReporter =
  *    (`isError == true`) → **stderr**, stdout stays empty.
  *  - [Json]: a single stable envelope on stdout regardless of success/failure.
  *
- * [Console.imageDir] is a provider (not a value) so a future console image-to-file renderer (Task 6) can
- * resolve a fresh temp directory per render without changing this interface.
+ * [Console.imageDir] is a provider (not a value) so each render can resolve a fresh, possibly
+ * lazily-created temp directory (C4) — production wires it to [HomePaths.screenshotTmpDir].
  */
 sealed interface Presentation {
     /** Renders a [ToolCallResult] for [command] and returns the process exit code. */
@@ -142,16 +143,18 @@ sealed interface Presentation {
     }
 
     /**
-     * Human-readable console text. [imageDir] is unused this task — it exists so Task 6 can plug in a
-     * temp-dir provider for writing console image content to a file instead of a byte-count placeholder.
+     * Human-readable console text. Image content (C4) is decoded and written to a file under
+     * [imageDir] — a provider (not a value) so each render resolves a fresh, possibly lazily-created,
+     * temp directory (production wires it to [HomePaths.screenshotTmpDir]) — and the file's absolute
+     * path is printed instead of a byte-count placeholder.
      */
     class Console(private val imageDir: () -> Path) : Presentation {
         override fun render(result: ToolCallResult, command: String, out: PrintStream, err: PrintStream): Int {
             val sink = if (result.isError) err else out
-            for (item in result.content) {
+            for ((index, item) in result.content.withIndex()) {
                 when (item) {
                     is ContentItem.Text -> sink.println(item.text)
-                    is ContentItem.Image -> sink.println("[image: ${item.mimeType}, ${item.decodedByteCount()} bytes]")
+                    is ContentItem.Image -> renderImage(item, index, sink)
                     is ContentItem.Resource -> {
                         val res = item.resource
                         sink.println("[resource: ${res.uri}${res.mimeType?.let { " ($it)" } ?: ""}]")
@@ -160,6 +163,28 @@ sealed interface Presentation {
                 }
             }
             return if (result.isError) CliExit.TOOL_ERROR else CliExit.OK
+        }
+
+        /**
+         * Decodes [item]'s base64 payload and writes it to `<imageDir>/image-<index>.<ext>`, printing the
+         * absolute path to [sink]. Undecodable base64 is logged to stderr (never silently swallowed) and
+         * reported as a clear, non-crashing console line — the render must still complete.
+         */
+        private fun renderImage(item: ContentItem.Image, index: Int, sink: PrintStream) {
+            val decoded = try {
+                Base64.getDecoder().decode(item.data)
+            } catch (e: IllegalArgumentException) {
+                System.err.println("devrig: image payload was not valid base64 (${e.message})")
+                null
+            }
+            if (decoded == null) {
+                sink.println("[image: ${item.mimeType}, undecodable]")
+                return
+            }
+            val ext = item.mimeType.substringAfterLast('/', "png")
+            val file = imageDir().resolve("image-$index.$ext")
+            Files.write(file, decoded)
+            sink.println("Saved image: ${file.toAbsolutePath()}")
         }
 
         override fun renderError(command: String, message: String, exit: Int, out: PrintStream, err: PrintStream): Int {
@@ -178,8 +203,13 @@ sealed interface Presentation {
 fun presentationFor(json: Boolean, imageDir: () -> Path): Presentation =
     if (json) Presentation.Json() else Presentation.Console(imageDir)
 
-/** Fallback [Presentation.Console] image-dir provider for callers with no [DevrigServices] in scope (tests). */
-private val defaultImageDir: () -> Path = { Path.of(System.getProperty("user.home")) }
+/**
+ * Fallback [Presentation.Console] image-dir provider for callers with no [DevrigServices] in scope
+ * (tests only — no production call site uses the shims below). Resolves the JVM temp dir, never the
+ * real `user.home`, so an image-bearing [ToolCallResult] rendered through a shim cannot write into the
+ * user's actual home directory.
+ */
+private val defaultImageDir: () -> Path = { Path.of(System.getProperty("java.io.tmpdir")) }
 
 /**
  * Renders a [ToolCallResult] for a CLI command and returns the process exit code. Thin shim over
@@ -265,13 +295,3 @@ fun ToolCallResult.toEnvelopeJson(command: String): String =
 fun ToolCallResult.contentDataJson(): JsonObject = buildJsonObject {
     put("content", McpJson.encodeToJsonElement(ListSerializer(ContentItem.serializer()), content))
 }
-
-/** Used only by the human-readable console renderer ([renderTo]); the `--json` envelope carries `data` as-is. */
-private fun ContentItem.Image.decodedByteCount(): Int =
-    try {
-        Base64.getDecoder().decode(data).size
-    } catch (e: IllegalArgumentException) {
-        // Not valid base64 — report the raw length rather than failing the whole render.
-        System.err.println("devrig: image payload was not valid base64 (${e.message}); reporting raw length")
-        data.length
-    }

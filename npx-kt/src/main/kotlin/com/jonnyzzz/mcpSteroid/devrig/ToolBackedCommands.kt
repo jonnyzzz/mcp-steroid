@@ -65,9 +65,9 @@ private inline fun DevrigServices.runToolCall(
     return presentation.render(result, command = commandName, out = mcpStdout)
 }
 
-/** Builds this command's [Presentation] once from its `--json` flag; `imageDir` is unused before Task 6. */
+/** Builds this command's [Presentation] once from its `--json` flag; console images go to [HomePaths.screenshotTmpDir]. */
 private fun DevrigServices.presentationFor(json: Boolean): Presentation =
-    presentationFor(json) { homePaths.home }
+    presentationFor(json, homePaths::screenshotTmpDir)
 
 /**
  * Signals a bad `--code-file`. [exit] distinguishes a fixable-input mistake ([CliExit.USAGE] — missing

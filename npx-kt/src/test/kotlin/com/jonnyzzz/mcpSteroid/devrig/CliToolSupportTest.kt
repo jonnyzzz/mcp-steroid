@@ -42,15 +42,10 @@ class CliToolSupportTest {
     }
 
     @Test
-    fun `image renders a byte-count placeholder on console and carries data as-is in the envelope`() {
-        val (out, err) = buffers()
+    fun `image data is carried as-is in the json envelope`() {
         val raw = ByteArray(9) { it.toByte() }
         val b64 = Base64.getEncoder().encodeToString(raw)
         val result = ToolCallResult(content = listOf(ContentItem.Image(data = b64, mimeType = "image/png")))
-
-        // Console rendering is untouched by this task (Task 6 replaces it with a temp-file write).
-        result.renderTo("shot", json = false, out = PrintStream(out), err = PrintStream(err))
-        assertTrue(out.text().contains("[image: image/png, 9 bytes]"), out.text())
 
         val obj = Json.parseToJsonElement(result.toEnvelopeJson("shot")).jsonObject
         val item = obj["data"]!!.jsonObject["content"]!!.jsonArray.first().jsonObject
@@ -58,6 +53,44 @@ class CliToolSupportTest {
         // C7: image data is carried as-is (base64), not summarized to a byte count.
         assertEquals(b64, item["data"]!!.jsonPrimitive.content)
         assertEquals("image/png", item["mimeType"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `console image is written to a temp file and the path is printed`() {
+        val raw = ByteArray(9) { it.toByte() }
+        val b64 = Base64.getEncoder().encodeToString(raw)
+        val result = ToolCallResult(content = listOf(ContentItem.Image(data = b64, mimeType = "image/png")))
+        val tmp = java.nio.file.Files.createTempDirectory("shot")
+        val (out, err) = buffers()
+
+        Presentation.Console { tmp }.render(result, "shot", PrintStream(out), PrintStream(err))
+
+        val printed = out.text().trim()
+        val path = java.nio.file.Path.of(printed.substringAfterLast(' ').ifBlank { printed })
+        assertTrue(java.nio.file.Files.exists(path), "expected a written file, printed: $printed")
+        assertEquals(9, java.nio.file.Files.size(path).toInt())
+        assertEquals("image/png", result.content.filterIsInstance<ContentItem.Image>().first().mimeType)
+    }
+
+    @Test
+    fun `console image with undecodable base64 logs to stderr and prints a clear line, never crashes`() {
+        val result = ToolCallResult(content = listOf(ContentItem.Image(data = "!!!not base64!!!", mimeType = "image/png")))
+        val tmp = java.nio.file.Files.createTempDirectory("shot")
+        val (out, err) = buffers()
+
+        // The undecodable-base64 log line goes to the real System.err (not the `err` render param — same
+        // logging contract the old decodedByteCount() used), so redirect it to observe it.
+        val originalErr = System.err
+        System.setErr(PrintStream(err))
+        val exit = try {
+            Presentation.Console { tmp }.render(result, "shot", PrintStream(out), PrintStream(err))
+        } finally {
+            System.setErr(originalErr)
+        }
+
+        assertEquals(CliExit.OK, exit)
+        assertTrue(out.text().contains("undecodable"), out.text())
+        assertTrue(err.text().contains("not valid base64"), err.text())
     }
 
     @Test

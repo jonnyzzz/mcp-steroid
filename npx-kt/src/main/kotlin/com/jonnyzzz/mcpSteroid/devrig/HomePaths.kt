@@ -33,6 +33,17 @@ class HomePaths(val home: Path) {
     fun cacheDir(id: String): Path = cachesDir.resolve(id)
     fun pidFile(id: String): Path = stateDir.resolve("$id.pid")
 
+    /**
+     * `~/.mcp-steroid/tmp` — where [Presentation.Console] writes decoded image content it prints a path
+     * to (C4). Created on demand rather than in [mkdirsAll] since not every `devrig` invocation renders
+     * an image.
+     */
+    fun screenshotTmpDir(): Path {
+        val dir = home.resolve("tmp")
+        Files.createDirectories(dir)
+        return dir
+    }
+
     fun mkdirsAll() {
         listOf(logsDir, backendsDir, cachesDir, downloadsDir, stateDir, binDir).forEach { Files.createDirectories(it) }
     }

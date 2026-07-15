@@ -23,7 +23,7 @@ fun DevrigServices.runListWindowsCommand(
     command: DevrigCommand.DevrigCommandListWindows,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
 ): Int {
-    val presentation = presentationFor(command.json) { homePaths.home }
+    val presentation = presentationFor(command.json, homePaths::screenshotTmpDir)
     val response = try {
         runBlocking(Dispatchers.IO) {
             tools.handler<ListWindowsToolHandler>().collectListWindowsResponse()

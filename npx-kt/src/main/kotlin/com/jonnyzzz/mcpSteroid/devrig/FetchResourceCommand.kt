@@ -20,7 +20,7 @@ import com.jonnyzzz.mcpSteroid.server.resolveResourcePayload
  * the MCP tool uses, so both surfaces render identically.
  */
 fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandFetchResource): Int {
-    val presentation = presentationFor(command.json) { homePaths.home }
+    val presentation = presentationFor(command.json, homePaths::screenshotTmpDir)
     val uri = command.uri
     if (uri.isNullOrBlank()) {
         // Defensive: the parser already rejects a blank URI; keep a clean error if reached directly.
