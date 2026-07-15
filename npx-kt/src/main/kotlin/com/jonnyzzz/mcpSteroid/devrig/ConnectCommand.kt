@@ -1,12 +1,16 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 
 /** Absolute path to the user's Claude Code settings file. */
 fun claudeSettingsPath(): Path =
@@ -41,8 +45,12 @@ fun runConnectClaude(settingsPath: Path, out: PrintStream, err: PrintStream): In
     return 0
 }
 
-// Temporary stub — Task 4 replaces this with the real "connect ide" implementation (live IDE discovery
-// + installPlugin). Kept in the same file so the two `connect` dispatch extensions live together.
-fun DevrigServices.runConnectIdeCommand(command: DevrigCommand.DevrigCommandConnectIde): Int {
-    TODO("Task 4")
-}
+fun DevrigServices.runConnectIdeCommand(command: DevrigCommand.DevrigCommandConnectIde): Int =
+    runBlocking(Dispatchers.IO) {
+        val discovered = portDiscovery.stateSnapshot()
+        val client = InstallPluginClient { url ->
+            val response = commandHttpClient.get(url)
+            InstallPluginResponse(response.status.value, response.bodyAsText())
+        }
+        runConnectIde(discovered, client, mcpStdout, System.err)
+    }
