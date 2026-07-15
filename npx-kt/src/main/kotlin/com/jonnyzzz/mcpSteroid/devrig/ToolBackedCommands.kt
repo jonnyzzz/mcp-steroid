@@ -75,10 +75,12 @@ private class CodeArgException(message: String, val exit: Int) : RuntimeExceptio
 /** Reads inline `--code` or the `--code-file` path; throws [CodeArgException] on a bad/unreadable file. */
 private fun resolveCodeArg(inline: String?, file: String?): String {
     if (!inline.isNullOrBlank()) return inline
+    val resolvedFile = file
+        ?: throw CodeArgException("provide --code or --code-file", CliExit.USAGE)
     val path = try {
-        Path.of(file!!)
+        Path.of(resolvedFile)
     } catch (e: InvalidPathException) {
-        throw CodeArgException("--code-file is not a valid path: $file (${e.reason})", CliExit.USAGE)
+        throw CodeArgException("--code-file is not a valid path: $resolvedFile (${e.reason})", CliExit.USAGE)
     }
     if (!Files.isRegularFile(path)) {
         throw CodeArgException("--code-file not found or not a regular file: $path", CliExit.USAGE)
