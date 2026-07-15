@@ -38,32 +38,36 @@ import kotlinx.coroutines.runBlocking
 
 /**
  * Runs [block] against [tools], turning routing/bridge failures into meaningful exit codes + agent-usable
- * stderr messages, then renders the [ToolCallResult].
+ * stderr messages, then renders the [ToolCallResult] through [presentation].
  */
 private inline fun DevrigServices.runToolCall(
     commandName: String,
-    json: Boolean,
+    presentation: Presentation,
     tools: McpSteroidTools,
     crossinline block: suspend (McpSteroidTools) -> ToolCallResult,
 ): Int {
     val result = try {
         runBlocking(Dispatchers.IO) { block(tools) }
     } catch (e: ProjectRouteNotFoundException) {
-        return renderCliError(
+        return presentation.renderError(
             commandName,
             "${e.message} — run `devrig list_projects` to see valid project_name keys",
-            json, CliExit.USAGE, mcpStdout,
+            CliExit.USAGE, mcpStdout,
         )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        return renderCliError(
+        return presentation.renderError(
             commandName, "devrig $commandName failed to reach a backend: ${e.message}",
-            json, CliExit.UNAVAILABLE, mcpStdout,
+            CliExit.UNAVAILABLE, mcpStdout,
         )
     }
-    return result.renderTo(command = commandName, json = json, out = mcpStdout)
+    return presentation.render(result, command = commandName, out = mcpStdout)
 }
+
+/** Builds this command's [Presentation] once from its `--json` flag; `imageDir` is unused before Task 6. */
+private fun DevrigServices.presentationFor(json: Boolean): Presentation =
+    presentationFor(json) { homePaths.home }
 
 /**
  * Signals a bad `--code-file`. [exit] distinguishes a fixable-input mistake ([CliExit.USAGE] — missing
@@ -98,6 +102,7 @@ fun DevrigServices.runExecuteCodeCommand(
     command: DevrigCommand.DevrigCommandExecuteCode,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
 ): Int {
+    val presentation = presentationFor(command.json)
     // `--code-file=-` reads the script from stdin so agents can pipe a snippet without a temp file.
     val code = try {
         when {
@@ -105,7 +110,7 @@ fun DevrigServices.runExecuteCodeCommand(
             else -> resolveCodeArg(command.code, command.codeFile)
         }
     } catch (e: CodeArgException) {
-        return renderCliError("execute_code", e.message!!, command.json, e.exit, mcpStdout)
+        return presentation.renderError("execute_code", e.message!!, e.exit, mcpStdout)
     }
     // --modal is validated at parse time (ExecuteCodeCliCommand), so a bad value never reaches here; the
     // firstOrNull mapping is a defensive lookup that falls back to the default rather than failing.
@@ -118,7 +123,7 @@ fun DevrigServices.runExecuteCodeCommand(
         timeout = command.timeout ?: 600,
         modal = modal,
     )
-    return runToolCall("execute_code", command.json, tools) { t ->
+    return runToolCall("execute_code", presentation, tools) { t ->
         t.handler<ExecuteCodeToolHandler>()
             .executeCode(command.projectName!!, params, stderrProgressReporter())
     }
@@ -130,6 +135,7 @@ fun DevrigServices.runFeedbackCommand(
     command: DevrigCommand.DevrigCommandFeedback,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
 ): Int {
+    val presentation = presentationFor(command.json)
     val code: String? = try {
         when {
             !command.code.isNullOrBlank() -> command.code
@@ -137,7 +143,7 @@ fun DevrigServices.runFeedbackCommand(
             else -> null
         }
     } catch (e: CodeArgException) {
-        return renderCliError("execute_feedback", e.message!!, command.json, e.exit, mcpStdout)
+        return presentation.renderError("execute_feedback", e.message!!, e.exit, mcpStdout)
     }
     val params = FeedbackParams(
         taskId = command.taskId!!,
@@ -145,7 +151,7 @@ fun DevrigServices.runFeedbackCommand(
         explanation = command.explanation,
         code = code,
     )
-    return runToolCall("execute_feedback", command.json, tools) { t ->
+    return runToolCall("execute_feedback", presentation, tools) { t ->
         t.handler<ExecuteFeedbackToolHandler>().handleFeedback(command.projectName!!, params)
     }
 }
@@ -156,6 +162,7 @@ fun DevrigServices.runInputCommand(
     command: DevrigCommand.DevrigCommandInput,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
 ): Int {
+    val presentation = presentationFor(command.json)
     // Forward the RAW sequence verbatim — the IDE is the SINGLE source of truth for input syntax. devrig
     // deliberately does NOT re-parse/validate the sequence: a newer plugin may accept steps this devrig's
     // parser wouldn't recognize, so client-side rejection would strand a valid call on version skew.
@@ -174,20 +181,20 @@ fun DevrigServices.runInputCommand(
             tools.handler<VisionInputToolHandler>().handleInputSequence(command.projectName!!, params)
         }
     } catch (e: ProjectRouteNotFoundException) {
-        return renderCliError(
+        return presentation.renderError(
             "input", "${e.message} — run `devrig list_projects` to see valid project_name keys",
-            command.json, CliExit.USAGE, mcpStdout,
+            CliExit.USAGE, mcpStdout,
         )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        return renderCliError(
+        return presentation.renderError(
             "input", "devrig input failed to reach a backend: ${e.message}",
-            command.json, CliExit.UNAVAILABLE, mcpStdout,
+            CliExit.UNAVAILABLE, mcpStdout,
         )
     }
     val rendered = if (result.isError) result.sanitizeErrorContent() else result
-    return rendered.renderTo(command = "input", json = command.json, out = mcpStdout)
+    return presentation.render(rendered, command = "input", out = mcpStdout)
 }
 
 /** Returns a copy with every Text content item's stack-frame noise stripped ([sanitizeServerError]). */
@@ -203,6 +210,7 @@ fun DevrigServices.runScreenshotCommand(
     command: DevrigCommand.DevrigCommandScreenshot,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
 ): Int {
+    val presentation = presentationFor(command.json)
     val params = ScreenshotParams(
         taskId = command.taskId!!,
         reason = command.reason!!,
@@ -214,57 +222,57 @@ fun DevrigServices.runScreenshotCommand(
                 .screenshotWindow(command.projectName!!, params, stderrProgressReporter())
         }
     } catch (e: ProjectRouteNotFoundException) {
-        return renderCliError(
+        return presentation.renderError(
             "take_screenshot",
             "${e.message} — run `devrig list_projects` to see valid project_name keys",
-            command.json, CliExit.USAGE, mcpStdout,
+            CliExit.USAGE, mcpStdout,
         )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        return renderCliError(
+        return presentation.renderError(
             "take_screenshot", "devrig take_screenshot failed to reach a backend: ${e.message}",
-            command.json, CliExit.UNAVAILABLE, mcpStdout,
+            CliExit.UNAVAILABLE, mcpStdout,
         )
     }
 
     // A tool-level error (bad window_id, etc.) or a request with no --out: render the single result.
     if (result.isError || command.out.isNullOrBlank()) {
-        return result.renderTo(command = "take_screenshot", json = command.json, out = mcpStdout)
+        return presentation.render(result, command = "take_screenshot", out = mcpStdout)
     }
 
     // --out requested: strict contract (finding #6) — exit 0 ONLY when the file is actually written.
     // A result with no image, or an undecodable image, is a data error (65), not a silent success; a
     // malformed --out path string is a usage error (64); a real write failure is an I/O error (74).
     val image = result.content.filterIsInstance<ContentItem.Image>().firstOrNull()
-        ?: return renderCliError(
+        ?: return presentation.renderError(
             "take_screenshot",
             "--out=${command.out} requested but the screenshot result carried no image to save",
-            command.json, CliExit.DATA_ERROR, mcpStdout,
+            CliExit.DATA_ERROR, mcpStdout,
         )
     val bytes = try {
         Base64.getDecoder().decode(image.data)
     } catch (e: IllegalArgumentException) {
-        return renderCliError(
+        return presentation.renderError(
             "take_screenshot",
             "--out=${command.out}: the screenshot image payload was not valid base64 (${e.message})",
-            command.json, CliExit.DATA_ERROR, mcpStdout,
+            CliExit.DATA_ERROR, mcpStdout,
         )
     }
     val savedPath = try {
         writeScreenshotOut(command.out, bytes, image.mimeType)
     } catch (e: InvalidPathException) {
-        return renderCliError(
+        return presentation.renderError(
             "take_screenshot", "invalid --out path: ${command.out} (${e.reason})",
-            command.json, CliExit.USAGE, mcpStdout,
+            CliExit.USAGE, mcpStdout,
         )
     } catch (e: IOException) {
-        return renderCliError(
+        return presentation.renderError(
             "take_screenshot", "failed to write --out=${command.out}: ${e.message}",
-            command.json, CliExit.IO_ERROR, mcpStdout,
+            CliExit.IO_ERROR, mcpStdout,
         )
     }
-    return renderScreenshotSaved(result, savedPath.toString(), command.json, mcpStdout)
+    return presentation.renderScreenshotSaved(result, savedPath.toString(), mcpStdout)
 }
 
 /**
@@ -290,6 +298,7 @@ fun DevrigServices.runOpenProjectCommand(
     waitAttempts: Int = 60,
     waitIntervalMs: Long = 2000,
 ): Int {
+    val presentation = presentationFor(command.json)
     // Resolve a relative --project_path against the caller's cwd into an absolute path. Previously a
     // relative path (e.g. `.`) was resolved by the backend against `/`, silently opening the wrong
     // project — the one genuinely dangerous Round-4 finding. A malformed path STRING is a fixable
@@ -297,9 +306,9 @@ fun DevrigServices.runOpenProjectCommand(
     val absoluteProjectPath = try {
         Path.of(command.projectPath!!).toAbsolutePath().normalize().toString()
     } catch (e: InvalidPathException) {
-        return renderCliError(
+        return presentation.renderError(
             "open_project", "invalid --project_path: ${command.projectPath} (${e.reason})",
-            command.json, CliExit.USAGE, mcpStdout,
+            CliExit.USAGE, mcpStdout,
         )
     }
     val params = OpenProjectParams(
@@ -314,15 +323,15 @@ fun DevrigServices.runOpenProjectCommand(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        return renderCliError(
+        return presentation.renderError(
             "open_project", "devrig open_project failed to reach a backend: ${e.message}",
-            command.json, CliExit.UNAVAILABLE, mcpStdout,
+            CliExit.UNAVAILABLE, mcpStdout,
         )
     }
 
     // Without --wait, or when the open itself already errored, render that single result now.
     if (!command.wait || result.isError) {
-        return result.renderTo(command = "open_project", json = command.json, out = mcpStdout)
+        return presentation.render(result, command = "open_project", out = mcpStdout)
     }
 
     // --wait: poll list_windows until the freshly-opened project is ready BEFORE emitting any stdout, so
@@ -331,16 +340,16 @@ fun DevrigServices.runOpenProjectCommand(
     // A timeout is a genuine failure — stdout gets a single isError envelope, never a stale success one.
     val ready = waitForProjectReady(absoluteProjectPath, tools, attempts = waitAttempts, intervalMs = waitIntervalMs)
     if (!ready) {
-        return renderCliError(
+        return presentation.renderError(
             "open_project",
             "open_project --wait timed out before the project became ready: $absoluteProjectPath",
-            command.json, CliExit.UNAVAILABLE, mcpStdout,
+            CliExit.UNAVAILABLE, mcpStdout,
         )
     }
     val readyResult = result.copy(
         content = result.content + ContentItem.Text("open_project: project is initialized and ready"),
     )
-    return readyResult.renderTo(command = "open_project", json = command.json, out = mcpStdout)
+    return presentation.render(readyResult, command = "open_project", out = mcpStdout)
 }
 
 /**

@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import java.io.PrintStream
+import java.nio.file.Path
 import java.util.Base64
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -87,12 +88,103 @@ fun stderrProgressReporter(err: PrintStream = System.err): McpProgressReporter =
     }
 
 /**
- * Renders a [ToolCallResult] for a CLI command and returns the process exit code.
+ * Renders CLI output for a command as either a `--json` envelope or human-readable console text — the
+ * single fork point for that choice. Each implementation owns its own branch body in full (Tenet: no
+ * `if (json)` scattered through shared render code); [presentationFor] is the only place that maps the
+ * `--json` flag onto a concrete implementation.
  *
  * Contract (locked by tests, matches the rest of devrig):
- *  - Non-error text content → **stdout** (so `| jq`, `| less` work).
- *  - Error content (`isError == true`) → **stderr**; stdout stays empty.
- *  - `--json` emits a single stable envelope on stdout regardless of success/failure.
+ *  - [Console]: non-error text content → **stdout** (so `| jq`, `| less` work); error content
+ *    (`isError == true`) → **stderr**, stdout stays empty.
+ *  - [Json]: a single stable envelope on stdout regardless of success/failure.
+ *
+ * [Console.imageDir] is a provider (not a value) so a future console image-to-file renderer (Task 6) can
+ * resolve a fresh temp directory per render without changing this interface.
+ */
+sealed interface Presentation {
+    /** Renders a [ToolCallResult] for [command] and returns the process exit code. */
+    fun render(result: ToolCallResult, command: String, out: PrintStream, err: PrintStream = System.err): Int
+
+    /** Renders a CLI-level failure (usage/parse, routing, bridge error) for [command]; returns [exit] verbatim. */
+    fun renderError(command: String, message: String, exit: Int, out: PrintStream, err: PrintStream = System.err): Int
+
+    /** Renders a successful `take_screenshot` whose image was additionally saved to [savedOut]. */
+    fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, out: PrintStream): Int
+
+    /** `--json`: a single stable envelope on stdout, built from [toEnvelopeJson] / [cliEnvelopeJson]. */
+    class Json : Presentation {
+        override fun render(result: ToolCallResult, command: String, out: PrintStream, err: PrintStream): Int {
+            out.println(result.toEnvelopeJson(command))
+            return if (result.isError) CliExit.TOOL_ERROR else CliExit.OK
+        }
+
+        override fun renderError(command: String, message: String, exit: Int, out: PrintStream, err: PrintStream): Int {
+            val data = buildJsonObject {
+                putJsonArray("content") {
+                    add(buildJsonObject {
+                        put("type", "text")
+                        put("text", message)
+                    })
+                }
+            }
+            out.println(cliEnvelopeJson(command, isError = true, data = data))
+            return exit
+        }
+
+        override fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, out: PrintStream): Int {
+            val data = buildJsonObject {
+                for ((key, value) in result.contentDataJson()) put(key, value)
+                put("savedOut", savedOut)
+            }
+            out.println(cliEnvelopeJson("take_screenshot", isError = false, data = data))
+            return CliExit.OK
+        }
+    }
+
+    /**
+     * Human-readable console text. [imageDir] is unused this task — it exists so Task 6 can plug in a
+     * temp-dir provider for writing console image content to a file instead of a byte-count placeholder.
+     */
+    class Console(private val imageDir: () -> Path) : Presentation {
+        override fun render(result: ToolCallResult, command: String, out: PrintStream, err: PrintStream): Int {
+            val sink = if (result.isError) err else out
+            for (item in result.content) {
+                when (item) {
+                    is ContentItem.Text -> sink.println(item.text)
+                    is ContentItem.Image -> sink.println("[image: ${item.mimeType}, ${item.decodedByteCount()} bytes]")
+                    is ContentItem.Resource -> {
+                        val res = item.resource
+                        sink.println("[resource: ${res.uri}${res.mimeType?.let { " ($it)" } ?: ""}]")
+                        res.text?.let { sink.println(it) }
+                    }
+                }
+            }
+            return if (result.isError) CliExit.TOOL_ERROR else CliExit.OK
+        }
+
+        override fun renderError(command: String, message: String, exit: Int, out: PrintStream, err: PrintStream): Int {
+            err.println(message)
+            return exit
+        }
+
+        override fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, out: PrintStream): Int {
+            val withNote = ToolCallResult(content = result.content + ContentItem.Text("Saved --out: $savedOut"))
+            return render(withNote, command = "take_screenshot", out = out)
+        }
+    }
+}
+
+/** Maps the `--json` flag onto a concrete [Presentation]; the only place the boolean is branched on. */
+fun presentationFor(json: Boolean, imageDir: () -> Path): Presentation =
+    if (json) Presentation.Json() else Presentation.Console(imageDir)
+
+/** Fallback [Presentation.Console] image-dir provider for callers with no [DevrigServices] in scope (tests). */
+private val defaultImageDir: () -> Path = { Path.of(System.getProperty("user.home")) }
+
+/**
+ * Renders a [ToolCallResult] for a CLI command and returns the process exit code. Thin shim over
+ * [presentationFor] kept for call sites/tests that don't have a [DevrigServices] receiver in scope; new
+ * production call sites should build a [Presentation] once per command instead (see [ToolBackedCommands]).
  *
  * @param command the CLI subcommand name, echoed into the JSON envelope for context.
  */
@@ -101,26 +193,7 @@ fun ToolCallResult.renderTo(
     json: Boolean,
     out: PrintStream,
     err: PrintStream = System.err,
-): Int {
-    if (json) {
-        out.println(toEnvelopeJson(command))
-        return if (isError) CliExit.TOOL_ERROR else CliExit.OK
-    }
-
-    val sink = if (isError) err else out
-    for (item in content) {
-        when (item) {
-            is ContentItem.Text -> sink.println(item.text)
-            is ContentItem.Image -> sink.println("[image: ${item.mimeType}, ${item.decodedByteCount()} bytes]")
-            is ContentItem.Resource -> {
-                val res = item.resource
-                sink.println("[resource: ${res.uri}${res.mimeType?.let { " ($it)" } ?: ""}]")
-                res.text?.let { sink.println(it) }
-            }
-        }
-    }
-    return if (isError) CliExit.TOOL_ERROR else CliExit.OK
-}
+): Int = presentationFor(json, defaultImageDir).render(this, command, out, err)
 
 /**
  * The unified JSON envelope for all `devrig` CLI commands, shared across tool-backed subcommands.
@@ -142,7 +215,8 @@ val CLI_ENVELOPE_JSON: Json = Json {
  *  - otherwise → prints [message] to [err] (stderr), keeping stdout clean.
  *
  * Returns [exit] verbatim so callers keep their meaningful [CliExit] codes (USAGE / UNAVAILABLE / …);
- * the exit code is independent of the `--json` toggle.
+ * the exit code is independent of the `--json` toggle. Thin shim over [presentationFor] kept for call
+ * sites/tests without a [DevrigServices] receiver in scope.
  */
 fun renderCliError(
     command: String,
@@ -151,39 +225,15 @@ fun renderCliError(
     exit: Int,
     out: PrintStream,
     err: PrintStream = System.err,
-): Int {
-    if (json) {
-        val data = buildJsonObject {
-            putJsonArray("content") {
-                add(buildJsonObject {
-                    put("type", "text")
-                    put("text", message)
-                })
-            }
-        }
-        out.println(cliEnvelopeJson(command, isError = true, data = data))
-    } else {
-        err.println(message)
-    }
-    return exit
-}
+): Int = presentationFor(json, defaultImageDir).renderError(command, message, exit, out, err)
 
 /**
  * Renders a successful `take_screenshot` with a structured `savedOut` path in the JSON envelope.
  * `savedOut` lives in the devrig-owned CLI envelope, not the frozen wire DTO [ToolCallResult] (Tenet 5).
+ * Thin shim over [presentationFor] kept for call sites/tests without a [DevrigServices] receiver in scope.
  */
-fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, json: Boolean, out: PrintStream): Int {
-    if (json) {
-        val data = buildJsonObject {
-            for ((key, value) in result.contentDataJson()) put(key, value)
-            put("savedOut", savedOut)
-        }
-        out.println(cliEnvelopeJson("take_screenshot", isError = false, data = data))
-        return CliExit.OK
-    }
-    val withNote = ToolCallResult(content = result.content + ContentItem.Text("Saved --out: $savedOut"))
-    return withNote.renderTo(command = "take_screenshot", json = false, out = out)
-}
+fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, json: Boolean, out: PrintStream): Int =
+    presentationFor(json, defaultImageDir).renderScreenshotSaved(result, savedOut, out)
 
 /** Wraps a command-specific [data] object in the unified envelope and renders it to a string. */
 fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String {

@@ -23,6 +23,7 @@ fun DevrigServices.runListWindowsCommand(
     command: DevrigCommand.DevrigCommandListWindows,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
 ): Int {
+    val presentation = presentationFor(command.json) { homePaths.home }
     val response = try {
         runBlocking(Dispatchers.IO) {
             tools.handler<ListWindowsToolHandler>().collectListWindowsResponse()
@@ -30,12 +31,15 @@ fun DevrigServices.runListWindowsCommand(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        return renderCliError(
+        return presentation.renderError(
             "list_windows", "devrig list_windows failed to reach a backend: ${e.message}",
-            command.json, CliExit.UNAVAILABLE, mcpStdout,
+            CliExit.UNAVAILABLE, mcpStdout,
         )
     }
 
+    // list_windows/list_projects don't route their SUCCESS path through Presentation.render: the payload
+    // is a typed ListWindowsResponse (list_windows_envelope_json), not a ToolCallResult, so each keeps its
+    // own success renderer here; only the shared error envelope goes through `presentation`.
     if (command.json) {
         mcpStdout.println(listWindowsEnvelopeJson(response))
     } else {

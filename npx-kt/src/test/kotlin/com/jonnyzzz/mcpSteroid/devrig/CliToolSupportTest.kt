@@ -68,4 +68,17 @@ class CliToolSupportTest {
         assertEquals("execute_code", obj["command"]!!.jsonPrimitive.content)
         assertEquals(false, obj["isError"]!!.jsonPrimitive.booleanOrNull)
     }
+
+    @Test
+    fun `json presentation emits one envelope, console emits plain text`() {
+        val result = ToolCallResult(content = listOf(ContentItem.Text("hi")))
+        val (jo, je) = buffers()
+        Presentation.Json().render(result, "demo", PrintStream(jo), PrintStream(je))
+        val (co, ce) = buffers()
+        Presentation.Console { java.nio.file.Files.createTempDirectory("t") }
+            .render(result, "demo", PrintStream(co), PrintStream(ce))
+
+        assertTrue(jo.text().trim().startsWith("{"), jo.text())
+        assertEquals("hi", co.text().trim())
+    }
 }

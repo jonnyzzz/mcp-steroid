@@ -758,7 +758,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
                 // `--json` consumers must be able to parse usage/parse failures too — emit the unified
                 // isError envelope; otherwise print the full formatted help to stderr. Exit stays 64.
                 if (command.json) {
-                    renderCliError(command.commandName, command.message, json = true, exit = CliExit.USAGE, out = mcpStdout)
+                    Presentation.Json().renderError(command.commandName, command.message, exit = CliExit.USAGE, out = mcpStdout)
                 } else {
                     System.err.println(command.text)
                     CliExit.USAGE

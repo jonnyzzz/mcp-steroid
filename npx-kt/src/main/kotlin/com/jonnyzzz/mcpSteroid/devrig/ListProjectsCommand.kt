@@ -36,9 +36,10 @@ fun DevrigServices.runListProjectsCommand(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        return renderCliError(
+        // command.json is always true past the early return above; the JSON presentation is fixed here.
+        return Presentation.Json().renderError(
             "list_projects", "devrig list_projects failed to reach a backend: ${e.message}",
-            command.json, CliExit.UNAVAILABLE, mcpStdout,
+            CliExit.UNAVAILABLE, mcpStdout,
         )
     }
     mcpStdout.println(listProjectsEnvelopeJson(response))

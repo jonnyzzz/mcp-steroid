@@ -20,21 +20,22 @@ import com.jonnyzzz.mcpSteroid.server.resolveResourcePayload
  * the MCP tool uses, so both surfaces render identically.
  */
 fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandFetchResource): Int {
+    val presentation = presentationFor(command.json) { homePaths.home }
     val uri = command.uri
     if (uri.isNullOrBlank()) {
         // Defensive: the parser already rejects a blank URI; keep a clean error if reached directly.
-        return renderCliError(
+        return presentation.renderError(
             command.commandName, "missing <uri>. Example:\n  ${fetchResourceUsageExample()}",
-            command.json, CliExit.USAGE, mcpStdout,
+            CliExit.USAGE, mcpStdout,
         )
     }
 
     val context = try {
         resolvePromptsContext(command.projectName)
     } catch (e: PromptsContextResolutionException) {
-        return renderCliError(
+        return presentation.renderError(
             command.commandName, e.message ?: "failed to resolve project context",
-            command.json, CliExit.USAGE, mcpStdout,
+            CliExit.USAGE, mcpStdout,
         )
     }
 
@@ -45,7 +46,7 @@ fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandF
         ToolCallResult.errorResult(resourceNotFoundMessage(uri))
     }
     // Echo the alias the user actually typed ("prompt" vs "fetch_resource") into the `--json` envelope.
-    return result.renderTo(command = command.commandName, json = command.json, out = mcpStdout)
+    return presentation.render(result, command = command.commandName, out = mcpStdout)
 }
 
 /**

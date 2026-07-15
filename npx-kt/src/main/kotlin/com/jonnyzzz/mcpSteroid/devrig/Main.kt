@@ -146,9 +146,9 @@ suspend fun DevrigServices.mainImpl2(
         // consumer never gets an empty stdout on an unexpected failure; otherwise log the trace to
         // stderr (stdout stays clean). Never a stack trace on stdout, never a second stdout document.
         if (command.json) {
-            renderCliError(
+            Presentation.Json().renderError(
                 "devrig", "unexpected error: ${t.message ?: t.javaClass.simpleName}",
-                json = true, exit = 64, out = mcpStdout,
+                exit = 64, out = mcpStdout,
             )
         } else {
             System.err.println("Unexpected error calling $command. ${t.message}")
