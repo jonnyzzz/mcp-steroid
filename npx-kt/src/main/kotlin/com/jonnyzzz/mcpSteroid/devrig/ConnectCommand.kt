@@ -2,7 +2,9 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -49,7 +51,12 @@ fun DevrigServices.runConnectIdeCommand(command: DevrigCommand.DevrigCommandConn
     runBlocking(Dispatchers.IO) {
         val discovered = portDiscovery.stateSnapshot()
         val client = InstallPluginClient { url ->
-            val response = commandHttpClient.get(url)
+            val response = commandHttpClient.get(url) {
+                // /api/installPlugin trusts localhost callers (RestService.isHostTrusted -> isLocalhost);
+                // devrig is a localhost tool, so we declare our real localhost origin rather than spoof a
+                // marketplace one. Without any Origin the endpoint blocks on an "unknown host" dialog.
+                header(HttpHeaders.Origin, "http://127.0.0.1")
+            }
             InstallPluginResponse(response.status.value, response.bodyAsText())
         }
         runConnectIde(discovered, client, mcpStdout, System.err)
