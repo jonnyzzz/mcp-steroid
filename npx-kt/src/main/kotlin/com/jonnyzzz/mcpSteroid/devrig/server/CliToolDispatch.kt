@@ -19,7 +19,7 @@ import kotlinx.serialization.json.JsonObject
  * `McpToolRegistry.callTool`. The registry catches every exception into a generic `isError` result,
  * which would collapse the CLI's frozen exit-code contract (`ProjectRouteNotFoundException` → USAGE 64,
  * a bridge failure → UNAVAILABLE 69, …). Calling `spec.call()` directly lets those exceptions propagate
- * so the caller's existing `try/catch → renderCliError(...)` mapping assigns the right [com.jonnyzzz.mcpSteroid.devrig.CliExit]
+ * so the caller's existing `try/catch → presentation.renderError(...)` mapping assigns the right [com.jonnyzzz.mcpSteroid.devrig.CliExit]
  * code. The spec is constructed with the SAME handler wiring the proxy uses (e.g.
  * `ExecuteCodeToolSpec { tools.handler<ExecuteCodeToolHandler>() }`), so it reaches the real devrig
  * handler.

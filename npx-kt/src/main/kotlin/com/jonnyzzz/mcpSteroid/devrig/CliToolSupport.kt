@@ -209,8 +209,8 @@ fun presentationFor(json: Boolean, imageDir: () -> Path): Presentation =
 
 /**
  * Fallback [Presentation.Console] image-dir provider for callers with no [DevrigServices] in scope
- * (tests only — no production call site uses the shims below). Resolves the JVM temp dir, never the
- * real `user.home`, so an image-bearing [ToolCallResult] rendered through a shim cannot write into the
+ * (tests only — no production call site uses the shim below). Resolves the JVM temp dir, never the
+ * real `user.home`, so an image-bearing [ToolCallResult] rendered through the shim cannot write into the
  * user's actual home directory.
  */
 private val defaultImageDir: () -> Path = { Path.of(System.getProperty("java.io.tmpdir")) }
@@ -240,34 +240,6 @@ val CLI_ENVELOPE_JSON: Json = Json {
     encodeDefaults = true
     explicitNulls = false
 }
-
-/**
- * Renders a CLI-level failure (usage/parse, routing, or bridge error) consistently, so a `--json`
- * consumer can parse EVERY failure the same way it parses success:
- *  - `--json` → emits the unified `{tool, command, isError:true, data:{content:[{type,text}]}}` envelope
- *    on [out] (stdout), matching [ToolCallResult.toEnvelopeJson]'s shape.
- *  - otherwise → prints [message] to [err] (stderr), keeping stdout clean.
- *
- * Returns [exit] verbatim so callers keep their meaningful [CliExit] codes (USAGE / UNAVAILABLE / …);
- * the exit code is independent of the `--json` toggle. Thin shim over [presentationFor] kept for call
- * sites/tests without a [DevrigServices] receiver in scope.
- */
-fun renderCliError(
-    command: String,
-    message: String,
-    json: Boolean,
-    exit: Int,
-    out: PrintStream,
-    err: PrintStream = System.err,
-): Int = presentationFor(json, defaultImageDir).renderError(command, message, exit, out, err)
-
-/**
- * Renders a successful `take_screenshot` with a structured `savedOut` path in the JSON envelope.
- * `savedOut` lives in the devrig-owned CLI envelope, not the frozen wire DTO [ToolCallResult] (Tenet 5).
- * Thin shim over [presentationFor] kept for call sites/tests without a [DevrigServices] receiver in scope.
- */
-fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, json: Boolean, out: PrintStream): Int =
-    presentationFor(json, defaultImageDir).renderScreenshotSaved(result, savedOut, out)
 
 /** Wraps a command-specific [data] object in the unified envelope and renders it to a string. */
 fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String {
