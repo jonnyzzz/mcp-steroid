@@ -38,7 +38,7 @@ class FetchResourceCommandTest {
     lateinit var testHome: Path
 
     /** A URI guaranteed to exist in the bundled article index (as a plain string — no prompts import). */
-    private val knownUri: String get() = canonicalResourceEntryPoints().first()
+    private val knownUri: String get() = canonicalResourceEntryPoints().first().uri
 
     @BeforeEach
     fun setUp() {

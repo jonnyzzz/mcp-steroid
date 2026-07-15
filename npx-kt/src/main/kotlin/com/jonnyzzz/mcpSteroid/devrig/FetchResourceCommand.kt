@@ -8,7 +8,7 @@ import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.server.canonicalResourceEntryPoints
-import com.jonnyzzz.mcpSteroid.server.resolveResourcePayload
+import com.jonnyzzz.mcpSteroid.server.resolveResourceArticle
 
 /**
  * `devrig prompt <uri>` / `devrig fetch_resource --uri=...` — the CLI face of `steroid_fetch_resource`.
@@ -16,7 +16,7 @@ import com.jonnyzzz.mcpSteroid.server.resolveResourcePayload
  * Bundled `mcp-steroid://` articles ship inside the devrig binary, so this resolves **without a
  * running IDE** using [PromptsContext.Generic]. Passing `--project_name` upgrades to that project's
  * IDE-specific context via the existing routing + [DevrigPromptsContextHandler] (which needs the IDE
- * to be discovered). URI → payload resolution is the shared [resolveResourcePayload] — the same code
+ * to be discovered). URI → article resolution is the shared [resolveResourceArticle] — the same code
  * the MCP tool uses, so both surfaces render identically.
  */
 fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandFetchResource): Int {
@@ -39,9 +39,9 @@ fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandF
         )
     }
 
-    val payload = resolveResourcePayload(uri, context)
-    val result = if (payload != null) {
-        ToolCallResult(content = listOf(ContentItem.Text(text = payload)))
+    val article = resolveResourceArticle(uri, context)
+    val result = if (article != null) {
+        ToolCallResult(content = listOf(ContentItem.Text(text = article.readPayload(context))))
     } else {
         ToolCallResult.errorResult(resourceNotFoundMessage(uri))
     }
@@ -72,7 +72,7 @@ private fun resourceNotFoundMessage(uri: String): String = buildString {
     append("Resource not found: ").append(uri).append('\n')
     append("Canonical entry points:\n")
     for (entry in canonicalResourceEntryPoints()) {
-        append("  devrig prompt ").append(entry).append('\n')
+        append("  devrig prompt ").append(entry.uri).append('\n')
     }
 }
 
@@ -81,4 +81,4 @@ fun fetchResourceUsageExample(): String = "devrig prompt ${canonicalResourceEntr
 
 /** First canonical entry-point URI, or a bracket placeholder if the article index is somehow empty. */
 fun canonicalResourceEntryPointOrPlaceholder(): String =
-    canonicalResourceEntryPoints().firstOrNull() ?: "<resource-uri>"
+    canonicalResourceEntryPoints().firstOrNull()?.uri ?: "<resource-uri>"

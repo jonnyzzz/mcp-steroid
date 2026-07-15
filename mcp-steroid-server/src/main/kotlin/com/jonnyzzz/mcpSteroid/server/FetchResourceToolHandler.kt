@@ -10,6 +10,7 @@ import com.jonnyzzz.mcpSteroid.mcp.get
 import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
 import com.jonnyzzz.mcpSteroid.mcp.string
+import com.jonnyzzz.mcpSteroid.prompts.ArticleBase
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.ResourcesIndex
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.FindDuplicatesPromptArticle
@@ -68,45 +69,43 @@ class FetchResourceToolHandler(
         log.info("steroid_fetch_resource: $uri")
 
         val promptsContext = handler().buildPromptsContext(projectName)
-        val payload = resolveResourcePayload(uri, promptsContext)
+        val article = resolveResourceArticle(uri, promptsContext)
             ?: return ToolCallResult(
                 content = listOf(ContentItem.Text(text = "ERROR: Resource not found: $uri")),
                 isError = true
             )
 
-        return ToolCallResult(content = listOf(ContentItem.Text(text = payload)))
+        return ToolCallResult(content = listOf(ContentItem.Text(text = article.readPayload(promptsContext))))
     }
 }
 
 /**
- * Resolves a `mcp-steroid://` resource URI to its rendered Markdown payload for the given
- * [context], or `null` when no article matches the URI + IDE filter.
+ * Resolves a `mcp-steroid://` resource URI to its matching [ArticleBase] for the given [context],
+ * or `null` when no article matches the URI + IDE filter. Callers render the payload themselves via
+ * [ArticleBase.readPayload] — this function hands back the article object, not pre-rendered text.
  *
- * The single source of truth for URI → payload resolution: used by [FetchResourceToolHandler]
+ * The single source of truth for URI → article resolution: used by [FetchResourceToolHandler]
  * (the `steroid_fetch_resource` MCP tool) and by the `devrig fetch_resource` / `devrig prompt`
  * CLI commands, so both surfaces resolve identically.
  */
-fun resolveResourcePayload(uri: String, context: PromptsContext): String? {
-    val article = ResourcesIndex().roots.values
+fun resolveResourceArticle(uri: String, context: PromptsContext): ArticleBase? =
+    ResourcesIndex().roots.values
         .asSequence()
         .flatMap { it.articles.values.asSequence() }
         .firstOrNull { it.uri == uri && it.filter.matches(context) }
-        ?: return null
-    return article.readPayload(context)
-}
 
 /**
- * Canonical entry-point URIs to suggest when a fetch misses — built from the generated article
+ * Canonical entry-point articles to suggest when a fetch misses — built from the generated article
  * classes (never hardcoded `mcp-steroid://` literals, per NoHardcodedMcpSteroidUriUsageTest).
  * Reused by CLI error hints so the suggestions stay in sync with the tool description above.
  */
-fun canonicalResourceEntryPoints(): List<String> = listOf(
-    SkillPromptArticle().uri,
-    TestSkillPromptArticle().uri,
-    DebuggerSkillPromptArticle().uri,
-    FindDuplicatesPromptArticle().uri,
-    InspectAndFixPromptArticle().uri,
-    CodingWithIntelliJPromptArticle().uri,
+fun canonicalResourceEntryPoints(): List<ArticleBase> = listOf(
+    SkillPromptArticle(),
+    TestSkillPromptArticle(),
+    DebuggerSkillPromptArticle(),
+    FindDuplicatesPromptArticle(),
+    InspectAndFixPromptArticle(),
+    CodingWithIntelliJPromptArticle(),
 )
 
 /**
