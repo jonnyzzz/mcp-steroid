@@ -121,18 +121,16 @@ fun ToolCallResult.renderTo(
 }
 
 /**
- * The single, unified `--json` envelope shared by EVERY `devrig` MCP-as-CLI command:
+ * The unified JSON envelope for all `devrig` CLI commands, shared across tool-backed subcommands.
  *
- * ```json
- * { "tool": {"name":"devrig","version":"..."}, "command": "<name>", "isError": <bool>, "data": { ... } }
- * ```
- *
- * `data` holds the command-specific payload: `{content:[...]}` for tool-result commands (fetch_resource,
- * execute_code, …), `{projects:[...]}` for list_projects, `{windows,backgroundTasks}` for list_windows.
- * One outer shape keeps agents and tests from special-casing per command. The [Json] instance is shared
- * so encoding stays consistent.
+ * `data` shape is command-specific: `{content:[...]}` for tool-result commands, `{projects:[...]}`
+ * for list_projects, `{windows,backgroundTasks}` for list_windows.
  */
-val CLI_ENVELOPE_JSON: Json = Json { prettyPrint = true; encodeDefaults = true; explicitNulls = false }
+val CLI_ENVELOPE_JSON: Json = Json {
+    prettyPrint = true
+    encodeDefaults = true
+    explicitNulls = false
+}
 
 /**
  * Renders a CLI-level failure (usage/parse, routing, or bridge error) consistently, so a `--json`
@@ -169,11 +167,8 @@ fun renderCliError(
 }
 
 /**
- * Renders a successful `take_screenshot` that wrote a file to `--out`, adding a **structured**
- * `savedOut` (absolute path) key alongside the usual `content` in the `--json` envelope `data`, and a
- * human `Saved --out: <abs>` line otherwise. The structured field lives only in the devrig-owned CLI
- * envelope — the frozen wire DTO ([ToolCallResult]) is untouched (Tenet 5). Always [CliExit.OK]: the
- * caller only reaches this after the file is confirmed written.
+ * Renders a successful `take_screenshot` with a structured `savedOut` path in the JSON envelope.
+ * `savedOut` lives in the devrig-owned CLI envelope, not the frozen wire DTO [ToolCallResult] (Tenet 5).
  */
 fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, json: Boolean, out: PrintStream): Int {
     if (json) {
@@ -202,10 +197,7 @@ fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String
     return CLI_ENVELOPE_JSON.encodeToString(JsonObject.serializer(), payload)
 }
 
-/**
- * Envelope for a tool-backed command's [ToolCallResult]: `data:{content:[...]}`. Image blobs are
- * summarized (mimeType + byte count) rather than inlined so stdout stays usable.
- */
+/** Envelope for a [ToolCallResult]: `data:{content:[...]}`, with images summarized to prevent bloat. */
 fun ToolCallResult.toEnvelopeJson(command: String): String =
     cliEnvelopeJson(command, isError, contentDataJson())
 
