@@ -34,7 +34,7 @@ fun printExecuteCodeHelp(out: PrintStream): Int {
 
         Required:
           --project_name   routing key from `devrig list_projects` (NOT the folder name)
-          --code-file      path to a .kts file; pass "-" to read the script from stdin
+          --code-file      path to a .kts file; pass "-" to read the script from stdin (blocks until EOF)
           --code           inline script (alternative to --code-file)
           --task_id        groups related calls in audit logs
           --reason         full task description
@@ -126,6 +126,7 @@ fun printHelp(out: PrintStream) : Int {
           devrig execute_code --project_name=<key> --code-file=<path> --task_id=<id> --reason=<text>
                               [--code=<inline>] [--modal=<mode>] [--timeout=<sec>] [--json]
                                          run a Kotlin script in the IDE (steroid_execute_code).
+                                         --code-file=- reads the script from stdin (blocks until EOF).
 
           devrig list_projects [--json]  list open projects (steroid_list_projects; shares
                                          output with `devrig project`). Exposes project_name,

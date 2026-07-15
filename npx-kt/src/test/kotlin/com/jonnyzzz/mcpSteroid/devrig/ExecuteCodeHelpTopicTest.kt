@@ -69,4 +69,17 @@ class ExecuteCodeHelpTopicTest {
         assertNotEquals(render("execute_code"), global)
         assertEquals(global, render("no-such-command"), "unknown topic must fall back to the global help")
     }
+
+    @Test
+    fun `execute_code help documents stdin via code-file dash`() {
+        val out = ByteArrayOutputStream()
+        printExecuteCodeHelp(PrintStream(out))
+        val text = out.toString(Charsets.UTF_8)
+        assertTrue(text.contains("--code-file=-") || text.contains("\"-\""),
+            "expected stdin affordance documented, got:\n$text")
+        assertTrue(text.contains("stdin"), text)
+        // C17: readBytes() reads to EOF (blocks until the stream closes) — no partial-read risk
+        // for a slow producer. The help must say so.
+        assertTrue(text.contains("EOF"), "expected the blocks-until-EOF note documented, got:\n$text")
+    }
 }
