@@ -5,7 +5,7 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
 import java.io.PrintStream
 
 /** Plugin id of the MCP Steroid IntelliJ plugin (matches plugin.xml `<id>`). */
-const val MCP_STEROID_PLUGIN_ID = "com.jonnyzzz.mcpSteroid"
+const val MCP_STEROID_PLUGIN_ID = "com.jonnyzzz.mcp-steroid"
 
 /**
  * The IntelliJ Platform built-in Netty server picks the first free port starting at 63342 (19 fallbacks).

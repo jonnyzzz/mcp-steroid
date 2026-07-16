@@ -35,7 +35,7 @@ class ConnectIdeTest {
     @Test
     fun `install url is well formed`() {
         assertEquals(
-            "http://127.0.0.1:63342/api/installPlugin?action=install&pluginId=com.jonnyzzz.mcpSteroid",
+            "http://127.0.0.1:63342/api/installPlugin?action=install&pluginId=com.jonnyzzz.mcp-steroid",
             installPluginUrl("http://127.0.0.1:63342/", "install", MCP_STEROID_PLUGIN_ID),
         )
     }
