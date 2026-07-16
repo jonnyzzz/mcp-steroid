@@ -11,6 +11,11 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# PowerShell's default progress bar redraws on every byte read (Invoke-WebRequest) and every entry
+# unpacked (Expand-Archive), turning a multi-hundred-MB download + JDK unpack into a UI-bound crawl
+# on Windows consoles. See https://github.com/PowerShell/PowerShell/issues/2138 - silence progress
+# for the whole script (Write-Log status lines still go to stderr).
+$ProgressPreference = 'SilentlyContinue'
 
 $Version      = '@@VERSION@@'
 $DevrigUrl    = '@@DEVRIG_URL@@'
@@ -42,10 +47,28 @@ $BinariesDir = Join-Path $SteroidHome 'binaries'
 # -- platform detection -> normalized <os>-<cpu> key --
 $cpu = $env:DEVRIG_CPU
 if (-not $cpu) {
-  switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-    'Arm64' { $cpu = 'arm64' }
-    'X64'   { $cpu = 'x64' }
-    default { Fail "unsupported CPU architecture" }
+  # PROCESSOR_ARCHITECTURE / PROCESSOR_ARCHITEW6432 are Windows-native env vars set on EVERY
+  # PowerShell host (5.1 and 7.x) on every Windows build. Do NOT read
+  # [RuntimeInformation]::OSArchitecture as the primary lookup: on the .NET Framework 4.6.x that
+  # ships with base Windows 10 the property is missing entirely, and Set-StrictMode Latest turns
+  # that into a hard PropertyNotFoundStrict abort (jonnyzzz/mcp-steroid#273 - user ran
+  # `irm | iex` and got "OSArchitecture cannot be found on this object", the whole install
+  # dead in the water). PROCESSOR_ARCHITEW6432 comes first because WoW64 (32-bit PS on 64-bit
+  # Windows) sets PROCESSOR_ARCHITECTURE=x86 but exposes the real host arch in ARCHITEW6432.
+  $arch = $env:PROCESSOR_ARCHITEW6432
+  if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
+  if (-not $arch) {
+    # Reached only on non-Windows (pwsh Core on Linux/Mac in dev+test contexts) where neither
+    # env var is set. Guarded so a missing property in some future strict mode cannot
+    # re-introduce #273.
+    try { $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() }
+    catch { Fail "cannot detect CPU architecture: PROCESSOR_ARCHITECTURE unset and RuntimeInformation lookup threw ($($_.Exception.Message))" }
+  }
+  switch -Regex ($arch) {
+    '^(?i)ARM64$'       { $cpu = 'arm64' }
+    '^(?i)(AMD64|X64)$' { $cpu = 'x64' }
+    '^(?i)X86$'         { Fail "32-bit Windows is not supported" }
+    default             { Fail "unsupported CPU architecture: '$arch'" }
   }
 }
 $os = $env:DEVRIG_OS
