@@ -42,7 +42,7 @@ fun runConnectClaude(settingsPath: Path, out: PrintStream, err: PrintStream): In
         err.println("[devrig] atomic move unavailable (${e.message}); falling back to a plain replace.")
         Files.move(tmp, settingsPath, StandardCopyOption.REPLACE_EXISTING)
     }
-    out.println("enabled the devrig plugin for Claude Code in $settingsPath.")
+    out.println("Claude Code plugin now enabled in $settingsPath.")
     out.println("Restart Claude Code (or start a new session) to load it.")
     return 0
 }
