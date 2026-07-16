@@ -311,10 +311,11 @@ the FULL schema-driven generation is a deliberate follow-up. Comment → action 
       launcher logic he wants split into a separate PR, rather than extracting the load-bearing gate.
 
 ### Deferred to a FOLLOW-UP PR (own design; comments C8, C11, C12)
+- Tracking issue: #284 (`devrig CLI: derive command registration, flags, and help from ToolSpec`).
 - Generate clikt options + per-command help + the command registration from the tool `InputSchemaElement`
   specs, so a new MCP tool auto-registers as a CLI command. Reviewer himself frames this as
   "next iteration / next PR". Needs: schema→clikt type adapters, help synopsis (NOT the multi-KB tool
-  description), and re-validating the frozen `--json`/exit-code contract. Open a tracking issue.
+  description), and re-validating the frozen `--json`/exit-code contract.
 
 ### Implementation order (test-first per CLAUDE.md)
 1. Bucket A (independent, low-risk) → green.
