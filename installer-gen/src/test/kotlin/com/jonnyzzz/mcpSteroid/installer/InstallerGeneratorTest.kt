@@ -124,6 +124,28 @@ class InstallerGeneratorTest {
     }
 
     @Test
+    fun `install_ps1 restores the caller ProgressPreference (no session leak under irm iex)`() {
+        // `irm | iex` runs install.ps1 in the CALLER's scope, so a bare `$ProgressPreference =
+        // 'SilentlyContinue'` would leave the user's interactive session with progress permanently
+        // silenced. The script must snapshot the prior value and restore it in a `finally` so the
+        // success path and any uncaught terminating error both put the session back as they found it.
+        val ps = renderInstallerScripts(jdkScriptTable(fullModel()), devrig, "1.2.3").ps
+        val saveAt = ps.indexOf("\$SteroidPrevProgressPreference = \$ProgressPreference")
+        val setAt = ps.indexOf("\$ProgressPreference = 'SilentlyContinue'")
+        val restoreAt = ps.indexOf("\$ProgressPreference = \$SteroidPrevProgressPreference")
+        assertTrue(saveAt >= 0, "install.ps1 must snapshot the caller's \$ProgressPreference before overriding it")
+        assertTrue(restoreAt >= 0, "install.ps1 must restore the caller's \$ProgressPreference (leak fix)")
+        // Order: snapshot → override → … → restore. Restore must be the LAST of the three so it wins.
+        assertTrue(saveAt < setAt, "must snapshot BEFORE overriding \$ProgressPreference")
+        assertTrue(restoreAt > setAt, "must restore AFTER the override")
+        // The restore lives in a finally that closes a try opened right after the override.
+        val tryAt = ps.indexOf("\ntry {", setAt)
+        val finallyAt = ps.lastIndexOf("finally {")
+        assertTrue(tryAt in 0 until restoreAt, "the body must be wrapped in a try{} opened after the override")
+        assertTrue(finallyAt in 0 until restoreAt, "the restore must sit inside the finally{} block")
+    }
+
+    @Test
     fun `install_sh does not carry the PowerShell ProgressPreference setting`() {
         // Belt-and-suspenders: `$ProgressPreference` is a PowerShell-only automatic variable. The POSIX
         // install.sh must not contain it — a leak would mean the shared render pipeline crossed streams

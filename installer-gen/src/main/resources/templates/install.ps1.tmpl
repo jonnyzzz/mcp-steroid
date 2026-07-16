@@ -15,7 +15,14 @@ $ErrorActionPreference = 'Stop'
 # unpacked (Expand-Archive), turning a multi-hundred-MB download + JDK unpack into a UI-bound crawl
 # on Windows consoles. See https://github.com/PowerShell/PowerShell/issues/2138 - silence progress
 # for the whole script (Write-Log status lines still go to stderr).
+#
+# `irm | iex` runs this script in the CALLER's scope, so a bare assignment would leave the user's
+# session with progress permanently silenced. Save the prior value and restore it in the finally
+# below - that covers the success path and any uncaught terminating error (the Fail -> exit path
+# tears the session down, so the leak is moot there).
+$SteroidPrevProgressPreference = $ProgressPreference
 $ProgressPreference = 'SilentlyContinue'
+try {
 
 $Version      = '@@VERSION@@'
 $DevrigUrl    = '@@DEVRIG_URL@@'
@@ -152,3 +159,8 @@ Write-Log "devrig binary is ready."
 Write-Log ""
 Write-Log "To register devrig with your agents (Claude, Codex, Gemini), run:"
 Write-Log "    devrig install"
+}
+finally {
+  # Restore the caller's progress preference so `irm | iex` leaves the session as it found it.
+  $ProgressPreference = $SteroidPrevProgressPreference
+}

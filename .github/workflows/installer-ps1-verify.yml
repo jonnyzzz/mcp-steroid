@@ -53,17 +53,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '25' }
-      # Run the WHOLE task — no --tests scoping. Every test starts regardless of any single failure
-      # (JUnit runs them all; --continue keeps the Gradle run going past a failed task), so the
-      # install.ps1 tests this PR adds (InstallerPs1ExecutionTest + InstallerScriptTest) always
+      # Run the WHOLE suite — no --tests scoping. `test` is the cross-OS ClaudeAgentLaunchTest +
+      # InstallerScriptTest; `windowsPs1Test` is the Windows-gated native-powershell.exe end-to-end
+      # (InstallerPs1ExecutionTest). Every test starts regardless of any single failure (JUnit runs them
+      # all; --continue keeps the Gradle run going past a failed task), so the install.ps1 tests always
       # execute and land in the uploaded report. The one intermittently-red case is
       # ClaudeAgentLaunchTest.`hook-devrig-pattern - fires on both`: a timing race in the test's
       # probe-log capture (the slow sh-script hook can lose the race against Claude's fast auth-fail
       # exit) — tracked in jonnyzzz/mcp-steroid#283 and fixed there. NOT hidden here, and NOT gating
       # this install.ps1 fix.
-      - name: Run :test-integration-agent-launch:test (native powershell.exe + pwsh)
+      - name: Run install.ps1 suites (native powershell.exe + pwsh)
         shell: bash
-        run: ./gradlew :test-integration-agent-launch:test --continue --info --stacktrace
+        run: ./gradlew :test-integration-agent-launch:test :test-integration-agent-launch:windowsPs1Test --continue --info --stacktrace
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4

@@ -45,16 +45,11 @@ val installerGenDir = project(":installer-gen").projectDir
 val installPs1Template = installerGenDir.resolve("src/main/resources/templates/install.ps1.tmpl")
 val installShTemplate = installerGenDir.resolve("src/main/resources/templates/install.sh.tmpl")
 
-tasks.test {
+// Shared config for every Test task in this module (main cross-OS `test` + the Windows-only PS lane).
+fun Test.commonAgentLaunchTestConfig() {
     useJUnitPlatform()
     testLogging { showStandardStreams = true }
     systemProperty("junit.jupiter.execution.timeout.default", "15m")
-
-    // Windows||Linux gate (see note above). On macOS this task is skipped, so `./gradlew test`,
-    // `ciAgentLaunchTests`, and IDE runs on macOS are no-ops for this module.
-    enabled = runsHere
-    onlyIf("test-integration-agent-launch runs only on Windows/Linux agents") { runsHere }
-
     doFirst {
         systemProperty(
             "agent.launch.cache.dir",
@@ -64,3 +59,39 @@ tasks.test {
         systemProperty("installer.sh.template", installShTemplate.absolutePath)
     }
 }
+
+// `InstallerPs1ExecutionTest` drives NATIVE powershell.exe, so it is structurally Windows-only. It shares
+// this module with the cross-OS `ClaudeAgentLaunchTest`, so rather than a banned runtime skip
+// (`assumeTrue(isWindows)`), it is gated at the TASK level — the only skip the root CLAUDE.md allows. The
+// main `test` task EXCLUDES it (it still runs + reports under `windowsPs1Test`, so it is not hidden), and
+// `windowsPs1Test` runs ONLY it, `enabled = isWindows`.
+val installerPs1TestClass = "com.jonnyzzz.mcpSteroid.agentlaunch.InstallerPs1ExecutionTest"
+
+tasks.test {
+    commonAgentLaunchTestConfig()
+
+    // Windows||Linux gate (see note above). On macOS this task is skipped, so `./gradlew test`,
+    // `ciAgentLaunchTests`, and IDE runs on macOS are no-ops for this module.
+    enabled = runsHere
+    onlyIf("test-integration-agent-launch runs only on Windows/Linux agents") { runsHere }
+
+    // The Windows-native PS test runs under `windowsPs1Test` instead (see below).
+    filter { excludeTestsMatching(installerPs1TestClass) }
+}
+
+val windowsPs1Test = tasks.register<Test>("windowsPs1Test") {
+    group = "verification"
+    description = "Runs InstallerPs1ExecutionTest end-to-end under native Windows powershell.exe (+ pwsh). Windows-only."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    commonAgentLaunchTestConfig()
+
+    // Task-level Windows gate — the compliant place for a structural OS skip (no runtime assumeTrue).
+    enabled = os.isWindows
+    onlyIf("InstallerPs1ExecutionTest needs native powershell.exe (Windows only)") { os.isWindows }
+
+    filter { includeTestsMatching(installerPs1TestClass) }
+}
+
+// Keep `check` (and thus CI aggregators that depend on it) running the Windows PS lane on Windows agents.
+tasks.named("check") { dependsOn(windowsPs1Test) }

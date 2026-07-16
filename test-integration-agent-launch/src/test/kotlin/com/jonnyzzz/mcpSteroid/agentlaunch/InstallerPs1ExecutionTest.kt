@@ -11,7 +11,6 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoMessageInOutput
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
 import com.sun.net.httpserver.HttpServer
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.Timeout
@@ -46,30 +45,30 @@ import kotlin.io.path.readBytes
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class InstallerPs1ExecutionTest {
 
-    private val isWindows = System.getProperty("os.name").lowercase().contains("win")
-
     @Test
     @Timeout(value = 10, unit = TimeUnit.MINUTES)
-    fun `install_ps1 runs end-to-end under Windows PowerShell 5-1 (powershell_exe)`() {
-        // Task-level `enabled = runsHere` already keeps this test off macOS. The class-level gate
-        // makes it a NO-OP on the Linux side of the cross-OS matrix — the Docker pwsh path is what
-        // covers Linux, not powershell.exe.
-        assumeTrue(isWindows) { "InstallerPs1ExecutionTest exercises native powershell.exe; skipping on non-Windows host" }
-        runInstallEndToEnd("powershell", extraArgs = emptyList(), shellDescription = "powershell.exe (Windows PowerShell 5.1)")
-    }
-
-    @Test
-    @Timeout(value = 10, unit = TimeUnit.MINUTES)
-    fun `install_ps1 runs end-to-end under PowerShell Core (pwsh) when available on PATH`() {
-        assumeTrue(isWindows) { "pwsh coverage on Linux lives in :installer-gen InstallerBootstrapPs1Test (Docker)" }
-        val pwshOnPath = isCommandOnPath("pwsh")
-        assumeTrue(pwshOnPath) { "pwsh (PowerShell Core) not on PATH; only powershell.exe (5.1) will be exercised" }
-        runInstallEndToEnd("pwsh", extraArgs = emptyList(), shellDescription = "pwsh (PowerShell Core 7.x)")
+    fun `install_ps1 runs end-to-end under Windows PowerShell 5-1 and PowerShell Core`() {
+        // NO runtime skip: this class runs only under the Gradle task `windowsPs1Test`, which is gated
+        // `enabled = isWindows` at the task level (the compliant place per root CLAUDE.md). It needs
+        // native powershell.exe, so it is structurally Windows-only; the cross-OS `test` task excludes it.
+        //
+        // Always exercise powershell.exe (Windows PowerShell 5.1 — the default Windows 10/11 shell, where
+        // #273 manifests).
+        runInstallEndToEnd("powershell", shellDescription = "powershell.exe (Windows PowerShell 5.1)")
+        // Additionally exercise PowerShell Core when the runner has it (GH windows-latest + TC agents do).
+        // This is EXTRA coverage, not a skip — the powershell.exe assertions above already ran and asserted
+        // a real outcome; pwsh-on-Linux coverage lives in :installer-gen InstallerBootstrapPs1Test (Docker).
+        if (isCommandOnPath("pwsh")) {
+            runInstallEndToEnd("pwsh", shellDescription = "pwsh (PowerShell Core 7.x)")
+        } else {
+            println("[InstallerPs1ExecutionTest] pwsh not on PATH — exercised powershell.exe (5.1) only")
+        }
     }
 
     // ── shared driver ────────────────────────────────────────────────────────────────────────────
 
-    private fun runInstallEndToEnd(shellCommand: String, extraArgs: List<String>, shellDescription: String) {
+    private fun runInstallEndToEnd(shellCommand: String, shellDescription: String) {
+        val extraArgs = emptyList<String>()
         val workDir = cacheDir().resolve("ps1-exec-${System.nanoTime()}").also { it.createDirectories() }
         val fixturesDir = workDir.resolve("fixtures").also { it.createDirectories() }
         val genDir = workDir.resolve("gen").also { it.createDirectories() }
@@ -171,14 +170,14 @@ class InstallerPs1ExecutionTest {
         Path.of(System.getProperty("agent.launch.cache.dir")).also { it.createDirectories() }
 
     private fun isCommandOnPath(cmd: String): Boolean {
-        // Both cmd.exe `where` and PS `Get-Command` do the resolution; `where` is cheap and always
-        // present on Windows. Exit 0 → found. On non-Windows this method is never reached (gated by
-        // the assumeTrue(isWindows)).
+        // `where` is cheap and always present on Windows (the only OS this class runs on — task-gated).
+        // Exit 0 → found. A probe failure is logged (never silently swallowed) and treated as "absent".
         return try {
             val proc = ProcessBuilder("where", cmd).redirectErrorStream(true).start()
             proc.inputStream.readAllBytes() // drain so waitFor doesn't block on buffered output
             proc.waitFor(5, TimeUnit.SECONDS) && proc.exitValue() == 0
         } catch (e: Exception) {
+            System.err.println("[InstallerPs1ExecutionTest] 'where $cmd' probe failed (${e.message}); treating '$cmd' as not on PATH")
             false
         }
     }
