@@ -13,6 +13,10 @@ dependencies {
     // process-driving test in the repo uses: consistent [prefix] logging, timeout + destroyForcibly,
     // captured stdout/stderr in the returned ProcessResult.
     implementation(project(":test-helper"))
+    // The Windows execution test drives writeInstallerScripts + DevrigEntry directly to render a
+    // real, executable install.ps1 into a temp dir (the syntax-check test uses placeholder string
+    // replacement, which is fine for a Parser::ParseFile check but not for an end-to-end run).
+    testImplementation(project(":installer-gen"))
 
     implementation(platform("org.junit:junit-bom:5.11.4"))
     implementation("org.junit.jupiter:junit-jupiter-api")

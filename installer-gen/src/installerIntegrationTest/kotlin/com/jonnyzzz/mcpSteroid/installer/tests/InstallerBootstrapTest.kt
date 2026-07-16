@@ -20,9 +20,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.File
 import java.io.FileOutputStream
-import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
-import java.util.zip.GZIPOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -38,13 +36,10 @@ import java.util.zip.ZipOutputStream
  * hermetic unit tests.
  */
 class InstallerBootstrapTest {
-    private val version = "0.0.0-test"
-    private val nginxImage = "nginx:alpine"
+    private val version = INSTALLER_TEST_VERSION
     private val installImage = "ubuntu:24.04"
     private val muslImage = "alpine:3.21"
-
-    /** HOME with a space catches quoting bugs in install.sh / the launcher wrapper. */
-    private val homeDir = "/home/tester one"
+    private val homeDir = INSTALLER_HOME_DIR
 
     /**
      * The project's defining platform constraint: musl/Alpine is NOT supported (the IntelliJ IDEs need
@@ -55,7 +50,7 @@ class InstallerBootstrapTest {
     @Test
     @Timeout(value = 10, unit = TimeUnit.MINUTES)
     fun `generated install_sh refuses musl (alpine)`() = runWithCloseableStack { lifetime ->
-        val genDir = createWorkDir("installer-musl-gen")
+        val genDir = createInstallerWorkDir("installer-musl-gen")
         // A minimal valid model (nothing is downloaded on the musl-reject path) → renders a real install.sh.
         val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("https://example.com/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk") }
         writeInstallerScripts(
@@ -94,7 +89,7 @@ class InstallerBootstrapTest {
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `generated install_sh end-to-end on ubuntu (glibc)`() = runWithCloseableStack { lifetime ->
         // ── 1. build fixtures into a temp dir ──
-        val fixturesDir = createWorkDir("installer-fixtures")
+        val fixturesDir = createInstallerWorkDir("installer-fixtures")
         val devrigZip = File(fixturesDir, "devrig.zip").also { buildFakeDevrigZip(it) }
         val jdkTarGz = File(fixturesDir, "jdk.tar.gz").also { buildFakeJdkTarGz(it) }
         val devrigSha = sha256(devrigZip)
@@ -105,7 +100,7 @@ class InstallerBootstrapTest {
         val nginx = startDockerContainerAndDispose(
             lifetime,
             StartContainerRequest()
-                .image(nginxImage)
+                .image(NGINX_IMAGE)
                 .logPrefix("installer-nginx")
                 .volumes(ContainerVolume(fixturesDir, "/usr/share/nginx/html", "ro")),
         )
@@ -114,7 +109,7 @@ class InstallerBootstrapTest {
 
         // ── 3. render install.sh from a synthetic model: all 5 platforms point at the one fake jdk.tar.gz
         //       (javaHome="jdk"), served by the side-car. This is the new seam — no real JDK download. ──
-        val genDir = createWorkDir("installer-gen-out")
+        val genDir = createInstallerWorkDir("installer-gen-out")
         val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/jdk.tar.gz", jdkSha, "tar.gz", "jdk") }
         // The fixture zip unpacks to devrig-<version>/, so that's the computed+asserted launcher subpath.
         val devrig = DevrigEntry(
@@ -227,33 +222,6 @@ class InstallerBootstrapTest {
 
     private fun log(msg: String) = println("[InstallerBootstrapTest] $msg")
 
-    private fun createWorkDir(prefix: String): File {
-        val d = File.createTempFile(prefix, "").let { it.delete(); File(it.absolutePath + "-dir") }
-        d.mkdirs()
-        return d
-    }
-
-    private fun makeWorldReadable(dir: File) {
-        dir.walkTopDown().forEach {
-            it.setReadable(true, false)
-            if (it.isDirectory) it.setExecutable(true, false)
-        }
-        dir.setExecutable(true, false)
-    }
-
-    private fun sha256(file: File): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { ins ->
-            val buf = ByteArray(64 * 1024)
-            while (true) {
-                val n = ins.read(buf)
-                if (n < 0) break
-                md.update(buf, 0, n)
-            }
-        }
-        return md.digest().joinToString("") { "%02x".format(it) }
-    }
-
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────────
 
     /**
@@ -286,64 +254,5 @@ class InstallerBootstrapTest {
             zip.putNextEntry(ZipEntry("devrig-$version/bin/")); zip.closeEntry()
             zip.putNextEntry(ZipEntry("devrig-$version/bin/devrig")); zip.write(script.toByteArray()); zip.closeEntry()
         }
-    }
-
-    /** Fake JDK tar.gz. Top dir `jdk/` (matches javaHome="jdk"), with an executable `bin/java` sh stub. */
-    private fun buildFakeJdkTarGz(target: File) {
-        val javaStub = "#!/bin/sh\necho 'java-stub 25'\nexit 0\n".toByteArray()
-        GZIPOutputStream(FileOutputStream(target)).use { gz ->
-            TarWriter(gz).use { tar ->
-                tar.putDir("jdk/")
-                tar.putDir("jdk/bin/")
-                tar.putFile("jdk/bin/java", javaStub, mode = 0b111_101_101) // rwxr-xr-x
-            }
-        }
-    }
-}
-
-/**
- * Minimal POSIX (ustar) tar writer — the JDK has no built-in tar. Enough for a few small files with
- * stored unix permission bits so the unpacked `bin/java` keeps its +x bit (install.sh checks `-x`).
- */
-private class TarWriter(private val out: java.io.OutputStream) : AutoCloseable {
-    fun putDir(name: String) = writeEntry(name, ByteArray(0), typeFlag = '5', mode = 0b111_101_101)
-    fun putFile(name: String, data: ByteArray, mode: Int) = writeEntry(name, data, typeFlag = '0', mode = mode)
-
-    private fun writeEntry(name: String, data: ByteArray, typeFlag: Char, mode: Int) {
-        val header = ByteArray(512)
-        putString(header, 0, name, 100)
-        putOctal(header, 100, mode.toLong(), 8)
-        putOctal(header, 108, 0, 8)
-        putOctal(header, 116, 0, 8)
-        putOctal(header, 124, data.size.toLong(), 12)
-        putOctal(header, 136, 0, 12)
-        header[156] = typeFlag.code.toByte()
-        putString(header, 257, "ustar", 6)
-        header[263] = '0'.code.toByte(); header[264] = '0'.code.toByte()
-        for (i in 148 until 156) header[i] = ' '.code.toByte()
-        var sum = 0
-        for (b in header) sum += (b.toInt() and 0xff)
-        putOctal(header, 148, sum.toLong(), 7)
-        header[155] = ' '.code.toByte()
-        out.write(header)
-        out.write(data)
-        val pad = (512 - data.size % 512) % 512
-        if (pad > 0) out.write(ByteArray(pad))
-    }
-
-    private fun putString(buf: ByteArray, off: Int, s: String, max: Int) {
-        val bytes = s.toByteArray()
-        System.arraycopy(bytes, 0, buf, off, minOf(bytes.size, max - 1))
-    }
-
-    private fun putOctal(buf: ByteArray, off: Int, value: Long, len: Int) {
-        val s = java.lang.Long.toOctalString(value).padStart(len - 1, '0')
-        System.arraycopy(s.toByteArray(), 0, buf, off, len - 1)
-        buf[off + len - 1] = 0
-    }
-
-    override fun close() {
-        out.write(ByteArray(1024)) // two zero blocks terminate the archive
-        out.flush()
     }
 }
