@@ -416,8 +416,12 @@ val ciIntegrationTests by tasks.registering {
  */
 val ciAgentLaunchTests by tasks.registering {
     group = "ci"
-    description = "Run the cross-OS agent-launch behaviour tests: :test-integration-agent-launch:test."
+    description = "Run the cross-OS agent-launch behaviour tests: :test-integration-agent-launch (test + windowsPs1Test)."
     dependsOn(":test-integration-agent-launch:test")
+    // windowsPs1Test is the Windows-gated native-powershell.exe lane (InstallerPs1ExecutionTest), split out
+    // of `test` so it uses a task-level OS gate instead of a runtime skip. It is `enabled = isWindows`, so
+    // it runs on the Windows TC agent and is a no-op on the Linux one — both drive this aggregator.
+    dependsOn(":test-integration-agent-launch:windowsPs1Test")
 }
 
 /**
