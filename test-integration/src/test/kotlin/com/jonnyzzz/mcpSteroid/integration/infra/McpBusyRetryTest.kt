@@ -123,4 +123,16 @@ class McpBusyRetryTest {
         // and the isError read is guarded the same way
         assertThrows<McpRequestFailedError> { parseMcpToolResultIsError("""{"result":"oops"}""") }
     }
+
+    @Test
+    fun `isProjectNotFound detects the rename-race error verbatim from CI`() {
+        // Verbatim from builds 993299640/993296335/993298537: x11k's Gradle sync renames the project
+        // (project-home -> rootProject.name + suffix) between the driver's name resolution and the
+        // execute_code call — the "not found" is a rename race, not a missing project.
+        assertTrue(isProjectNotFound(
+            """ERROR: Project not found: "project-home". Available project_name values: x-m90g7r9u"""))
+        assertFalse(isProjectNotFound("done"))
+        assertFalse(isProjectNotFound("ERROR: compilation failed: unresolved reference"))
+        assertFalse(isProjectNotFound(""))
+    }
 }
