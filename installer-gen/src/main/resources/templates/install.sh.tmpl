@@ -170,8 +170,13 @@ main() {
   # -- hand off to devrig: it OWNS ~/.mcp-steroid/bin/devrig + PATH (no duplicate wrapper here) --
   # We pass every non-trivial parameter explicitly (the install-tree launcher + the bundled JDK); devrig
   # registers itself. JAVA_HOME is set only so the unpacked devrig runs under the bundled JDK right now.
+  # Redirect stdin from /dev/null so devrig inherits an already-closed stdin: when this installer is
+  # bootstrapped via `curl | sh`, the parent sh reads stdin from a pipe still open to the shell that
+  # ran curl. A devrig subprocess that read stdin (or waited on a prompt) would hang forever with no
+  # user recourse. `< /dev/null` gives it an already-closed stdin - `devrig install devrig` is
+  # contractually non-interactive (see runInstallDevrigCommand; mirrors the install.ps1 `$null |`).
   log "registering devrig (devrig install devrig)..."
-  JAVA_HOME="$jdk_home" "$launcher" install devrig --install-script="$launcher" --jdk-home="$jdk_home" \
+  JAVA_HOME="$jdk_home" "$launcher" install devrig --install-script="$launcher" --jdk-home="$jdk_home" < /dev/null \
     || fail "'devrig install devrig' failed - the launcher could not register itself"
 
   # -- done. We do NOT auto-register devrig with agents - that edits agent configs, so it is an

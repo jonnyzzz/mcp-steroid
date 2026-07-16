@@ -24,6 +24,15 @@ const val INSTALL_CHECK_DRIFT_EXIT_CODE = 1
  * on every start), here driven from the install script's EXPLICIT parameters: `--install-script` (the
  * unpacked install-tree launcher the wrapper execs) and `--jdk-home` (pinned as `DEVRIG_JAVA_HOME`). It
  * does ONLY that — no agent registration. Quiet: best-effort registration, one confirmation line.
+ *
+ * **Non-interactive contract.** This command is invoked by the generated bootstrap installers
+ * (`install.sh` / `install.ps1`) which are themselves piped from `curl | sh` / `irm | iex`. Those
+ * installers hand it an already-CLOSED stdin (`< /dev/null` on POSIX, `$null |` on PowerShell) precisely
+ * because the bootstrap's own stdin is a pipe still open to the outer shell — a subprocess that read it
+ * would hang forever with no user recourse. So this code path (and everything it calls) MUST be fully
+ * non-interactive: NO stdin reads, NO prompts, NO `Console.readLine` / `readln`. Every input arrives as
+ * an explicit flag; any missing input must fail fast (return non-zero) rather than block waiting for a
+ * user who cannot answer.
  */
 fun DevrigServices.runInstallDevrigCommand(command: DevrigCommand.DevrigCommandInstallDevrig): Int {
     val installScript = command.installScript

@@ -115,7 +115,12 @@ if (-not (Test-Path (Join-Path $jdkHome 'bin\java.exe'))) {
 # registers itself. JAVA_HOME is set only so the unpacked devrig runs under the bundled JDK right now.
 Write-Log "registering devrig (devrig install devrig)..."
 $env:JAVA_HOME = $jdkHome
-& $launcher install devrig "--install-script=$launcher" "--jdk-home=$jdkHome"
+# Pipe $null so the launcher inherits an already-closed stdin: when this installer is bootstrapped
+# via `irm | iex`, the parent PS reads stdin from a pipe still open to the shell that ran `irm`.
+# A devrig subprocess that read stdin (or waited on a Console.ReadLine style prompt) would hang
+# forever with no user recourse. `$null |` gives it an empty input stream so the first read returns
+# EOF immediately - `devrig install devrig` is contractually non-interactive (see runInstallDevrigCommand).
+$null | & $launcher install devrig "--install-script=$launcher" "--jdk-home=$jdkHome"
 if ($LASTEXITCODE -ne 0) { Fail "'devrig install devrig' failed (exit $LASTEXITCODE) - the launcher could not register itself" }
 
 # -- done. We do NOT auto-register devrig with agents - that edits agent configs, so it is an

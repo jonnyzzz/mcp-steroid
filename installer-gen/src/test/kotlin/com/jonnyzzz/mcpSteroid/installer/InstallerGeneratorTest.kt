@@ -96,6 +96,33 @@ class InstallerGeneratorTest {
     }
 
     @Test
+    fun `install_ps1 closes stdin on the devrig launcher invocation`() {
+        // Bootstrapping via `irm | iex` leaves the parent PS host with stdin still connected to the outer
+        // shell's pipe. A devrig subprocess that reads stdin would hang forever with no user recourse.
+        // `$null |` gives the launcher an empty input stream so the first read is EOF — enforcing the
+        // `devrig install devrig` non-interactive contract (see runInstallDevrigCommand).
+        val ps = renderInstallerScripts(jdkScriptTable(fullModel()), devrig, "1.2.3").ps
+        assertTrue(
+            ps.contains("\$null | & \$launcher install devrig"),
+            "install.ps1 must pipe \$null into the devrig launcher so the child cannot inherit an open stdin",
+        )
+    }
+
+    @Test
+    fun `install_sh closes stdin on the devrig launcher invocation`() {
+        // Mirror of the ps1 stdin-close on the POSIX side: `curl | sh` bootstrap leaves stdin open to the
+        // outer shell's pipe. `< /dev/null` gives devrig an already-closed stdin.
+        val sh = renderInstallerScripts(jdkScriptTable(fullModel()), devrig, "1.2.3").sh
+        // Match the actual invocation line to avoid false positives on other `< /dev/null` uses.
+        val launcherLine = sh.lines().firstOrNull { it.contains("\"\$launcher\" install devrig") }
+            ?: error("install.sh must invoke \"\$launcher\" install devrig")
+        assertTrue(
+            "< /dev/null" in launcherLine,
+            "install.sh must redirect stdin from /dev/null on the devrig launcher line: '$launcherLine'",
+        )
+    }
+
+    @Test
     fun `rendered install scripts are ASCII-only`() {
         val scripts = renderInstallerScripts(jdkScriptTable(fullModel()), devrig, "1.2.3")
 
