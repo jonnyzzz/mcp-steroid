@@ -158,11 +158,136 @@ class InstallerBootstrapPs1Test {
         log("ALL INSTALLER ASSERTIONS PASSED on ubuntu (glibc) under pwsh — download + delegate to devrig install devrig")
     }
 
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `install_ps1 auto-detects arch from PROCESSOR env (WoW64 + ARM64), rejects x86, catches bad sha`() =
+        runWithCloseableStack { lifetime ->
+            // The x64 CI runner cannot cover WoW64 / ARM64 / x86 natively, but detection reads env vars
+            // ($env:PROCESSOR_ARCHITEW6432 / PROCESSOR_ARCHITECTURE), so pwsh-on-Linux with those vars set
+            // exercises the exact real-Windows branches. DEVRIG_OS=windows forces the Windows platform table.
+            val fixturesDir = createInstallerWorkDir("installer-ps1-arch-fixtures")
+            val devrigZip = File(fixturesDir, "devrig.zip").also { buildFakePwshDevrigZip(it) }
+            val jdkZip = File(fixturesDir, "jdk.zip").also { buildFakeJdkZip(it) }
+            val devrigSha = sha256(devrigZip)
+            val jdkSha = sha256(jdkZip)
+            makeWorldReadable(fixturesDir)
+
+            val nginx = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest().image(NGINX_IMAGE).logPrefix("installer-ps1-arch-nginx")
+                    .volumes(ContainerVolume(fixturesDir, "/usr/share/nginx/html", "ro")),
+            )
+            val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
+
+            val jdkEntryWin = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "zip", "jdk")
+            val jdkEntryPosix = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "tar.gz", "jdk")
+            val table = ALL_PLATFORMS.associateWith { key -> if (key.startsWith("windows-")) jdkEntryWin else jdkEntryPosix }
+            val devrig = DevrigEntry(
+                url = "http://$nginxIp/devrig.zip", sha256 = devrigSha,
+                launcherPosix = "devrig-$version/bin/devrig", launcherWindows = "devrig-$version/bin/devrig.bat",
+            )
+            val genDir = createInstallerWorkDir("installer-ps1-arch-gen")
+            writeInstallerScripts(genDir.toPath(), table, devrig, version)
+            makeWorldReadable(genDir)
+            // A second render with a deliberately-corrupt devrig sha → download then Get-FileHash mismatch.
+            val badGenDir = createInstallerWorkDir("installer-ps1-badsha-gen")
+            writeInstallerScripts(badGenDir.toPath(), table, devrig.copy(sha256 = "0".repeat(64)), version)
+            makeWorldReadable(badGenDir)
+
+            val install = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest().image(pwshImage).logPrefix("installer-pwsh-arch")
+                    .volumes(ContainerVolume(genDir, "/gen", "ro"), ContainerVolume(badGenDir, "/badgen", "ro"))
+                    .entryPoint("sh", "-c", "apt-get update -qq && apt-get install -y -qq curl >/dev/null 2>&1; mkdir -p \"$homeDir\"; sleep 3000"),
+            )
+            awaitCurlInstalled(install)
+
+            val base = mapOf("HOME" to homeDir, "USERPROFILE" to homeDir, "DEVRIG_OS" to "windows")
+            // WoW64: 32-bit PS on 64-bit Windows sets PROCESSOR_ARCHITECTURE=x86 but the real arch in
+            // PROCESSOR_ARCHITEW6432 — which must win → windows-x64.
+            runInstall(install, base + mapOf("PROCESSOR_ARCHITEW6432" to "AMD64", "PROCESSOR_ARCHITECTURE" to "x86"))
+                .assertExitCode(0) { "WoW64 run failed:\n$this" }
+                .assertOutputContains("platform: windows-x64", message = "WoW64: PROCESSOR_ARCHITEW6432=AMD64 must beat x86 → windows-x64")
+            // ARM64 (empty ARCHITEW6432 is falsy in PS → falls through to PROCESSOR_ARCHITECTURE).
+            runInstall(install, base + mapOf("PROCESSOR_ARCHITEW6432" to "", "PROCESSOR_ARCHITECTURE" to "ARM64"))
+                .assertExitCode(0) { "ARM64 run failed:\n$this" }
+                .assertOutputContains("platform: windows-arm64", message = "ARM64 must resolve to windows-arm64")
+            // x86 with no 64-bit ARCHITEW6432 → explicit rejection, non-zero exit.
+            val x86 = runInstall(install, base + mapOf("PROCESSOR_ARCHITEW6432" to "", "PROCESSOR_ARCHITECTURE" to "x86"))
+            require(x86.exitCode != 0) { "x86 must be rejected (non-zero exit):\n$x86" }
+            x86.assertOutputContains("32-bit Windows is not supported", message = "x86 must be rejected with the 32-bit message")
+            // Corrupt devrig sha → mismatch caught, non-zero exit.
+            val bad = runInstall(install, base + mapOf("PROCESSOR_ARCHITECTURE" to "AMD64"), script = "/badgen/install.ps1")
+            require(bad.exitCode != 0) { "bad-sha run must fail:\n$bad" }
+            bad.assertOutputContains("SHA-256 mismatch", message = "a corrupt devrig sha must be caught before use")
+            log("arch matrix (WoW64/ARM64/x86) + sha-mismatch assertions passed under pwsh")
+        }
+
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `install_ps1 hands devrig a closed stdin (child reads EOF) and restores caller ProgressPreference`() =
+        runWithCloseableStack { lifetime ->
+            // Behavioral proof of the stdin-close (`$null | & $launcher …`): the fake devrig READS stdin and
+            // records whether it saw EOF (closed) or data. And a dot-sourced run (mimicking `irm | iex`)
+            // proves $ProgressPreference is restored to the caller's value (the #274 leak fix).
+            val fixturesDir = createInstallerWorkDir("installer-ps1-stdin-fixtures")
+            val devrigZip = File(fixturesDir, "devrig.zip").also { buildStdinProbeDevrigZip(it) }
+            val jdkZip = File(fixturesDir, "jdk.zip").also { buildFakeJdkZip(it) }
+            val devrigSha = sha256(devrigZip)
+            val jdkSha = sha256(jdkZip)
+            makeWorldReadable(fixturesDir)
+
+            val nginx = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest().image(NGINX_IMAGE).logPrefix("installer-ps1-stdin-nginx")
+                    .volumes(ContainerVolume(fixturesDir, "/usr/share/nginx/html", "ro")),
+            )
+            val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
+
+            val jdkEntryWin = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "zip", "jdk")
+            val jdkEntryPosix = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "tar.gz", "jdk")
+            val table = ALL_PLATFORMS.associateWith { key -> if (key.startsWith("windows-")) jdkEntryWin else jdkEntryPosix }
+            val devrig = DevrigEntry(
+                url = "http://$nginxIp/devrig.zip", sha256 = devrigSha,
+                launcherPosix = "devrig-$version/bin/devrig", launcherWindows = "devrig-$version/bin/devrig.bat",
+            )
+            val genDir = createInstallerWorkDir("installer-ps1-stdin-gen")
+            writeInstallerScripts(genDir.toPath(), table, devrig, version)
+            makeWorldReadable(genDir)
+
+            val install = startDockerContainerAndDispose(
+                lifetime,
+                StartContainerRequest().image(pwshImage).logPrefix("installer-pwsh-stdin")
+                    .volumes(ContainerVolume(genDir, "/gen", "ro"))
+                    .entryPoint("sh", "-c", "apt-get update -qq && apt-get install -y -qq curl >/dev/null 2>&1; mkdir -p \"$homeDir\"; sleep 3000"),
+            )
+            awaitCurlInstalled(install)
+
+            val env = mapOf("HOME" to homeDir, "USERPROFILE" to homeDir)
+            // (1) stdin close: the child devrig must see EOF, not block on / receive real input.
+            runInstall(install, env)
+                .assertExitCode(0) { "install.ps1 (stdin-probe devrig) failed:\n$this" }
+                .assertOutputContains("DEVRIG_STDIN_GOT_EOF", message = "devrig child must inherit a closed stdin (immediate EOF)")
+                .assertNoMessageInOutput("DEVRIG_STDIN_GOT_DATA")
+
+            // (2) progress restore: dot-source (as `iex` would) with a sentinel value and confirm it is
+            //     put back after the script completes — the caller's session must not leak SilentlyContinue.
+            val restore = install.startProcessInContainer {
+                args(
+                    "pwsh", "-NoProfile", "-NonInteractive", "-Command",
+                    "\$ProgressPreference='Continue'; . /gen/install.ps1; Write-Output \"PROGRESS_AFTER=\$ProgressPreference\"",
+                ).timeoutSeconds(300).description("dot-source install.ps1, check ProgressPreference restored").extraEnv(env)
+            }.awaitForProcessFinish()
+            restore.assertExitCode(0) { "dot-sourced install.ps1 failed:\n$this" }
+                .assertOutputContains("PROGRESS_AFTER=Continue", message = "install.ps1 must restore the caller's \$ProgressPreference (no session leak)")
+            log("stdin-close (EOF) + ProgressPreference-restore assertions passed under pwsh")
+        }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private fun runInstall(c: ContainerDriver, env: Map<String, String>): ProcessResult =
+    private fun runInstall(c: ContainerDriver, env: Map<String, String>, script: String = "/gen/install.ps1"): ProcessResult =
         c.startProcessInContainer {
-            args("pwsh", "-NoProfile", "-NonInteractive", "-File", "/gen/install.ps1")
+            args("pwsh", "-NoProfile", "-NonInteractive", "-File", script)
                 .timeoutSeconds(300).description("run generated install.ps1").extraEnv(env)
         }.awaitForProcessFinish()
 
@@ -231,6 +356,39 @@ class InstallerBootstrapPs1Test {
                 ZipArchiveEntry("devrig-$version/bin/devrig.bat").apply {
                     size = script.size.toLong()
                     unixMode = 0b111_101_101 // rwxr-xr-x — install.ps1 does NOT chmod after unpack
+                },
+            )
+            zip.write(script)
+            zip.closeArchiveEntry()
+        }
+    }
+
+    /**
+     * Variant fake devrig whose `install devrig` arm READS stdin and records what it saw:
+     * `DEVRIG_STDIN_GOT_EOF` (an already-closed stdin — the correct result of install.ps1's `$null |`)
+     * vs `DEVRIG_STDIN_GOT_DATA`. `read` on a closed stdin returns non-zero immediately, so the child
+     * never blocks; without the close it would hang and the test would time out.
+     */
+    private fun buildStdinProbeDevrigZip(target: File) {
+        val script = buildString {
+            append("#!/bin/sh\n")
+            append("if [ \"\$1\" = \"install\" ] && [ \"\$2\" = \"devrig\" ]; then\n")
+            append("  if IFS= read -r _line; then echo \"DEVRIG_STDIN_GOT_DATA \$_line\"; else echo \"DEVRIG_STDIN_GOT_EOF\"; fi\n")
+            append("  echo \"DEVRIG_INSTALL_DEVRIG \$*\"\n")
+            append("  exit 0\n")
+            append("fi\n")
+            append("echo \"DEVRIG_RAN \$*\"\n")
+            append("exit 0\n")
+        }.toByteArray()
+        ZipArchiveOutputStream(FileOutputStream(target)).use { zip ->
+            zip.putArchiveEntry(ZipArchiveEntry("devrig-$version/").apply { unixMode = 0b111_101_101 })
+            zip.closeArchiveEntry()
+            zip.putArchiveEntry(ZipArchiveEntry("devrig-$version/bin/").apply { unixMode = 0b111_101_101 })
+            zip.closeArchiveEntry()
+            zip.putArchiveEntry(
+                ZipArchiveEntry("devrig-$version/bin/devrig.bat").apply {
+                    size = script.size.toLong()
+                    unixMode = 0b111_101_101
                 },
             )
             zip.write(script)
