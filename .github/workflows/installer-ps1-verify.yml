@@ -1,0 +1,73 @@
+# Cross-OS validation for the generated installers (install.sh / install.ps1). Runs on EVERY branch
+# push so a template edit that would break the `curl | sh` / `irm | iex` bootstrap on a real OS is
+# caught before it lands — this is the check that would have caught jonnyzzz/mcp-steroid#273/#274.
+# (TeamCity is the internal home for the same suites; this GH lane keeps the public fork covered too.)
+#
+# Two lanes:
+#   * ubuntu-latest → :installer-gen:installerIntegrationTest (Linux Docker + pwsh 7.x)
+#   * windows-latest → :test-integration-agent-launch:test (Windows PowerShell 5.1 + pwsh)
+#
+# The Windows lane runs InstallerPs1ExecutionTest end-to-end under powershell.exe (the default shell
+# on Windows 10/11). Neither lane sets DEVRIG_OS / DEVRIG_CPU: both exercise the full auto-detect path.
+name: Installer PS1 Verify
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+concurrency:
+  # One run per ref; a newer push cancels the in-flight outdated run.
+  group: installer-ps1-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+# Opt JavaScript actions onto Node 24 to match the repo's other workflows.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  linux-docker:
+    name: linux-docker (pwsh 7.x)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - name: Run :installer-gen:installerIntegrationTest (sh + pwsh Docker)
+        shell: bash
+        run: ./gradlew :installer-gen:installerIntegrationTest --info --stacktrace
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-linux-docker
+          path: installer-gen/build/reports/**
+          if-no-files-found: warn
+
+  windows-native:
+    name: windows-native (PS 5.1 + pwsh)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      # Run the WHOLE task — no --tests scoping. Every test starts regardless of any single failure
+      # (JUnit runs them all; --continue keeps the Gradle run going past a failed task), so the
+      # install.ps1 tests this PR adds (InstallerPs1ExecutionTest + InstallerScriptTest) always
+      # execute and land in the uploaded report. The one intermittently-red case is
+      # ClaudeAgentLaunchTest.`hook-devrig-pattern - fires on both`: a timing race in the test's
+      # probe-log capture (the slow sh-script hook can lose the race against Claude's fast auth-fail
+      # exit) — tracked in jonnyzzz/mcp-steroid#283 and fixed there. NOT hidden here, and NOT gating
+      # this install.ps1 fix.
+      - name: Run :test-integration-agent-launch:test (native powershell.exe + pwsh)
+        shell: bash
+        run: ./gradlew :test-integration-agent-launch:test --continue --info --stacktrace
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-windows-native
+          path: test-integration-agent-launch/build/reports/**
+          if-no-files-found: warn
