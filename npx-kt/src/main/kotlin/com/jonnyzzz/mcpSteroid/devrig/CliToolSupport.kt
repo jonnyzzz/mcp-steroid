@@ -9,10 +9,10 @@ import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
@@ -26,39 +26,24 @@ import kotlinx.serialization.json.putJsonArray
  * reimplements it.
  */
 
-/** Meaningful, stable process exit codes shared by all tool-backed commands. */
+/** Stable process exit codes shared by tool-backed commands. */
 object CliExit {
     /** Success. */
     const val OK: Int = 0
 
-    /**
-     * The tool call reached its target but the tool itself reported `isError` (e.g. a script threw,
-     * a resource was missing). Distinct from a usage/infra failure so scripts can tell them apart.
-     */
+    /** The backend returned a [ToolCallResult] with `isError=true`. */
     const val TOOL_ERROR: Int = 1
 
     /** Bad invocation the user can fix: missing/blank required args, unknown project_name, malformed path. */
     const val USAGE: Int = 64
 
-    /**
-     * The command reached its target but the data it produced/received was unusable — e.g. the bridge
-     * returned a screenshot result with no image payload, or an image whose base64 could not be decoded.
-     * Distinct from [USAGE] (a fixable-input mistake) and [UNAVAILABLE] (could not reach a backend), so a
-     * `--json` consumer can tell "your fault" from "no IDE" from "bad data from the IDE".
-     * Value follows BSD sysexits `EX_DATAERR`.
-     */
+    /** The backend returned unusable data, such as an invalid image payload. */
     const val DATA_ERROR: Int = 65
 
     /** The command could not reach a backend / the bridge failed (no IDE running, connection refused). */
     const val UNAVAILABLE: Int = 69
 
-    /**
-     * A genuine filesystem I/O failure the invocation cannot fix by changing an argument — a readable
-     * `--code-file` path that fails mid-read, or an `--out` target that exists as a path string but
-     * cannot be written (a directory, a permission denial). Kept distinct from [USAGE] so a malformed
-     * *path string* (fixable) is not conflated with a real write/read failure. Value follows BSD
-     * sysexits `EX_IOERR`.
-     */
+    /** A filesystem read/write failure. */
     const val IO_ERROR: Int = 74
 }
 
@@ -88,20 +73,7 @@ fun stderrProgressReporter(err: PrintStream = System.err): McpProgressReporter =
         }
     }
 
-/**
- * Renders CLI output for a command as either a `--json` envelope or human-readable console text — the
- * single fork point for that choice. Each implementation owns its own branch body in full (Tenet: no
- * `if (json)` scattered through shared render code); [presentationFor] is the only place that maps the
- * `--json` flag onto a concrete implementation.
- *
- * Contract (locked by tests, matches the rest of devrig):
- *  - [Console]: non-error text content → **stdout** (so `| jq`, `| less` work); error content
- *    (`isError == true`) → **stderr**, stdout stays empty.
- *  - [Json]: a single stable envelope on stdout regardless of success/failure.
- *
- * [Console.imageDir] is a provider (not a value) so each render can resolve a fresh, possibly
- * lazily-created temp directory (C4) — production wires it to [HomePaths.screenshotTmpDir].
- */
+/** Renders tool results as either a JSON envelope or human-readable console output. */
 sealed interface Presentation {
     /** Renders a [ToolCallResult] for [command] and returns the process exit code. */
     fun render(result: ToolCallResult, command: String, out: PrintStream, err: PrintStream = System.err): Int
@@ -112,7 +84,7 @@ sealed interface Presentation {
     /** Renders a successful `take_screenshot` whose image was additionally saved to [savedOut]. */
     fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, out: PrintStream): Int
 
-    /** `--json`: a single stable envelope on stdout, built from [toEnvelopeJson] / [cliEnvelopeJson]. */
+    /** `--json`: one stable envelope on stdout. */
     class Json : Presentation {
         override fun render(result: ToolCallResult, command: String, out: PrintStream, err: PrintStream): Int {
             out.println(result.toEnvelopeJson(command))
@@ -142,12 +114,7 @@ sealed interface Presentation {
         }
     }
 
-    /**
-     * Human-readable console text. Image content (C4) is decoded and written to a file under
-     * [imageDir] — a provider (not a value) so each render resolves a fresh, possibly lazily-created,
-     * temp directory (production wires it to [HomePaths.screenshotTmpDir]) — and the file's absolute
-     * path is printed instead of a byte-count placeholder.
-     */
+    /** Human-readable output; image payloads are materialized under [imageDir]. */
     class Console(private val imageDir: () -> Path) : Presentation {
         override fun render(result: ToolCallResult, command: String, out: PrintStream, err: PrintStream): Int {
             val sink = if (result.isError) err else out
@@ -165,11 +132,6 @@ sealed interface Presentation {
             return if (result.isError) CliExit.TOOL_ERROR else CliExit.OK
         }
 
-        /**
-         * Decodes [item]'s base64 payload and writes it to `<imageDir>/image-<index>.<ext>`, printing the
-         * absolute path to [sink]. Undecodable base64 is logged to stderr (never silently swallowed) and
-         * reported as a clear, non-crashing console line — the render must still complete.
-         */
         private fun renderImage(item: ContentItem.Image, index: Int, sink: PrintStream) {
             val decoded = try {
                 Base64.getDecoder().decode(item.data)
@@ -182,7 +144,7 @@ sealed interface Presentation {
                 return
             }
             val ext = item.mimeType.substringAfterLast('/', "png")
-            val file = imageDir().resolve("image-$index.$ext")
+            val file = Files.createTempFile(imageDir(), "image-$index-", ".$ext")
             Files.write(file, decoded)
             sink.println("Saved image: ${file.toAbsolutePath()}")
         }
@@ -193,9 +155,6 @@ sealed interface Presentation {
         }
 
         override fun renderScreenshotSaved(result: ToolCallResult, savedOut: String, out: PrintStream): Int {
-            // The image was ALREADY written to the explicit --out path by the caller; strip image items
-            // before re-rendering so [renderImage] does not redundantly re-materialize a `<tmpDir>/image-*`
-            // file and print a spurious "Saved image:" line ahead of the "Saved --out:" note.
             val nonImage = result.content.filterNot { it is ContentItem.Image }
             val withNote = ToolCallResult(content = nonImage + ContentItem.Text("Saved --out: $savedOut"))
             return render(withNote, command = "take_screenshot", out = out)
@@ -206,28 +165,6 @@ sealed interface Presentation {
 /** Maps the `--json` flag onto a concrete [Presentation]; the only place the boolean is branched on. */
 fun presentationFor(json: Boolean, imageDir: () -> Path): Presentation =
     if (json) Presentation.Json() else Presentation.Console(imageDir)
-
-/**
- * Fallback [Presentation.Console] image-dir provider for callers with no [DevrigServices] in scope
- * (tests only — no production call site uses the shim below). Resolves the JVM temp dir, never the
- * real `user.home`, so an image-bearing [ToolCallResult] rendered through the shim cannot write into the
- * user's actual home directory.
- */
-private val defaultImageDir: () -> Path = { Path.of(System.getProperty("java.io.tmpdir")) }
-
-/**
- * Renders a [ToolCallResult] for a CLI command and returns the process exit code. Thin shim over
- * [presentationFor] kept for call sites/tests that don't have a [DevrigServices] receiver in scope; new
- * production call sites should build a [Presentation] once per command instead (see [ToolBackedCommands]).
- *
- * @param command the CLI subcommand name, echoed into the JSON envelope for context.
- */
-fun ToolCallResult.renderTo(
-    command: String,
-    json: Boolean,
-    out: PrintStream,
-    err: PrintStream = System.err,
-): Int = presentationFor(json, defaultImageDir).render(this, command, out, err)
 
 /**
  * The unified JSON envelope for all `devrig` CLI commands, shared across tool-backed subcommands.
@@ -255,19 +192,12 @@ fun cliEnvelopeJson(command: String, isError: Boolean, data: JsonObject): String
     return CLI_ENVELOPE_JSON.encodeToString(JsonObject.serializer(), payload)
 }
 
-/** Envelope for a [ToolCallResult]: `data:{content:[...]}`, native [ContentItem] serialization. */
+/** Envelope for a [ToolCallResult]: `data:{content:[...]}`. */
 fun ToolCallResult.toEnvelopeJson(command: String): String =
     cliEnvelopeJson(command, isError, contentDataJson())
 
-/**
- * Builds the `data:{content:[...]}` object for a [ToolCallResult] — the same payload
- * [toEnvelopeJson] wraps, but exposed so a command can merge command-specific keys alongside it.
- *
- * `content` is [ContentItem]'s own `@Serializable` shape, encoded via [McpJson] (the same
- * `classDiscriminator = "type"` config the wire protocol uses) — not a hand-built second copy.
- * Image items therefore carry `data` (base64) as-is, and resource items serialize to their native
- * `{type:"resource","resource":{...}}` shape (C6, C7).
- */
+/** Extracts native serialized `content` for command-specific envelopes. */
 fun ToolCallResult.contentDataJson(): JsonObject = buildJsonObject {
-    put("content", McpJson.encodeToJsonElement(ListSerializer(ContentItem.serializer()), content))
+    val native = McpJson.encodeToJsonElement(ToolCallResult.serializer(), this@contentDataJson).jsonObject
+    put("content", native.getValue("content"))
 }

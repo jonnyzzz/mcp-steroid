@@ -44,7 +44,7 @@ class FeedbackAndInputCommandTest {
     }
 
     @Test
-    fun `input forwards the raw sequence verbatim and leaves parsing to the IDE`() {
+    fun `input forwards the raw sequence verbatim for plugin version skew`() {
         val rec = RecordingInput()
         val cmd = DevrigCommand.DevrigCommandInput(
             projectName = "k", windowId = "win-1", taskId = "t", reason = "r",
@@ -55,7 +55,7 @@ class FeedbackAndInputCommandTest {
         assertEquals("k", rec.projectName)
         assertEquals("win-1", rec.params!!.windowId)
         assertEquals("press:CTRL+P, type:Main, delay:200, press:ENTER", rec.params!!.rawSequence)
-        assertTrue(rec.params!!.sequence.isEmpty(), "the CLI does not pre-parse; the IDE re-parses rawSequence")
+        assertTrue(rec.params!!.sequence.isEmpty(), "the plugin parses rawSequence using its own version")
     }
 
     // ------------------------- --project_name cwd inference (issue #266 part 2) -------------------------

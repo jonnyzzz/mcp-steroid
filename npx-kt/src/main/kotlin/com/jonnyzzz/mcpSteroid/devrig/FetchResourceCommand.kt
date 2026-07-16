@@ -1,23 +1,28 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.devrig.server.callToolViaSpec
 import com.jonnyzzz.mcpSteroid.devrig.server.DevrigPromptsContextHandler
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
-import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
+import com.jonnyzzz.mcpSteroid.server.FetchResourceToolHandler
+import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
 import com.jonnyzzz.mcpSteroid.server.canonicalResourceEntryPoints
-import com.jonnyzzz.mcpSteroid.server.resolveResourceArticle
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * `devrig prompt <uri>` / `devrig fetch_resource --uri=...` — the CLI face of `steroid_fetch_resource`.
  *
  * Bundled `mcp-steroid://` articles ship inside the devrig binary, so this resolves **without a
  * running IDE** using [PromptsContext.Generic]. Passing `--project_name` upgrades to that project's
- * IDE-specific context via the existing routing + [DevrigPromptsContextHandler] (which needs the IDE
- * to be discovered). URI → article resolution is the shared [resolveResourceArticle] — the same code
- * the MCP tool uses, so both surfaces render identically.
+ * IDE-specific context via the existing routing + [DevrigPromptsContextHandler]. Calls are dispatched
+ * through [FetchResourceToolHandler], the same ToolSpec used by `devrig mcp`.
  */
 fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandFetchResource): Int {
     val presentation = presentationFor(command.json, homePaths::screenshotTmpDir)
@@ -30,50 +35,57 @@ fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandF
         )
     }
 
-    val context = try {
-        resolvePromptsContext(command.projectName)
-    } catch (e: PromptsContextResolutionException) {
-        return presentation.renderError(
-            command.commandName, e.message ?: "failed to resolve project context",
-            CliExit.USAGE, mcpStdout,
-        )
-    }
-
-    val article = resolveResourceArticle(uri, context)
-    val result = if (article != null) {
-        ToolCallResult(content = listOf(ContentItem.Text(text = article.readPayload(context))))
+    val projectName = command.projectName?.takeUnless { it.isBlank() }
+    val contextHandler: PromptsContextHandler = if (projectName == null) {
+        FixedPromptsContextHandler(PromptsContext.Generic)
     } else {
-        ToolCallResult.errorResult(resourceNotFoundMessage(uri))
+        DevrigPromptsContextHandler(projectRouting)
     }
-    // Echo the alias the user actually typed ("prompt" vs "fetch_resource") into the `--json` envelope.
-    return presentation.render(result, command = command.commandName, out = mcpStdout)
-}
-
-/**
- * Resolves the [PromptsContext] for a resource fetch. No project → [PromptsContext.Generic] (bundled
- * docs, no IDE needed). With a project → that project's IDE build → context, reusing the same routing
- * the other CLI/MCP commands use.
- */
-private fun DevrigServices.resolvePromptsContext(projectName: String?): PromptsContext {
-    if (projectName.isNullOrBlank()) return PromptsContext.Generic
-    val route = try {
-        projectRouting.requireProject(projectName)
+    val arguments = buildJsonObject {
+        put("uri", uri)
+        put("project_name", projectName ?: GENERIC_PROJECT_NAME)
+    }
+    val result = try {
+        runBlocking(Dispatchers.IO) {
+            callToolViaSpec(
+                FetchResourceToolHandler { contextHandler },
+                arguments,
+                stderrProgressReporter(),
+            )
+        }
     } catch (e: IllegalArgumentException) {
-        throw PromptsContextResolutionException(
-            "unknown --project_name '$projectName' (get it from `devrig list_projects`)"
+        return presentation.renderError(
+            command.commandName,
+            "unknown --project_name '$projectName' (get it from `devrig list_projects`)",
+            CliExit.USAGE,
+            mcpStdout,
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        return presentation.renderError(
+            command.commandName,
+            "devrig ${command.commandName} failed: ${e.message}",
+            CliExit.UNAVAILABLE,
+            mcpStdout,
         )
     }
-    return DevrigPromptsContextHandler.promptsContextFromRoute(route)
+    val rendered = if (result.isError) result.withResourceEntryPointHints() else result
+    return presentation.render(rendered, command = command.commandName, out = mcpStdout)
 }
 
-private class PromptsContextResolutionException(message: String) : RuntimeException(message)
+private class FixedPromptsContextHandler(private val context: PromptsContext) : PromptsContextHandler {
+    override suspend fun buildPromptsContext(projectName: String): PromptsContext = context
+}
 
-private fun resourceNotFoundMessage(uri: String): String = buildString {
-    append("Resource not found: ").append(uri).append('\n')
-    append("Canonical entry points:\n")
-    for (entry in canonicalResourceEntryPoints()) {
-        append("  devrig prompt ").append(entry.uri).append('\n')
+private fun ToolCallResult.withResourceEntryPointHints(): ToolCallResult {
+    val hints = buildString {
+        append("Canonical entry points:\n")
+        for (entry in canonicalResourceEntryPoints()) {
+            append("  devrig prompt ").append(entry.uri).append('\n')
+        }
     }
+    return copy(content = content + ContentItem.Text(hints))
 }
 
 /** A runnable example for the `prompt` usage error — built from generated article URIs, never a literal. */
@@ -82,3 +94,5 @@ fun fetchResourceUsageExample(): String = "devrig prompt ${canonicalResourceEntr
 /** First canonical entry-point URI, or a bracket placeholder if the article index is somehow empty. */
 fun canonicalResourceEntryPointOrPlaceholder(): String =
     canonicalResourceEntryPoints().firstOrNull()?.uri ?: "<resource-uri>"
+
+private const val GENERIC_PROJECT_NAME = "devrig-cli-generic"

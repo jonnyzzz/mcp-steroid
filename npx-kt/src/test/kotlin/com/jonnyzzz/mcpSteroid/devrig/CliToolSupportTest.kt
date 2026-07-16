@@ -15,17 +15,18 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.util.Base64
 
-/** Pins the shared [renderTo] / [toEnvelopeJson] contract reused by every tool-backed command. */
+/** Pins the shared [Presentation] / [toEnvelopeJson] contract reused by every tool-backed command. */
 class CliToolSupportTest {
 
     private fun buffers() = ByteArrayOutputStream() to ByteArrayOutputStream()
     private fun ByteArrayOutputStream.text() = toString(Charsets.UTF_8).replace("\r\n", "\n")
+    private fun console() = Presentation.Console { java.nio.file.Files.createTempDirectory("cli-render") }
 
     @Test
     fun `success text goes to stdout with exit OK`() {
         val (out, err) = buffers()
         val result = ToolCallResult(content = listOf(ContentItem.Text("hello world")))
-        val exit = result.renderTo("demo", json = false, out = PrintStream(out), err = PrintStream(err))
+        val exit = console().render(result, "demo", PrintStream(out), PrintStream(err))
         assertEquals(CliExit.OK, exit)
         assertEquals("hello world", out.text().trim())
         assertEquals("", err.text())
@@ -35,7 +36,7 @@ class CliToolSupportTest {
     fun `error content goes to stderr and stdout stays clean`() {
         val (out, err) = buffers()
         val result = ToolCallResult(content = listOf(ContentItem.Text("ERROR: boom")), isError = true)
-        val exit = result.renderTo("demo", json = false, out = PrintStream(out), err = PrintStream(err))
+        val exit = console().render(result, "demo", PrintStream(out), PrintStream(err))
         assertEquals(CliExit.TOOL_ERROR, exit)
         assertEquals("", out.text())
         assertTrue(err.text().contains("boom"))

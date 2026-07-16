@@ -13,12 +13,12 @@ import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolSpec
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolSpec
-import com.jonnyzzz.mcpSteroid.server.InputParams
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
-import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
+import com.jonnyzzz.mcpSteroid.server.OpenProjectToolSpec
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
+import com.jonnyzzz.mcpSteroid.server.VisionInputToolSpec
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolSpec
 import java.io.IOException
@@ -62,6 +62,10 @@ private inline fun DevrigServices.runToolCall(
         )
     } catch (e: CancellationException) {
         throw e
+    } catch (e: IllegalArgumentException) {
+        return presentation.renderError(
+            commandName, "devrig $commandName: ${e.message}", CliExit.USAGE, mcpStdout,
+        )
     } catch (e: Exception) {
         return presentation.renderError(
             commandName, "devrig $commandName failed to reach a backend: ${e.message}",
@@ -164,10 +168,7 @@ fun DevrigServices.runExecuteCodeCommand(
     } catch (e: CodeArgException) {
         return presentation.renderCodeArgFailure("execute_code", e, mcpStdout)
     }
-    // Map the CLI flags → tool-call JSON arguments; ExecuteCodeToolSpec.call() re-parses them into
-    // ExecCodeParams (single source of truth), rather than the CLI rebuilding *Params by hand (C9/C15).
-    // --modal is validated at parse time (ExecuteCodeCliCommand), so a bad value never reaches here; when
-    // omitted the spec applies its own default (SMART_NON_MODAL == ModalMode.DEFAULT), preserving behavior.
+    // ToolSpec owns parameter parsing and defaults; the CLI only maps its flags to JSON.
     val arguments = buildJsonObject {
         put("project_name", projectName)
         put("code", code)
@@ -208,11 +209,7 @@ fun DevrigServices.runFeedbackCommand(
     } catch (e: CodeArgException) {
         return presentation.renderCodeArgFailure("execute_feedback", e, mcpStdout)
     }
-    // Map the CLI flags → tool-call JSON arguments; ExecuteFeedbackToolSpec.call() re-parses them into
-    // FeedbackParams and calls the handler (C9/C15). All required fields (project_name, task_id,
-    // success_rating in range, explanation) are already enforced at parse time (FeedbackCliCommand), so
-    // the spec's equivalent guards never fire — behavior is preserved. execution_id is intentionally NOT
-    // forwarded (parity with the MCP surface). `code` is optional and omitted when absent.
+    // execution_id is accepted by the CLI for compatibility but is not part of FeedbackParams.
     val arguments = buildJsonObject {
         put("project_name", projectName)
         put("task_id", command.taskId!!)
@@ -243,38 +240,21 @@ fun DevrigServices.runInputCommand(
     } catch (e: CodeArgException) {
         return presentation.renderCodeArgFailure("input", e, mcpStdout)
     }
-    // Forward the RAW sequence verbatim — the IDE is the SINGLE source of truth for input syntax. devrig
-    // deliberately does NOT re-parse/validate the sequence: a newer plugin may accept steps this devrig's
-    // parser wouldn't recognize, so client-side rejection would strand a valid call on version skew.
-    val params = InputParams(
-        taskId = command.taskId!!,
-        reason = command.reason!!,
-        windowId = command.windowId!!,
-        sequence = emptyList(),
-        rawSequence = command.sequence,
-    )
-    // The IDE's parse failure is returned as an isError result whose text is a full server stack trace;
-    // sanitize THAT (strip JVM frames) so the agent sees the message, not a leaked trace. Scoped to
-    // input — never execute_code, whose trace is the agent's own script (see sanitizeServerError).
-    val result = try {
-        runBlocking(Dispatchers.IO) {
-            tools.handler<VisionInputToolHandler>().handleInputSequence(projectName, params)
-        }
-    } catch (e: ProjectRouteNotFoundException) {
-        return presentation.renderError(
-            "input", "${e.message} — run `devrig list_projects` to see valid project_name keys",
-            CliExit.USAGE, mcpStdout,
-        )
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        return presentation.renderError(
-            "input", "devrig input failed to reach a backend: ${e.message}",
-            CliExit.UNAVAILABLE, mcpStdout,
-        )
+    val arguments = buildJsonObject {
+        put("project_name", projectName)
+        put("task_id", command.taskId!!)
+        put("reason", command.reason!!)
+        put("window_id", command.windowId!!)
+        put("sequence", command.sequence)
     }
-    val rendered = if (result.isError) result.sanitizeErrorContent() else result
-    return presentation.render(rendered, command = "input", out = mcpStdout)
+    return runToolCall("input", presentation, tools) { t ->
+        val result = callToolViaSpec(
+            VisionInputToolSpec(parseSequence = false) { t.handler<VisionInputToolHandler>() },
+            arguments,
+            stderrProgressReporter(),
+        )
+        if (result.isError) result.sanitizeErrorContent() else result
+    }
 }
 
 /** Returns a copy with every Text content item's stack-frame noise stripped ([sanitizeServerError]). */
@@ -298,9 +278,7 @@ fun DevrigServices.runScreenshotCommand(
     } catch (e: CodeArgException) {
         return presentation.renderCodeArgFailure("take_screenshot", e, mcpStdout)
     }
-    // Map the CLI flags → tool-call JSON arguments; VisionScreenshotToolSpec.call() re-parses them into
-    // ScreenshotParams and calls the handler (C9/C15). window_id is optional and omitted when absent. The
-    // --out post-write below stays a CLI-only affordance around the call.
+    // --out remains a CLI-only post-processing step around the shared ToolSpec call.
     val arguments = buildJsonObject {
         put("project_name", projectName)
         put("task_id", command.taskId!!)
@@ -335,9 +313,7 @@ fun DevrigServices.runScreenshotCommand(
         return presentation.render(result, command = "take_screenshot", out = mcpStdout)
     }
 
-    // --out requested: strict contract (finding #6) — exit 0 ONLY when the file is actually written.
-    // A result with no image, or an undecodable image, is a data error (65), not a silent success; a
-    // malformed --out path string is a usage error (64); a real write failure is an I/O error (74).
+    // With --out, success means an image was decoded and written.
     val image = result.content.filterIsInstance<ContentItem.Image>().firstOrNull()
         ?: return presentation.renderError(
             "take_screenshot",
@@ -393,10 +369,7 @@ fun DevrigServices.runOpenProjectCommand(
     waitIntervalMs: Long = 2000,
 ): Int {
     val presentation = presentationFor(command.json)
-    // Resolve a relative --project_path against the caller's cwd into an absolute path. Previously a
-    // relative path (e.g. `.`) was resolved by the backend against `/`, silently opening the wrong
-    // project — the one genuinely dangerous Round-4 finding. A malformed path STRING is a fixable
-    // usage error (enveloped, not a stack trace propagated to Main).
+    // Resolve relative paths against the caller's cwd before dispatch.
     val absoluteProjectPath = try {
         Path.of(command.projectPath!!).toAbsolutePath().normalize().toString()
     } catch (e: InvalidPathException) {
@@ -405,14 +378,23 @@ fun DevrigServices.runOpenProjectCommand(
             CliExit.USAGE, mcpStdout,
         )
     }
-    val params = OpenProjectParams(
-        projectPath = absoluteProjectPath,
-        trustProject = command.trustProject,
-        backendName = command.backendName,
-    )
+    val arguments = buildJsonObject {
+        put("project_path", absoluteProjectPath)
+        put("task_id", command.taskId!!)
+        put("reason", command.reason!!)
+        put("trust_project", command.trustProject)
+        command.backendName?.let { put("backend_name", it) }
+    }
     val result = try {
         runBlocking(Dispatchers.IO) {
-            tools.handler<OpenProjectToolHandler>().handleOpenProject(params, stderrProgressReporter())
+            callToolViaSpec(
+                OpenProjectToolSpec(
+                    includeBackendName = true,
+                    validateProjectPath = false,
+                ) { tools.handler<OpenProjectToolHandler>() },
+                arguments,
+                stderrProgressReporter(),
+            )
         }
     } catch (e: CancellationException) {
         throw e
@@ -428,10 +410,7 @@ fun DevrigServices.runOpenProjectCommand(
         return presentation.render(result, command = "open_project", out = mcpStdout)
     }
 
-    // --wait: poll list_windows until the freshly-opened project is ready BEFORE emitting any stdout, so
-    // exactly ONE final envelope reflects the command's true outcome. Poll progress + transient poll
-    // failures go to stderr; the readiness contract is unchanged (initialized, not indexing, no modal).
-    // A timeout is a genuine failure — stdout gets a single isError envelope, never a stale success one.
+    // Delay stdout until --wait knows the final outcome, preserving one JSON envelope per invocation.
     val ready = waitForProjectReady(absoluteProjectPath, tools, attempts = waitAttempts, intervalMs = waitIntervalMs)
     if (!ready) {
         return presentation.renderError(

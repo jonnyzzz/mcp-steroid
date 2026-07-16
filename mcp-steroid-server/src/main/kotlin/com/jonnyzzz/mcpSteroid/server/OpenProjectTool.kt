@@ -31,6 +31,7 @@ import kotlinx.serialization.Serializable
  */
 class OpenProjectToolSpec(
     val includeBackendName: Boolean = false,
+    val validateProjectPath: Boolean = true,
     val handler: () -> OpenProjectToolHandler,
 ) : McpToolBase() {
     private val logger = thisLogger()
@@ -88,18 +89,20 @@ class OpenProjectToolSpec(
             return ToolCallResult.errorResult("Invalid project path: $projectPathStr - ${e.message}")
         }
 
-        // Validate that the path exists
-        if (!Files.isDirectory(requestedProjectPath)) {
-            return ToolCallResult.errorResult("Project path is not a directory: $requestedProjectPath")
-        }
-
-        val projectPath = try {
-            withContext(Dispatchers.IO) {
-                requestedProjectPath.toRealPath()
+        val projectPath = if (validateProjectPath) {
+            if (!Files.isDirectory(requestedProjectPath)) {
+                return ToolCallResult.errorResult("Project path is not a directory: $requestedProjectPath")
             }
-        } catch (e: Exception) {
-            logger.warn("Failed to resolve project path: $requestedProjectPath", e)
-            return ToolCallResult.errorResult("Failed to resolve project path: $requestedProjectPath - ${e.message}")
+            try {
+                withContext(Dispatchers.IO) {
+                    requestedProjectPath.toRealPath()
+                }
+            } catch (e: Exception) {
+                logger.warn("Failed to resolve project path: $requestedProjectPath", e)
+                return ToolCallResult.errorResult("Failed to resolve project path: $requestedProjectPath - ${e.message}")
+            }
+        } else {
+            requestedProjectPath
         }
 
         return handler().handleOpenProject(

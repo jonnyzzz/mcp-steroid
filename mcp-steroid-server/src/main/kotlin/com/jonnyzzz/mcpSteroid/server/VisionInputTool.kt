@@ -17,7 +17,10 @@ import kotlinx.serialization.Serializable
 /**
  * Handler for the steroid_input MCP tool.
  */
-class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBase() {
+class VisionInputToolSpec(
+    val parseSequence: Boolean = true,
+    val handler: () -> VisionInputToolHandler,
+) : McpToolBase() {
     override val name = "steroid_input"
 
     override val description = """
@@ -66,8 +69,8 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
         val windowId = context[windowId]
         val sequence = context[sequence]
 
-        val parsed = InputSequenceParser().parse(sequence)
-        if (parsed.filterIsInstance<InputStep.Click>().any { it.target is InputTarget.Unsupported }) {
+        val parsed = if (parseSequence) InputSequenceParser().parse(sequence) else emptyList()
+        if (parseSequence && parsed.filterIsInstance<InputStep.Click>().any { it.target is InputTarget.Unsupported }) {
             throw IllegalArgumentException("Unsupported target in sequence. Only screenshot/screen targets are supported.")
         }
 
