@@ -26,13 +26,14 @@ const val INSTALL_CHECK_DRIFT_EXIT_CODE = 1
  * does ONLY that — no agent registration. Quiet: best-effort registration, one confirmation line.
  *
  * **Non-interactive contract.** This command is invoked by the generated bootstrap installers
- * (`install.sh` / `install.ps1`) which are themselves piped from `curl | sh` / `irm | iex`. Those
- * installers hand it an already-CLOSED stdin (`< /dev/null` on POSIX, `$null |` on PowerShell) precisely
- * because the bootstrap's own stdin is a pipe still open to the outer shell — a subprocess that read it
- * would hang forever with no user recourse. So this code path (and everything it calls) MUST be fully
- * non-interactive: NO stdin reads, NO prompts, NO `Console.readLine` / `readln`. Every input arrives as
- * an explicit flag; any missing input must fail fast (return non-zero) rather than block waiting for a
- * user who cannot answer.
+ * (`install.sh` / `install.ps1`), typically run as `curl | sh` / `irm | iex`. Those installers hand it a
+ * stdin that reads EOF immediately (`< /dev/null` on POSIX, `$null |` on PowerShell) so it can never
+ * inherit a live input stream: on POSIX the `sh` process's own stdin is the pipe from `curl`, and on
+ * Windows the child would otherwise inherit the caller's PowerShell host stdin. In either shape a
+ * subprocess that read stdin — or waited on a prompt — could block with no user recourse. So this code
+ * path (and everything it calls) MUST be fully non-interactive: NO stdin reads, NO prompts, NO
+ * `Console.readLine` / `readln`. Every input arrives as an explicit flag; any missing input must fail
+ * fast (return non-zero) rather than block waiting for a user who cannot answer.
  */
 fun DevrigServices.runInstallDevrigCommand(command: DevrigCommand.DevrigCommandInstallDevrig): Int {
     val installScript = command.installScript
