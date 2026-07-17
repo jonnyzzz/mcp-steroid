@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.onboarding
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -37,8 +36,11 @@ fun devrigInstalled(userHome: Path, windows: Boolean): Boolean {
 /** Locate the `claude` CLI: scan PATH entries, then fall back to ~/.local/bin. Null if not found. */
 fun findClaudeBinary(pathEnv: String?, userHome: Path, windows: Boolean): Path? {
     val names = if (windows) listOf("claude.exe", "claude.cmd", "claude.bat") else listOf("claude")
+    // Derive the PATH separator from the `windows` parameter — NOT File.pathSeparatorChar (runtime OS),
+    // so the function stays OS-pure and testable for either OS on any host.
+    val pathSeparator = if (windows) ';' else ':'
     val dirs = buildList {
-        pathEnv?.split(File.pathSeparatorChar)?.forEach { entry ->
+        pathEnv?.split(pathSeparator)?.forEach { entry ->
             if (entry.isNotBlank()) add(Path.of(entry))
         }
         add(userHome.resolve(".local").resolve("bin"))
