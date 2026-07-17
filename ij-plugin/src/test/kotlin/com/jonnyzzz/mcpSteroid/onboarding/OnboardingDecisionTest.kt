@@ -22,6 +22,10 @@ class OnboardingDecisionTest {
         assertEquals(OnboardingDecision.OFFER_ENABLE, decideOnboarding(devrigInstalled = true, claudePresent = true, claudePluginEnabled = false))
         // Agent present, plugin key set but devrig missing -> still offer enable (install devrig).
         assertEquals(OnboardingDecision.OFFER_ENABLE, decideOnboarding(devrigInstalled = false, claudePresent = true, claudePluginEnabled = true))
+        // Remaining combinations of the 8 (devrigInstalled x claudePresent x claudePluginEnabled) truth table.
+        assertEquals(OnboardingDecision.OFFER_GET_AGENT, decideOnboarding(devrigInstalled = false, claudePresent = false, claudePluginEnabled = true))
+        assertEquals(OnboardingDecision.OFFER_ENABLE, decideOnboarding(devrigInstalled = false, claudePresent = true, claudePluginEnabled = false))
+        assertEquals(OnboardingDecision.OFFER_GET_AGENT, decideOnboarding(devrigInstalled = true, claudePresent = false, claudePluginEnabled = false))
     }
 
     @Test
@@ -51,6 +55,21 @@ class OnboardingDecisionTest {
         val localBin = Files.createDirectories(home.resolve(".local").resolve("bin"))
         val fallback = Files.createFile(localBin.resolve("claude"))
         assertEquals(fallback, findClaudeBinary(pathEnv = "", userHome = home, windows = false))
+    }
+
+    @Test
+    fun `findClaudeBinary splits a semicolon-separated PATH on windows`() {
+        val home = Files.createTempDirectory("home-win")
+        val dir1 = Files.createTempDirectory("p1-win")
+        val dir2 = Files.createTempDirectory("p2-win")
+        val claudeExe = Files.createFile(dir2.resolve("claude.exe"))
+
+        // If ':' were used as the separator (runtime-OS default), this would be parsed as a single
+        // malformed entry and claude.exe would never be found.
+        assertEquals(
+            claudeExe,
+            findClaudeBinary(pathEnv = "${dir1};${dir2}", userHome = home, windows = true),
+        )
     }
 
     @Test
