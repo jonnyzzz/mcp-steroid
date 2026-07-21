@@ -18,9 +18,9 @@ Tasks:
    - highlights
    - release notes summary
    - download links (if available)
-   - EULA link to https://mcp-steroid.jonnyzzz.com/LICENSE
+   - EULA link to https://devrig.dev/LICENSE
 4. Keep existing site style and conventions.
-5. All links to our own resources MUST use full URLs (https://mcp-steroid.jonnyzzz.com/...), never relative paths. Release pages are also shown on GitHub where relative links break.
+5. All links to our own resources MUST use full URLs (https://devrig.dev/...), never relative paths. Release pages are also shown on GitHub where relative links break.
 5. Do not run publish/deploy.
 
 After edits:

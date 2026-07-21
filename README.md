@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://mcp-steroid.jonnyzzz.com">Website</a> &bull;
+  <a href="https://devrig.dev">Website</a> &bull;
   <a href="https://www.youtube.com/playlist?list=PLitZWClhc4Qgz3w8qrtctMR_lpIc81n0f">Demo Videos</a> &bull;
   <a href="https://jonnyzzz.com/blog/2026/04/07/mcp-steroid-open-source/">Blog Post</a> &bull;
   <a href="https://discord.gg/e9qgQ7NeTC">Discord</a>
@@ -32,7 +32,7 @@
 
 Unlike file-only assistants, MCP Steroid gives AI agents the same capabilities developers use: semantic code understanding, advanced refactorings, debugging, test running, visual awareness, and the entire IntelliJ API surface.
 
-There are **two ways to run it**. Start with the new **[`devrig`](https://mcp-steroid.jonnyzzz.com/docs/devrig/) CLI** (preview): a standalone tool that bridges any MCP-capable agent into a real IntelliJ-family IDE over stdio — through one bridge it connects to **every IDE you already have open at once** (across projects), or **downloads, installs, and starts one for the agent** (great for headless, CI, and fresh machines). Or run the **JetBrains IDE plugin** in-IDE over HTTP. The project is gradually moving toward the **Devrig** name.
+There are **two ways to run it**. Start with the new **[`devrig`](https://devrig.dev/docs/devrig/) CLI** (preview): a standalone tool that bridges any MCP-capable agent into a real IntelliJ-family IDE over stdio — through one bridge it connects to **every IDE you already have open at once** (across projects), or **downloads, installs, and starts one for the agent** (great for headless, CI, and fresh machines). Or run the **JetBrains IDE plugin** in-IDE over HTTP. The project is gradually moving toward the **Devrig** name.
 
 ### One bridge, every IDE
 
@@ -82,7 +82,7 @@ Search for **MCP Steroid** in **Settings > Plugins > Marketplace**, or install f
 Add this URL in **Settings > Plugins > Gear icon > Manage Plugin Repositories...**:
 
 ```
-https://mcp-steroid.jonnyzzz.com/updatePlugins.xml
+https://devrig.dev/updatePlugins.xml
 ```
 
 ### Manual Download
@@ -93,7 +93,7 @@ Download the latest ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-s
 
 ## Connect Your AI Agent
 
-**[`devrig`](https://mcp-steroid.jonnyzzz.com/docs/devrig/)** is the standalone CLI for connecting agents to MCP Steroid. It runs a stdio MCP bridge and connects your agent to **every running IntelliJ instance at once** (across projects), discovered automatically — and when none is open it can **download, prepare, and start a managed IDE backend** for the agent (IDEA Community/Ultimate, PyCharm, Android Studio). It's the recommended way to wire up Claude Code, Codex CLI, and Gemini CLI — one registration per agent, applies to every project on the machine.
+**[`devrig`](https://devrig.dev/docs/devrig/)** is the standalone CLI for connecting agents to MCP Steroid. It runs a stdio MCP bridge and connects your agent to **every running IntelliJ instance at once** (across projects), discovered automatically — and when none is open it can **download, prepare, and start a managed IDE backend** for the agent (IDEA Community/Ultimate, PyCharm, Android Studio). It's the recommended way to wire up Claude Code, Codex CLI, and Gemini CLI — one registration per agent, applies to every project on the machine.
 
 > **Requirement: JDK 25.** `devrig` is a Kotlin/JVM application and is **not** bundled with a JRE. A **JDK/JRE 25** is the supported runtime and must be available on the machine that runs it — either on `PATH` or via `JAVA_HOME` (the `devrig` launcher honours `JAVA_HOME` first). The binaries target **Java 21 bytecode** (class-file v65 — so the IDE plugin also loads in JBR-21 IDEs like Android Studio, and a Java 21+ runtime technically works), but JDK 25 is what the installer provisions and what we test against. A Java older than 21 fails at startup with `UnsupportedClassVersionError ... class file version 65.0`. Install e.g. [Amazon Corretto 25](https://aws.amazon.com/corretto/) or [Eclipse Temurin 25](https://adoptium.net/), and point `JAVA_HOME` at it if your default `java` is older.
 
@@ -208,7 +208,7 @@ MCP Steroid can be configured via IntelliJ's Registry (`Help > Find Action > Reg
 | `mcp.steroid.server.host` | 127.0.0.1 | Bind address (use 0.0.0.0 for Docker) |
 | `mcp.steroid.storage.path` | (empty) | Custom storage path (default: .idea/mcp-steroid/) |
 
-See the full [Configuration Documentation](https://mcp-steroid.jonnyzzz.com/docs/configuration/) on the website.
+See the full [Configuration Documentation](https://devrig.dev/docs/configuration/) on the website.
 
 ---
 
@@ -254,7 +254,7 @@ MCP Steroid is open-source software licensed under the [Apache License 2.0](LICE
 
 ## Links
 
-- **Website:** [mcp-steroid.jonnyzzz.com](https://mcp-steroid.jonnyzzz.com)
+- **Website:** [devrig.dev](https://devrig.dev)
 - **JetBrains Marketplace:** [plugins.jetbrains.com](https://plugins.jetbrains.com/plugin/30019-mcp-steroid)
 - **Discord:** [discord.gg/e9qgQ7NeTC](https://discord.gg/e9qgQ7NeTC)
 - **GitHub Issues:** [github.com/jonnyzzz/mcp-steroid/issues](https://github.com/jonnyzzz/mcp-steroid/issues)

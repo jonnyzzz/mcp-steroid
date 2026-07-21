@@ -137,7 +137,7 @@ This ensures `updatePlugins.xml` always matches the published artifact. Always p
 
 Requirements: `gh` CLI (authenticated), `uv` (Python runner).
 
-Custom plugin repository URL: `https://mcp-steroid.jonnyzzz.com/updatePlugins.xml`
+Custom plugin repository URL: `https://devrig.dev/updatePlugins.xml`
 
 ### Post-Release Checklist
 

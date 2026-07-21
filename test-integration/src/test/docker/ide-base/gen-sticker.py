@@ -107,7 +107,7 @@ TAGLINE_Y = 258
 CREDIT_Y = 282
 
 # QR code
-QR_URL = "https://mcp-steroid.jonnyzzz.com/#qr1"
+QR_URL = "https://devrig.dev/#qr1"
 
 # ----- Collect all boundary points (v5: text-only) -----
 boundary = []

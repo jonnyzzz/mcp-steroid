@@ -5,7 +5,7 @@ The MCP Steroid plugin includes an automatic update checker that notifies users 
 ## Overview
 
 The update checker:
-- Fetches version information from `https://mcp-steroid.jonnyzzz.com/version.json`
+- Fetches version information from `https://devrig.dev/version.json`
 - Compares the remote version with the currently installed plugin version
 - Shows a balloon notification **once per IDE session** when a newer version is detected
 - Continues checking periodically even after detecting an update (so the check doesn't stop)
@@ -15,7 +15,7 @@ The update checker:
 The plugin checks the following endpoint:
 
 ```
-GET https://mcp-steroid.jonnyzzz.com/version.json?intellij-version=<IJ-BUILD>
+GET https://devrig.dev/version.json?intellij-version=<IJ-BUILD>
 ```
 
 ### Query Parameters
@@ -127,7 +127,7 @@ checker.updateDetected // Whether an update was found
                   │
                   ▼
 ┌─────────────────────────────────────┐
-│  https://mcp-steroid.jonnyzzz.com  │
+│  https://devrig.dev  │
 │         /version.json               │
 └─────────────────────────────────────┘
 ```
