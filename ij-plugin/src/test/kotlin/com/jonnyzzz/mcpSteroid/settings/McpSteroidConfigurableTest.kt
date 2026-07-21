@@ -53,7 +53,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             assertContainsText(texts, "devrig install claude")
 
             // The panel still links to the devrig documentation.
-            assertEquals("https://mcp-steroid.jonnyzzz.com/docs/devrig/", McpSteroidConfigurable.DEVRIG_DOCS_URL)
+            assertEquals("https://devrig.dev/docs/devrig/", McpSteroidConfigurable.DEVRIG_DOCS_URL)
 
             // The legacy HTTP examples must carry a "not recommended" warning steering users to devrig.
             assertContainsText(texts, "Not recommended")

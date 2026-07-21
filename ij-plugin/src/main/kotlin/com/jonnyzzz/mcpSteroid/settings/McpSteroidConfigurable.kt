@@ -204,12 +204,12 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         /** Must match the displayName attribute of the applicationConfigurable EP in plugin.xml. */
         const val DISPLAY_NAME = "MCP Steroid — devrig"
 
-        const val DEVRIG_DOCS_URL = "https://mcp-steroid.jonnyzzz.com/docs/devrig/"
+        const val DEVRIG_DOCS_URL = "https://devrig.dev/docs/devrig/"
 
         /** One-line devrig installers (served from the website). Shown copyable on the settings page. */
-        const val DEVRIG_INSTALL_SH = "curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh"
-        const val DEVRIG_INSTALL_PS1 = "irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex"
+        const val DEVRIG_INSTALL_SH = "curl -fsSL https://devrig.dev/install.sh | sh"
+        const val DEVRIG_INSTALL_PS1 = "irm https://devrig.dev/install.ps1 | iex"
 
-        const val FEEDBACK_URL = "https://mcp-steroid.jonnyzzz.com"
+        const val FEEDBACK_URL = "https://devrig.dev"
     }
 }

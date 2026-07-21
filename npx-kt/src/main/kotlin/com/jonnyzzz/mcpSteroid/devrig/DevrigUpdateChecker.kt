@@ -33,7 +33,7 @@ suspend fun fetchVersionInfo(): DevrigVersionInfo? {
     }
 
     return try {
-        val response = client.get("https://mcp-steroid.jonnyzzz.com/version.json") {
+        val response = client.get("https://devrig.dev/version.json") {
             header("Accept", "application/json")
             header("User-Agent", "devrig/${DevrigVersionMetadata.getDevrigVersion()}")
         }
@@ -61,7 +61,7 @@ suspend fun checkForUpdates(onNotice: (String) -> Unit = {}) {
     val message = buildString {
         appendLine()
         appendLine("A new version of devrig is available: $newVersion (current: $currentVersion)")
-        appendLine("Download update from: https://mcp-steroid.jonnyzzz.com/releases/")
+        appendLine("Download update from: https://devrig.dev/releases/")
         appendLine()
     }
     System.err.println(message)

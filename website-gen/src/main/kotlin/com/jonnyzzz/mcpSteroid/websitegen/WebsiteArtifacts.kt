@@ -136,7 +136,7 @@ private const val DESCRIPTION_HTML =
         "</ul>\n" +
         "<p>Compatible with all IntelliJ Platform-based IDEs: IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, Rider, and more.</p>\n" +
         "<p>Requirements: IntelliJ IDEA 2025.3 or newer (build 253 or later).</p>\n" +
-        "<p>Visit <a href=\"https://mcp-steroid.jonnyzzz.com\">mcp-steroid.jonnyzzz.com</a> for documentation and examples.</p>"
+        "<p>Visit <a href=\"https://devrig.dev\">devrig.dev</a> for documentation and examples.</p>"
 
 /** Convert release-notes markdown (`release/notes/<version>.md`) to the change-notes HTML fragment. */
 fun markdownToHtml(notes: String?, version: String): String {
@@ -154,8 +154,8 @@ fun markdownToHtml(notes: String?, version: String): String {
         }
     }
     parts.append(
-        "\n<p>Full release notes: <a href=\"https://mcp-steroid.jonnyzzz.com/releases/$version/\">" +
-            "mcp-steroid.jonnyzzz.com/releases/$version/</a></p>",
+        "\n<p>Full release notes: <a href=\"https://devrig.dev/releases/$version/\">" +
+            "devrig.dev/releases/$version/</a></p>",
     )
     return parts.toString()
 }

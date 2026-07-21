@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-baseURL = 'https://mcp-steroid.jonnyzzz.com/'
+baseURL = 'https://devrig.dev/'
 languageCode = 'en-us'
 title = 'MCP Steroid - Reliable code changes for your AI Agent'
 disableKinds = ['taxonomy', 'term']

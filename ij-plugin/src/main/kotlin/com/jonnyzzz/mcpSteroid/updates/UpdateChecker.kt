@@ -27,7 +27,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Application-level service that periodically checks for plugin updates.
  *
- * Fetches version info from https://mcp-steroid.jonnyzzz.com/version.json
+ * Fetches version info from https://devrig.dev/version.json
  * and notifies the user ONCE per IDE session when a newer version is available.
  *
  * The check continues running even after an update is detected, but the notification
@@ -55,7 +55,7 @@ class UpdateChecker(
     suspend fun checkForUpdates() {
         val currentVersion = PluginDescriptorProvider.getInstance().version
         val ijBuild = ApplicationInfo.getInstance().build.asString()
-        val url = "https://mcp-steroid.jonnyzzz.com/version.json?intellij-version=$ijBuild"
+        val url = "https://devrig.dev/version.json?intellij-version=$ijBuild"
         log.debug("Checking for updates at $url (current version: $currentVersion)")
 
         val response = withContext(Dispatchers.IO) {
@@ -124,7 +124,7 @@ class UpdateChecker(
             })",
             NotificationType.INFORMATION
         ).addAction(NotificationAction.createSimpleExpiring("Download") {
-            BrowserUtil.browse("https://mcp-steroid.jonnyzzz.com/releases/")
+            BrowserUtil.browse("https://devrig.dev/releases/")
         }).notify(null)
     }
 
