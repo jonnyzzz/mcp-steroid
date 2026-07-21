@@ -34,13 +34,14 @@ class OpenProjectToolSpec(
     val validateProjectPath: Boolean = true,
     val handler: () -> OpenProjectToolHandler,
 ) : McpToolBase() {
-    private val logger = thisLogger()
+    private val logger by lazy { thisLogger() }
 
     override val name = "steroid_open_project"
     override val description: String = buildString {
         append(BASE_DESCRIPTION)
         if (includeBackendName) append("\n\n").append(BACKEND_NAME_DESCRIPTION)
     }
+    override val cliSynopsis = "open a project in the IDE"
 
     val projectPath = InputSchemaElement.param("project_path")
         .description("Absolute path to the project directory to open.")

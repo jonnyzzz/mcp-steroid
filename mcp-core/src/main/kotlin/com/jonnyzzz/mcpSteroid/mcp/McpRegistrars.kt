@@ -7,6 +7,9 @@ import kotlinx.serialization.json.JsonObject
  * A single MCP tool, bundling the metadata and the invocation logic. Replaces the
  * previous parameter-list passed to [McpToolRegistrar.registerTool] so each tool is
  * a self-describing object.
+ *
+ * Deliberately NARROW: it carries only what the MCP wire needs. The CLI projection (`cli` + `schema`)
+ * lives on [CliToolSpec], so a plain MCP tool double never has to supply CLI metadata.
  */
 interface McpTool {
     val name: String
@@ -16,13 +19,64 @@ interface McpTool {
     suspend fun call(context: ToolCallContext): ToolCallResult
 }
 
-abstract class McpToolBase : McpTool {
-    private val params = mutableListOf<InputSchemaElement<*>>()
+/**
+ * An [McpTool] that also projects itself onto the devrig `steroid_*`-as-subcommand CLI surface
+ * (issue #284). The CLI generator consumes [cli] (command descriptor) and [schema] (`asCliParams()`)
+ * directly — no cast — while MCP clients still see only the narrow [McpTool] surface. [McpToolBase]
+ * is the canonical implementation; the `devrigToolSpecs(...)` factory returns `List<CliToolSpec>` so a
+ * new tool can never be silently dropped from the CLI.
+ */
+interface CliToolSpec : McpTool {
+    /** CLI command descriptor for the devrig `steroid_*`-as-subcommand surface. */
+    val cli: CliCommandSpec
 
-    protected fun <R> InputSchemaElement<R>.registerToSchema() = apply { params.add(this) }
+    /** The parameter owner, offering the MCP-JSON (`asMcpJson`) and CLI-param (`asCliParams`) projections. */
+    val schema: ToolSchema
+}
+
+/**
+ * Describes how a tool appears as a `devrig` subcommand. CLI-only metadata — it carries no behavior and
+ * is not part of the MCP wire protocol.
+ */
+data class CliCommandSpec(
+    /** Subcommand name; default = [McpTool.name] with the `steroid_` prefix stripped. */
+    val name: String,
+    /** One-line synopsis for the CLI banner/help. Short and curated — NOT the full MCP description. */
+    val synopsis: String,
+    /** Extra subcommand aliases (e.g. `prompt` for `fetch_resource`). */
+    val aliases: List<String> = emptyList(),
+    /** Exclude from the CLI if ever needed. */
+    val hidden: Boolean = false,
+)
+
+/** Derives the default CLI subcommand name from an MCP tool [toolName] by stripping the `steroid_` prefix. */
+fun defaultCliName(toolName: String): String = toolName.removePrefix("steroid_")
+
+abstract class McpToolBase : CliToolSpec {
+    /** Single owner of the registered parameters, exposing the MCP-JSON and CLI-param projections. */
+    final override val schema = ToolSchema()
+
+    protected fun <R> InputSchemaElement<R>.registerToSchema(): InputSchemaElement<R> = schema.register(this)
 
     final override val inputSchema: JsonObject
-        get() = InputSchemaElement.buildSchema(params)
+        get() = schema.asMcpJson()
+
+    /** Curated one-line CLI synopsis for this tool's `devrig` subcommand — NOT the full [description]. */
+    protected abstract val cliSynopsis: String
+
+    /** Extra CLI subcommand aliases; empty by default. */
+    protected open val cliAliases: List<String> get() = emptyList()
+
+    /** When true the tool is not exposed as a CLI subcommand; false by default. */
+    protected open val cliHidden: Boolean get() = false
+
+    override val cli: CliCommandSpec
+        get() = CliCommandSpec(
+            name = defaultCliName(name),
+            synopsis = cliSynopsis,
+            aliases = cliAliases,
+            hidden = cliHidden,
+        )
 }
 
 

@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.cliPositional
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.get
 import com.jonnyzzz.mcpSteroid.mcp.param
@@ -34,7 +35,7 @@ class FetchResourceToolHandler(
     private val handler: () -> PromptsContextHandler,
 ) : McpToolBase() {
 
-    private val log = thisLogger()
+    private val log by lazy { thisLogger() }
 
     override val name = "steroid_fetch_resource"
 
@@ -54,6 +55,13 @@ class FetchResourceToolHandler(
                 "Full reference? → $codingGuideUri"
     }
 
+    override val cliSynopsis = "fetch a mcp-steroid:// guide by URI"
+    override val cliAliases = listOf("prompt")
+
+    // uri maps to the `--uri` flag, NOT a positional: the canonical `devrig fetch_resource` command takes
+    // --uri (Cli.kt) and the contract pins that form (McpAsCliParseTest). The positional `<uri>` is the
+    // `prompt` alias's ergonomic, owned by the separate PromptCliCommand; shared tool metadata carries a
+    // single form, so it reflects the canonical --uri grammar and the generated help matches the parser.
     val uri = InputSchemaElement.param("uri")
         .description("The mcp-steroid:// URI to fetch (see the tool description for the canonical entry points, or fetch mcp-steroid://prompt/skill for the index)")
         .string()

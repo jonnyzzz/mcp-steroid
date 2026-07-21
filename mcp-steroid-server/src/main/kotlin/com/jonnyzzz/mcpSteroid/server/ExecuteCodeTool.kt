@@ -78,6 +78,7 @@ data class ExecCodeParams(
 class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBase() {
     override val name = "steroid_execute_code"
     override val description get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
+    override val cliSynopsis = "run a Kotlin script in the target IDE"
 
     val projectName = CommonToolParams.projectName().registerToSchema()
 
