@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -22,6 +23,7 @@ class LauncherSelfHealPredicateTest {
         DevrigCommand.DevrigCommandScreenshot(projectName = "k", taskId = "t", reason = "r"),
         DevrigCommand.DevrigCommandInput(projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "press:ESCAPE"),
         DevrigCommand.DevrigCommandFeedback(projectName = "k", taskId = "t", successRating = 0.5, explanation = "x"),
+        DevrigCommand.RunTool(toolName = "steroid_list_windows", commandName = "list_windows", arguments = JsonObject(emptyMap())),
     )
 
     private val lifecycleCommands: List<DevrigCommand> = listOf(

@@ -14,6 +14,7 @@ import com.github.ajalt.clikt.parameters.types.double
 import com.github.ajalt.clikt.parameters.types.int
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.server.ModalMode
+import kotlinx.serialization.json.JsonObject
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
@@ -194,6 +195,22 @@ sealed interface DevrigCommand {
         override val json: Boolean = false,
     ) : DevrigCommand
 
+    /**
+     * A parsed-but-inert schema-driven tool command. Clikt has routed, tokenized, and typed every
+     * parameter into [arguments], but nothing has executed: parsing touches no service, backend, or
+     * handler. Runtime resolves the live `CliToolSpec` by [toolName] and runs it; [commandName] is the
+     * token the user typed (canonical name or alias) and is echoed into the `--json` envelope. [extras]
+     * carry CLI-only state that has no MCP-schema parameter (see [ToolCliExtras]).
+     */
+    data class RunTool(
+        val toolName: String,
+        val commandName: String,
+        val arguments: JsonObject,
+        val extras: ToolCliExtras = ToolCliExtras(),
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
     data class DevrigCommandHelp(
         /** Optional per-command topic (e.g. "execute_code") for layered help; null = the global banner. */
         val topic: String? = null,
@@ -218,6 +235,11 @@ sealed interface DevrigCommand {
     ) : DevrigCommand
 }
 
+private val ANSI_ESCAPE_CODES = Regex("\\u001B\\[[0-9;]*m")
+
+/** Removes ANSI SGR colour codes so a formatted-help string can be matched by plain text. */
+private fun stripAnsiCodes(text: String): String = ANSI_ESCAPE_CODES.replace(text, "")
+
 fun parseDevrigCommand(rawArgs: Array<String>): DevrigCommand {
     val selected = SelectedDevrigCommand()
     val root = DevrigRootCommand(selected)
@@ -230,10 +252,12 @@ fun parseDevrigCommand(rawArgs: Array<String>): DevrigCommand {
         val formatted = root.getFormattedHelp(e)
         // Our own UsageErrors carry a concise `message`; clikt-internal errors (e.g. NoSuchOption) leave it
         // blank and only put the specifics in the formatted help ("Error: no such option --nope") — lift
-        // that line so the `--json` envelope isn't a useless "Invalid arguments".
+        // that line so the `--json` envelope isn't a useless "Invalid arguments". The formatted help may
+        // carry ANSI colour codes (clikt colourises when it detects a terminal), so strip them before
+        // matching the "Error:" line — otherwise the line starts with an escape sequence, not "Error:".
         val message = e.message?.takeIf { it.isNotBlank() }
-            ?: formatted?.lineSequence()?.map { it.trim() }
-                ?.firstOrNull { it.startsWith("Error:") }?.removePrefix("Error:")?.trim()
+            ?: stripAnsiCodes(formatted.orEmpty()).lineSequence().map { it.trim() }
+                .firstOrNull { it.startsWith("Error:") }?.removePrefix("Error:")?.trim()
             ?: "Invalid arguments"
         DevrigCommand.DevrigCommandParseError(
             text = formatted ?: message,
@@ -244,17 +268,17 @@ fun parseDevrigCommand(rawArgs: Array<String>): DevrigCommand {
     }
 }
 
-private class SelectedDevrigCommand {
+class SelectedDevrigCommand {
     var command: DevrigCommand? = null
 }
 
-private data class GenericOptions(
+data class GenericOptions(
     val debug: Boolean,
     val json: Boolean,
     val help: Boolean,
 )
 
-private abstract class DevrigCliktCommand(
+abstract class DevrigCliktCommand(
     name: String,
     private val selected: SelectedDevrigCommand,
     private val parent: DevrigCliktCommand?,
@@ -748,6 +772,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
     return try {
         when (command) {
             is DevrigCommand.MCP -> error("runCli called with DevrigCommand.MCP")
+            is DevrigCommand.RunTool -> error("runCli reached a schema-driven RunTool without a registered runtime dispatcher: $command")
             is DevrigCommand.DevrigCommandHelp -> printTopicHelp(command.topic, mcpStdout)
             is DevrigCommand.DevrigCommandVersion -> printVersion(mcpStdout)
             is DevrigCommand.DevrigCommandParseError -> {

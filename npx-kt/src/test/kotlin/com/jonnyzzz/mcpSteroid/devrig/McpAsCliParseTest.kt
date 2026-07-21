@@ -117,6 +117,20 @@ class McpAsCliParseTest {
         assertTrue(parse("list_windows") is DevrigCommand.DevrigCommandListWindows)
     }
 
+    // ------------------------------ parse/runtime boundary ------------------------------
+
+    @Test
+    fun `parsing is inert - it only routes and types tokens into a value object`() {
+        // The parse phase must never create a service, backend, or handler: DevrigServices is built after
+        // parsing (see Main.runCli). A parsed command is therefore a plain data object carrying only the
+        // typed tokens — pinned here by data-class equality with a freshly constructed instance.
+        assertEquals(DevrigCommand.DevrigCommandListWindows(json = true), parse("list_windows", "--json"))
+        assertEquals(
+            DevrigCommand.DevrigCommandFetchResource(uri = "mcp-steroid://a", commandName = "fetch_resource"),
+            parse("fetch_resource", "--uri=mcp-steroid://a"),
+        )
+    }
+
     // ------------------------------ open_project ------------------------------
 
     @Test

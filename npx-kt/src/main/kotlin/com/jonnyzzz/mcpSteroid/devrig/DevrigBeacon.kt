@@ -80,6 +80,7 @@ class DevrigBeacon(
             is DevrigCommand.DevrigCommandScreenshot -> "take_screenshot"
             is DevrigCommand.DevrigCommandInput -> "input"
             is DevrigCommand.DevrigCommandFeedback -> "execute_feedback"
+            is DevrigCommand.RunTool -> cliMode.commandName
             is DevrigCommand.DevrigCommandHelp -> null
             is DevrigCommand.DevrigCommandVersion -> null
             is DevrigCommand.DevrigCommandParseError -> null
