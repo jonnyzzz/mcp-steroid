@@ -1,3 +1,3 @@
 ---
-title: "MCP Steroid"
+title: ""
 ---

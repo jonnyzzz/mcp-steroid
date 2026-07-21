@@ -14,7 +14,7 @@
 
 baseURL = 'https://devrig.dev/'
 languageCode = 'en-us'
-title = 'MCP Steroid - Reliable code changes for your AI Agent'
+title = 'devrig — reliable code changes for your AI agent'
 disableKinds = ['taxonomy', 'term']
 
 # Two static roots, merged by Hugo: checked-in assets (static/) + the generator output
