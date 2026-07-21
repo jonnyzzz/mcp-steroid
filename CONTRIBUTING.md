@@ -18,7 +18,7 @@ improving tests, or enhancing documentation, your help makes the project better 
 - **Feature implementations** linked to an existing issue
 - **Documentation improvements** that clarify usage or architecture
 - **Scenario submissions** -- share reproducible test scenarios from real repositories
-  (see [Support the Project](https://mcp-steroid.jonnyzzz.com/docs/need-your-experiments-and-support/))
+  (see [Support the Project](https://devrig.dev/docs/need-your-experiments-and-support/))
 
 ## Pull Request Guidelines
 

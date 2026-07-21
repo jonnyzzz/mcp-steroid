@@ -252,7 +252,7 @@ the tool surface or `McpScriptContext`):
   <https://jonnyzzz.com/blog/2026/03/24/agentic-experience-and-tools/>.
   *"Agents follow the same processes as humans. No shortcuts. No special
   agent-only paths."* This is the source of Tenet 2.
-- **Strategy page** — <https://mcp-steroid.jonnyzzz.com/docs/strategy/>.
+- **Strategy page** — <https://devrig.dev/docs/strategy/>.
   "Give AI the whole IDE, not just the files." Phase 1 (IDE plugin) →
   Phase 2 (benchmarks) → Phase 3 (headless runtime).
 

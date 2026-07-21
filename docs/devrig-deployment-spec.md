@@ -20,7 +20,7 @@ Author: Eugene Petrenko · Status: design ready for implementation
 ## What the user gets
 
 ```sh
-curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh -s install
+curl -fsSL https://devrig.dev/install.sh | sh -s install
 ```
 
 A self-updating launcher at `~/.mcp-steroid/bin/devrig` (or `devrig.cmd`
@@ -96,7 +96,7 @@ version=0.96.20003-0123abcd
 builtAt=2026-05-28T18:00:00Z
 
 # ─── linux-x86_64 ────────────────────────────────────────────────────────
-binaries.linux-x86_64.devrig.url=https://mcp-steroid.jonnyzzz.com/dl/0.96.20003/devrig-installDist.zip
+binaries.linux-x86_64.devrig.url=https://devrig.dev/dl/0.96.20003/devrig-installDist.zip
 binaries.linux-x86_64.devrig.sha512=abcd0123...
 binaries.linux-x86_64.devrig.size=53412345
 binaries.linux-x86_64.devrig.format=zip
@@ -131,10 +131,10 @@ binaries.windows-x86_64.jdk.javaHomeSubpath=jdk25.0.x_x
 # … linux-arm64, darwin-x86_64, windows-arm64 …
 
 # ─── self-updating wrapper scripts ────────────────────────────────────────
-scripts.posix.url=https://mcp-steroid.jonnyzzz.com/dl/0.96.20003/devrig
+scripts.posix.url=https://devrig.dev/dl/0.96.20003/devrig
 scripts.posix.sha512=f00d…
 
-scripts.windows.url=https://mcp-steroid.jonnyzzz.com/dl/0.96.20003/devrig.cmd
+scripts.windows.url=https://devrig.dev/dl/0.96.20003/devrig.cmd
 scripts.windows.sha512=cafe…
 ```
 
@@ -291,7 +291,7 @@ Same script doubles as installer. When invoked NOT from
 
 ```
 1. mkdir -p ~/.mcp-steroid/{bin,binaries}
-2. Fetch https://mcp-steroid.jonnyzzz.com/version.properties → ~/.mcp-steroid/
+2. Fetch https://devrig.dev/version.properties → ~/.mcp-steroid/
 3. Fetch .signatures + allowed_signers → ~/.mcp-steroid/   (stored; not verified by wrapper)
 4. Write the running script's own bytes → ~/.mcp-steroid/bin/devrig (or .cmd)
 5. Run standard cache resolution: download devrig + JDK, verify SHAs, unpack into binaries/.
@@ -343,8 +343,8 @@ Windows:
 ## `devrig upgrade` (inner Java)
 
 ```
-1. GET https://mcp-steroid.jonnyzzz.com/version.properties
-   GET https://mcp-steroid.jonnyzzz.com/version.properties.signatures
+1. GET https://devrig.dev/version.properties
+   GET https://devrig.dev/version.properties.signatures
 2. Read ~/.mcp-steroid/allowed_signers
 3. ssh-keygen -Y verify (or programmatic ed25519 verify) — BOTH keys must verify.
 4. Compare versions; if not newer → log "up to date", exit 0.
@@ -488,7 +488,7 @@ effectively zero** across all three OSes.
 ### curl|sh viability with a native binary
 
 ```sh
-# shim — one POSIX shell file at https://mcp-steroid.jonnyzzz.com/install.sh
+# shim — one POSIX shell file at https://devrig.dev/install.sh
 #  - detects (os, cpu)
 #  - downloads the matching native installer binary
 #  - SHA-checks against a hash baked into THIS file at release time
