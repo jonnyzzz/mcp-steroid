@@ -83,6 +83,10 @@
         <notificationGroup id="jonnyzzz.mcp.steroid.updates"
                            displayType="BALLOON"/>
 
+        <!-- IDE-first onboarding: offer to connect an AI agent to this IDE -->
+        <notificationGroup id="jonnyzzz.mcp.steroid.onboarding"
+                           displayType="BALLOON"/>
+
         <!-- Settings | Tools | Devrig — MCP Steroid: informational page promoting the devrig CLI
              setup, showing the MCP server status, and keeping the legacy HTTP connection info. -->
         <applicationConfigurable parentId="tools"
