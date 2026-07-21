@@ -8,9 +8,11 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable
+import kotlinx.coroutines.CancellationException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -34,6 +36,10 @@ class DevrigOnboardingService {
                 OnboardingDecision.OFFER_ENABLE -> offerEnable(project)
                 OnboardingDecision.OFFER_GET_AGENT -> offerGetAgent()
             }
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.warn("devrig onboarding check failed", e)
         }
