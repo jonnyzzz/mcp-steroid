@@ -9,8 +9,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ServerInfo
 import com.jonnyzzz.mcpSteroid.mcp.ToolsCapability
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.devrig.DevrigVersionMetadata
-import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
-import com.jonnyzzz.mcpSteroid.server.OpenProjectToolSpec
+import com.jonnyzzz.mcpSteroid.server.devrigToolSpecs
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -64,14 +63,14 @@ suspend fun runStubStdioMcpServer(
 
     onServerReady(server)
 
+    // Register the ONE canonical devrig tool surface (issue #284): the same `List<CliToolSpec>` the
+    // generated `devrig --help` and the CLI consume, so the stdio server can never advertise a different
+    // set. Its steroid_open_project carries the required `backend_name` routing param (devrigToolSpecs
+    // uses includeBackendName = true) since devrig routes to one of several discovered IDEs.
     val tools = StubMcpSteroidTools(services)
-    tools.registerAll(server)
-    // devrig routes to one of several discovered IDEs, so its steroid_open_project advertises the
-    // required `backend_name` routing param (includeBackendName = true). registerAll() no longer
-    // registers open_project; each surface registers its own spec.
-    server.toolRegistry.registerTool(
-        OpenProjectToolSpec(includeBackendName = true) { tools.handler<OpenProjectToolHandler>() }
-    )
+    for (spec in devrigToolSpecs(tools)) {
+        server.toolRegistry.registerTool(spec)
+    }
 
     McpStdioServer(server, input = services.mcpStdin, output = services.mcpStdout).run()
 }
