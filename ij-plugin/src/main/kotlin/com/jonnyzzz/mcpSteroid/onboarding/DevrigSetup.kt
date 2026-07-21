@@ -50,9 +50,12 @@ class DevrigSetupRunner {
                     if (!devrigInstalled(userHome, windows)) {
                         indicator.text = "Downloading and installing devrig…"
                         val install = runCommand(installerArgv(windows), timeoutMs = 30 * 60 * 1000)
-                        if (install.exitCode != 0 || !devrigInstalled(userHome, windows)) {
-                            notify(project, NotificationType.ERROR, "devrig install failed",
-                                "The devrig installer exited with code ${install.exitCode}. See the IDE log for details.")
+                        if (install.isTimeout || install.exitCode != 0 || !devrigInstalled(userHome, windows)) {
+                            val content = if (install.isTimeout)
+                                "The devrig installer timed out. See the IDE log for details."
+                            else
+                                "The devrig installer exited with code ${install.exitCode}. See the IDE log for details."
+                            notify(project, NotificationType.ERROR, "devrig install failed", content)
                             log.warn("devrig install failed: ${install.stderr.ifBlank { install.stdout }}")
                             return
                         }
@@ -60,9 +63,12 @@ class DevrigSetupRunner {
 
                     indicator.text = "Connecting Claude Code to this IDE…"
                     val connect = runCommand(connectClaudeArgv(devrig), timeoutMs = 60 * 1000)
-                    if (connect.exitCode != 0) {
-                        notify(project, NotificationType.ERROR, "Could not connect Claude Code",
-                            "`devrig connect claude` exited with code ${connect.exitCode}. See the IDE log for details.")
+                    if (connect.isTimeout || connect.exitCode != 0) {
+                        val content = if (connect.isTimeout)
+                            "`devrig connect claude` timed out. See the IDE log for details."
+                        else
+                            "`devrig connect claude` exited with code ${connect.exitCode}. See the IDE log for details."
+                        notify(project, NotificationType.ERROR, "Could not connect Claude Code", content)
                         log.warn("devrig connect claude failed: ${connect.stderr.ifBlank { connect.stdout }}")
                         return
                     }
@@ -82,12 +88,12 @@ class DevrigSetupRunner {
         })
     }
 
-    private data class CommandResult(val exitCode: Int, val stdout: String, val stderr: String)
+    private data class CommandResult(val exitCode: Int, val stdout: String, val stderr: String, val isTimeout: Boolean)
 
     private fun runCommand(argv: List<String>, timeoutMs: Int): CommandResult {
         val cmd = GeneralCommandLine(argv)
         val out = ExecUtil.execAndGetOutput(cmd, timeoutMs)
-        return CommandResult(out.exitCode, out.stdout, out.stderr)
+        return CommandResult(out.exitCode, out.stdout, out.stderr, out.isTimeout)
     }
 
     private fun notify(project: Project, type: NotificationType, title: String, content: String) {
