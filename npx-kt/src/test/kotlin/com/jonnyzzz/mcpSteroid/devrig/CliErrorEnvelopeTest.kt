@@ -76,11 +76,9 @@ class CliErrorEnvelopeTest {
 
     @Test
     fun `stale project_name under --json is an enveloped usage error`() {
-        val cmd = DevrigCommand.DevrigCommandExecuteCode(
-            projectName = "stale", code = "x", taskId = "t", reason = "r", json = true,
-        )
+        val cmd = executeCodeRunTool(projectName = "stale", code = "x", taskId = "t", reason = "r", json = true)
         val run = runCliCommand(homePaths()) {
-            runExecuteCodeCommand(cmd, fakeTools(ExecuteCodeToolHandler::class.java to throwingExecuteCode(ProjectRouteNotFoundException("stale"))))
+            runGeneratedToolCommand(cmd, fakeTools(ExecuteCodeToolHandler::class.java to throwingExecuteCode(ProjectRouteNotFoundException("stale"))))
         }
         assertEquals(CliExit.USAGE, run.exit)
         assertTrue(envIsError(run), run.stdout)
@@ -89,11 +87,9 @@ class CliErrorEnvelopeTest {
 
     @Test
     fun `bridge failure under --json is an enveloped unavailable error`() {
-        val cmd = DevrigCommand.DevrigCommandExecuteCode(
-            projectName = "k", code = "x", taskId = "t", reason = "r", json = true,
-        )
+        val cmd = executeCodeRunTool(projectName = "k", code = "x", taskId = "t", reason = "r", json = true)
         val run = runCliCommand(homePaths()) {
-            runExecuteCodeCommand(cmd, fakeTools(ExecuteCodeToolHandler::class.java to throwingExecuteCode(RuntimeException("connection refused"))))
+            runGeneratedToolCommand(cmd, fakeTools(ExecuteCodeToolHandler::class.java to throwingExecuteCode(RuntimeException("connection refused"))))
         }
         assertEquals(CliExit.UNAVAILABLE, run.exit)
         assertTrue(envIsError(run), run.stdout)
@@ -214,14 +210,13 @@ class CliErrorEnvelopeTest {
     @Test
     fun `execute_feedback does not forward --execution_id into FeedbackParams`() {
         val rec = RecordingFeedback()
-        val cmd = DevrigCommand.DevrigCommandFeedback(
-            projectName = "k", taskId = "t", executionId = "e-42", successRating = 0.5, explanation = "x",
-        )
+        val cmd = executeFeedbackRunTool(projectName = "k", taskId = "t", executionId = "e-42", successRating = 0.5, explanation = "x")
         val run = runCliCommand(homePaths()) {
-            runFeedbackCommand(cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec))
+            runGeneratedToolCommand(cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec))
         }
         assertEquals(CliExit.OK, run.exit)
-        // FeedbackParams has no execution_id field; the value is contextual only (matches the MCP tool).
+        // execution_id rides in the arguments JSON (generic mapping), but ExecuteFeedbackToolSpec.call()
+        // drops it when building FeedbackParams — which has no such field (matches the MCP tool).
         assertEquals("t", rec.params!!.taskId)
         assertEquals(0.5, rec.params!!.successRating)
     }

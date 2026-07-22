@@ -2,6 +2,9 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -58,6 +61,8 @@ class McpAsCliParseTest {
 
     @Test
     fun `execute_code maps all flags`() {
+        // Schema-generated command (issue #284): typed schema flags land in RunTool.arguments, and the
+        // CLI-only --code-file rides in extras. The `code` body is synthesized from --code-file at runtime.
         val command = parse(
             "execute_code",
             "--project_name=key-1",
@@ -67,26 +72,28 @@ class McpAsCliParseTest {
             "--modal=unleashed",
             "--timeout=120",
         )
-        assertTrue(command is DevrigCommand.DevrigCommandExecuteCode)
-        command as DevrigCommand.DevrigCommandExecuteCode
-        assertEquals("key-1", command.projectName)
-        assertEquals("repro.kts", command.codeFile)
-        assertEquals("t1", command.taskId)
-        assertEquals("repro", command.reason)
-        assertEquals("unleashed", command.modal)
-        assertEquals(120, command.timeout)
+        assertTrue(command is DevrigCommand.RunTool, "expected a RunTool, got $command")
+        command as DevrigCommand.RunTool
+        assertEquals("steroid_execute_code", command.toolName)
+        assertEquals("execute_code", command.commandName)
+        assertEquals("key-1", command.arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals("repro.kts", command.extras.codeFile)
+        assertEquals("t1", command.arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("repro", command.arguments["reason"]?.jsonPrimitive?.content)
+        assertEquals("unleashed", command.arguments["modal"]?.jsonPrimitive?.content)
+        assertEquals(120, command.arguments["timeout"]?.jsonPrimitive?.int)
     }
 
     @Test
     fun `execute_code without project_name parses successfully, resolved later from cwd (#266 p2)`() {
         // --project_name is optional at parse time (issue #266): a missing value is no longer a parse
         // error here — it is resolved against the current directory at runtime by requireProjectName in
-        // runExecuteCodeCommand, which fails with a candidate-listing USAGE error (see
+        // runGeneratedToolCommand, which fails with a candidate-listing USAGE error (see
         // ExecuteCodeCommandTest's cwd-inference tests) only when the cwd doesn't uniquely match one open
-        // project. Parsing must succeed and leave projectName null so that resolution point runs.
+        // project. Parsing must succeed and omit project_name so that resolution point runs.
         val command = parse("execute_code", "--code-file=x.kts", "--task_id=t", "--reason=r")
-        assertTrue(command is DevrigCommand.DevrigCommandExecuteCode, "expected a parsed command, got $command")
-        assertNull((command as DevrigCommand.DevrigCommandExecuteCode).projectName)
+        assertTrue(command is DevrigCommand.RunTool, "expected a parsed command, got $command")
+        assertFalse((command as DevrigCommand.RunTool).arguments.containsKey("project_name"))
     }
 
     @Test
@@ -193,17 +200,24 @@ class McpAsCliParseTest {
             "--explanation=good",
             "--execution_id=e1",
         )
-        assertTrue(command is DevrigCommand.DevrigCommandFeedback)
-        command as DevrigCommand.DevrigCommandFeedback
-        assertEquals(0.9, command.successRating)
-        assertEquals("good", command.explanation)
-        assertEquals("e1", command.executionId)
+        assertTrue(command is DevrigCommand.RunTool)
+        command as DevrigCommand.RunTool
+        assertEquals("steroid_execute_feedback", command.toolName)
+        assertEquals(0.9, command.arguments["success_rating"]?.jsonPrimitive?.double)
+        assertEquals("good", command.arguments["explanation"]?.jsonPrimitive?.content)
+        assertEquals("e1", command.arguments["execution_id"]?.jsonPrimitive?.content)
     }
 
     @Test
     fun `execute_feedback rejects out-of-range rating`() {
+        // success_rating carries maximum=1.0; the schema-generated Clikt `restrictTo` rejects 2.0 at parse
+        // (exit 64), never as a backend tool error. The message references the valid range.
         val err = parseError("execute_feedback", "--project_name=k", "--task_id=t", "--success_rating=2.0", "--explanation=x")
-        assertTrue(err.text.contains("out of range"), err.text)
+        assertTrue(err.text.contains("--success_rating"), err.text)
+        assertTrue(err.text.contains("range"), err.text)
+        // The concise `--json` envelope message must also name the flag (clikt keeps it in `paramName`, not
+        // in the raw message), so an agent reading the envelope knows which flag was rejected.
+        assertTrue(err.message.contains("--success_rating"), err.message)
     }
 
     @Test
@@ -214,27 +228,32 @@ class McpAsCliParseTest {
 
     @Test
     fun `execute_feedback still accepts --execution_id (MCP parity, contextual only)`() {
-        // #8: the flag is kept for parity with steroid_execute_feedback; it parses onto the command but
-        // FeedbackParams has no such field, so it is never forwarded (asserted in the glue tests).
+        // #8: execution_id is a generic schema parameter kept for parity with steroid_execute_feedback; it
+        // maps into the RunTool arguments but ExecuteFeedbackToolSpec.call() drops it when building
+        // FeedbackParams, so it is never forwarded (asserted in the glue tests).
         val command = parse("execute_feedback", "--project_name=k", "--task_id=t", "--success_rating=0.5",
-            "--explanation=x", "--execution_id=e-42") as DevrigCommand.DevrigCommandFeedback
-        assertEquals("e-42", command.executionId)
+            "--explanation=x", "--execution_id=e-42") as DevrigCommand.RunTool
+        assertEquals("e-42", command.arguments["execution_id"]?.jsonPrimitive?.content)
     }
 
     // ------------------------------ #2: --modal validation at parse ------------------------------
 
     @Test
     fun `execute_code rejects an unknown --modal value at parse`() {
+        // --modal is a schema-generated Clikt `choice`, so a bad value is a parse-time BadParameterValue
+        // (exit 64) that lists the valid choices — not a backend error.
         val err = parseError("execute_code", "--project_name=k", "--code=x", "--task_id=t", "--reason=r", "--modal=bogus")
-        assertTrue(err.text.contains("invalid --modal"), err.text)
+        assertTrue(err.text.contains("--modal"), err.text)
         assertTrue(err.text.contains("smart_non_modal"), "lists valid values: ${err.text}")
+        // The concise `--json` envelope message must also name the flag, not just the human `.text`.
+        assertTrue(err.message.contains("--modal"), err.message)
     }
 
     @Test
     fun `execute_code accepts each valid --modal value`() {
         for (wire in listOf("smart_non_modal", "non_modal", "unleashed")) {
             val command = parse("execute_code", "--project_name=k", "--code=x", "--task_id=t", "--reason=r", "--modal=$wire")
-            assertTrue(command is DevrigCommand.DevrigCommandExecuteCode, "modal=$wire should parse: $command")
+            assertTrue(command is DevrigCommand.RunTool, "modal=$wire should parse: $command")
         }
     }
 

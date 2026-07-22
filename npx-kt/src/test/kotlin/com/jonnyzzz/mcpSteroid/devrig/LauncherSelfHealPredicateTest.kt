@@ -16,11 +16,11 @@ class LauncherSelfHealPredicateTest {
 
     private val toolFacades: List<DevrigCommand> = listOf(
         DevrigCommand.DevrigCommandFetchResource(uri = "mcp-steroid://x"),
-        DevrigCommand.DevrigCommandExecuteCode(projectName = "k", code = "x", taskId = "t", reason = "r"),
         DevrigCommand.DevrigCommandOpenProject(projectPath = "/p", taskId = "t", reason = "r"),
         DevrigCommand.DevrigCommandScreenshot(projectName = "k", taskId = "t", reason = "r"),
         DevrigCommand.DevrigCommandInput(projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "press:ESCAPE"),
-        DevrigCommand.DevrigCommandFeedback(projectName = "k", taskId = "t", successRating = 0.5, explanation = "x"),
+        DevrigCommand.RunTool(toolName = "steroid_execute_code", commandName = "execute_code", arguments = JsonObject(emptyMap())),
+        DevrigCommand.RunTool(toolName = "steroid_execute_feedback", commandName = "execute_feedback", arguments = JsonObject(emptyMap())),
         DevrigCommand.RunTool(toolName = "steroid_list_windows", commandName = "list_windows", arguments = JsonObject(emptyMap())),
     )
 

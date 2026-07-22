@@ -40,11 +40,12 @@ class McpAsCliContractTest {
     @TempDir lateinit var home: Path
     private fun homePaths() = HomePaths(home).also { it.mkdirsAll() }
 
-    // Project-scoped commands (routing can fail with ProjectRouteNotFoundException).
+    // Project-scoped commands (routing can fail with ProjectRouteNotFoundException). execute_code /
+    // execute_feedback are schema-generated RunTool commands dispatched via runGeneratedToolCommand (#284).
     private fun execCmd(json: Boolean) =
-        DevrigCommand.DevrigCommandExecuteCode(projectName = "k", code = "x", taskId = "t", reason = "r", json = json)
+        executeCodeRunTool(projectName = "k", code = "x", taskId = "t", reason = "r", json = json)
     private fun feedbackCmd(json: Boolean) =
-        DevrigCommand.DevrigCommandFeedback(projectName = "k", taskId = "t", successRating = 0.5, explanation = "x", json = json)
+        executeFeedbackRunTool(projectName = "k", taskId = "t", successRating = 0.5, explanation = "x", json = json)
     private fun inputCmd(json: Boolean) =
         DevrigCommand.DevrigCommandInput(projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "press:ESCAPE", json = json)
     private fun screenshotCmd(json: Boolean) =
@@ -75,10 +76,10 @@ class McpAsCliContractTest {
     fun `stale project_name is an enveloped usage error for every project-scoped tool`() {
         val ex = { ProjectRouteNotFoundException("k") }
         assertEnvelope(runCliCommand(homePaths()) {
-            runExecuteCodeCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to ThrowingExecuteCode(ex())))
+            runGeneratedToolCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to ThrowingExecuteCode(ex())))
         }, CliExit.USAGE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
-            runFeedbackCommand(feedbackCmd(true), fakeTools(ExecuteFeedbackToolHandler::class.java to ThrowingFeedback(ex())))
+            runGeneratedToolCommand(feedbackCmd(true), fakeTools(ExecuteFeedbackToolHandler::class.java to ThrowingFeedback(ex())))
         }, CliExit.USAGE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
             runInputCommand(inputCmd(true), fakeTools(VisionInputToolHandler::class.java to ThrowingInput(ex())))
@@ -94,10 +95,10 @@ class McpAsCliContractTest {
     fun `bridge failure is an enveloped unavailable error for every tool`() {
         val ex = { RuntimeException("connection refused") }
         assertEnvelope(runCliCommand(homePaths()) {
-            runExecuteCodeCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to ThrowingExecuteCode(ex())))
+            runGeneratedToolCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to ThrowingExecuteCode(ex())))
         }, CliExit.UNAVAILABLE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
-            runFeedbackCommand(feedbackCmd(true), fakeTools(ExecuteFeedbackToolHandler::class.java to ThrowingFeedback(ex())))
+            runGeneratedToolCommand(feedbackCmd(true), fakeTools(ExecuteFeedbackToolHandler::class.java to ThrowingFeedback(ex())))
         }, CliExit.UNAVAILABLE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
             runInputCommand(inputCmd(true), fakeTools(VisionInputToolHandler::class.java to ThrowingInput(ex())))
@@ -124,12 +125,12 @@ class McpAsCliContractTest {
     @Test
     fun `a tool-reported error is enveloped in json and goes to stderr in human mode`() {
         val jsonRun = runCliCommand(homePaths()) {
-            runExecuteCodeCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to RecordingExecuteCode(toolErrorResult("script threw"))))
+            runGeneratedToolCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to RecordingExecuteCode(toolErrorResult("script threw"))))
         }
         assertEnvelope(jsonRun, CliExit.TOOL_ERROR, expectError = true)
 
         val humanRun = runCliCommand(homePaths()) {
-            runExecuteCodeCommand(execCmd(false), fakeTools(ExecuteCodeToolHandler::class.java to RecordingExecuteCode(toolErrorResult("script threw"))))
+            runGeneratedToolCommand(execCmd(false), fakeTools(ExecuteCodeToolHandler::class.java to RecordingExecuteCode(toolErrorResult("script threw"))))
         }
         assertHumanErrorOnStderr(humanRun, CliExit.TOOL_ERROR)
         assertTrue(humanRun.stderr.contains("script threw"))
@@ -140,12 +141,12 @@ class McpAsCliContractTest {
     @Test
     fun `success emits one envelope in json and clean content on stdout in human mode`() {
         val jsonRun = runCliCommand(homePaths()) {
-            runExecuteCodeCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to RecordingExecuteCode(okResult("done"))))
+            runGeneratedToolCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to RecordingExecuteCode(okResult("done"))))
         }
         assertEnvelope(jsonRun, CliExit.OK, expectError = false)
 
         val humanRun = runCliCommand(homePaths()) {
-            runExecuteCodeCommand(execCmd(false), fakeTools(ExecuteCodeToolHandler::class.java to RecordingExecuteCode(okResult("done"))))
+            runGeneratedToolCommand(execCmd(false), fakeTools(ExecuteCodeToolHandler::class.java to RecordingExecuteCode(okResult("done"))))
         }
         assertEquals(CliExit.OK, humanRun.exit)
         assertTrue(humanRun.stdout.contains("done"))
@@ -158,7 +159,7 @@ class McpAsCliContractTest {
     fun `cancellation propagates and is never swallowed as a bridge error`() {
         assertThrows(CancellationException::class.java) {
             runCliCommand(homePaths()) {
-                runExecuteCodeCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to ThrowingExecuteCode(CancellationException("cancelled"))))
+                runGeneratedToolCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to ThrowingExecuteCode(CancellationException("cancelled"))))
             }
         }
     }
@@ -168,7 +169,7 @@ class McpAsCliContractTest {
     @Test
     fun `a bridge exception with a null message still produces a valid envelope`() {
         val run = runCliCommand(homePaths()) {
-            runExecuteCodeCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to ThrowingExecuteCode(RuntimeException())))
+            runGeneratedToolCommand(execCmd(true), fakeTools(ExecuteCodeToolHandler::class.java to ThrowingExecuteCode(RuntimeException())))
         }
         assertEnvelope(run, CliExit.UNAVAILABLE, expectError = true)
     }
@@ -189,8 +190,8 @@ class McpAsCliContractTest {
     fun `execute_code reads empty stdin without error`() {
         val rec = RecordingExecuteCode()
         val run = runCliCommand(homePaths(), stdin = ByteArray(0)) {
-            runExecuteCodeCommand(
-                DevrigCommand.DevrigCommandExecuteCode(projectName = "k", codeFile = "-", taskId = "t", reason = "r"),
+            runGeneratedToolCommand(
+                executeCodeRunTool(projectName = "k", codeFile = "-", taskId = "t", reason = "r"),
                 fakeTools(ExecuteCodeToolHandler::class.java to rec),
             )
         }
@@ -203,8 +204,8 @@ class McpAsCliContractTest {
         val big = "x".repeat(1_100_000)
         val rec = RecordingExecuteCode()
         val run = runCliCommand(homePaths(), stdin = big.toByteArray()) {
-            runExecuteCodeCommand(
-                DevrigCommand.DevrigCommandExecuteCode(projectName = "k", codeFile = "-", taskId = "t", reason = "r"),
+            runGeneratedToolCommand(
+                executeCodeRunTool(projectName = "k", codeFile = "-", taskId = "t", reason = "r"),
                 fakeTools(ExecuteCodeToolHandler::class.java to rec),
             )
         }

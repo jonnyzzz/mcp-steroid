@@ -23,6 +23,8 @@ import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -76,6 +78,62 @@ class FakeMcpSteroidTools(private val handlers: Map<Class<*>, Any>) : McpSteroid
 
 fun fakeTools(vararg pairs: Pair<Class<*>, Any>): FakeMcpSteroidTools =
     FakeMcpSteroidTools(pairs.toMap())
+
+/**
+ * The inert [DevrigCommand.RunTool] that parsing `devrig execute_code …` produces (issue #284): typed
+ * schema flags land in `arguments`, and the CLI-only `--code-file` source rides in [ToolCliExtras]. Only
+ * the flags actually supplied are present, so cwd inference / code-file resolution runs at runtime in
+ * `runGeneratedToolCommand`, exactly as after a real parse. A test-only fixture that mirrors the parse
+ * output so the glue tests can drive `runGeneratedToolCommand` directly.
+ */
+fun executeCodeRunTool(
+    projectName: String? = null,
+    code: String? = null,
+    codeFile: String? = null,
+    taskId: String? = null,
+    reason: String? = null,
+    modal: String? = null,
+    timeout: Int? = null,
+    json: Boolean = false,
+): DevrigCommand.RunTool = DevrigCommand.RunTool(
+    toolName = "steroid_execute_code",
+    commandName = "execute_code",
+    arguments = buildJsonObject {
+        projectName?.let { put("project_name", it) }
+        code?.let { put("code", it) }
+        taskId?.let { put("task_id", it) }
+        reason?.let { put("reason", it) }
+        modal?.let { put("modal", it) }
+        timeout?.let { put("timeout", it) }
+    },
+    extras = ToolCliExtras(codeFile = codeFile),
+    json = json,
+)
+
+/** The inert [DevrigCommand.RunTool] that parsing `devrig execute_feedback …` produces (issue #284). */
+fun executeFeedbackRunTool(
+    projectName: String? = null,
+    taskId: String? = null,
+    executionId: String? = null,
+    successRating: Double? = null,
+    explanation: String? = null,
+    code: String? = null,
+    codeFile: String? = null,
+    json: Boolean = false,
+): DevrigCommand.RunTool = DevrigCommand.RunTool(
+    toolName = "steroid_execute_feedback",
+    commandName = "execute_feedback",
+    arguments = buildJsonObject {
+        projectName?.let { put("project_name", it) }
+        taskId?.let { put("task_id", it) }
+        executionId?.let { put("execution_id", it) }
+        successRating?.let { put("success_rating", it) }
+        explanation?.let { put("explanation", it) }
+        code?.let { put("code", it) }
+    },
+    extras = ToolCliExtras(codeFile = codeFile),
+    json = json,
+)
 
 /**
  * A [ProjectRoute] fixture for cwd-inference tests (issue #266): only [path] and [name] are meaningful

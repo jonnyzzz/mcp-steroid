@@ -19,10 +19,8 @@ class FeedbackAndInputCommandTest {
     @Test
     fun `feedback maps rating, explanation and inline code`() {
         val rec = RecordingFeedback()
-        val cmd = DevrigCommand.DevrigCommandFeedback(
-            projectName = "k", taskId = "t1", successRating = 0.75, explanation = "worked", code = "val x = 1",
-        )
-        val run = runCliCommand(homePaths()) { runFeedbackCommand(cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec)) }
+        val cmd = executeFeedbackRunTool(projectName = "k", taskId = "t1", successRating = 0.75, explanation = "worked", code = "val x = 1")
+        val run = runCliCommand(homePaths()) { runGeneratedToolCommand(cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec)) }
         assertEquals(CliExit.OK, run.exit)
         assertEquals("k", rec.projectName)
         assertEquals("t1", rec.params!!.taskId)
@@ -36,11 +34,22 @@ class FeedbackAndInputCommandTest {
         val snippet = home.resolve("s.kts")
         Files.writeString(snippet, "// illustrative")
         val rec = RecordingFeedback()
-        val cmd = DevrigCommand.DevrigCommandFeedback(
-            projectName = "k", taskId = "t", successRating = 1.0, explanation = "e", codeFile = snippet.toString(),
-        )
-        runCliCommand(homePaths()) { runFeedbackCommand(cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec)) }
+        val cmd = executeFeedbackRunTool(projectName = "k", taskId = "t", successRating = 1.0, explanation = "e", codeFile = snippet.toString())
+        runCliCommand(homePaths()) { runGeneratedToolCommand(cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec)) }
         assertEquals("// illustrative", rec.params!!.code)
+    }
+
+    @Test
+    fun `feedback code-file dash reads stdin`() {
+        val rec = RecordingFeedback()
+        val cmd = executeFeedbackRunTool(
+            projectName = "k", taskId = "t", successRating = 1.0, explanation = "e", codeFile = "-",
+        )
+        val run = runCliCommand(homePaths(), stdin = "// from stdin".toByteArray()) {
+            runGeneratedToolCommand(cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec))
+        }
+        assertEquals(CliExit.OK, run.exit)
+        assertEquals("// from stdin", rec.params!!.code)
     }
 
     @Test
@@ -63,11 +72,9 @@ class FeedbackAndInputCommandTest {
     @Test
     fun `feedback explicit project_name overrides cwd inference`() {
         val rec = RecordingFeedback()
-        val cmd = DevrigCommand.DevrigCommandFeedback(
-            projectName = "explicit-key", taskId = "t", successRating = 1.0, explanation = "e",
-        )
+        val cmd = executeFeedbackRunTool(projectName = "explicit-key", taskId = "t", successRating = 1.0, explanation = "e")
         val run = runCliCommand(homePaths()) {
-            runFeedbackCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec),
                 cwd = Path.of("/home/u/proj"), routes = listOf(fakeRoute("/home/u/proj", "cwd-key")),
             )
@@ -79,11 +86,9 @@ class FeedbackAndInputCommandTest {
     @Test
     fun `feedback blank project_name infers the single containing project`() {
         val rec = RecordingFeedback()
-        val cmd = DevrigCommand.DevrigCommandFeedback(
-            projectName = null, taskId = "t", successRating = 1.0, explanation = "e",
-        )
+        val cmd = executeFeedbackRunTool(projectName = null, taskId = "t", successRating = 1.0, explanation = "e")
         val run = runCliCommand(homePaths()) {
-            runFeedbackCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec),
                 cwd = Path.of("/home/u/proj/src"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
             )
@@ -95,11 +100,9 @@ class FeedbackAndInputCommandTest {
     @Test
     fun `feedback no containing project fails with a candidate-listing usage error`() {
         val rec = RecordingFeedback()
-        val cmd = DevrigCommand.DevrigCommandFeedback(
-            projectName = null, taskId = "t", successRating = 1.0, explanation = "e",
-        )
+        val cmd = executeFeedbackRunTool(projectName = null, taskId = "t", successRating = 1.0, explanation = "e")
         val run = runCliCommand(homePaths()) {
-            runFeedbackCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(ExecuteFeedbackToolHandler::class.java to rec),
                 cwd = Path.of("/tmp/elsewhere"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
             )

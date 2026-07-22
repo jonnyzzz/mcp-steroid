@@ -10,11 +10,8 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.optional
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
-import com.github.ajalt.clikt.parameters.types.double
-import com.github.ajalt.clikt.parameters.types.int
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
-import com.jonnyzzz.mcpSteroid.server.ModalMode
 import kotlinx.serialization.json.JsonObject
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
@@ -147,19 +144,6 @@ sealed interface DevrigCommand {
         override val json: Boolean = false,
     ) : DevrigCommand
 
-    /** `devrig execute_code` — steroid_execute_code. Code comes from --code-file (preferred) or --code. */
-    data class DevrigCommandExecuteCode(
-        val projectName: String? = null,
-        val code: String? = null,
-        val codeFile: String? = null,
-        val taskId: String? = null,
-        val reason: String? = null,
-        val modal: String? = null,
-        val timeout: Int? = null,
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
     /** `devrig open_project` — steroid_open_project. `--wait` polls until the project is ready. */
     data class DevrigCommandOpenProject(
         val projectPath: String? = null,
@@ -190,19 +174,6 @@ sealed interface DevrigCommand {
         val taskId: String? = null,
         val reason: String? = null,
         val sequence: String? = null,
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
-    /** `devrig execute_feedback` — steroid_execute_feedback. Optional code via --code-file / --code. */
-    data class DevrigCommandFeedback(
-        val projectName: String? = null,
-        val taskId: String? = null,
-        val executionId: String? = null,
-        val successRating: Double? = null,
-        val explanation: String? = null,
-        val code: String? = null,
-        val codeFile: String? = null,
         override val debug: Boolean = false,
         override val json: Boolean = false,
     ) : DevrigCommand
@@ -275,15 +246,20 @@ fun parseDevrigCommandWithRoot(
         // The exception aborts parsing before the `--json`/command flags are captured on a variant, so
         // recover both directly from the raw tokens to keep the `--json` error envelope contract intact.
         val formatted = root.getFormattedHelp(e)
-        // Our own UsageErrors carry a concise `message`; clikt-internal errors (e.g. NoSuchOption) leave it
-        // blank and only put the specifics in the formatted help ("Error: no such option --nope") — lift
-        // that line so the `--json` envelope isn't a useless "Invalid arguments". The formatted help may
-        // carry ANSI colour codes (clikt colourises when it detects a terminal), so strip them before
-        // matching the "Error:" line — otherwise the line starts with an escape sequence, not "Error:".
-        val message = e.message?.takeIf { it.isNotBlank() }
-            ?: stripAnsiCodes(formatted.orEmpty()).lineSequence().map { it.trim() }
-                .firstOrNull { it.startsWith("Error:") }?.removePrefix("Error:")?.trim()
-            ?: "Invalid arguments"
+        // The formatted help's "Error:" line names the offending flag (clikt colourises it on a TTY, so
+        // strip ANSI first — otherwise the line starts with an escape sequence, not "Error:").
+        val errorLine = stripAnsiCodes(formatted.orEmpty()).lineSequence().map { it.trim() }
+            .firstOrNull { it.startsWith("Error:") }?.removePrefix("Error:")?.trim()
+        // A clikt parameter error (invalid choice, out-of-range, no such option) stores the offending flag
+        // in `paramName`, NOT in `message` — its raw `message` omits the flag ("invalid choice: bogus…").
+        // Prefer the flag-naming "Error:" line for those so the `--json` envelope identifies the flag. Our
+        // own UsageErrors carry no `paramName` and may be multi-line (curated examples), so keep their full
+        // `message`.
+        val message = if (e is UsageError && !e.paramName.isNullOrBlank()) {
+            errorLine ?: e.message?.takeIf { it.isNotBlank() } ?: "Invalid arguments"
+        } else {
+            e.message?.takeIf { it.isNotBlank() } ?: errorLine ?: "Invalid arguments"
+        }
         DevrigCommand.DevrigCommandParseError(
             text = formatted ?: message,
             message = message,
@@ -365,12 +341,13 @@ private class DevrigRootCommand(
 
     init {
         val backend = BackendCommand(selected, this)
-        // list_projects / list_windows are generated from their `CliToolSpec` metadata and dispatched at
-        // runtime through the single `RunTool` arm (issue #284); the other tools carry their own command
-        // classes.
-        val generatedListers = schemaToolCliCommands(
+        // These tools are generated from their `CliToolSpec` metadata and dispatched at runtime through
+        // the single `RunTool` arm (issue #284); the remaining tools still carry their own command classes
+        // until their runtime behaviors are migrated.
+        val generatedToolNames = setOf("list_projects", "list_windows", "execute_code", "execute_feedback")
+        val generatedTools = schemaToolCliCommands(
             selected, this,
-            tools = devrigCliTools().filter { it.cli.name == "list_projects" || it.cli.name == "list_windows" },
+            tools = devrigCliTools().filter { it.cli.name in generatedToolNames },
         )
         subcommands(
             // `mcp` is the canonical, advertised spelling. `mpc` is the original
@@ -384,12 +361,10 @@ private class DevrigRootCommand(
             // MCP-as-CLI (epic #188) — thin frontends over the existing bridge tool handlers.
             PromptCliCommand(selected, this),
             FetchResourceCliCommand(selected, this),
-            ExecuteCodeCliCommand(selected, this),
-            *generatedListers.toTypedArray(),
+            *generatedTools.toTypedArray(),
             OpenProjectCliCommand(selected, this),
             ScreenshotCliCommand(selected, this),
             InputCliCommand(selected, this),
-            FeedbackCliCommand(selected, this),
             HelpCommand(selected, this),
             VersionCommand(selected, this),
         )
@@ -506,52 +481,6 @@ private class FetchResourceCliCommand(
     }
 }
 
-/** `devrig execute_code` — steroid_execute_code. */
-private class ExecuteCodeCliCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("execute_code", selected, parent) {
-    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`; omit to infer from the current directory")
-    private val codeFile: String? by option("--code-file", help = "path to a Kotlin script file (preferred)")
-    private val code: String? by option("--code", help = "inline Kotlin suspend body (alternative to --code-file)")
-    private val taskId: String? by option("--task_id", help = "groups related calls in audit logs")
-    private val reason: String? by option("--reason", help = "full task description")
-    private val modal: String? by option("--modal", help = "smart_non_modal (default) | non_modal | unleashed")
-    private val timeout: Int? by option("--timeout", help = "script timeout in seconds (default 600)").int()
-
-    override fun run() {
-        val options = options()
-        if (options.help) { selectHelpTopic("execute_code"); return }
-        if (code.isNullOrBlank() && codeFile.isNullOrBlank()) {
-            throw UsageError(
-                "missing code. Pass --code-file=<path> (preferred) or --code=\"...\". Example:\n" +
-                    "  devrig execute_code --project_name=\"<key>\" --code-file=repro.kts --task_id=t1 --reason=\"reproduce issue\""
-            )
-        }
-        if (!code.isNullOrBlank() && !codeFile.isNullOrBlank()) {
-            throw UsageError("pass only one of --code / --code-file, not both")
-        }
-        // Reject a non-positive timeout up front: dispatching with 0/-1 would start the script and then
-        // immediately fail with "timed out after 0 seconds" (Codex Round-4 finding).
-        timeout?.let { if (it <= 0) throw UsageError("--timeout must be a positive number of seconds (got $it)") }
-        // Validate --modal here so an unknown value rides the parse-error envelope path (honors --json,
-        // exit 64) instead of a stderr-only message from runExecuteCodeCommand (Codex finding #2).
-        modal?.let { wire ->
-            if (ModalMode.entries.none { it.wire == wire }) {
-                throw UsageError(
-                    "invalid --modal '$wire'. Valid: ${ModalMode.entries.joinToString(" | ") { it.wire }}"
-                )
-            }
-        }
-        requireArg(taskId, "--task_id", null)
-        requireArg(reason, "--reason", null)
-        select(DevrigCommand.DevrigCommandExecuteCode(
-            projectName = projectName, code = code, codeFile = codeFile, taskId = taskId,
-            reason = reason, modal = modal, timeout = timeout, debug = options.debug, json = options.json,
-        ))
-    }
-}
-
 /** `devrig open_project --project_path=... [--wait]` — steroid_open_project. */
 private class OpenProjectCliCommand(
     selected: SelectedDevrigCommand,
@@ -627,47 +556,6 @@ private class InputCliCommand(
         select(DevrigCommand.DevrigCommandInput(
             projectName = projectName, windowId = windowId, taskId = taskId, reason = reason,
             sequence = sequence, debug = options.debug, json = options.json,
-        ))
-    }
-}
-
-/** `devrig execute_feedback --project_name=... --task_id=... --success_rating=... --explanation=...` */
-private class FeedbackCliCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("execute_feedback", selected, parent) {
-    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`; omit to infer from the current directory")
-    private val taskId: String? by option("--task_id", help = "the same task_id used for the rated execution")
-    // Accepted for parity with the steroid_execute_feedback MCP surface, which likewise documents
-    // execution_id but does not forward it (FeedbackParams has no such field). Kept so an agent/script
-    // that passes it is not rejected; the value is contextual only and is intentionally NOT forwarded.
-    private val executionId: String? by option(
-        "--execution_id",
-        help = "accepted for MCP parity; contextual only — currently NOT forwarded (matches steroid_execute_feedback)",
-    )
-    private val successRating: Double? by option("--success_rating", help = "0.00 (failure) .. 1.00 (success)").double()
-    private val explanation: String? by option("--explanation", help = "what worked, what didn't, what you'll try next")
-    private val codeFile: String? by option("--code-file", help = "optional illustrative snippet file")
-    private val code: String? by option("--code", help = "optional illustrative snippet (inline)")
-
-    override fun run() {
-        val options = options()
-        if (options.help) { select(helpFor(options)); return }
-        requireArg(taskId, "--task_id", null)
-        requireArg(explanation, "--explanation", null)
-        val rating = successRating
-            ?: throw UsageError("missing --success_rating (number 0.00..1.00). Example:\n" +
-                "  devrig execute_feedback --project_name=\"<key>\" --task_id=t1 --success_rating=0.9 --explanation=\"...\"")
-        if (rating !in 0.0..1.0) {
-            throw UsageError("--success_rating=$rating is out of range (must be 0.00..1.00)")
-        }
-        if (!code.isNullOrBlank() && !codeFile.isNullOrBlank()) {
-            throw UsageError("pass only one of --code / --code-file, not both")
-        }
-        select(DevrigCommand.DevrigCommandFeedback(
-            projectName = projectName, taskId = taskId, executionId = executionId,
-            successRating = rating, explanation = explanation, code = code, codeFile = codeFile,
-            debug = options.debug, json = options.json,
         ))
     }
 }
@@ -804,11 +692,9 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandInstallDevrig -> runInstallDevrigCommand(command)
             // MCP-as-CLI (epic #188)
             is DevrigCommand.DevrigCommandFetchResource -> runFetchResourceCommand(command)
-            is DevrigCommand.DevrigCommandExecuteCode -> runExecuteCodeCommand(command)
             is DevrigCommand.DevrigCommandOpenProject -> runOpenProjectCommand(command)
             is DevrigCommand.DevrigCommandScreenshot -> runScreenshotCommand(command)
             is DevrigCommand.DevrigCommandInput -> runInputCommand(command)
-            is DevrigCommand.DevrigCommandFeedback -> runFeedbackCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

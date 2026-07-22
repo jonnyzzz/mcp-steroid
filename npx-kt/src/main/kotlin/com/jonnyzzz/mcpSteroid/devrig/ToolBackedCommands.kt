@@ -11,10 +11,6 @@ import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
-import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
-import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolSpec
-import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
-import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolSpec
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
@@ -175,87 +171,6 @@ private fun requireProjectName(explicit: String?, cwd: Path, routes: List<Projec
                 CliExit.USAGE,
             )
         }
-    }
-}
-
-// ----------------------------------- execute_code -----------------------------------
-
-fun DevrigServices.runExecuteCodeCommand(
-    command: DevrigCommand.DevrigCommandExecuteCode,
-    tools: McpSteroidTools = StubMcpSteroidTools(this),
-    cwd: Path = Path.of(System.getProperty("user.dir")),
-    routes: List<ProjectRoute> = projectRouting.routes(),
-): Int {
-    val presentation = presentationFor(command.json)
-    val projectName = try {
-        requireProjectName(command.projectName, cwd, routes)
-    } catch (e: CodeArgException) {
-        return presentation.renderCodeArgFailure("execute_code", e, mcpStdout)
-    }
-    // `--code-file=-` reads the script from stdin so agents can pipe a snippet without a temp file.
-    val code = try {
-        when {
-            command.codeFile == "-" -> mcpStdin.readBytes().decodeToString()
-            else -> resolveCodeArg(command.code, command.codeFile)
-        }
-    } catch (e: CodeArgException) {
-        return presentation.renderCodeArgFailure("execute_code", e, mcpStdout)
-    }
-    // ToolSpec owns parameter parsing and defaults; the CLI only maps its flags to JSON.
-    val arguments = buildJsonObject {
-        put("project_name", projectName)
-        put("code", code)
-        put("task_id", command.taskId!!)
-        put("reason", command.reason!!)
-        put("timeout", command.timeout ?: 600)
-        command.modal?.let { put("modal", it) }
-    }
-    return runToolCall("execute_code", presentation, tools) { t ->
-        callToolViaSpec(
-            ExecuteCodeToolSpec { t.handler<ExecuteCodeToolHandler>() },
-            arguments,
-            stderrProgressReporter(),
-        )
-    }
-}
-
-// ----------------------------------- execute_feedback -----------------------------------
-
-fun DevrigServices.runFeedbackCommand(
-    command: DevrigCommand.DevrigCommandFeedback,
-    tools: McpSteroidTools = StubMcpSteroidTools(this),
-    cwd: Path = Path.of(System.getProperty("user.dir")),
-    routes: List<ProjectRoute> = projectRouting.routes(),
-): Int {
-    val presentation = presentationFor(command.json)
-    val projectName = try {
-        requireProjectName(command.projectName, cwd, routes)
-    } catch (e: CodeArgException) {
-        return presentation.renderCodeArgFailure("execute_feedback", e, mcpStdout)
-    }
-    val code: String? = try {
-        when {
-            !command.code.isNullOrBlank() -> command.code
-            !command.codeFile.isNullOrBlank() -> resolveCodeArg(null, command.codeFile)
-            else -> null
-        }
-    } catch (e: CodeArgException) {
-        return presentation.renderCodeArgFailure("execute_feedback", e, mcpStdout)
-    }
-    // execution_id is accepted by the CLI for compatibility but is not part of FeedbackParams.
-    val arguments = buildJsonObject {
-        put("project_name", projectName)
-        put("task_id", command.taskId!!)
-        put("success_rating", command.successRating!!)
-        command.explanation?.let { put("explanation", it) }
-        code?.let { put("code", it) }
-    }
-    return runToolCall("execute_feedback", presentation, tools) { t ->
-        callToolViaSpec(
-            ExecuteFeedbackToolSpec { t.handler<ExecuteFeedbackToolHandler>() },
-            arguments,
-            stderrProgressReporter(),
-        )
     }
 }
 
@@ -516,6 +431,8 @@ private fun waitForProjectReady(
 fun DevrigServices.runGeneratedToolCommand(
     command: DevrigCommand.RunTool,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
+    cwd: Path = Path.of(System.getProperty("user.dir")),
+    routes: List<ProjectRoute> = projectRouting.routes(),
 ): Int {
     // Resolve the LIVE spec (with its real handler wiring), never a metadata-only parser spec.
     val spec = liveToolSpec(command.toolName, tools)
@@ -528,11 +445,67 @@ fun DevrigServices.runGeneratedToolCommand(
     }
 
     val presentation = presentationFor(command.json)
+    // CLI-only runtime preprocessing (cwd-inferred project_name, --code-file/stdin) into a NEW JsonObject.
+    val arguments = try {
+        toolRuntimeArguments(command, cwd, routes)
+    } catch (e: CodeArgException) {
+        return presentation.renderCodeArgFailure(command.commandName, e, mcpStdout)
+    }
     return dispatchToolCall(
         command.commandName, presentation, tools,
-        call = { callToolViaSpec(spec, command.arguments, stderrProgressReporter()) },
-    ) { result -> renderGeneratedToolResult(command, result) }
+        call = { callToolViaSpec(spec, arguments, stderrProgressReporter()) },
+    ) { result -> renderGeneratedToolResult(command, presentation, result) }
 }
+
+/**
+ * Runtime preprocessing for a generated [command]: resolves the CLI-only inputs that a schema parameter
+ * cannot carry — the cwd-inferred `project_name` (issue #266) and the `--code-file`/stdin script source —
+ * and returns a NEW [JsonObject]. It never mutates [DevrigCommand.RunTool.arguments] and never re-parses
+ * an already-typed value (task_id/reason/timeout/modal/success_rating/execution_id are copied verbatim);
+ * a tool with no such inputs (the listers) gets its typed arguments back unchanged. The generic mapping
+ * keeps `execution_id` — `ExecuteFeedbackToolSpec.call()` owns that it is contextual and absent from
+ * `FeedbackParams`, so CLI glue must not drop it (issue #284).
+ */
+private fun DevrigServices.toolRuntimeArguments(
+    command: DevrigCommand.RunTool,
+    cwd: Path,
+    routes: List<ProjectRoute>,
+): JsonObject = when (command.toolName) {
+    EXECUTE_CODE_TOOL_NAME -> command.arguments.withResolvedProjectAndCode(
+        projectName = requireProjectName(command.arguments.stringOrNull("project_name"), cwd, routes),
+        code = executeCodeSource(command),
+    )
+    EXECUTE_FEEDBACK_TOOL_NAME -> command.arguments.withResolvedProjectAndCode(
+        projectName = requireProjectName(command.arguments.stringOrNull("project_name"), cwd, routes),
+        code = feedbackCodeSource(command),
+    )
+    else -> command.arguments
+}
+
+/** execute_code's script body: `--code-file=-` reads stdin, else inline `--code` or the `--code-file` path. */
+private fun DevrigServices.executeCodeSource(command: DevrigCommand.RunTool): String = when {
+    command.extras.codeFile == "-" -> mcpStdin.readBytes().decodeToString()
+    else -> resolveCodeArg(command.arguments.stringOrNull("code"), command.extras.codeFile)
+}
+
+/** execute_feedback's optional illustrative snippet: inline `--code`, else the `--code-file` path, else none. */
+private fun DevrigServices.feedbackCodeSource(command: DevrigCommand.RunTool): String? {
+    val inline = command.arguments.stringOrNull("code")
+    return when {
+        !inline.isNullOrBlank() -> inline
+        command.extras.codeFile == "-" -> mcpStdin.readBytes().decodeToString()
+        !command.extras.codeFile.isNullOrBlank() -> resolveCodeArg(null, command.extras.codeFile)
+        else -> null
+    }
+}
+
+/** A copy of these arguments with `project_name` set to [projectName] and `code` replaced by [code] (omitted when null). */
+private fun JsonObject.withResolvedProjectAndCode(projectName: String, code: String?): JsonObject =
+    buildJsonObject {
+        forEach { (key, value) -> if (key != "project_name" && key != "code") put(key, value) }
+        put("project_name", projectName)
+        code?.let { put("code", it) }
+    }
 
 /**
  * The one live [CliToolSpec] whose MCP [toolName] matches, resolved from the canonical [devrigToolSpecs]
@@ -554,19 +527,26 @@ fun liveToolSpec(toolName: String, tools: McpSteroidTools): CliToolSpec {
  * IS the payload, so `--json` lifts it into the envelope `data` verbatim (byte-identical to the
  * pre-schema list envelopes: [McpJson] and [CLI_ENVELOPE_JSON] both encode defaults and omit nulls) and
  * the human path prints each command's dedicated table.
+ *
+ * Every other (content) tool returns free-form content items, so both modes render through the shared
+ * [presentation]: `--json` emits `data:{content:[...]}` and human mode prints each item — byte-identical
+ * to the pre-schema per-tool render path (issue #284).
  */
-private fun DevrigServices.renderGeneratedToolResult(command: DevrigCommand.RunTool, result: ToolCallResult): Int {
-    if (command.json) {
-        mcpStdout.println(cliEnvelopeJson(command.commandName, isError = result.isError, data = result.jsonResponseData()))
-        return if (result.isError) CliExit.TOOL_ERROR else CliExit.OK
-    }
-    return when (command.toolName) {
-        LIST_WINDOWS_TOOL_NAME -> {
-            renderListWindowsText(McpJson.decodeFromString(ListWindowsResponse.serializer(), result.singleTextContent()), mcpStdout)
-            CliExit.OK
+private fun DevrigServices.renderGeneratedToolResult(
+    command: DevrigCommand.RunTool,
+    presentation: Presentation,
+    result: ToolCallResult,
+): Int {
+    if (command.toolName == LIST_PROJECTS_TOOL_NAME || command.toolName == LIST_WINDOWS_TOOL_NAME) {
+        if (command.json) {
+            mcpStdout.println(cliEnvelopeJson(command.commandName, isError = result.isError, data = result.jsonResponseData()))
+            return if (result.isError) CliExit.TOOL_ERROR else CliExit.OK
         }
-        else -> error("runGeneratedToolCommand: no human renderer registered for '${command.toolName}'")
+        // Human `list_projects` is handled before dispatch (runProjectCommand); only list_windows reaches here.
+        renderListWindowsText(McpJson.decodeFromString(ListWindowsResponse.serializer(), result.singleTextContent()), mcpStdout)
+        return CliExit.OK
     }
+    return presentation.render(result, command = command.commandName, out = mcpStdout)
 }
 
 /** The single text content item a structured-response tool returns; an invariant for the list tools. */

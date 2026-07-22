@@ -51,25 +51,42 @@ class SchemaCliBinding private constructor(
     }
 
     companion object {
-        /** Binds every non-hidden parameter in [specs] onto [command], preserving declaration order. */
-        fun bindAll(command: CliktCommand, specs: List<InputSchemaParamSpec>): List<SchemaCliBinding> =
-            specs.filterNot { it.cliHidden }.map { bind(command, it) }
+        /**
+         * Binds every non-hidden parameter in [specs] onto [command], preserving declaration order.
+         *
+         * When [optionalizeRequired] is true, an MCP-required parameter is bound WITHOUT Clikt
+         * `.required()`, so parsing does not abort at Clikt finalization before the command's `run()` gets
+         * a chance to short-circuit `--help`; the generated command then re-checks presence itself after
+         * that short-circuit. Left false (the default), an MCP-required parameter is a Clikt-required
+         * option — the standalone binding contract exercised without a `run()` help hook (issue #284).
+         */
+        fun bindAll(
+            command: CliktCommand,
+            specs: List<InputSchemaParamSpec>,
+            optionalizeRequired: Boolean = false,
+        ): List<SchemaCliBinding> =
+            specs.filterNot { it.cliHidden }.map { bind(command, it, optionalizeRequired) }
 
         /**
          * Creates and registers a single typed Clikt binding for [spec] on [command]. An enum ([spec]
          * `enumValues`) becomes a Clikt `choice`; a numeric `minimum`/`maximum` from [spec] `extra` becomes
          * a Clikt `restrictTo`, so an out-of-range value is a parse-time USAGE error rather than a backend
-         * error. A parameter counts as required only when it is MCP-required and not CLI-optional.
+         * error. A parameter counts as required only when it is MCP-required, not CLI-optional, and
+         * [optionalizeRequired] is false.
          */
-        fun bind(command: CliktCommand, spec: InputSchemaParamSpec): SchemaCliBinding {
+        fun bind(
+            command: CliktCommand,
+            spec: InputSchemaParamSpec,
+            optionalizeRequired: Boolean = false,
+        ): SchemaCliBinding {
             require(!spec.cliHidden) { "cliHidden parameter ${spec.name} must not be bound to the CLI" }
-            return if (spec.cliPositional) bindArgument(command, spec) else bindOption(command, spec)
+            val required = isRequired(spec) && !optionalizeRequired
+            return if (spec.cliPositional) bindArgument(command, spec, required) else bindOption(command, spec, required)
         }
 
         private fun isRequired(spec: InputSchemaParamSpec): Boolean = spec.required && !spec.cliOptional
 
-        private fun bindOption(command: CliktCommand, spec: InputSchemaParamSpec): SchemaCliBinding {
-            val required = isRequired(spec)
+        private fun bindOption(command: CliktCommand, spec: InputSchemaParamSpec, required: Boolean): SchemaCliBinding {
             val flag = spec.cliFlag
             return when (spec.type) {
                 "boolean" -> {
@@ -140,8 +157,7 @@ class SchemaCliBinding private constructor(
             }
         }
 
-        private fun bindArgument(command: CliktCommand, spec: InputSchemaParamSpec): SchemaCliBinding {
-            val required = isRequired(spec)
+        private fun bindArgument(command: CliktCommand, spec: InputSchemaParamSpec, required: Boolean): SchemaCliBinding {
             return when (spec.type) {
                 "array" -> {
                     when (spec.arrayItemType()) {

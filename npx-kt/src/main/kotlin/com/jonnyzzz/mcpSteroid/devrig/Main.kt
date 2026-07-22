@@ -169,11 +169,9 @@ private fun DevrigCommand.runsTool(): Boolean = when (this) {
     is DevrigCommand.DevrigCommandInstall,
     is DevrigCommand.DevrigCommandInstallDevrig,
     is DevrigCommand.DevrigCommandFetchResource,
-    is DevrigCommand.DevrigCommandExecuteCode,
     is DevrigCommand.DevrigCommandOpenProject,
     is DevrigCommand.DevrigCommandScreenshot,
     is DevrigCommand.DevrigCommandInput,
-    is DevrigCommand.DevrigCommandFeedback,
     is DevrigCommand.RunTool -> true
     is DevrigCommand.DevrigCommandHelp,
     is DevrigCommand.DevrigCommandVersion,
@@ -187,11 +185,9 @@ private fun DevrigCommand.runsTool(): Boolean = when (this) {
  */
 private fun DevrigCommand.isMcpAsCliToolCommand(): Boolean = when (this) {
     is DevrigCommand.DevrigCommandFetchResource,
-    is DevrigCommand.DevrigCommandExecuteCode,
     is DevrigCommand.DevrigCommandOpenProject,
     is DevrigCommand.DevrigCommandScreenshot,
     is DevrigCommand.DevrigCommandInput,
-    is DevrigCommand.DevrigCommandFeedback,
     is DevrigCommand.RunTool -> true
     else -> false
 }
