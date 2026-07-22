@@ -59,5 +59,15 @@ fun DevrigServices.runConnectIdeCommand(command: DevrigCommand.DevrigCommandConn
             }
             InstallPluginResponse(response.status.value, response.bodyAsText())
         }
-        runConnectIde(discovered, client, mcpStdout, System.err)
+        val browser = BrowserLauncher { url ->
+            try {
+                ProcessBuilder(browserOpenArgv(detectHostOs(System.getProperty("os.name") ?: ""), url)).start()
+                true
+            } catch (e: Exception) {
+                System.err.println("[devrig] failed to open browser: ${e.message ?: e::class.simpleName}")
+                false
+            }
+        }
+        val outcome = runConnectIde(discovered, pluginMarkerCount = 0, client, browser, mcpStdout, System.err)
+        if (outcome == ConnectIdeOutcome.NO_IDE) 1 else 0
     }
