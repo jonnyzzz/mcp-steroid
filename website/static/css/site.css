@@ -1428,8 +1428,8 @@ h1 {
     font-size: 0.85rem;
 }
 
-/* ── devrig brand badge in the top-left nav (next to "MCP Steroid") ───────── */
-.nav-devrig {
+/* ── secondary brand badge in the top-left nav (next to "devrig") ─────────── */
+.nav-badge {
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: 0.7rem;
     font-weight: 700;
@@ -1444,7 +1444,7 @@ h1 {
 }
 @media (max-width: 480px) {
     .nav-container { padding-left: 0.9rem; padding-right: 0.9rem; }
-    .nav-devrig { font-size: 0.62rem; padding: 2px 5px; }
+    .nav-badge { font-size: 0.62rem; padding: 2px 5px; }
     .nav-brand { gap: 0.4rem; }
     .nav-title { font-size: 1rem; }
 }
