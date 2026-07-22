@@ -109,6 +109,13 @@ a:hover {
     background-clip: text;
     color: transparent;
 }
+/* Inside a button/CTA the gradient-clipped brand word blends into the pill
+   background; force it to the solid white button label so it stays readable. */
+.btn .lighter {
+    background: none;
+    -webkit-text-fill-color: #ffffff;
+    color: #ffffff;
+}
 .nav-links {
     display: flex;
     align-items: center;
