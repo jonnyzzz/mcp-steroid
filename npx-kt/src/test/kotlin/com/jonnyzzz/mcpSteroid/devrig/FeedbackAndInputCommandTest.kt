@@ -55,11 +55,11 @@ class FeedbackAndInputCommandTest {
     @Test
     fun `input forwards the raw sequence verbatim for plugin version skew`() {
         val rec = RecordingInput()
-        val cmd = DevrigCommand.DevrigCommandInput(
+        val cmd = inputRunTool(
             projectName = "k", windowId = "win-1", taskId = "t", reason = "r",
             sequence = "press:CTRL+P, type:Main, delay:200, press:ENTER",
         )
-        val run = runCliCommand(homePaths()) { runInputCommand(cmd, fakeTools(VisionInputToolHandler::class.java to rec)) }
+        val run = runCliCommand(homePaths()) { runGeneratedToolCommand(cmd, fakeTools(VisionInputToolHandler::class.java to rec)) }
         assertEquals(CliExit.OK, run.exit)
         assertEquals("k", rec.projectName)
         assertEquals("win-1", rec.params!!.windowId)
@@ -115,11 +115,11 @@ class FeedbackAndInputCommandTest {
     @Test
     fun `input explicit project_name overrides cwd inference`() {
         val rec = RecordingInput()
-        val cmd = DevrigCommand.DevrigCommandInput(
+        val cmd = inputRunTool(
             projectName = "explicit-key", windowId = "win-1", taskId = "t", reason = "r", sequence = "press:ENTER",
         )
         val run = runCliCommand(homePaths()) {
-            runInputCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(VisionInputToolHandler::class.java to rec),
                 cwd = Path.of("/home/u/proj"), routes = listOf(fakeRoute("/home/u/proj", "cwd-key")),
             )
@@ -131,11 +131,11 @@ class FeedbackAndInputCommandTest {
     @Test
     fun `input blank project_name infers the single containing project`() {
         val rec = RecordingInput()
-        val cmd = DevrigCommand.DevrigCommandInput(
+        val cmd = inputRunTool(
             projectName = null, windowId = "win-1", taskId = "t", reason = "r", sequence = "press:ENTER",
         )
         val run = runCliCommand(homePaths()) {
-            runInputCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(VisionInputToolHandler::class.java to rec),
                 cwd = Path.of("/home/u/proj/src"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
             )
@@ -147,11 +147,11 @@ class FeedbackAndInputCommandTest {
     @Test
     fun `input no containing project fails with a candidate-listing usage error`() {
         val rec = RecordingInput()
-        val cmd = DevrigCommand.DevrigCommandInput(
+        val cmd = inputRunTool(
             projectName = null, windowId = "win-1", taskId = "t", reason = "r", sequence = "press:ENTER",
         )
         val run = runCliCommand(homePaths()) {
-            runInputCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(VisionInputToolHandler::class.java to rec),
                 cwd = Path.of("/tmp/elsewhere"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
             )

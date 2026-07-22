@@ -108,11 +108,11 @@ class CliErrorEnvelopeTest {
         // path), not a human string buried in the content array. Supersedes the Round-4 "Saved --out:"
         // content-text approach.
         val outFile = home.resolve("shots/ok.png")
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = "k", taskId = "t", reason = "r", out = outFile.toString(), json = true,
         )
         val run = runCliCommand(homePaths()) {
-            runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(imageResult())))
+            runGeneratedToolCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(imageResult())))
         }
         assertEquals(CliExit.OK, run.exit)
         assertFalse(envIsError(run), run.stdout)
@@ -124,11 +124,11 @@ class CliErrorEnvelopeTest {
     fun `--out write failure under --json is an enveloped IO error`() {
         // Point --out at the home DIRECTORY: Files.write on a directory fails. A genuine write failure is
         // an I/O error (74), not a usage error (64) — the path string was fine, the write was not (#4/#6).
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = "k", taskId = "t", reason = "r", out = home.toString(), json = true,
         )
         val run = runCliCommand(homePaths()) {
-            runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(imageResult())))
+            runGeneratedToolCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(imageResult())))
         }
         assertEquals(CliExit.IO_ERROR, run.exit)
         assertTrue(envIsError(run), run.stdout)
@@ -137,12 +137,12 @@ class CliErrorEnvelopeTest {
 
     @Test
     fun `--out requested but no image is a data error, never a silent success`() {
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = "k", taskId = "t", reason = "r", out = home.resolve("x.png").toString(), json = true,
         )
         val noImage = ToolCallResult(content = listOf(ContentItem.Text("screenshot taken, tree saved")))
         val run = runCliCommand(homePaths()) {
-            runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(noImage)))
+            runGeneratedToolCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(noImage)))
         }
         assertEquals(CliExit.DATA_ERROR, run.exit)
         assertTrue(envIsError(run), run.stdout)
@@ -151,12 +151,12 @@ class CliErrorEnvelopeTest {
 
     @Test
     fun `--out with an undecodable image payload is a data error`() {
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = "k", taskId = "t", reason = "r", out = home.resolve("x.png").toString(), json = true,
         )
         val bad = ToolCallResult(content = listOf(ContentItem.Image(data = "!!!not base64!!!", mimeType = "image/png")))
         val run = runCliCommand(homePaths()) {
-            runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(bad)))
+            runGeneratedToolCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to RecordingScreenshot(bad)))
         }
         assertEquals(CliExit.DATA_ERROR, run.exit)
         assertTrue(envIsError(run), run.stdout)
@@ -170,11 +170,11 @@ class CliErrorEnvelopeTest {
         // A step this devrig's parser would not recognize must still be forwarded raw — a newer plugin
         // may support it. devrig is NOT a second source of truth for input syntax.
         val rec = RecordingInput()
-        val cmd = DevrigCommand.DevrigCommandInput(
+        val cmd = inputRunTool(
             projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "warp:9000", json = true,
         )
         val run = runCliCommand(homePaths()) {
-            runInputCommand(cmd, fakeTools(VisionInputToolHandler::class.java to rec))
+            runGeneratedToolCommand(cmd, fakeTools(VisionInputToolHandler::class.java to rec))
         }
         assertEquals(CliExit.OK, run.exit)
         assertEquals("warp:9000", rec.params!!.rawSequence)
@@ -191,11 +191,11 @@ class CliErrorEnvelopeTest {
             )),
             isError = true,
         )
-        val cmd = DevrigCommand.DevrigCommandInput(
+        val cmd = inputRunTool(
             projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "warp:9000", json = true,
         )
         val run = runCliCommand(homePaths()) {
-            runInputCommand(cmd, fakeTools(VisionInputToolHandler::class.java to RecordingInput(serverError)))
+            runGeneratedToolCommand(cmd, fakeTools(VisionInputToolHandler::class.java to RecordingInput(serverError)))
         }
         assertEquals(CliExit.TOOL_ERROR, run.exit)
         assertTrue(envIsError(run), run.stdout)
@@ -244,9 +244,9 @@ class CliErrorEnvelopeTest {
     @Test
     fun `open_project --wait ready emits a single success envelope`() {
         val path = home.resolve("proj").toAbsolutePath().normalize().toString()
-        val cmd = DevrigCommand.DevrigCommandOpenProject(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
+        val cmd = openProjectRunTool(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(
+            runGeneratedToolCommand(
                 cmd,
                 fakeTools(
                     OpenProjectToolHandler::class.java to RecordingOpenProject(),
@@ -264,9 +264,9 @@ class CliErrorEnvelopeTest {
     @Test
     fun `open_project --wait timeout emits a single isError envelope, never a stale success`() {
         val path = home.resolve("proj").toAbsolutePath().normalize().toString()
-        val cmd = DevrigCommand.DevrigCommandOpenProject(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
+        val cmd = openProjectRunTool(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(
+            runGeneratedToolCommand(
                 cmd,
                 fakeTools(
                     OpenProjectToolHandler::class.java to RecordingOpenProject(),
@@ -284,9 +284,9 @@ class CliErrorEnvelopeTest {
     @Test
     fun `open_project --wait tolerates a transient poll failure then succeeds`() {
         val path = home.resolve("proj").toAbsolutePath().normalize().toString()
-        val cmd = DevrigCommand.DevrigCommandOpenProject(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
+        val cmd = openProjectRunTool(projectPath = path, taskId = "t", reason = "r", wait = true, json = true)
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(
+            runGeneratedToolCommand(
                 cmd,
                 fakeTools(
                     OpenProjectToolHandler::class.java to RecordingOpenProject(),
@@ -316,9 +316,9 @@ class CliErrorEnvelopeTest {
     @Test
     fun `open_project resolves a relative --project_path against cwd`() {
         val rec = RecordingOpenProject()
-        val cmd = DevrigCommand.DevrigCommandOpenProject(projectPath = ".", taskId = "t", reason = "r")
+        val cmd = openProjectRunTool(projectPath = ".", taskId = "t", reason = "r")
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(cmd, fakeTools(OpenProjectToolHandler::class.java to rec))
+            runGeneratedToolCommand(cmd, fakeTools(OpenProjectToolHandler::class.java to rec))
         }
         assertEquals(CliExit.OK, run.exit)
         val expected = Path.of(".").toAbsolutePath().normalize().toString()

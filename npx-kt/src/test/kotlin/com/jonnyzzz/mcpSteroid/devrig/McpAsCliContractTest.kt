@@ -47,9 +47,9 @@ class McpAsCliContractTest {
     private fun feedbackCmd(json: Boolean) =
         executeFeedbackRunTool(projectName = "k", taskId = "t", successRating = 0.5, explanation = "x", json = json)
     private fun inputCmd(json: Boolean) =
-        DevrigCommand.DevrigCommandInput(projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "press:ESCAPE", json = json)
+        inputRunTool(projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "press:ESCAPE", json = json)
     private fun screenshotCmd(json: Boolean) =
-        DevrigCommand.DevrigCommandScreenshot(projectName = "k", taskId = "t", reason = "r", json = json)
+        takeScreenshotRunTool(projectName = "k", taskId = "t", reason = "r", json = json)
 
     // ---- shared assertions ----
 
@@ -82,10 +82,10 @@ class McpAsCliContractTest {
             runGeneratedToolCommand(feedbackCmd(true), fakeTools(ExecuteFeedbackToolHandler::class.java to ThrowingFeedback(ex())))
         }, CliExit.USAGE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
-            runInputCommand(inputCmd(true), fakeTools(VisionInputToolHandler::class.java to ThrowingInput(ex())))
+            runGeneratedToolCommand(inputCmd(true), fakeTools(VisionInputToolHandler::class.java to ThrowingInput(ex())))
         }, CliExit.USAGE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
-            runScreenshotCommand(screenshotCmd(true), fakeTools(VisionScreenshotToolHandler::class.java to ThrowingScreenshot(ex())))
+            runGeneratedToolCommand(screenshotCmd(true), fakeTools(VisionScreenshotToolHandler::class.java to ThrowingScreenshot(ex())))
         }, CliExit.USAGE, expectError = true)
     }
 
@@ -101,14 +101,14 @@ class McpAsCliContractTest {
             runGeneratedToolCommand(feedbackCmd(true), fakeTools(ExecuteFeedbackToolHandler::class.java to ThrowingFeedback(ex())))
         }, CliExit.UNAVAILABLE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
-            runInputCommand(inputCmd(true), fakeTools(VisionInputToolHandler::class.java to ThrowingInput(ex())))
+            runGeneratedToolCommand(inputCmd(true), fakeTools(VisionInputToolHandler::class.java to ThrowingInput(ex())))
         }, CliExit.UNAVAILABLE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
-            runScreenshotCommand(screenshotCmd(true), fakeTools(VisionScreenshotToolHandler::class.java to ThrowingScreenshot(ex())))
+            runGeneratedToolCommand(screenshotCmd(true), fakeTools(VisionScreenshotToolHandler::class.java to ThrowingScreenshot(ex())))
         }, CliExit.UNAVAILABLE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
-            runOpenProjectCommand(
-                DevrigCommand.DevrigCommandOpenProject(projectPath = "/p", taskId = "t", reason = "r", json = true),
+            runGeneratedToolCommand(
+                openProjectRunTool(projectPath = "/p", taskId = "t", reason = "r", json = true),
                 fakeTools(OpenProjectToolHandler::class.java to ThrowingOpenProject(ex())),
             )
         }, CliExit.UNAVAILABLE, expectError = true)
@@ -219,8 +219,8 @@ class McpAsCliContractTest {
     fun `open_project normalizes a relative path with dot-dot against cwd`() {
         val rec = RecordingOpenProject()
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(
-                DevrigCommand.DevrigCommandOpenProject(projectPath = "a/../b", taskId = "t", reason = "r"),
+            runGeneratedToolCommand(
+                openProjectRunTool(projectPath = "a/../b", taskId = "t", reason = "r"),
                 fakeTools(OpenProjectToolHandler::class.java to rec),
             )
         }
@@ -237,8 +237,8 @@ class McpAsCliContractTest {
         Files.createSymbolicLink(link, target)
         val rec = RecordingOpenProject()
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(
-                DevrigCommand.DevrigCommandOpenProject(projectPath = link.toString(), taskId = "t", reason = "r"),
+            runGeneratedToolCommand(
+                openProjectRunTool(projectPath = link.toString(), taskId = "t", reason = "r"),
                 fakeTools(OpenProjectToolHandler::class.java to rec),
             )
         }

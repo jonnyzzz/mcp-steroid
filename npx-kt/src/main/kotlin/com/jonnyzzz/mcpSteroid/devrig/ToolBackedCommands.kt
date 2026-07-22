@@ -135,7 +135,7 @@ private fun resolveCodeArg(inline: String?, file: String?): String {
     }
 }
 
-/** Renders a [CodeArgException] (bad --code-file, missing/ambiguous --project_name, …) via [presentation]. */
+/** Renders a [CodeArgException] (bad --code-file, missing/ambiguous --project_name, …) via [Presentation]. */
 private fun Presentation.renderCodeArgFailure(command: String, e: CodeArgException, out: PrintStream): Int =
     renderError(command, e.message!!, e.exit, out)
 
@@ -176,26 +176,30 @@ private fun requireProjectName(explicit: String?, cwd: Path, routes: List<Projec
 
 // ----------------------------------- input -----------------------------------
 
-fun DevrigServices.runInputCommand(
-    command: DevrigCommand.DevrigCommandInput,
-    tools: McpSteroidTools = StubMcpSteroidTools(this),
-    cwd: Path = Path.of(System.getProperty("user.dir")),
-    routes: List<ProjectRoute> = projectRouting.routes(),
+/**
+ * `steroid_input` runtime behavior (issue #284): generic schema mapping plus cwd `project_name`
+ * inference. The sequence is forwarded verbatim — [VisionInputToolSpec] is constructed with
+ * `parseSequence = false` so devrig never rejects a step this (possibly older) parser doesn't recognise;
+ * the target plugin parses `rawSequence` with its own version. Stack-frame noise is stripped ONLY from an
+ * error result after the call ([sanitizeErrorContent]).
+ */
+private fun DevrigServices.runInputBehavior(
+    command: DevrigCommand.RunTool,
+    tools: McpSteroidTools,
+    cwd: Path,
+    routes: List<ProjectRoute>,
 ): Int {
     val presentation = presentationFor(command.json)
     val projectName = try {
-        requireProjectName(command.projectName, cwd, routes)
+        requireProjectName(command.arguments.stringOrNull("project_name"), cwd, routes)
     } catch (e: CodeArgException) {
-        return presentation.renderCodeArgFailure("input", e, mcpStdout)
+        return presentation.renderCodeArgFailure(command.commandName, e, mcpStdout)
     }
     val arguments = buildJsonObject {
+        command.arguments.forEach { (key, value) -> put(key, value) }
         put("project_name", projectName)
-        put("task_id", command.taskId!!)
-        put("reason", command.reason!!)
-        put("window_id", command.windowId!!)
-        put("sequence", command.sequence)
     }
-    return runToolCall("input", presentation, tools) { t ->
+    return runToolCall(command.commandName, presentation, tools) { t ->
         val result = callToolViaSpec(
             VisionInputToolSpec(parseSequence = false) { t.handler<VisionInputToolHandler>() },
             arguments,
@@ -214,24 +218,30 @@ private fun ToolCallResult.sanitizeErrorContent(): ToolCallResult = copy(
 
 // ----------------------------------- take_screenshot -----------------------------------
 
-fun DevrigServices.runScreenshotCommand(
-    command: DevrigCommand.DevrigCommandScreenshot,
-    tools: McpSteroidTools = StubMcpSteroidTools(this),
-    cwd: Path = Path.of(System.getProperty("user.dir")),
-    routes: List<ProjectRoute> = projectRouting.routes(),
+/**
+ * `steroid_take_screenshot` runtime behavior (issue #284): generic schema mapping plus cwd `project_name`
+ * inference. `--out` is the only CLI-only extra ([ToolCliExtras.out]); on success its image is decoded and
+ * written ONCE ([writeScreenshotOut]) and the saved path is preserved as the envelope `savedOut` field.
+ * The image-carrying result NEVER goes through the verbatim JSON lift; without `--out` (or on an error) it
+ * renders through the shared `{content:[...]}` envelope ([Presentation.render]).
+ */
+private fun DevrigServices.runScreenshotBehavior(
+    command: DevrigCommand.RunTool,
+    tools: McpSteroidTools,
+    cwd: Path,
+    routes: List<ProjectRoute>,
 ): Int {
     val presentation = presentationFor(command.json)
     val projectName = try {
-        requireProjectName(command.projectName, cwd, routes)
+        requireProjectName(command.arguments.stringOrNull("project_name"), cwd, routes)
     } catch (e: CodeArgException) {
-        return presentation.renderCodeArgFailure("take_screenshot", e, mcpStdout)
+        return presentation.renderCodeArgFailure(command.commandName, e, mcpStdout)
     }
+    val out = command.extras.out
     // --out remains a CLI-only post-processing step around the shared ToolSpec call.
     val arguments = buildJsonObject {
+        command.arguments.forEach { (key, value) -> put(key, value) }
         put("project_name", projectName)
-        put("task_id", command.taskId!!)
-        put("reason", command.reason!!)
-        command.windowId?.let { put("window_id", it) }
     }
     val result = try {
         runBlocking(Dispatchers.IO) {
@@ -243,7 +253,7 @@ fun DevrigServices.runScreenshotCommand(
         }
     } catch (e: ProjectRouteNotFoundException) {
         return presentation.renderError(
-            "take_screenshot",
+            command.commandName,
             "${e.message} — run `devrig list_projects` to see valid project_name keys",
             CliExit.USAGE, mcpStdout,
         )
@@ -251,42 +261,42 @@ fun DevrigServices.runScreenshotCommand(
         throw e
     } catch (e: Exception) {
         return presentation.renderError(
-            "take_screenshot", "devrig take_screenshot failed to reach a backend: ${e.message}",
+            command.commandName, "devrig ${command.commandName} failed to reach a backend: ${e.message}",
             CliExit.UNAVAILABLE, mcpStdout,
         )
     }
 
     // A tool-level error (bad window_id, etc.) or a request with no --out: render the single result.
-    if (result.isError || command.out.isNullOrBlank()) {
-        return presentation.render(result, command = "take_screenshot", out = mcpStdout)
+    if (result.isError || out.isNullOrBlank()) {
+        return presentation.render(result, command = command.commandName, out = mcpStdout)
     }
 
     // With --out, success means an image was decoded and written.
     val image = result.content.filterIsInstance<ContentItem.Image>().firstOrNull()
         ?: return presentation.renderError(
-            "take_screenshot",
-            "--out=${command.out} requested but the screenshot result carried no image to save",
+            command.commandName,
+            "--out=$out requested but the screenshot result carried no image to save",
             CliExit.DATA_ERROR, mcpStdout,
         )
     val bytes = try {
         Base64.getDecoder().decode(image.data)
     } catch (e: IllegalArgumentException) {
         return presentation.renderError(
-            "take_screenshot",
-            "--out=${command.out}: the screenshot image payload was not valid base64 (${e.message})",
+            command.commandName,
+            "--out=$out: the screenshot image payload was not valid base64 (${e.message})",
             CliExit.DATA_ERROR, mcpStdout,
         )
     }
     val savedPath = try {
-        writeScreenshotOut(command.out, bytes, image.mimeType)
+        writeScreenshotOut(out, bytes, image.mimeType)
     } catch (e: InvalidPathException) {
         return presentation.renderError(
-            "take_screenshot", "invalid --out path: ${command.out} (${e.reason})",
+            command.commandName, "invalid --out path: $out (${e.reason})",
             CliExit.USAGE, mcpStdout,
         )
     } catch (e: IOException) {
         return presentation.renderError(
-            "take_screenshot", "failed to write --out=${command.out}: ${e.message}",
+            command.commandName, "failed to write --out=$out: ${e.message}",
             CliExit.IO_ERROR, mcpStdout,
         )
     }
@@ -309,29 +319,34 @@ private fun writeScreenshotOut(out: String, bytes: ByteArray, mimeType: String):
 
 // ----------------------------------- open_project -----------------------------------
 
-fun DevrigServices.runOpenProjectCommand(
-    command: DevrigCommand.DevrigCommandOpenProject,
-    tools: McpSteroidTools = StubMcpSteroidTools(this),
-    // Exposed for tests so the --wait poll loop can run with a fast cadence.
-    waitAttempts: Int = 60,
-    waitIntervalMs: Long = 2000,
+/**
+ * `steroid_open_project` runtime behavior (issue #284): `backend_name` is already schema-generated
+ * (devrig's `OpenProjectToolSpec(includeBackendName = true)`), so only `--wait` is a CLI-only extra
+ * ([ToolCliExtras.wait]). The relative `--project_path` is resolved against the caller cwd here, and an
+ * ABSENT `trust_project` is left out of the arguments so the tool default (`true`) stays owned by
+ * `OpenProjectToolSpec.call()` — a CLI-synthesized `false` never leaks. With `--wait`, stdout is delayed
+ * until [waitForProjectReady] yields ONE final success/error envelope.
+ */
+private fun DevrigServices.runOpenProjectBehavior(
+    command: DevrigCommand.RunTool,
+    tools: McpSteroidTools,
+    waitAttempts: Int,
+    waitIntervalMs: Long,
 ): Int {
     val presentation = presentationFor(command.json)
+    val rawProjectPath = command.arguments.stringOrNull("project_path")!!
     // Resolve relative paths against the caller's cwd before dispatch.
     val absoluteProjectPath = try {
-        Path.of(command.projectPath!!).toAbsolutePath().normalize().toString()
+        Path.of(rawProjectPath).toAbsolutePath().normalize().toString()
     } catch (e: InvalidPathException) {
         return presentation.renderError(
-            "open_project", "invalid --project_path: ${command.projectPath} (${e.reason})",
+            command.commandName, "invalid --project_path: $rawProjectPath (${e.reason})",
             CliExit.USAGE, mcpStdout,
         )
     }
     val arguments = buildJsonObject {
+        command.arguments.forEach { (key, value) -> put(key, value) }
         put("project_path", absoluteProjectPath)
-        put("task_id", command.taskId!!)
-        put("reason", command.reason!!)
-        put("trust_project", command.trustProject)
-        command.backendName?.let { put("backend_name", it) }
     }
     val result = try {
         runBlocking(Dispatchers.IO) {
@@ -348,21 +363,21 @@ fun DevrigServices.runOpenProjectCommand(
         throw e
     } catch (e: Exception) {
         return presentation.renderError(
-            "open_project", "devrig open_project failed to reach a backend: ${e.message}",
+            command.commandName, "devrig ${command.commandName} failed to reach a backend: ${e.message}",
             CliExit.UNAVAILABLE, mcpStdout,
         )
     }
 
     // Without --wait, or when the open itself already errored, render that single result now.
-    if (!command.wait || result.isError) {
-        return presentation.render(result, command = "open_project", out = mcpStdout)
+    if (!command.extras.wait || result.isError) {
+        return presentation.render(result, command = command.commandName, out = mcpStdout)
     }
 
     // Delay stdout until --wait knows the final outcome, preserving one JSON envelope per invocation.
     val ready = waitForProjectReady(absoluteProjectPath, tools, attempts = waitAttempts, intervalMs = waitIntervalMs)
     if (!ready) {
         return presentation.renderError(
-            "open_project",
+            command.commandName,
             "open_project --wait timed out before the project became ready: $absoluteProjectPath",
             CliExit.UNAVAILABLE, mcpStdout,
         )
@@ -370,7 +385,7 @@ fun DevrigServices.runOpenProjectCommand(
     val readyResult = result.copy(
         content = result.content + ContentItem.Text("open_project: project is initialized and ready"),
     )
-    return presentation.render(readyResult, command = "open_project", out = mcpStdout)
+    return presentation.render(readyResult, command = command.commandName, out = mcpStdout)
 }
 
 /**
@@ -387,6 +402,7 @@ private fun waitForProjectReady(
     val target = try {
         Path.of(projectPath).toRealPath().toString()
     } catch (e: Exception) {
+        System.err.println("Could not canonicalize project path '$projectPath' while waiting for readiness: ${e.message}")
         projectPath
     }
     repeat(attempts) { attempt ->
@@ -420,19 +436,47 @@ private fun waitForProjectReady(
 // ----------------------------------- schema-driven runtime dispatch -----------------------------------
 
 /**
- * The single runtime dispatcher for a schema-driven [DevrigCommand.RunTool] (issue #284). Clikt has
+ * The single runtime entry point for a schema-driven [DevrigCommand.RunTool] (issue #284). Clikt has
  * already routed, tokenized, and typed every parameter into [DevrigCommand.RunTool.arguments]; here the
- * live [CliToolSpec] is resolved by [DevrigCommand.RunTool.toolName] and executed through the same
- * `ToolSpec.call()` path (`callToolViaSpec`) the `devrig mcp` stdio proxy uses, inside the one shared
- * error-mapping pipeline ([dispatchToolCall]).
+ * command is routed to its runtime behavior by [DevrigCommand.RunTool.toolName].
  *
- * `tools` is defaulted so tests can inject a fake snapshot without a live IDE.
+ * Most tools flow through the generic pipeline ([runSchemaDispatchToolCommand]): the live [CliToolSpec]
+ * is resolved from `devrigToolSpecs` and executed through the same `ToolSpec.call()` path the `devrig mcp`
+ * stdio proxy uses. The four tools that need CLI-only orchestration a schema parameter cannot express —
+ * `input` (verbatim sequence, error sanitize), `take_screenshot` (`--out` write), `open_project`
+ * (`--project_path` resolve, `--wait` poll, absent `trust_project`), and `fetch_resource`
+ * (local Generic context, entry-point hints) — route to a dedicated per-tool runtime behavior, each of
+ * which still maps the generic schema arguments and shares the frozen exit-code/envelope contract.
+ *
+ * `tools` is defaulted so tests can inject a fake snapshot without a live IDE; `waitAttempts` /
+ * `waitIntervalMs` let the `open_project --wait` poll loop run with a fast cadence under test.
  */
 fun DevrigServices.runGeneratedToolCommand(
     command: DevrigCommand.RunTool,
     tools: McpSteroidTools = StubMcpSteroidTools(this),
     cwd: Path = Path.of(System.getProperty("user.dir")),
     routes: List<ProjectRoute> = projectRouting.routes(),
+    waitAttempts: Int = 60,
+    waitIntervalMs: Long = 2000,
+): Int = when (command.toolName) {
+    VISION_INPUT_TOOL_NAME -> runInputBehavior(command, tools, cwd, routes)
+    VISION_SCREENSHOT_TOOL_NAME -> runScreenshotBehavior(command, tools, cwd, routes)
+    OPEN_PROJECT_TOOL_NAME -> runOpenProjectBehavior(command, tools, waitAttempts, waitIntervalMs)
+    FETCH_RESOURCE_TOOL_NAME -> runFetchResourceBehavior(command)
+    else -> runSchemaDispatchToolCommand(command, tools, cwd, routes)
+}
+
+/**
+ * The generic runtime pipeline for tools with no CLI-only orchestration (the two listers, `execute_code`,
+ * `execute_feedback`): resolve the live [CliToolSpec] by [DevrigCommand.RunTool.toolName], apply the
+ * runtime preprocessing ([toolRuntimeArguments]), and execute through the one shared error-mapping
+ * pipeline ([dispatchToolCall]).
+ */
+private fun DevrigServices.runSchemaDispatchToolCommand(
+    command: DevrigCommand.RunTool,
+    tools: McpSteroidTools,
+    cwd: Path,
+    routes: List<ProjectRoute>,
 ): Int {
     // Resolve the LIVE spec (with its real handler wiring), never a metadata-only parser spec.
     val spec = liveToolSpec(command.toolName, tools)

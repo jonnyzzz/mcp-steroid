@@ -72,10 +72,6 @@ class DevrigBeacon(
             is DevrigCommand.DevrigCommandProject -> "project"
             is DevrigCommand.DevrigCommandInstall -> "install"
             is DevrigCommand.DevrigCommandInstallDevrig -> "install"
-            is DevrigCommand.DevrigCommandFetchResource -> "fetch_resource"
-            is DevrigCommand.DevrigCommandOpenProject -> "open_project"
-            is DevrigCommand.DevrigCommandScreenshot -> "take_screenshot"
-            is DevrigCommand.DevrigCommandInput -> "input"
             is DevrigCommand.RunTool -> cliMode.commandName
             is DevrigCommand.DevrigCommandHelp -> null
             is DevrigCommand.DevrigCommandVersion -> null

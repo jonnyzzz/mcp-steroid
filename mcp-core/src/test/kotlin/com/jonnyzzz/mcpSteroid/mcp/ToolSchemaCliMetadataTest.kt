@@ -111,7 +111,7 @@ class ToolSchemaCliMetadataTest {
         val json = tool.schema.asMcpJson()
         val props = json["properties"]!!.jsonObject
         assertEquals("string", props["alpha"]!!.jsonObject["type"]!!.jsonPrimitive.content)
-        assertEquals("integer", props["beta"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("integer", props[tool.beta.spec.name]!!.jsonObject["type"]!!.jsonPrimitive.content)
         val required = json["required"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertTrue(required.contains("alpha"))
         assertFalse(required.contains("beta"))

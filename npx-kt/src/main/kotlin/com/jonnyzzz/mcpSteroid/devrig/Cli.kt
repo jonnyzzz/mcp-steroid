@@ -13,6 +13,8 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
@@ -128,52 +130,6 @@ sealed interface DevrigCommand {
     data class DevrigCommandInstallDevrig(
         val installScript: String? = null,
         val jdkHome: String? = null,
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
-    // ---- MCP-as-CLI (epic #188): thin frontends over the existing bridge tool handlers ----
-
-    /** `devrig prompt <uri>` / `devrig fetch_resource --uri=...` — steroid_fetch_resource. */
-    data class DevrigCommandFetchResource(
-        val uri: String? = null,
-        val projectName: String? = null,
-        /** The alias the user typed ("prompt" or "fetch_resource"); echoed into the `--json` envelope. */
-        val commandName: String = "fetch_resource",
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
-    /** `devrig open_project` — steroid_open_project. `--wait` polls until the project is ready. */
-    data class DevrigCommandOpenProject(
-        val projectPath: String? = null,
-        val taskId: String? = null,
-        val reason: String? = null,
-        val trustProject: Boolean = true,
-        val backendName: String? = null,
-        val wait: Boolean = false,
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
-    /** `devrig take_screenshot` — steroid_take_screenshot. `--out` writes the PNG to a file. */
-    data class DevrigCommandScreenshot(
-        val projectName: String? = null,
-        val taskId: String? = null,
-        val reason: String? = null,
-        val windowId: String? = null,
-        val out: String? = null,
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
-    /** `devrig input` — steroid_input. */
-    data class DevrigCommandInput(
-        val projectName: String? = null,
-        val windowId: String? = null,
-        val taskId: String? = null,
-        val reason: String? = null,
-        val sequence: String? = null,
         override val debug: Boolean = false,
         override val json: Boolean = false,
     ) : DevrigCommand
@@ -341,14 +297,12 @@ private class DevrigRootCommand(
 
     init {
         val backend = BackendCommand(selected, this)
-        // These tools are generated from their `CliToolSpec` metadata and dispatched at runtime through
-        // the single `RunTool` arm (issue #284); the remaining tools still carry their own command classes
-        // until their runtime behaviors are migrated.
-        val generatedToolNames = setOf("list_projects", "list_windows", "execute_code", "execute_feedback")
-        val generatedTools = schemaToolCliCommands(
-            selected, this,
-            tools = devrigCliTools().filter { it.cli.name in generatedToolNames },
-        )
+        // Every visible `steroid_*`-as-CLI tool is generated from its `CliToolSpec` metadata and dispatched
+        // at runtime through the single `RunTool` arm (issue #284): adding a tool to `devrigToolSpecs(...)`
+        // adds its canonical subcommand here with no new command class. `prompt` is the one documented
+        // exception — a positional-`<uri>` alias for `fetch_resource` whose grammar the shared metadata
+        // cannot carry, so it keeps a tiny adapter that selects the same `RunTool`.
+        val generatedTools = schemaToolCliCommands(selected, this)
         subcommands(
             // `mcp` is the canonical, advertised spelling. `mpc` is the original
             // (mis-spelled) subcommand kept as a hidden alias so existing agent
@@ -358,13 +312,8 @@ private class DevrigRootCommand(
             backend,
             ProjectCommand(selected, this),
             InstallCommand(selected, this),
-            // MCP-as-CLI (epic #188) — thin frontends over the existing bridge tool handlers.
             PromptCliCommand(selected, this),
-            FetchResourceCliCommand(selected, this),
             *generatedTools.toTypedArray(),
-            OpenProjectCliCommand(selected, this),
-            ScreenshotCliCommand(selected, this),
-            InputCliCommand(selected, this),
             HelpCommand(selected, this),
             VersionCommand(selected, this),
         )
@@ -434,14 +383,15 @@ private class InstallCommand(
     }
 }
 
-// ============================ MCP-as-CLI subcommands (epic #188) ============================
+// ============================ MCP-as-CLI alias adapter (epic #188 / issue #284) ============================
 //
-// Each command below only PARSES + VALIDATES into a DevrigCommand variant. The actual behavior is
-// dispatched by runCli(...) and reuses the existing bridge tool handlers — the CLI never
-// reimplements tool logic. Required args are validated here (not via clikt `.required()`) so the
-// error messages can carry agent-usable runnable examples.
+// The canonical `steroid_*`-as-CLI commands are generated from `CliToolSpec` metadata
+// (see [schemaToolCliCommands]). Only `prompt` needs a hand-written adapter: its positional-`<uri>`
+// grammar differs from the canonical `fetch_resource --uri=...`, and one shared metadata entry cannot
+// describe both forms. It PARSES ONLY and selects the SAME inert [DevrigCommand.RunTool] the generated
+// `fetch_resource` command selects, reporting `command:"prompt"` in the envelope.
 
-/** `devrig prompt <uri> [--project_name]` — ergonomic alias for fetch_resource. */
+/** `devrig prompt <uri> [--project_name]` — ergonomic positional alias for `fetch_resource`. */
 private class PromptCliCommand(
     selected: SelectedDevrigCommand,
     parent: DevrigCliktCommand,
@@ -454,124 +404,18 @@ private class PromptCliCommand(
         if (!options.help && uri.isNullOrBlank()) {
             throw UsageError("missing <uri>. Example:\n  ${fetchResourceUsageExample()}")
         }
-        select(DevrigCommand.DevrigCommandFetchResource(
-            uri = uri, projectName = projectName, commandName = "prompt",
-            debug = options.debug, json = options.json,
+        select(DevrigCommand.RunTool(
+            toolName = FETCH_RESOURCE_TOOL_NAME,
+            commandName = "prompt",
+            arguments = buildJsonObject {
+                uri?.let { put("uri", it) }
+                projectName?.takeUnless { it.isBlank() }?.let { put("project_name", it) }
+            },
+            debug = options.debug,
+            json = options.json,
         ))
     }
 }
-
-/** `devrig fetch_resource --uri=<uri> [--project_name]` — canonical steroid_fetch_resource. */
-private class FetchResourceCliCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("fetch_resource", selected, parent) {
-    private val uri: String? by option("--uri", help = "the mcp-steroid:// resource URI to fetch")
-    private val projectName: String? by option("--project_name", help = "resolve IDE-specific content for this project (from `devrig list_projects`); omit for generic docs")
-
-    override fun run() {
-        val options = options()
-        if (!options.help && uri.isNullOrBlank()) {
-            throw UsageError("missing --uri. Example:\n  devrig fetch_resource --uri=${canonicalResourceEntryPointOrPlaceholder()}")
-        }
-        select(DevrigCommand.DevrigCommandFetchResource(
-            uri = uri, projectName = projectName, commandName = "fetch_resource",
-            debug = options.debug, json = options.json,
-        ))
-    }
-}
-
-/** `devrig open_project --project_path=... [--wait]` — steroid_open_project. */
-private class OpenProjectCliCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("open_project", selected, parent) {
-    private val projectPath: String? by option("--project_path", help = "absolute path to the project directory")
-    private val taskId: String? by option("--task_id", help = "groups related calls in audit logs")
-    private val reason: String? by option("--reason", help = "full task description")
-    private val trustProject by option("--trust_project", help = "trust the project (skip trust dialog); default true").flag(default = true)
-    private val backendName: String? by option("--backend_name", help = "target backend when several IDEs are running (from `devrig backend --json`)")
-    private val wait by option("--wait", help = "poll until the project is initialized (no modal, indexing done)").flag()
-
-    override fun run() {
-        val options = options()
-        if (options.help) { select(helpFor(options)); return }
-        requireArg(projectPath, "--project_path", null)
-        requireArg(taskId, "--task_id", null)
-        requireArg(reason, "--reason", null)
-        select(DevrigCommand.DevrigCommandOpenProject(
-            projectPath = projectPath, taskId = taskId, reason = reason, trustProject = trustProject,
-            backendName = backendName, wait = wait, debug = options.debug, json = options.json,
-        ))
-    }
-}
-
-/** `devrig take_screenshot --project_name=... [--out=file.png]` — steroid_take_screenshot. */
-private class ScreenshotCliCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("take_screenshot", selected, parent) {
-    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`; omit to infer from the current directory")
-    private val taskId: String? by option("--task_id", help = "groups related calls in audit logs")
-    private val reason: String? by option("--reason", help = "full task description")
-    private val windowId: String? by option("--window_id", help = "target window (from `devrig list_windows`)")
-    private val out: String? by option("--out", help = "write the PNG to this file path")
-
-    override fun run() {
-        val options = options()
-        if (options.help) { select(helpFor(options)); return }
-        requireArg(taskId, "--task_id", null)
-        requireArg(reason, "--reason", null)
-        select(DevrigCommand.DevrigCommandScreenshot(
-            projectName = projectName, taskId = taskId, reason = reason, windowId = windowId,
-            out = out, debug = options.debug, json = options.json,
-        ))
-    }
-}
-
-/** `devrig input --project_name=... --window_id=... --sequence=...` — steroid_input. */
-private class InputCliCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("input", selected, parent) {
-    private val projectName: String? by option("--project_name", help = "routing key from `devrig list_projects`; omit to infer from the current directory")
-    private val windowId: String? by option("--window_id", help = "target window (from `devrig list_windows`)")
-    private val taskId: String? by option("--task_id", help = "groups related calls in audit logs")
-    private val reason: String? by option("--reason", help = "full task description")
-    private val sequence: String? by option("--sequence", help = "input steps, e.g. \"press:CTRL+P, type:Main, delay:200, press:ENTER\"")
-
-    override fun run() {
-        val options = options()
-        if (options.help) { select(helpFor(options)); return }
-        requireArg(windowId, "--window_id", "devrig list_windows")
-        requireArg(taskId, "--task_id", null)
-        requireArg(reason, "--reason", null)
-        if (sequence.isNullOrBlank()) {
-            throw UsageError(
-                "missing --sequence. Example:\n" +
-                    "  devrig input --project_name=\"<key>\" --window_id=\"<win>\" --task_id=t1 --reason=\"...\" \\\n" +
-                    "    --sequence=\"press:CTRL+P, type:Main, delay:200, press:ENTER\""
-            )
-        }
-        select(DevrigCommand.DevrigCommandInput(
-            projectName = projectName, windowId = windowId, taskId = taskId, reason = reason,
-            sequence = sequence, debug = options.debug, json = options.json,
-        ))
-    }
-}
-
-/**
- * Throws an agent-usable [UsageError] when [value] is null/blank. [nextStep] names the command to
- * run to obtain the value (e.g. `devrig list_projects`) so the error points the agent forward.
- */
-private fun requireArg(value: String?, flag: String, nextStep: String?) {
-    if (!value.isNullOrBlank()) return
-    val hint = nextStep?.let { " (get it from `$it`)" } ?: ""
-    throw UsageError("missing required $flag$hint")
-}
-
-private fun helpFor(options: GenericOptions): DevrigCommand =
-    DevrigCommand.DevrigCommandHelp(debug = options.debug, json = options.json)
 
 private class HelpCommand(
     selected: SelectedDevrigCommand,
@@ -690,11 +534,6 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
             is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
             is DevrigCommand.DevrigCommandInstallDevrig -> runInstallDevrigCommand(command)
-            // MCP-as-CLI (epic #188)
-            is DevrigCommand.DevrigCommandFetchResource -> runFetchResourceCommand(command)
-            is DevrigCommand.DevrigCommandOpenProject -> runOpenProjectCommand(command)
-            is DevrigCommand.DevrigCommandScreenshot -> runScreenshotCommand(command)
-            is DevrigCommand.DevrigCommandInput -> runInputCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

@@ -17,16 +17,20 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * `devrig prompt <uri>` / `devrig fetch_resource --uri=...` — the CLI face of `steroid_fetch_resource`.
+ * `devrig prompt <uri>` / `devrig fetch_resource --uri=...` — the CLI face of `steroid_fetch_resource`
+ * (issue #284). Runtime behavior for the schema-driven [DevrigCommand.RunTool]: the canonical grammar is
+ * `--uri` (and the `prompt` alias's positional `<uri>`), both typed into [DevrigCommand.RunTool.arguments].
  *
  * Bundled `mcp-steroid://` articles ship inside the devrig binary, so this resolves **without a
- * running IDE** using [PromptsContext.Generic]. Passing `--project_name` upgrades to that project's
- * IDE-specific context via the existing routing + [DevrigPromptsContextHandler]. Calls are dispatched
- * through [FetchResourceToolHandler], the same ToolSpec used by `devrig mcp`.
+ * running IDE** using [PromptsContext.Generic] when no `project_name` is present. Passing `project_name`
+ * upgrades to that project's IDE-specific context via the existing routing + [DevrigPromptsContextHandler].
+ * Calls are dispatched through [FetchResourceToolHandler], the same ToolSpec used by `devrig mcp`. The
+ * alias command name ([DevrigCommand.RunTool.commandName]: "prompt" or "fetch_resource") is echoed into the
+ * envelope, and a miss appends the canonical entry-point hints.
  */
-fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandFetchResource): Int {
+fun DevrigServices.runFetchResourceBehavior(command: DevrigCommand.RunTool): Int {
     val presentation = presentationFor(command.json, homePaths::screenshotTmpDir)
-    val uri = command.uri
+    val uri = command.arguments.stringOrNull("uri")
     if (uri.isNullOrBlank()) {
         // Defensive: the parser already rejects a blank URI; keep a clean error if reached directly.
         return presentation.renderError(
@@ -35,14 +39,14 @@ fun DevrigServices.runFetchResourceCommand(command: DevrigCommand.DevrigCommandF
         )
     }
 
-    val projectName = command.projectName?.takeUnless { it.isBlank() }
+    val projectName = command.arguments.stringOrNull("project_name")?.takeUnless { it.isBlank() }
     val contextHandler: PromptsContextHandler = if (projectName == null) {
         FixedPromptsContextHandler(PromptsContext.Generic)
     } else {
         DevrigPromptsContextHandler(projectRouting)
     }
     val arguments = buildJsonObject {
-        put("uri", uri)
+        command.arguments.forEach { (key, value) -> put(key, value) }
         put("project_name", projectName ?: GENERIC_PROJECT_NAME)
     }
     val result = try {

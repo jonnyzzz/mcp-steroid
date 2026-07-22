@@ -2,12 +2,13 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -29,11 +30,15 @@ class McpAsCliParseTest {
 
     @Test
     fun `prompt takes a positional uri`() {
+        // The positional-`<uri>` alias selects the SAME RunTool the canonical fetch_resource command does,
+        // reporting command:"prompt" (issue #284).
         val command = parse("prompt", "mcp-steroid://x/y")
-        assertTrue(command is DevrigCommand.DevrigCommandFetchResource)
-        command as DevrigCommand.DevrigCommandFetchResource
-        assertEquals("mcp-steroid://x/y", command.uri)
-        assertNull(command.projectName)
+        assertTrue(command is DevrigCommand.RunTool, "expected a RunTool, got $command")
+        command as DevrigCommand.RunTool
+        assertEquals("steroid_fetch_resource", command.toolName)
+        assertEquals("prompt", command.commandName)
+        assertEquals("mcp-steroid://x/y", command.arguments["uri"]?.jsonPrimitive?.content)
+        assertFalse(command.arguments.containsKey("project_name"))
     }
 
     @Test
@@ -46,10 +51,12 @@ class McpAsCliParseTest {
     @Test
     fun `fetch_resource maps --uri and --project_name`() {
         val command = parse("fetch_resource", "--uri=mcp-steroid://a", "--project_name=proj-1")
-        assertTrue(command is DevrigCommand.DevrigCommandFetchResource)
-        command as DevrigCommand.DevrigCommandFetchResource
-        assertEquals("mcp-steroid://a", command.uri)
-        assertEquals("proj-1", command.projectName)
+        assertTrue(command is DevrigCommand.RunTool, "expected a RunTool, got $command")
+        command as DevrigCommand.RunTool
+        assertEquals("steroid_fetch_resource", command.toolName)
+        assertEquals("fetch_resource", command.commandName)
+        assertEquals("mcp-steroid://a", command.arguments["uri"]?.jsonPrimitive?.content)
+        assertEquals("proj-1", command.arguments["project_name"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -148,7 +155,10 @@ class McpAsCliParseTest {
             parse("list_windows", "--json"),
         )
         assertEquals(
-            DevrigCommand.DevrigCommandFetchResource(uri = "mcp-steroid://a", commandName = "fetch_resource"),
+            DevrigCommand.RunTool(
+                toolName = "steroid_fetch_resource", commandName = "fetch_resource",
+                arguments = buildJsonObject { put("uri", "mcp-steroid://a") },
+            ),
             parse("fetch_resource", "--uri=mcp-steroid://a"),
         )
     }
@@ -158,11 +168,14 @@ class McpAsCliParseTest {
     @Test
     fun `open_project maps path and --wait`() {
         val command = parse("open_project", "--project_path=/abs/p", "--task_id=t", "--reason=r", "--wait")
-        assertTrue(command is DevrigCommand.DevrigCommandOpenProject)
-        command as DevrigCommand.DevrigCommandOpenProject
-        assertEquals("/abs/p", command.projectPath)
-        assertTrue(command.wait)
-        assertTrue(command.trustProject, "trust_project defaults to true")
+        assertTrue(command is DevrigCommand.RunTool, "expected a RunTool, got $command")
+        command as DevrigCommand.RunTool
+        assertEquals("steroid_open_project", command.toolName)
+        assertEquals("/abs/p", command.arguments["project_path"]?.jsonPrimitive?.content)
+        assertTrue(command.extras.wait)
+        // trust_project is a nullableFlag: an omitted flag stays absent so the tool default (true) owned by
+        // OpenProjectToolSpec.call() is preserved — a CLI-synthesized false must never be serialized (#284).
+        assertFalse(command.arguments.containsKey("trust_project"), "absent trust_project must not be serialized")
     }
 
     @Test
@@ -175,10 +188,12 @@ class McpAsCliParseTest {
     @Test
     fun `take_screenshot maps --out and --window_id`() {
         val command = parse("take_screenshot", "--project_name=k", "--task_id=t", "--reason=r", "--window_id=w1", "--out=shot.png")
-        assertTrue(command is DevrigCommand.DevrigCommandScreenshot)
-        command as DevrigCommand.DevrigCommandScreenshot
-        assertEquals("w1", command.windowId)
-        assertEquals("shot.png", command.out)
+        assertTrue(command is DevrigCommand.RunTool, "expected a RunTool, got $command")
+        command as DevrigCommand.RunTool
+        assertEquals("steroid_take_screenshot", command.toolName)
+        assertEquals("w1", command.arguments["window_id"]?.jsonPrimitive?.content)
+        // --out has no MCP-schema parameter, so it rides in the CLI-only extras, not the arguments JSON.
+        assertEquals("shot.png", command.extras.out)
     }
 
     @Test

@@ -77,7 +77,7 @@ class FetchResourceCommandTest {
 
     @Test
     fun `known uri prints markdown to stdout, nothing to stderr, exit 0`() {
-        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = knownUri))
+        val result = run(fetchResourceRunTool(uri = knownUri))
         assertEquals(0, result.exit)
         assertTrue(result.stdout.isNotBlank(), "expected markdown payload on stdout")
         assertEquals("", stderr(), "stdout-only for success; stderr must stay clean")
@@ -85,7 +85,7 @@ class FetchResourceCommandTest {
 
     @Test
     fun `known uri with --json emits a parseable envelope`() {
-        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = knownUri, json = true))
+        val result = run(fetchResourceRunTool(uri = knownUri, json = true))
         assertEquals(0, result.exit)
         val obj = Json.parseToJsonElement(result.stdout).jsonObject
         assertEquals("devrig", obj["tool"]!!.jsonObject["name"]!!.jsonPrimitive.content)
@@ -98,7 +98,7 @@ class FetchResourceCommandTest {
 
     @Test
     fun `prompt alias reports command prompt in the --json envelope, not fetch_resource`() {
-        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = knownUri, commandName = "prompt", json = true))
+        val result = run(fetchResourceRunTool(uri = knownUri, commandName = "prompt", json = true))
         assertEquals(0, result.exit)
         val obj = Json.parseToJsonElement(result.stdout).jsonObject
         assertEquals("prompt", obj["command"]!!.jsonPrimitive.content)
@@ -106,7 +106,7 @@ class FetchResourceCommandTest {
 
     @Test
     fun `fetch_resource alias reports command fetch_resource in the --json envelope`() {
-        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = knownUri, commandName = "fetch_resource", json = true))
+        val result = run(fetchResourceRunTool(uri = knownUri, commandName = "fetch_resource", json = true))
         assertEquals(0, result.exit)
         val obj = Json.parseToJsonElement(result.stdout).jsonObject
         assertEquals("fetch_resource", obj["command"]!!.jsonPrimitive.content)
@@ -114,7 +114,7 @@ class FetchResourceCommandTest {
 
     @Test
     fun `unknown uri fails with entry-point hints on stderr, clean stdout`() {
-        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = "mcp-steroid://does/not/exist"))
+        val result = run(fetchResourceRunTool(uri = "mcp-steroid://does/not/exist"))
         assertEquals(CliExit.TOOL_ERROR, result.exit)
         assertEquals("", result.stdout, "stdout must stay clean on error")
         val err = stderr()
@@ -124,7 +124,7 @@ class FetchResourceCommandTest {
 
     @Test
     fun `unknown uri with --json still routes exit code and JSON envelope`() {
-        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = "mcp-steroid://nope", json = true))
+        val result = run(fetchResourceRunTool(uri = "mcp-steroid://nope", json = true))
         assertEquals(CliExit.TOOL_ERROR, result.exit)
         val obj = Json.parseToJsonElement(result.stdout).jsonObject
         assertTrue(obj["isError"]!!.jsonPrimitive.booleanOrNull == true)
@@ -132,7 +132,7 @@ class FetchResourceCommandTest {
 
     @Test
     fun `blank uri reaching the handler yields a usage exit`() {
-        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = ""))
+        val result = run(fetchResourceRunTool(uri = ""))
         assertEquals(CliExit.USAGE, result.exit)
         assertEquals("", result.stdout)
         assertTrue(stderr().contains("missing <uri>"))
@@ -140,7 +140,7 @@ class FetchResourceCommandTest {
 
     @Test
     fun `unknown project_name is a usage error pointing at list_projects`() {
-        val result = run(DevrigCommand.DevrigCommandFetchResource(uri = knownUri, projectName = "no-such-project"))
+        val result = run(fetchResourceRunTool(uri = knownUri, projectName = "no-such-project"))
         assertEquals(CliExit.USAGE, result.exit)
         assertFalse(result.stdout.contains("```"), "must not print a payload when routing failed")
         assertTrue(stderr().contains("list_projects"), "should point the agent at devrig list_projects")

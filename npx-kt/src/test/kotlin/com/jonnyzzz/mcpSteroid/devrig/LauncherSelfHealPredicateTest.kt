@@ -15,10 +15,10 @@ import org.junit.jupiter.api.Test
 class LauncherSelfHealPredicateTest {
 
     private val toolFacades: List<DevrigCommand> = listOf(
-        DevrigCommand.DevrigCommandFetchResource(uri = "mcp-steroid://x"),
-        DevrigCommand.DevrigCommandOpenProject(projectPath = "/p", taskId = "t", reason = "r"),
-        DevrigCommand.DevrigCommandScreenshot(projectName = "k", taskId = "t", reason = "r"),
-        DevrigCommand.DevrigCommandInput(projectName = "k", windowId = "w", taskId = "t", reason = "r", sequence = "press:ESCAPE"),
+        DevrigCommand.RunTool(toolName = "steroid_fetch_resource", commandName = "fetch_resource", arguments = JsonObject(emptyMap())),
+        DevrigCommand.RunTool(toolName = "steroid_open_project", commandName = "open_project", arguments = JsonObject(emptyMap())),
+        DevrigCommand.RunTool(toolName = "steroid_take_screenshot", commandName = "take_screenshot", arguments = JsonObject(emptyMap())),
+        DevrigCommand.RunTool(toolName = "steroid_input", commandName = "input", arguments = JsonObject(emptyMap())),
         DevrigCommand.RunTool(toolName = "steroid_execute_code", commandName = "execute_code", arguments = JsonObject(emptyMap())),
         DevrigCommand.RunTool(toolName = "steroid_execute_feedback", commandName = "execute_feedback", arguments = JsonObject(emptyMap())),
         DevrigCommand.RunTool(toolName = "steroid_list_windows", commandName = "list_windows", arguments = JsonObject(emptyMap())),

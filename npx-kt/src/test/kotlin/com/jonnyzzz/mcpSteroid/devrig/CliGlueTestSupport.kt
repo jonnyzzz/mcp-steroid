@@ -135,6 +135,91 @@ fun executeFeedbackRunTool(
     json = json,
 )
 
+/** The inert [DevrigCommand.RunTool] that parsing `devrig input …` produces (issue #284). */
+fun inputRunTool(
+    projectName: String? = null,
+    windowId: String? = null,
+    taskId: String? = null,
+    reason: String? = null,
+    sequence: String? = null,
+    json: Boolean = false,
+): DevrigCommand.RunTool = DevrigCommand.RunTool(
+    toolName = "steroid_input",
+    commandName = "input",
+    arguments = buildJsonObject {
+        projectName?.let { put("project_name", it) }
+        taskId?.let { put("task_id", it) }
+        reason?.let { put("reason", it) }
+        windowId?.let { put("window_id", it) }
+        sequence?.let { put("sequence", it) }
+    },
+    json = json,
+)
+
+/** The inert [DevrigCommand.RunTool] that parsing `devrig take_screenshot …` produces (issue #284). */
+fun takeScreenshotRunTool(
+    projectName: String? = null,
+    taskId: String? = null,
+    reason: String? = null,
+    windowId: String? = null,
+    out: String? = null,
+    json: Boolean = false,
+): DevrigCommand.RunTool = DevrigCommand.RunTool(
+    toolName = "steroid_take_screenshot",
+    commandName = "take_screenshot",
+    arguments = buildJsonObject {
+        projectName?.let { put("project_name", it) }
+        taskId?.let { put("task_id", it) }
+        reason?.let { put("reason", it) }
+        windowId?.let { put("window_id", it) }
+    },
+    extras = ToolCliExtras(out = out),
+    json = json,
+)
+
+/**
+ * The inert [DevrigCommand.RunTool] that parsing `devrig open_project …` produces (issue #284). A null
+ * [trustProject] mirrors an omitted `--trust_project`: the key is absent from `arguments`, so the tool
+ * default (true) stays owned by `OpenProjectToolSpec.call()`.
+ */
+fun openProjectRunTool(
+    projectPath: String? = null,
+    taskId: String? = null,
+    reason: String? = null,
+    trustProject: Boolean? = null,
+    backendName: String? = null,
+    wait: Boolean = false,
+    json: Boolean = false,
+): DevrigCommand.RunTool = DevrigCommand.RunTool(
+    toolName = "steroid_open_project",
+    commandName = "open_project",
+    arguments = buildJsonObject {
+        projectPath?.let { put("project_path", it) }
+        taskId?.let { put("task_id", it) }
+        reason?.let { put("reason", it) }
+        trustProject?.let { put("trust_project", it) }
+        backendName?.let { put("backend_name", it) }
+    },
+    extras = ToolCliExtras(wait = wait),
+    json = json,
+)
+
+/** The inert [DevrigCommand.RunTool] that parsing `devrig fetch_resource …` / `devrig prompt …` produces. */
+fun fetchResourceRunTool(
+    uri: String? = null,
+    projectName: String? = null,
+    commandName: String = "fetch_resource",
+    json: Boolean = false,
+): DevrigCommand.RunTool = DevrigCommand.RunTool(
+    toolName = "steroid_fetch_resource",
+    commandName = commandName,
+    arguments = buildJsonObject {
+        uri?.let { put("uri", it) }
+        projectName?.let { put("project_name", it) }
+    },
+    json = json,
+)
+
 /**
  * A [ProjectRoute] fixture for cwd-inference tests (issue #266): only [path] and [name] are meaningful
  * (drive `resolveProjectFromCwd` matching + the exposed routing key); the [DiscoveredIde]/[IdeProjectState]

@@ -168,10 +168,6 @@ private fun DevrigCommand.runsTool(): Boolean = when (this) {
     is DevrigCommand.DevrigCommandProject,
     is DevrigCommand.DevrigCommandInstall,
     is DevrigCommand.DevrigCommandInstallDevrig,
-    is DevrigCommand.DevrigCommandFetchResource,
-    is DevrigCommand.DevrigCommandOpenProject,
-    is DevrigCommand.DevrigCommandScreenshot,
-    is DevrigCommand.DevrigCommandInput,
     is DevrigCommand.RunTool -> true
     is DevrigCommand.DevrigCommandHelp,
     is DevrigCommand.DevrigCommandVersion,
@@ -183,14 +179,7 @@ private fun DevrigCommand.runsTool(): Boolean = when (this) {
  * clean for piping, so they never print the human headliner banner — unlike the interactive
  * `project` / `backend` / `install` listings.
  */
-private fun DevrigCommand.isMcpAsCliToolCommand(): Boolean = when (this) {
-    is DevrigCommand.DevrigCommandFetchResource,
-    is DevrigCommand.DevrigCommandOpenProject,
-    is DevrigCommand.DevrigCommandScreenshot,
-    is DevrigCommand.DevrigCommandInput,
-    is DevrigCommand.RunTool -> true
-    else -> false
-}
+private fun DevrigCommand.isMcpAsCliToolCommand(): Boolean = this is DevrigCommand.RunTool
 
 private fun DevrigCommand.printsHeadliner(): Boolean =
     runsTool() && this !is DevrigCommand.MCP && !json && !isMcpAsCliToolCommand()

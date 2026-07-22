@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.UsageError
+import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -17,6 +18,10 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 const val EXECUTE_CODE_TOOL_NAME: String = "steroid_execute_code"
 const val EXECUTE_FEEDBACK_TOOL_NAME: String = "steroid_execute_feedback"
+const val VISION_INPUT_TOOL_NAME: String = "steroid_input"
+const val VISION_SCREENSHOT_TOOL_NAME: String = "steroid_take_screenshot"
+const val OPEN_PROJECT_TOOL_NAME: String = "steroid_open_project"
+const val FETCH_RESOURCE_TOOL_NAME: String = "steroid_fetch_resource"
 
 /**
  * CLI-only state for a generated tool command that has no MCP `inputSchema` parameter to carry it:
@@ -59,6 +64,8 @@ class ToolCliParseBehavior private constructor(
         fun forTool(toolName: String): ToolCliParseBehavior = when (toolName) {
             EXECUTE_CODE_TOOL_NAME -> ExecuteCode
             EXECUTE_FEEDBACK_TOOL_NAME -> ExecuteFeedback
+            VISION_SCREENSHOT_TOOL_NAME -> Screenshot
+            OPEN_PROJECT_TOOL_NAME -> OpenProject
             else -> None
         }
 
@@ -98,6 +105,37 @@ class ToolCliParseBehavior private constructor(
                     if (it.isNaN()) throw UsageError("--success_rating must be a number in 0.00..1.00")
                 }
             },
+        )
+
+        /**
+         * `take_screenshot`'s only CLI-only extra: `--out`, the file path the decoded PNG is written to
+         * at runtime ([ToolCliExtras.out]). It has no MCP-schema parameter, so it rides in the extras.
+         */
+        private val Screenshot: ToolCliParseBehavior = ToolCliParseBehavior(
+            extrasBinder = { command ->
+                val out = command.option("--out", help = "write the PNG to this file path")
+                command.registerOption(out)
+                val reader: () -> ToolCliExtras = { ToolCliExtras(out = out.value) }
+                reader
+            },
+            validator = { _, _ -> },
+        )
+
+        /**
+         * `open_project`'s only CLI-only extra: `--wait` ([ToolCliExtras.wait]), which makes the runtime
+         * poll `list_windows` until the project is initialized before rendering one final envelope. It is a
+         * CLI orchestration toggle with no MCP-schema parameter.
+         */
+        private val OpenProject: ToolCliParseBehavior = ToolCliParseBehavior(
+            extrasBinder = { command ->
+                val wait = command.option(
+                    "--wait", help = "poll until the project is initialized (no modal, indexing done)",
+                ).flag()
+                command.registerOption(wait)
+                val reader: () -> ToolCliExtras = { ToolCliExtras(wait = wait.value) }
+                reader
+            },
+            validator = { _, _ -> },
         )
 
         /** The `--code-file` option shared by execute_code and execute_feedback; `-` reads the script from stdin at runtime. */

@@ -33,10 +33,10 @@ class ScreenshotAndOpenProjectCommandTest {
             ToolCallResult(content = listOf(ContentItem.Image(data = b64, mimeType = "image/png"))),
         )
         val outFile = home.resolve("shots/x.png") // parent dir does not exist yet
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = "k", taskId = "t", reason = "r", out = outFile.toString(),
         )
-        val run = runCliCommand(homePaths()) { runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec)) }
+        val run = runCliCommand(homePaths()) { runGeneratedToolCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec)) }
         assertEquals(CliExit.OK, run.exit)
         assertTrue(Files.exists(outFile), "parent dirs must be created and file written")
         assertArrayEquals(raw, Files.readAllBytes(outFile))
@@ -55,10 +55,10 @@ class ScreenshotAndOpenProjectCommandTest {
         )
         val outFile = home.resolve("shots/only.png")
         val hp = homePaths()
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = "k", taskId = "t", reason = "r", out = outFile.toString(),
         )
-        val run = runCliCommand(hp) { runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec)) }
+        val run = runCliCommand(hp) { runGeneratedToolCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec)) }
         assertEquals(CliExit.OK, run.exit)
         assertTrue(Files.exists(outFile), "the --out file must be written")
         assertArrayEquals(raw, Files.readAllBytes(outFile))
@@ -80,10 +80,10 @@ class ScreenshotAndOpenProjectCommandTest {
         // with no image cannot satisfy that, so it is a DATA_ERROR — the old "note it but succeed"
         // behavior masked a failed request.
         val rec = RecordingScreenshot(ToolCallResult(content = listOf(ContentItem.Text("no image here"))))
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = "k", taskId = "t", reason = "r", out = home.resolve("y.png").toString(),
         )
-        val run = runCliCommand(homePaths()) { runScreenshotCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec)) }
+        val run = runCliCommand(homePaths()) { runGeneratedToolCommand(cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec)) }
         assertEquals(CliExit.DATA_ERROR, run.exit)
         assertTrue(run.stderr.contains("no image to save"), run.stderr)
         assertFalse(Files.exists(home.resolve("y.png")))
@@ -94,11 +94,11 @@ class ScreenshotAndOpenProjectCommandTest {
     @Test
     fun `screenshot explicit project_name overrides cwd inference`() {
         val rec = RecordingScreenshot(ToolCallResult(content = listOf(ContentItem.Text("ok"))))
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = "explicit-key", taskId = "t", reason = "r",
         )
         val run = runCliCommand(homePaths()) {
-            runScreenshotCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec),
                 cwd = Path.of("/home/u/proj"), routes = listOf(fakeRoute("/home/u/proj", "cwd-key")),
             )
@@ -110,11 +110,11 @@ class ScreenshotAndOpenProjectCommandTest {
     @Test
     fun `screenshot blank project_name infers the single containing project`() {
         val rec = RecordingScreenshot(ToolCallResult(content = listOf(ContentItem.Text("ok"))))
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = null, taskId = "t", reason = "r",
         )
         val run = runCliCommand(homePaths()) {
-            runScreenshotCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec),
                 cwd = Path.of("/home/u/proj/src"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
             )
@@ -126,11 +126,11 @@ class ScreenshotAndOpenProjectCommandTest {
     @Test
     fun `screenshot no containing project fails with a candidate-listing usage error`() {
         val rec = RecordingScreenshot(ToolCallResult(content = listOf(ContentItem.Text("ok"))))
-        val cmd = DevrigCommand.DevrigCommandScreenshot(
+        val cmd = takeScreenshotRunTool(
             projectName = null, taskId = "t", reason = "r",
         )
         val run = runCliCommand(homePaths()) {
-            runScreenshotCommand(
+            runGeneratedToolCommand(
                 cmd, fakeTools(VisionScreenshotToolHandler::class.java to rec),
                 cwd = Path.of("/tmp/elsewhere"), routes = listOf(fakeRoute("/home/u/proj", "proj-abc")),
             )
@@ -154,11 +154,11 @@ class ScreenshotAndOpenProjectCommandTest {
     fun `without --wait open_project returns immediately and does not poll windows`() {
         val open = RecordingOpenProject()
         val windows = SequencedListWindows(listOf(ListWindowsResponse(emptyList(), emptyList())))
-        val cmd = DevrigCommand.DevrigCommandOpenProject(
+        val cmd = openProjectRunTool(
             projectPath = home.toString(), taskId = "t", reason = "r", wait = false,
         )
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(cmd, fakeTools(
+            runGeneratedToolCommand(cmd, fakeTools(
                 OpenProjectToolHandler::class.java to open,
                 ListWindowsToolHandler::class.java to windows,
             ))
@@ -176,11 +176,11 @@ class ScreenshotAndOpenProjectCommandTest {
             ListWindowsResponse(listOf(notReadyWindow(path)), emptyList()),
             ListWindowsResponse(listOf(readyWindow(path)), emptyList()),
         ))
-        val cmd = DevrigCommand.DevrigCommandOpenProject(
+        val cmd = openProjectRunTool(
             projectPath = path, taskId = "t", reason = "r", wait = true,
         )
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(cmd, fakeTools(
+            runGeneratedToolCommand(cmd, fakeTools(
                 OpenProjectToolHandler::class.java to open,
                 ListWindowsToolHandler::class.java to windows,
             ), waitAttempts = 5, waitIntervalMs = 10)
@@ -195,11 +195,11 @@ class ScreenshotAndOpenProjectCommandTest {
         val open = RecordingOpenProject()
         val path = home.toString()
         val windows = SequencedListWindows(listOf(ListWindowsResponse(listOf(notReadyWindow(path)), emptyList())))
-        val cmd = DevrigCommand.DevrigCommandOpenProject(
+        val cmd = openProjectRunTool(
             projectPath = path, taskId = "t", reason = "r", wait = true,
         )
         val run = runCliCommand(homePaths()) {
-            runOpenProjectCommand(cmd, fakeTools(
+            runGeneratedToolCommand(cmd, fakeTools(
                 OpenProjectToolHandler::class.java to open,
                 ListWindowsToolHandler::class.java to windows,
             ), waitAttempts = 2, waitIntervalMs = 5)
