@@ -86,4 +86,12 @@ class ConnectIdeTest {
         assertContains(s, "Settings")
         assertContains(s, CUSTOM_REPO_URL)
     }
+
+    @Test fun `exit code maps outcome to process exit status`() {
+        assertEquals(1, connectIdeExitCode(ConnectIdeOutcome.NO_IDE))
+        assertEquals(1, connectIdeExitCode(ConnectIdeOutcome.MANUAL_INSTRUCTIONS))
+        assertEquals(0, connectIdeExitCode(ConnectIdeOutcome.ALREADY_CONNECTED))
+        assertEquals(0, connectIdeExitCode(ConnectIdeOutcome.OFFERED_VIA_HTTP))
+        assertEquals(0, connectIdeExitCode(ConnectIdeOutcome.OFFERED_VIA_BROWSER))
+    }
 }

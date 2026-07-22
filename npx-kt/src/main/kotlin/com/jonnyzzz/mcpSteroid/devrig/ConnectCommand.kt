@@ -50,6 +50,8 @@ fun runConnectClaude(settingsPath: Path, out: PrintStream, err: PrintStream): In
 fun DevrigServices.runConnectIdeCommand(command: DevrigCommand.DevrigCommandConnectIde): Int =
     runBlocking(Dispatchers.IO) {
         val discovered = portDiscovery.stateSnapshot()
+        // Marker count = IDEs already advertising the MCP Steroid plugin; >0 means the bridge works.
+        val pluginMarkerCount = collectIdeReachability().discovered
         val client = InstallPluginClient { url ->
             val response = commandHttpClient.get(url) {
                 // /api/installPlugin trusts localhost callers (RestService.isHostTrusted -> isLocalhost);
@@ -63,11 +65,13 @@ fun DevrigServices.runConnectIdeCommand(command: DevrigCommand.DevrigCommandConn
             try {
                 ProcessBuilder(browserOpenArgv(detectHostOs(System.getProperty("os.name") ?: ""), url)).start()
                 true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 System.err.println("[devrig] failed to open browser: ${e.message ?: e::class.simpleName}")
                 false
             }
         }
-        val outcome = runConnectIde(discovered, pluginMarkerCount = 0, client, browser, mcpStdout, System.err)
-        if (outcome == ConnectIdeOutcome.NO_IDE) 1 else 0
+        val outcome = runConnectIde(discovered, pluginMarkerCount, client, browser, mcpStdout, System.err)
+        connectIdeExitCode(outcome)
     }
