@@ -168,8 +168,11 @@ When changing files across multiple sub-folders, read the guides for each.
 
 ## Project Overview
 
-MCP Steroid — IntelliJ Platform plugin that exposes a standalone MCP server letting LLM agents drive the
-IDE via Kotlin code execution.
+devrig is the product — the CLI you install and run. One command installs devrig with its own bundled
+runtime (no manual setup); `devrig install <agent>` wires it into Claude Code, Codex, or Gemini. To reach
+real IDE semantics, devrig talks to **MCP Steroid**, the IntelliJ Platform plugin that exposes a standalone
+MCP server letting LLM agents drive the IDE via Kotlin code execution — installed in your JetBrains IDE as
+well (JetBrains Marketplace).
 
 - **Public repo**: https://github.com/jonnyzzz/mcp-steroid
 - **Docs**: [README.md](README.md), [docs/guides/AGENT-STEROID-GUIDE.md](docs/guides/AGENT-STEROID-GUIDE.md)

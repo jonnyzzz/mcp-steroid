@@ -39,9 +39,10 @@ download and start more on demand:
 <figcaption style="color:#909090;font-size:0.85rem;margin-top:0.4rem;">One <code>devrig</code> process bridges your agent to every IntelliJ-family IDE running on the machine — and can start more.</figcaption>
 </figure>
 
-Devrig is a Java application and requires **Java 25** to run. It does not bundle
-a JVM: `java` must be on the `PATH`, or `JAVA_HOME` / `DEVRIG_JAVA_HOME` must
-point at a Java 25 home.
+Devrig is a Java application. The one-command installer downloads devrig
+together with a matching Java runtime into `~/.mcp-steroid`, so there is nothing
+to set up by hand. To run devrig under a Java you manage instead, point
+`DEVRIG_JAVA_HOME` (or `JAVA_HOME`) at it.
 
 ## Install
 
@@ -132,7 +133,7 @@ Environment variables:
 
 | Variable | Effect |
 |---|---|
-| `DEVRIG_JAVA_HOME` | JDK/JRE home used to launch devrig (devrig needs Java 25). Overrides `JAVA_HOME` for the devrig process only. |
+| `DEVRIG_JAVA_HOME` | JDK/JRE home used to launch devrig, instead of the bundled runtime. Overrides `JAVA_HOME` for the devrig process only. |
 | `DEVRIG_JVM_OPTS` | Extra JVM options for the devrig launch — for example `-Xmx512m`. |
 
 ## Example: an agent provisions an IDE

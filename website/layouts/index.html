@@ -23,11 +23,6 @@
                 One <span class="lighter">devrig</span> command connects Claude&nbsp;Code, Codex, or Gemini to typed refactors, inspections, the debugger, and real test runs &mdash; not just text edits.
             </p>
 
-            <div class="cta-buttons">
-                <a href="#install" class="btn btn-primary">Install <span class="lighter">devrig</span></a>
-                <a href="{{ "/releases/" | relURL }}" class="btn btn-secondary">Get the IDE plugin</a>
-            </div>
-
             <p class="hero-sublinks">
                 <a href="{{ "/docs/capabilities/" | relURL }}">What your agent can do</a>
                 <span class="hero-sublink-sep">&middot;</span>
@@ -40,7 +35,7 @@
 <section class="about-section" id="install">
     <div class="about-content">
         <h2 class="section-title">Install <span class="lighter">devrig</span> &mdash; one command</h2>
-        <p class="section-lede"><span class="lighter">devrig</span> is the primary way in: one line installs the CLI and its own Java&nbsp;25 runtime. Already run a JetBrains IDE? The <strong>MCP&nbsp;Steroid</strong> plugin also installs on its own.</p>
+        <p class="section-lede"><span class="lighter">devrig</span> is the primary way in: one line installs the CLI and everything it needs to run &mdash; no manual setup. Already run a JetBrains IDE? The <strong>MCP&nbsp;Steroid</strong> plugin installs on its own too.</p>
         <div class="install-cta">
             <div class="install-cmd" data-cmd="curl -fsSL https://devrig.dev/install.sh | sh">
                 <span class="install-cmd-os">macOS / Linux</span>
@@ -53,6 +48,7 @@
                 <button type="button" class="install-copy" aria-label="Copy the Windows install command">Copy</button>
             </div>
             <p class="install-cta-sub">Then register your agent: <code>devrig install claude|codex|gemini</code>. <a href="{{ "/docs/devrig/" | relURL }}">Read the devrig guide &rarr;</a></p>
+            <p class="install-cta-sub">In your JetBrains IDE, also install the <strong>MCP&nbsp;Steroid</strong> plugin &rarr; <a href="https://plugins.jetbrains.com/plugin/30019-mcp-steroid" target="_blank" rel="noopener">JetBrains Marketplace</a>.</p>
             <p class="install-trust">No telemetry &mdash; we collect nothing. Checksums are generated on the fly, not shipped or pinned. Everything installs into <code>~/.mcp-steroid</code>.</p>
         </div>
     </div>
@@ -134,11 +130,11 @@
             </div>
             <div class="hero-card">
                 <h3>One bridge to the IDEs you run</h3>
-                <p>A single <span class="lighter">devrig</span> process connects your agent to the IntelliJ-family IDEs already open on your machine, across projects &mdash; or it downloads and starts a managed backend for you.</p>
+                <p>A single <span class="lighter">devrig</span> process connects your agent to the IntelliJ-family IDEs already open on your machine, across projects &mdash; or it downloads and starts a managed backend, giving your agent a real JetBrains IDE experience even on a headless server or CI box.</p>
             </div>
             <div class="hero-card">
                 <h3>No manual MCP wiring</h3>
-                <p><code>devrig install &lt;agent&gt;</code> registers MCP&nbsp;Steroid with Claude&nbsp;Code, Codex, or Gemini, and the installer brings its own Java&nbsp;25 runtime &mdash; nothing to hand-configure.</p>
+                <p><code>devrig install &lt;agent&gt;</code> registers MCP&nbsp;Steroid with Claude&nbsp;Code, Codex, or Gemini, and the installer brings its own runtime &mdash; nothing to hand-configure.</p>
             </div>
         </div>
         <p class="hero-card-cta"><a href="{{ "/docs/capabilities/" | relURL }}" class="card-link"><strong>See what your agent can do &rarr;</strong></a></p>

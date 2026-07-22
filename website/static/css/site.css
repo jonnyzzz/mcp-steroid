@@ -418,12 +418,12 @@ a:focus-visible {
                 0 8px 32px rgba(0, 0, 0, 0.25);
 }
 .hero {
-    text-align: center;
-    max-width: 980px;
+    text-align: left;
+    max-width: 1000px;
     margin: 0 auto 3rem auto;
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     width: 100%;
 }
     .logo {
@@ -1493,7 +1493,7 @@ h1 {
 }
 .install-cta {
     max-width: 680px;
-    margin: 2rem auto 0.5rem auto;
+    margin: 2rem 0 0.5rem 0;
     width: 100%;
 }
 .install-cta-label {

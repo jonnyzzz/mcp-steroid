@@ -69,7 +69,7 @@ staticDir = ['static', 'build/generated-static']
 
 [[params.whatsnew]]
   date = "2026-06-24"
-  text = "v0.101 released — one-command devrig install (curl | sh / irm | iex) downloads devrig + a Java 25 runtime into ~/.mcp-steroid; startable managed backends, backend_name routing, opaque project_name, a devrig-first settings page"
+  text = "v0.101 released — one-command devrig install (curl | sh / irm | iex) downloads devrig and its own runtime into ~/.mcp-steroid; startable managed backends, backend_name routing, opaque project_name, a devrig-first settings page"
 
 [[params.whatsnew]]
   date = "2026-06-02"
