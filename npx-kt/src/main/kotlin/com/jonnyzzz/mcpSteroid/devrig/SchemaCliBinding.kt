@@ -63,29 +63,40 @@ class SchemaCliBinding private constructor(
             command: CliktCommand,
             specs: List<InputSchemaParamSpec>,
             optionalizeRequired: Boolean = false,
+            cliValidatedParams: Set<String> = emptySet(),
         ): List<SchemaCliBinding> =
-            specs.filterNot { it.cliHidden }.map { bind(command, it, optionalizeRequired) }
+            specs.filterNot { it.cliHidden }.map { bind(command, it, optionalizeRequired, it.name in cliValidatedParams) }
 
         /**
          * Creates and registers a single typed Clikt binding for [spec] on [command]. An enum ([spec]
          * `enumValues`) becomes a Clikt `choice`; a numeric `minimum`/`maximum` from [spec] `extra` becomes
          * a Clikt `restrictTo`, so an out-of-range value is a parse-time USAGE error rather than a backend
          * error. A parameter counts as required only when it is MCP-required, not CLI-optional, and
-         * [optionalizeRequired] is false.
+         * [optionalizeRequired] is false. When [cliSelfValidated] is true the tool's
+         * [ToolCliParseBehavior] validates this parameter's value itself with curated wording, so the
+         * generated `choice`/`restrictTo` is suppressed here to avoid double, conflicting validation — the
+         * value is still typed by Clikt, just not range/enum-checked twice.
          */
         fun bind(
             command: CliktCommand,
             spec: InputSchemaParamSpec,
             optionalizeRequired: Boolean = false,
+            cliSelfValidated: Boolean = false,
         ): SchemaCliBinding {
             require(!spec.cliHidden) { "cliHidden parameter ${spec.name} must not be bound to the CLI" }
             val required = isRequired(spec) && !optionalizeRequired
-            return if (spec.cliPositional) bindArgument(command, spec, required) else bindOption(command, spec, required)
+            return if (spec.cliPositional) bindArgument(command, spec, required)
+            else bindOption(command, spec, required, cliSelfValidated)
         }
 
         private fun isRequired(spec: InputSchemaParamSpec): Boolean = spec.required && !spec.cliOptional
 
-        private fun bindOption(command: CliktCommand, spec: InputSchemaParamSpec, required: Boolean): SchemaCliBinding {
+        private fun bindOption(
+            command: CliktCommand,
+            spec: InputSchemaParamSpec,
+            required: Boolean,
+            cliSelfValidated: Boolean,
+        ): SchemaCliBinding {
             val flag = spec.cliFlag
             return when (spec.type) {
                 "boolean" -> {
@@ -96,14 +107,16 @@ class SchemaCliBinding private constructor(
                 }
 
                 "integer" -> {
-                    val typed = command.option(flag).int().applyIntRange(spec)
+                    val base = command.option(flag).int()
+                    val typed = if (cliSelfValidated) base else base.applyIntRange(spec)
                     val option = if (required) typed.required() else typed
                     command.registerOption(option)
                     SchemaCliBinding(spec) { option.value?.let { JsonPrimitive(it) } }
                 }
 
                 "number" -> {
-                    val typed = command.option(flag).double().applyDoubleRange(spec)
+                    val base = command.option(flag).double()
+                    val typed = if (cliSelfValidated) base else base.applyDoubleRange(spec)
                     val option = if (required) typed.required() else typed
                     command.registerOption(option)
                     SchemaCliBinding(spec) { option.value?.let { JsonPrimitive(it) } }
@@ -139,7 +152,7 @@ class SchemaCliBinding private constructor(
 
                 "string" -> {
                     val enumValues = spec.enumValues
-                    if (enumValues != null) {
+                    if (enumValues != null && !cliSelfValidated) {
                         val typed = command.option(flag).choice(*enumValues.toTypedArray())
                         val option = if (required) typed.required() else typed
                         command.registerOption(option)

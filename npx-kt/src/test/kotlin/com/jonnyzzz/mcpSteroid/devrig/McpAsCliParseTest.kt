@@ -46,6 +46,9 @@ class McpAsCliParseTest {
         val err = parseError("prompt")
         assertTrue(err.text.contains("missing <uri>"), err.text)
         assertTrue(err.text.contains("devrig prompt "), "must show a runnable example: ${err.text}")
+        // The concise `--json` envelope payload (not only the human `.text`) must carry the runnable example.
+        assertTrue(err.message.contains("missing <uri>"), err.message)
+        assertTrue(err.message.contains("devrig prompt "), err.message)
     }
 
     @Test
@@ -60,8 +63,13 @@ class McpAsCliParseTest {
     }
 
     @Test
-    fun `fetch_resource without --uri is a parse error`() {
-        assertTrue(parseError("fetch_resource").text.contains("--uri"))
+    fun `fetch_resource without --uri is a parse error with a runnable example`() {
+        // The curated missing-required message (restored via ToolCliParseBehavior.missingRequiredMessage)
+        // must ride the concise `--json` envelope payload, not just the human `.text`.
+        val err = parseError("fetch_resource")
+        assertTrue(err.message.contains("missing --uri"), err.message)
+        assertTrue(err.message.contains("Example:"), err.message)
+        assertTrue(err.message.contains("devrig fetch_resource --uri="), "must show a runnable example: ${err.message}")
     }
 
     // ------------------------------ execute_code ------------------------------
@@ -183,6 +191,12 @@ class McpAsCliParseTest {
         assertTrue(parseError("open_project", "--task_id=t", "--reason=r").text.contains("--project_path"))
     }
 
+    @Test
+    fun `open_project rejects a blank required project_path`() {
+        val err = parseError("open_project", "--project_path=", "--task_id=t", "--reason=r")
+        assertTrue(err.message.contains("--project_path"), err.message)
+    }
+
     // ------------------------------ take_screenshot / input ------------------------------
 
     @Test
@@ -198,9 +212,23 @@ class McpAsCliParseTest {
 
     @Test
     fun `input requires a sequence and window_id`() {
-        assertTrue(parseError("input", "--project_name=k", "--task_id=t", "--reason=r").text.contains("--window_id"))
+        // Curated missing-required wording (restored near the tool) must ride the concise `--json` payload:
+        // --window_id points the agent at `devrig list_windows`; --sequence shows a full runnable example.
+        val missingWin = parseError("input", "--project_name=k", "--task_id=t", "--reason=r")
+        assertTrue(missingWin.message.contains("--window_id"), missingWin.message)
+        assertTrue(missingWin.message.contains("get it from `devrig list_windows`"), missingWin.message)
         val missingSeq = parseError("input", "--project_name=k", "--window_id=w", "--task_id=t", "--reason=r")
-        assertTrue(missingSeq.text.contains("--sequence"), missingSeq.text)
+        assertTrue(missingSeq.message.contains("--sequence"), missingSeq.message)
+        assertTrue(missingSeq.message.contains("Example:"), missingSeq.message)
+        assertTrue(missingSeq.message.contains("devrig input "), "must show a runnable example: ${missingSeq.message}")
+    }
+
+    @Test
+    fun `input rejects a blank required sequence`() {
+        val err = parseError(
+            "input", "--project_name=k", "--window_id=w", "--task_id=t", "--reason=r", "--sequence=",
+        )
+        assertTrue(err.message.contains("--sequence"), err.message)
     }
 
     // ------------------------------ execute_feedback ------------------------------
@@ -225,20 +253,27 @@ class McpAsCliParseTest {
 
     @Test
     fun `execute_feedback rejects out-of-range rating`() {
-        // success_rating carries maximum=1.0; the schema-generated Clikt `restrictTo` rejects 2.0 at parse
-        // (exit 64), never as a backend tool error. The message references the valid range.
+        // success_rating is validated by the tool's ToolCliParseBehavior (its schema `restrictTo` is
+        // suppressed so wording is not doubled): 2.0 is a parse error (exit 64), never a backend tool error.
+        // The curated message names the flag and states the valid range with the offending value.
         val err = parseError("execute_feedback", "--project_name=k", "--task_id=t", "--success_rating=2.0", "--explanation=x")
         assertTrue(err.text.contains("--success_rating"), err.text)
         assertTrue(err.text.contains("range"), err.text)
-        // The concise `--json` envelope message must also name the flag (clikt keeps it in `paramName`, not
-        // in the raw message), so an agent reading the envelope knows which flag was rejected.
-        assertTrue(err.message.contains("--success_rating"), err.message)
+        // The concise `--json` envelope payload must carry the curated range wording, not only the human text.
+        assertTrue(err.message.contains("--success_rating=2.0"), err.message)
+        assertTrue(err.message.contains("out of range"), err.message)
+        assertTrue(err.message.contains("0.00..1.00"), err.message)
     }
 
     @Test
     fun `execute_feedback without rating shows an example`() {
+        // The curated missing-required message (restored near the tool) must ride the concise `--json`
+        // payload with a runnable example, not the terse generic "missing required --success_rating".
         val err = parseError("execute_feedback", "--project_name=k", "--task_id=t", "--explanation=x")
-        assertTrue(err.text.contains("--success_rating"), err.text)
+        assertTrue(err.message.contains("missing --success_rating"), err.message)
+        assertTrue(err.message.contains("0.00..1.00"), err.message)
+        assertTrue(err.message.contains("Example:"), err.message)
+        assertTrue(err.message.contains("devrig execute_feedback "), "must show a runnable example: ${err.message}")
     }
 
     @Test
@@ -255,13 +290,16 @@ class McpAsCliParseTest {
 
     @Test
     fun `execute_code rejects an unknown --modal value at parse`() {
-        // --modal is a schema-generated Clikt `choice`, so a bad value is a parse-time BadParameterValue
-        // (exit 64) that lists the valid choices — not a backend error.
+        // --modal is validated by the tool's ToolCliParseBehavior (its schema `choice` is suppressed so the
+        // wording is not doubled): a bad value is a parse-time error (exit 64) carrying the curated valid-set
+        // message, not Clikt's terser default.
         val err = parseError("execute_code", "--project_name=k", "--code=x", "--task_id=t", "--reason=r", "--modal=bogus")
         assertTrue(err.text.contains("--modal"), err.text)
         assertTrue(err.text.contains("smart_non_modal"), "lists valid values: ${err.text}")
-        // The concise `--json` envelope message must also name the flag, not just the human `.text`.
-        assertTrue(err.message.contains("--modal"), err.message)
+        // The concise `--json` envelope payload must carry the curated valid-set wording that names the flag
+        // and lists every wire value separated by " | ", not only the human `.text`.
+        assertTrue(err.message.contains("invalid --modal 'bogus'"), err.message)
+        assertTrue(err.message.contains("Valid: smart_non_modal | non_modal | unleashed"), err.message)
     }
 
     @Test

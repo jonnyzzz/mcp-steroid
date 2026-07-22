@@ -72,15 +72,16 @@ class ExecuteCodeCommandTest {
 
     @Test
     fun `invalid modal is rejected at parse, handler never reached`() {
-        // --modal is a schema-generated Clikt `choice`, so a bad value is a BadParameterValue at parse
-        // (exit 64, rides the unified --json envelope) — the execute_code handler is never reached.
+        // --modal is validated by the tool's ToolCliParseBehavior (its schema `choice` is suppressed so the
+        // wording is not doubled): a bad value is a parse error (exit 64, rides the unified --json envelope)
+        // carrying the curated valid-set message — the execute_code handler is never reached.
         val parsed = parseDevrigCommand(arrayOf(
             "execute_code", "--project_name=k", "--code=x", "--task_id=t", "--reason=r", "--modal=bogus",
         ))
         assertTrue(parsed is DevrigCommand.DevrigCommandParseError, "expected parse error, got $parsed")
         parsed as DevrigCommand.DevrigCommandParseError
-        assertTrue(parsed.message.contains("invalid choice"), parsed.message)
-        assertTrue(parsed.message.contains("smart_non_modal"), "lists valid values: ${parsed.message}")
+        assertTrue(parsed.message.contains("invalid --modal 'bogus'"), parsed.message)
+        assertTrue(parsed.message.contains("Valid: smart_non_modal | non_modal | unleashed"), "lists valid values: ${parsed.message}")
         assertTrue(parsed.text.contains("--modal"), "the formatted usage names the option: ${parsed.text}")
     }
 

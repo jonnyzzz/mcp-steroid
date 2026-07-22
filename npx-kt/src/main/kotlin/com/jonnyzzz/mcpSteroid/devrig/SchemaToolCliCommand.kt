@@ -5,6 +5,8 @@ import com.github.ajalt.clikt.core.UsageError
 import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import com.jonnyzzz.mcpSteroid.mcp.InputSchemaParamSpec
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * A single `devrig` subcommand generated from a metadata-only [CliToolSpec]. It PARSES ONLY: Clikt owns
@@ -31,9 +33,10 @@ class SchemaToolCliCommand(
     parent = parent,
     hidden = spec.cli.hidden,
 ) {
-    private val bindings: List<SchemaCliBinding> =
-        SchemaCliBinding.bindAll(this, spec.schema.asCliParams(), optionalizeRequired = true)
     private val behavior: ToolCliParseBehavior = ToolCliParseBehavior.forTool(spec.name)
+    private val bindings: List<SchemaCliBinding> = SchemaCliBinding.bindAll(
+        this, spec.schema.asCliParams(), optionalizeRequired = true, cliValidatedParams = behavior.cliValidatedParams,
+    )
     private val readExtras: () -> ToolCliExtras = behavior.bindExtras(this)
 
     override fun run() {
@@ -61,12 +64,19 @@ class SchemaToolCliCommand(
         )
     }
 
-    /** Fails when an MCP-required, non-CLI-optional parameter is absent from the parsed [arguments]. */
+    /**
+     * Fails when an MCP-required, non-CLI-optional parameter is absent from the parsed [arguments]. The
+     * tool's [ToolCliParseBehavior] may supply a curated, agent-facing message (a runnable example or a
+     * "get it from `devrig …`" hint) for the parameter; a generic tool falls back to the plain default.
+     */
     private fun requireBoundParams(arguments: JsonObject) {
         for (binding in bindings) {
             val param = binding.spec
-            if (param.required && !param.cliOptional && !arguments.containsKey(param.name)) {
-                throw UsageError("missing required ${param.cliToken()}")
+            val value = arguments[param.name]
+            val missing = value == null ||
+                (param.type == "string" && value.jsonPrimitive.contentOrNull?.isBlank() != false)
+            if (param.required && !param.cliOptional && missing) {
+                throw UsageError(behavior.missingRequiredMessage(param.name) ?: "missing required ${param.cliToken()}")
             }
         }
     }
