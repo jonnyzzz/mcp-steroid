@@ -34,6 +34,9 @@
     /* Accent Colors */
     --color-link: #a0a0ff;
     --color-code: #c0c0ff;
+
+    /* Shared nav font size — wordmark, menu items and badge read at one size */
+    --nav-font-size: 0.95rem;
 }
 
 * {
@@ -96,7 +99,7 @@ a:hover {
 }
 .nav-title {
     font-weight: 700;
-    font-size: 1.1rem;
+    font-size: var(--nav-font-size);
     background: var(--gradient-brand);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -110,7 +113,7 @@ a:hover {
 .nav-link {
     color: var(--color-tertiary);
     text-decoration: none;
-    font-size: 0.95rem;
+    font-size: var(--nav-font-size);
     font-weight: 500;
     transition: color 0.2s;
     display: flex;
@@ -419,7 +422,7 @@ margin-bottom: 2rem;
     h1 {
 font-size: 2.5rem;
 margin-bottom: 0.75rem;
-background: linear-gradient(135deg, #8A7AFF 0%, #FF5277 100%);
+background: linear-gradient(135deg, #A99CFF 0%, #FF6E8E 100%);
 -webkit-background-clip: text;
 -webkit-text-fill-color: transparent;
 background-clip: text;
@@ -1431,7 +1434,7 @@ h1 {
 /* ── secondary brand badge in the top-left nav (next to "devrig") ─────────── */
 .nav-badge {
     font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 0.7rem;
+    font-size: var(--nav-font-size);
     font-weight: 700;
     line-height: 1;
     letter-spacing: 0.01em;
