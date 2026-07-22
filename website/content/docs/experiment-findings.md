@@ -128,3 +128,8 @@ All experiments run continuously on CI; every number above is parsed from the ru
 [experiments-report](https://github.com/jonnyzzz/mcp-steroid/tree/main/experiments-report) pipeline —
 the same code that renders our internal dashboard. To reproduce locally, see the test classes linked
 above; run IDs are TeamCity build IDs recorded for provenance.
+
+---
+
+*Looking for the early DPAIA wall-clock table that used to be on the homepage? It has been
+withdrawn as current evidence (issue #251) and is [kept for the record only](/docs/dpaia-wall-clock-archive/).*

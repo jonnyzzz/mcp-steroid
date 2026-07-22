@@ -17,278 +17,106 @@
 <div class="hero">
     <div class="hero-grid">
         <div class="hero-content">
-            <h1>Give your AI Agent a whole IDE, not just the files. <a href="{{ "/releases/" | relURL }}" class="version-badge version-badge-sup">v{{ .Site.Params.version }}</a></h1>
+            <p class="hero-eyebrow"><span class="lighter">devrig</span> + MCP&nbsp;Steroid for JetBrains IDEs</p>
+            <h1>Connect your coding agent to JetBrains IDE intelligence. <a href="{{ "/releases/" | relURL }}" class="version-badge version-badge-sup">v{{ .Site.Params.version }}</a></h1>
             <p class="tagline">
-                <span class="lighter">devrig</span> hands your AI Agent the same semantic actions a JetBrains IDE gives humans &mdash; typed refactors, inspections, the debugger, real test runs &mdash; so it finishes in fewer attempts and produces more stable results: less to verify now, and fewer bugs to chase or fix later.
+                <span class="lighter">devrig</span> is the CLI you install and run. It connects your MCP-capable coding agent &mdash; Claude&nbsp;Code, Codex, Gemini &mdash; to a real JetBrains IDE through the <strong>MCP&nbsp;Steroid</strong> plugin, so the agent can use typed refactors, inspections, the debugger, and real test runs instead of only editing text.
             </p>
-            <div class="cta-buttons">
-                <a href="{{ "/docs/devrig/" | relURL }}" class="btn btn-primary">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M4 4h16v2H4V4zm0 5h10v2H4V9zm0 5h16v2H4v-2zm0 5h10v2H4v-2z"/>
-                    </svg>
-                    Try <span class="lighter">devrig</span> (CLI)
-                </a>
-                <a href="{{ "/releases/" | relURL }}" class="btn btn-secondary">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                    </svg>
-                    Install plugin
-                </a>
-                <a href="{{ .Site.Params.playlistUrl }}" class="btn btn-secondary" target="_blank" rel="noopener">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 5v14l11-7z"/>
-                    </svg>
-                    Watch demos
-                </a>
+
+            <div class="install-cta">
+                <p class="install-cta-label">Install <span class="lighter">devrig</span> &mdash; one command:</p>
+                <div class="install-cmd" data-cmd="curl -fsSL https://devrig.dev/install.sh | sh">
+                    <span class="install-cmd-os">macOS / Linux</span>
+                    <code class="install-cmd-text">curl -fsSL https://devrig.dev/install.sh | sh</code>
+                    <button type="button" class="install-copy" aria-label="Copy the macOS / Linux install command">Copy</button>
+                </div>
+                <div class="install-cmd" data-cmd="irm https://devrig.dev/install.ps1 | iex">
+                    <span class="install-cmd-os">Windows</span>
+                    <code class="install-cmd-text">irm https://devrig.dev/install.ps1 | iex</code>
+                    <button type="button" class="install-copy" aria-label="Copy the Windows install command">Copy</button>
+                </div>
+                <p class="install-cta-sub">Then register your agent: <code>devrig install claude|codex|gemini</code>. <a href="{{ "/docs/devrig/" | relURL }}">Read the devrig guide &rarr;</a></p>
             </div>
+
+            <p class="hero-sublinks">
+                <a href="{{ "/demos/" | relURL }}">Watch demos</a>
+                <span class="hero-sublink-sep">&middot;</span>
+                <a href="{{ "/docs/capabilities/" | relURL }}">What your agent can do</a>
+                <span class="hero-sublink-sep">&middot;</span>
+                <a href="{{ "/releases/" | relURL }}">Already use the plugin? Install a release</a>
+            </p>
         </div>
     </div>
 </div>
 
+<section class="about-section" id="value">
+    <div class="about-content">
+        <h2 class="section-title">Why it matters</h2>
+        <p class="section-lede">A coding agent limited to reading and writing files has to guess at what the IDE already knows. <span class="lighter">devrig</span> hands it the real thing.</p>
+        <div class="hero-cards hero-cards-three">
+            <div class="hero-card">
+                <h3>Real IDE semantics, not text guesses</h3>
+                <p>Your agent calls the same actions a JetBrains IDE gives a human &mdash; typed rename/extract/move refactors, inspections, the debugger, and real test runs &mdash; on your actual project model.</p>
+            </div>
+            <div class="hero-card">
+                <h3>One bridge to the IDEs you run</h3>
+                <p>A single <span class="lighter">devrig</span> process connects your agent to the IntelliJ-family IDEs already open on your machine, across projects &mdash; or it downloads and starts a managed backend for you.</p>
+            </div>
+            <div class="hero-card">
+                <h3>No manual MCP wiring</h3>
+                <p><code>devrig install &lt;agent&gt;</code> registers MCP&nbsp;Steroid with Claude&nbsp;Code, Codex, or Gemini, and the installer brings its own Java&nbsp;25 runtime &mdash; nothing to hand-configure.</p>
+            </div>
+        </div>
+        <p class="hero-card-cta"><a href="{{ "/docs/capabilities/" | relURL }}" class="card-link"><strong>See what your agent can do &rarr;</strong></a></p>
+    </div>
+</section>
+
 <section class="about-section" id="devrig">
     <div class="about-content">
-        <h2 class="section-title">New: <code>devrig</code> &mdash; give your agent an IDE, even on a headless box <span class="agent-badge">Preview</span></h2>
+        <h2 class="section-title"><span class="lighter">devrig</span> is the product. MCP&nbsp;Steroid is how it reaches your IDE.</h2>
         <p class="section-lede">
-            <code>devrig</code> is a new standalone CLI that bridges any MCP-capable agent &mdash; Claude Code, Codex, Gemini &mdash; into a real IntelliJ-family IDE over stdio. It connects to <strong>every IDE you already have open at once</strong> &mdash; across projects, through a single bridge &mdash; or it <strong>downloads, installs, and starts one for the agent</strong> (IDEA Community/Ultimate, PyCharm, Android Studio), so your agent reaches real IDE semantics without you hand-wiring any MCP configuration.
+            <strong><span class="lighter">devrig</span></strong> is the CLI and local control plane you install and run. To reach real IDE semantics it talks to the <strong>MCP&nbsp;Steroid</strong> plugin running inside a JetBrains IDE. You install <span class="lighter">devrig</span>; <span class="lighter">devrig</span> uses MCP&nbsp;Steroid.
         </p>
         <figure style="margin:1.25rem 0;">
             <img src="{{ "/devrig-bridge.svg" | relURL }}" alt="One devrig bridge connects your AI Agent to all running IDEs at once — and can start more" loading="lazy" style="width:100%;max-width:720px;height:auto;display:block;margin:0 auto;border-radius:12px;">
         </figure>
         <div class="hero-cards hero-cards-two">
             <div class="hero-card">
-                <h3>Connect to all of them &mdash; or provision</h3>
-                <p>One <code>devrig</code> process bridges your agent to every IntelliJ-family IDE running on the machine at once (across projects), or it fetches and launches a fresh one. Either way the agent talks to real IDEs, not a guess.</p>
+                <h3><span class="lighter">devrig</span> &mdash; the CLI you install</h3>
+                <p>The standalone command-line control plane. It registers your agent, bridges MCP calls to a running IDE across projects, and can download, start, and stop a managed IntelliJ backend. This is the thing you install and run.</p>
             </div>
             <div class="hero-card">
-                <h3>Headless &amp; CI-ready <span class="agent-badge">Work in progress</span></h3>
-                <p>Built for terminal, remote, and CI-style workflows: <span class="lighter">devrig</span> manages the IDE lifecycle so agents on remote servers and in CI get the same semantic tools. This path is actively being hardened.</p>
+                <h3>MCP&nbsp;Steroid &mdash; the IDE plugin</h3>
+                <p>The JetBrains IDE plugin that exposes the IDE's real semantic actions. <span class="lighter">devrig</span> connects to it so your agent reaches typed refactors, inspections, the debugger, and test runs. Also installable directly for an IDE you already use.</p>
             </div>
         </div>
         <p class="hero-card-cta"><a href="{{ "/docs/devrig/" | relURL }}" class="card-link"><strong>Read the <span class="lighter">devrig</span> guide &rarr;</strong></a></p>
         <p class="benchmark-footnote">
-            <code>devrig</code> is an early preview and the foundation for where this project is going &mdash; expect it to grow fast. Requires a JDK&nbsp;25+ on the host. MCP&nbsp;Steroid / Devrig is an independent open-source project, <strong>not affiliated with, sponsored by, or endorsed by JetBrains.</strong>
+            MCP&nbsp;Steroid / Devrig is an independent open-source project, <strong>not affiliated with, sponsored by, or endorsed by JetBrains.</strong> IntelliJ&nbsp;IDEA, PyCharm, and other IDE names are trademarks of JetBrains&nbsp;s.r.o.
         </p>
-    </div>
-</section>
-
-<section class="about-section">
-    <div class="about-content">
-        <h2 class="section-title">Why MCP Steroid / Devrig</h2>
-        <p class="section-lede">Works with any MCP-capable AI Agent &mdash; Claude, Codex, Gemini, Cursor, OpenCode, or any other MCP client. Run it in your JetBrains IDE today, or headless via the new <code>devrig</code> CLI.</p>
-        <div class="agents-list">
-            <span class="agent-badge">Claude</span>
-            <span class="agent-badge">GPT</span>
-            <span class="agent-badge">Gemini</span>
-            <span class="agent-badge">Codex CLI</span>
-            <span class="agent-badge">Cursor</span>
-            <span class="agent-badge">OpenCode</span>
-            <span class="agent-badge">Any MCP Client</span>
-        </div>
-        <div class="hero-cards hero-cards-two">
-            <div class="hero-card">
-                <h3><a href="#benchmarks" class="card-link">Fewer wasted iterations</a></h3>
-                <p>AI Agents finish semantic tasks in fewer attempts when they can use real refactorings, inspections, and the debugger instead of guessing through file edits. Measured on selected <a href="https://dpaia.org" target="_blank" rel="noopener" class="card-link">DPAIA</a> projects.</p>
-            </div>
-            <div class="hero-card">
-                <h3>Closed verify loop</h3>
-                <p>Your AI Agent runs inspections, the build, and the tests through the same IDE humans use to verify their own work &mdash; the Agent catches its mistakes before the human review queue does.</p>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section class="about-section">
-    <div class="about-content">
-        <h2 class="section-title">Built for AI Agents</h2>
-        <p class="section-lede">MCP Steroid gives the AI Agents you already use real IDE power &mdash; not another UI to babysit. Whatever your role, your Agent does more of the work and leaves you less to clean up:</p>
-        <div class="hero-cards hero-cards-three">
-            <div class="hero-card">
-                <h3>When you ship features</h3>
-                <p>Your AI Agent drives a real JetBrains IDE on your code &mdash; safe renames, extract/move refactors, inspections, the debugger, and test runs &mdash; so it lands changes in fewer cleanup loops and you re-review less.</p>
-                <p class="hero-card-cta"><a href="{{ "/docs/devrig/" | relURL }}" class="card-link"><strong>Start With devrig &rarr;</strong></a><br><a href="{{ "/releases/" | relURL }}" class="card-link"><strong>Install the Plugin &rarr;</strong></a></p>
-            </div>
-            <div class="hero-card">
-                <h3>When you review &amp; verify</h3>
-                <p>Your AI Agent runs the same inspections, build, and tests you use to check your own work &mdash; so it catches its own mistakes before they ever reach your review queue.</p>
-            </div>
-            <div class="hero-card">
-                <h3>When you run a team or platform</h3>
-                <p>Point your AI Agents at a large codebase and they stay consistent: <span class="lighter">devrig</span> provisions a managed IDE backend for headless and CI runs, so every Agent gets the same semantic tools. We also run Proof-of-Concept engagements tuned to your repos.</p>
-                <p class="hero-card-cta"><a href="#support" class="card-link"><strong>Book a PoC &rarr;</strong></a><br><a href="{{ "/docs/need-your-experiments-and-support/" | relURL }}" class="card-link"><strong>Submit a Scenario &rarr;</strong></a></p>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section class="about-section" id="benchmarks">
-    <div class="benchmark-panel">
-        <h2 class="section-title">Evidence: fewer wasted iterations, not just speed</h2>
-        <p class="benchmark-subtitle">
-            <a href="https://dpaia.org" target="_blank" rel="noopener">DPAIA</a> wall-clock results comparing AI Agents with IDE-native semantic actions (MCP Steroid) vs. file-only workflows. On tasks requiring real semantic understanding the Agent finishes in fewer attempts; read the delta as &ldquo;rework the Agent avoided&rdquo;:
-        </p>
-        <div class="benchmark-table-wrapper">
-            <table class="benchmark-table">
-                <thead>
-                    <tr>
-                        <th>Case</th>
-                        <th>Task</th>
-                        <th>With MCP</th>
-                        <th>Without MCP</th>
-                        <th>&Delta;</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td class="benchmark-case">dpaia_jhipster_sample_app-3</td>
-                        <td>Rename ROLE_ADMIN across JHipster app (9 files)</td>
-                        <td>202s</td>
-                        <td>440s</td>
-                        <td class="benchmark-faster"><strong>&minus;54%</strong></td>
-                    </tr>
-                    <tr>
-                        <td class="benchmark-case">dpaia_empty_maven_springboot3-1</td>
-                        <td>JWT auth from scratch (5+ new files)</td>
-                        <td>288s</td>
-                        <td>396s</td>
-                        <td class="benchmark-faster"><strong>&minus;27%</strong></td>
-                    </tr>
-                    <tr>
-                        <td class="benchmark-case">dpaia_feature_service-25</td>
-                        <td>Parent-child JPA &amp; Flyway (10 files)</td>
-                        <td>382s</td>
-                        <td>523s</td>
-                        <td class="benchmark-faster"><strong>&minus;27%</strong></td>
-                    </tr>
-                    <tr>
-                        <td class="benchmark-case">dpaia_feature_service-125</td>
-                        <td>Multi-layer JPA+service+controller (15 files)</td>
-                        <td>788s</td>
-                        <td>1002s</td>
-                        <td class="benchmark-faster"><strong>&minus;21%</strong></td>
-                    </tr>
-                    <tr>
-                        <td class="benchmark-case">dpaia_spring_petclinic_rest-14</td>
-                        <td>Simple URL prefix replace (7 files)</td>
-                        <td>188s</td>
-                        <td>181s</td>
-                        <td>+4%</td>
-                    </tr>
-                    <tr>
-                        <td class="benchmark-case">dpaia_train_ticket-1</td>
-                        <td>Extend OrderRepository JPQL (4 files)</td>
-                        <td>727s</td>
-                        <td>633s</td>
-                        <td>+15%</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        <p class="benchmark-footnote">
-            Tasks requiring semantic understanding &mdash; refactorings across many files, multi-layer code generation &mdash; show the largest reduction in wasted iterations. Simple text replacements perform similarly with or without IDE access. <a href="https://github.com/jonnyzzz/mcp-steroid/issues" target="_blank" rel="noopener">Suggest your project</a> for the next benchmark run.
-        </p>
-    </div>
-</section>
-
-<section class="about-section">
-    <div class="about-content">
-        <h2 class="section-title">What Your AI Agent Can Do</h2>
-        <ul class="features-list">
-            <li><strong>Refactor safely</strong>: rename a symbol across 50 files in one operation, extract methods, move classes</li>
-            <li><strong>Debug</strong>: set breakpoints, step through code, inspect variables &mdash; all programmatically</li>
-            <li><strong>Run inspections</strong>: catch real errors before committing, not just syntax issues</li>
-            <li><strong>Execute tests</strong>: run and analyze test results without leaving the AI Agent flow</li>
-            <li><strong>See the IDE</strong>: screenshot capture, UI interaction, modal dialog handling</li>
-            <li><strong>Run without an open IDE</strong>: with <code>devrig</code>, the agent connects to a running IDE &mdash; or downloads and starts one itself &mdash; for headless, CI, and fresh-machine work</li>
-            <li><strong>Integrate any third-party plugin</strong>: call APIs from any IntelliJ plugin loaded in the IDE &mdash; internal tooling, language plugins, custom inspections &mdash; without a custom MCP server</li>
-            <li><strong>Go beyond the built-in MCP server</strong>: run any IntelliJ API through <code>steroid_execute_code</code> &mdash; not just a fixed catalogue of file/search tools</li>
-            <li><strong><a href="#create-skills" class="card-link">Create skills from the running IDE</a></strong>: pass an IntelliJ API snippet yourself, or let your AI Agent learn from the running IDE and write the Skill for you</li>
-        </ul>
-    </div>
-</section>
-
-<section class="videos-section">
-    <div class="about-content videos-box">
-        <h2 class="section-title">Featured Demos</h2>
-        <div class="videos-carousel">
-            {{ range .Site.Params.featuredVideos }}
-            <div class="video-card">
-                <a href="https://www.youtube.com/watch?v={{ .id }}&list=PLitZWClhc4Qgz3w8qrtctMR_lpIc81n0f" target="_blank" rel="noopener">
-                    <div class="video-thumbnail">
-                        <img src="https://img.youtube.com/vi/{{ .id }}/mqdefault.jpg" alt="{{ .title }}">
-                        <span class="video-duration">{{ .duration }}</span>
-                        <div class="video-play-overlay">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="video-info">
-                        <div class="video-title">{{ .title }}</div>
-                        <div class="video-meta">{{ .meta }}</div>
-                    </div>
-                </a>
-            </div>
-            {{ end }}
-            <div class="video-card view-more-card">
-                <a href="{{ .Site.Params.playlistUrl }}" target="_blank" rel="noopener">
-                    <div class="view-more-content">
-                        <svg class="view-more-icon" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M8 5v14l11-7z"/>
-                        </svg>
-                        <span class="view-more-text">View More Videos</span>
-                        <span class="view-more-count">Full playlist on YouTube</span>
-                    </div>
-                </a>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section class="about-section">
-    <div class="about-content">
-        <h2 class="section-title" id="create-skills">Create Powerful IntelliJ-Driven Skills</h2>
-        <p>
-            Create custom skills for your AI Agent in minutes. Describe what you want, give it an IntelliJ API example, and let the AI Agent iterate. No plugin development needed.
-        </p>
-        <pre class="code-example"><code>import com.intellij.psi.search.PsiSearchHelper
-import com.intellij.psi.search.GlobalSearchScope
-
-// Example: find all TODO comments in the project
-val todoItems = readAction {
-    val searchHelper = PsiSearchHelper.getInstance(project)
-    val result = mutableListOf&lt;String&gt;()
-    searchHelper.processCommentsContainingIdentifier("TODO", GlobalSearchScope.projectScope(project)) { comment -&gt;
-        result.add("${comment.containingFile.virtualFile.path}: ${comment.text.trim()}")
-        true
-    }
-    result
-}
-todoItems.forEach { println(it) }</code></pre>
-        <p>
-            The <a href="/docs/how-to-debug-ide/">Debugging IDE with MCP Steroid</a> guide was written entirely by AI Agents &mdash; a real skill created through experimentation with full IDE access.
-        </p>
-        <p class="consulting-note">
-            Ready to give your AI Agent full IDE access? <a href="{{ "/docs/devrig/" | relURL }}">Try the <span class="lighter">devrig</span> CLI</a> for terminal and managed-backend workflows, or <a href="{{ "/releases/" | relURL }}">install the plugin</a> for an IDE you already use. See the <a href="https://jonnyzzz.com/blog/2026/04/08/mcp-steroid-skill-factory/" target="_blank" rel="noopener">Skill Factory blog post</a> for a deep dive on building custom skills.
-        </p>
-        <p class="consulting-note">
-            <strong>Proof-of-Concept program:</strong> We run Proof-of-Concept engagements for company-specific use cases &mdash; custom skills, internal tooling integrations, AI Agent workflows tailored to your codebase. <a href="https://jonnyzzz.com/support/" target="_blank" rel="noopener">Contact Eugene</a> to discuss.
-        </p>
-    </div>
-</section>
-
-<section class="whatsnew-section">
-    <div class="whatsnew-banner">
-        <h2 class="section-title">What&rsquo;s New</h2>
-        <ul class="whatsnew-list">
-            {{ range .Site.Params.whatsnew }}
-            <li class="whatsnew-item">
-                <span class="whatsnew-date">{{ .date }}</span>
-                <span class="whatsnew-text">{{ .text }}</span>
-            </li>
-            {{ end }}
-        </ul>
     </div>
 </section>
 
 {{ partial "support-section.html" . }}
+
+<script>
+    // Install-command copy buttons (progressive enhancement; the command text is
+    // also selectable as a fallback when clipboard access is unavailable).
+    document.querySelectorAll('.install-cmd').forEach(function (row) {
+        var btn = row.querySelector('.install-copy');
+        var cmd = row.getAttribute('data-cmd');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1600); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(cmd).then(done, function () { btn.textContent = 'Select & copy'; });
+            } else {
+                var sel = window.getSelection(); var range = document.createRange();
+                range.selectNodeContents(row.querySelector('.install-cmd-text'));
+                sel.removeAllRanges(); sel.addRange(range);
+                btn.textContent = 'Select & copy';
+            }
+        });
+    });
+</script>
 {{ end }}

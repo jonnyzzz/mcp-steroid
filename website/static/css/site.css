@@ -1475,3 +1475,102 @@ h1 {
     text-decoration: none;
 }
 .footer-copyright a:hover { text-decoration: underline; }
+
+/* ── Homepage focus rebuild (#322): hero eyebrow, install-command CTA, sublinks ── */
+/* Keep the hero from shrink-wrapping to the nowrap install command (would overflow
+   the viewport on narrow screens): force full width and let the grid track shrink. */
+.hero-grid {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+}
+.hero-eyebrow {
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--color-tertiary);
+    margin: 0 0 0.75rem 0;
+}
+.install-cta {
+    max-width: 680px;
+    margin: 2rem auto 0.5rem auto;
+    width: 100%;
+}
+.install-cta-label {
+    font-weight: 600;
+    color: var(--color-secondary);
+    margin: 0 0 0.75rem 0;
+}
+.install-cmd {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.6rem;
+    text-align: left;
+    min-width: 0;
+}
+.install-cmd-os {
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-quaternary);
+    min-width: 92px;
+}
+.install-cmd-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.95rem;
+    color: var(--color-code);
+    user-select: all;
+    overflow-x: auto;
+    white-space: nowrap;
+    background: none;
+    padding: 0;
+}
+.install-copy {
+    flex: 0 0 auto;
+    cursor: pointer;
+    border: none;
+    border-radius: 8px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #ffffff;
+    background: var(--gradient-brand);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.install-copy:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(107, 87, 255, 0.35);
+}
+.install-cta-sub {
+    font-size: 0.9rem;
+    color: var(--color-tertiary);
+    margin: 0.75rem 0 0 0;
+}
+.hero-sublinks {
+    margin: 1.5rem 0 0 0;
+    font-size: 0.9rem;
+    color: var(--color-quaternary);
+}
+.hero-sublinks a {
+    color: var(--color-link);
+    text-decoration: none;
+}
+.hero-sublinks a:hover { text-decoration: underline; }
+.hero-sublink-sep {
+    margin: 0 0.6rem;
+    color: var(--color-quaternary);
+    opacity: 0.6;
+}
+@media (max-width: 640px) {
+    .install-cmd { flex-wrap: wrap; }
+    .install-cmd-text { flex-basis: 100%; order: 3; }
+    .install-copy { margin-left: auto; }
+    .hero-sublink-sep { display: none; }
+    .hero-sublinks a { display: block; margin: 0.4rem 0; }
+}

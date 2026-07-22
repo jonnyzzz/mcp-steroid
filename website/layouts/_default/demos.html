@@ -1,0 +1,74 @@
+{{/*
+  Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com)
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/}}
+{{ define "main" }}
+<article class="page-content">
+    <h1>{{ .Title }}</h1>
+
+    <section class="videos-section">
+        <div class="about-content videos-box">
+            <h2 class="section-title">Featured Demos</h2>
+            <div class="videos-carousel">
+                {{ range .Site.Params.featuredVideos }}
+                <div class="video-card">
+                    <a href="https://www.youtube.com/watch?v={{ .id }}&list=PLitZWClhc4Qgz3w8qrtctMR_lpIc81n0f" target="_blank" rel="noopener">
+                        <div class="video-thumbnail">
+                            <img src="https://img.youtube.com/vi/{{ .id }}/mqdefault.jpg" alt="{{ .title }}">
+                            <span class="video-duration">{{ .duration }}</span>
+                            <div class="video-play-overlay">
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M8 5v14l11-7z"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="video-info">
+                            <div class="video-title">{{ .title }}</div>
+                            <div class="video-meta">{{ .meta }}</div>
+                        </div>
+                    </a>
+                </div>
+                {{ end }}
+                <div class="video-card view-more-card">
+                    <a href="{{ .Site.Params.playlistUrl }}" target="_blank" rel="noopener">
+                        <div class="view-more-content">
+                            <svg class="view-more-icon" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                            <span class="view-more-text">View More Videos</span>
+                            <span class="view-more-count">Full playlist on YouTube</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="whatsnew-section">
+        <div class="whatsnew-banner">
+            <h2 class="section-title">What&rsquo;s New</h2>
+            <ul class="whatsnew-list">
+                {{ range .Site.Params.whatsnew }}
+                <li class="whatsnew-item">
+                    <span class="whatsnew-date">{{ .date }}</span>
+                    <span class="whatsnew-text">{{ .text }}</span>
+                </li>
+                {{ end }}
+            </ul>
+        </div>
+    </section>
+
+    <p style="text-align:center;margin-top:1.5rem;">See every version on the <a href="{{ "/releases/" | relURL }}">releases page</a>.</p>
+</article>
+{{ end }}
