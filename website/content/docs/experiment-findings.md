@@ -1,6 +1,8 @@
 ---
 title: "Experiment Findings: IDE vs Shell Agents"
 description: "Measured A/B results — the same coding tasks with and without MCP Steroid, on real codebases, with evidence-based scoring"
+group: "Vision"
+weight: 28
 ---
 
 We continuously run A/B experiments where the **same agent gets the same task twice**: once with

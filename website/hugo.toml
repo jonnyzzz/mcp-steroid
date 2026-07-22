@@ -124,43 +124,43 @@ staticDir = ['static', 'build/generated-static']
   text = "Supported IntelliJ-based IDEs, including Rider, Android Studio, and GoLand"
 
 [[params.featuredVideos]]
-  id = "HtDDNyAoLak"
-  title = "Codex Debugs in IntelliJ IDEA"
-  meta = "Codex + debugger"
-  duration = "1:03:24"
-
-[[params.featuredVideos]]
   id = "6ByedA15n8Q"
-  title = "MCP Steroid Demo 5"
-  meta = "Most popular demo"
+  title = "Watch an agent refactor in IntelliJ"
+  meta = "Most popular · 1 min"
   duration = "1:00"
 
 [[params.featuredVideos]]
-  id = "8MjogrpfXLU"
-  title = "MCP Steroid & IntelliJ Debugger"
-  meta = "Debugger integration"
-  duration = "8:25"
-
-[[params.featuredVideos]]
-  id = "JGcRk7Y3-Z8"
-  title = "Now we call tasks in IntelliJ"
-  meta = "Task execution demo"
-  duration = "2:21"
-
-[[params.featuredVideos]]
-  id = "ibc0saTT06M"
-  title = "Real Work in Monorepo Part 2"
-  meta = "Deep dive demo"
-  duration = "18:37"
-
-[[params.featuredVideos]]
   id = "QIl57FrAJtk"
-  title = "Cursor Talks with IntelliJ"
+  title = "Cursor drives IntelliJ live"
   meta = "Cursor integration"
   duration = "0:44"
 
 [[params.featuredVideos]]
+  id = "JGcRk7Y3-Z8"
+  title = "An agent runs IntelliJ tasks"
+  meta = "Task execution"
+  duration = "2:21"
+
+[[params.featuredVideos]]
+  id = "8MjogrpfXLU"
+  title = "Debugging in IntelliJ from the agent"
+  meta = "Debugger integration"
+  duration = "8:25"
+
+[[params.featuredVideos]]
+  id = "HtDDNyAoLak"
+  title = "Codex debugs a full session"
+  meta = "Full debugging session"
+  duration = "1:03:24"
+
+[[params.featuredVideos]]
+  id = "ibc0saTT06M"
+  title = "Real work in a monorepo"
+  meta = "Deep dive"
+  duration = "18:37"
+
+[[params.featuredVideos]]
   id = "JNtYCWlRYak"
-  title = "Antigravity Mandelbrot Window"
+  title = "Rendering a Mandelbrot window"
   meta = "Visual demo"
   duration = "0:39"

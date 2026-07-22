@@ -17,10 +17,10 @@
 <div class="hero">
     <div class="hero-grid">
         <div class="hero-content">
-            <p class="hero-eyebrow"><span class="lighter">devrig</span> + MCP&nbsp;Steroid for JetBrains IDEs</p>
-            <h1>Connect your coding agent to JetBrains IDE intelligence. <a href="{{ "/releases/" | relURL }}" class="version-badge version-badge-sup">v{{ .Site.Params.version }}</a></h1>
+            <p class="hero-eyebrow"><span class="lighter">devrig</span> + MCP&nbsp;Steroid for JetBrains IDEs <a href="{{ "/releases/" | relURL }}" class="version-badge hero-eyebrow-version">v{{ .Site.Params.version }}</a></p>
+            <h1>Give your AI coding agent a real JetBrains IDE &mdash; real refactors, inspections, and a debugger.</h1>
             <p class="tagline">
-                <span class="lighter">devrig</span> is the CLI you install and run. It connects your MCP-capable coding agent &mdash; Claude&nbsp;Code, Codex, Gemini &mdash; to a real JetBrains IDE through the <strong>MCP&nbsp;Steroid</strong> plugin, so the agent can use typed refactors, inspections, the debugger, and real test runs instead of only editing text.
+                One <span class="lighter">devrig</span> command connects Claude&nbsp;Code, Codex, or Gemini to typed refactors, inspections, the debugger, and real test runs &mdash; not just text edits.
             </p>
 
             <div class="cta-buttons">
@@ -53,6 +53,7 @@
                 <button type="button" class="install-copy" aria-label="Copy the Windows install command">Copy</button>
             </div>
             <p class="install-cta-sub">Then register your agent: <code>devrig install claude|codex|gemini</code>. <a href="{{ "/docs/devrig/" | relURL }}">Read the devrig guide &rarr;</a></p>
+            <p class="install-trust">No telemetry &mdash; we collect nothing. Checksums are generated on the fly, not shipped or pinned. Everything installs into <code>~/.mcp-steroid</code>.</p>
         </div>
     </div>
 </section>
@@ -92,6 +93,33 @@
                 </a>
             </div>
         </div>
+    </div>
+</section>
+
+<section class="about-section" id="proof">
+    <div class="about-content">
+        <h2 class="section-title">What a verified run looks like</h2>
+        <p class="section-lede">We run the <strong>same task twice</strong> &mdash; same model, same repo &mdash; once with the IDE through MCP&nbsp;Steroid, once as a plain shell agent (grep, sed, javac). Every result below is scored on machine-checkable evidence, not on what the agent claims about itself.</p>
+        <div class="hero-cards hero-cards-three">
+            <div class="hero-card proof-card">
+                <div class="proof-stat">1m 48s <span class="proof-vs">vs 18m 13s</span></div>
+                <h3>Structural search across YouTrackDB</h3>
+                <p>Find every no-arg <code>Optional.get()</code> across a multi-module reactor. The IDE's AST-exact matcher: 1m&nbsp;48s / $0.75 at the same completeness the grep agent reached in 18m&nbsp;13s / $3.32.</p>
+            </div>
+            <div class="hero-card proof-card">
+                <div class="proof-stat">4/4 <span class="proof-vs">vs 3/4</span></div>
+                <h3>Redundant-cast inspection on Keycloak</h3>
+                <p>Which files hold a genuinely redundant cast, ground-truthed by <code>javac -Xlint:cast</code>? The IDE inspection: 4/4 true positives in 1m&nbsp;01s; the shell agent got 3/4 in 2m&nbsp;40s.</p>
+            </div>
+            <div class="hero-card proof-card">
+                <div class="proof-stat">green build <span class="proof-vs">vs died mid-way</span></div>
+                <h3>Safe rename across Keycloak</h3>
+                <p>An atomic PSI rename finished in 7m&nbsp;39s with a clean build; the manual shell sweep died mid-way after 18 minutes with nothing usable &mdash; the win is a verified-by-construction result, not just speed.</p>
+            </div>
+        </div>
+        <p class="proof-negative"><strong>We publish the losses too:</strong> on that same structural search, GPT&nbsp;5.5's IDE leg gave up after 1m&nbsp;25s without an exact match while its own grep baseline scored an exact 13/13 in 7m&nbsp;32s &mdash; the Codex flow there still needs work.</p>
+        <p class="proof-provenance">Recorded on internal CI; build IDs retained for provenance (SSR&nbsp;<code>993038190</code>, inspection&nbsp;<code>993036643</code>, rename&nbsp;<code>992152358</code>, GPT&nbsp;SSR&nbsp;<code>993038200</code> &mdash; all green). Reproduce from the public tests: <a href="https://github.com/jonnyzzz/mcp-steroid/tree/main/test-experiments" target="_blank" rel="noopener">test-experiments</a> and the evidence-based <a href="https://github.com/jonnyzzz/mcp-steroid/blob/main/test-integration/src/main/kotlin/com/jonnyzzz/mcpSteroid/integration/tests/SemanticTaskScoring.kt" target="_blank" rel="noopener">SemanticTaskScoring.kt</a>.</p>
+        <p class="hero-card-cta"><a href="{{ "/docs/experiment-findings/" | relURL }}" class="card-link"><strong>Read the full experiment findings &rarr;</strong></a></p>
     </div>
 </section>
 

@@ -1575,3 +1575,77 @@ h1 {
     .hero-sublink-sep { display: none; }
     .hero-sublinks a { display: block; margin: 0.4rem 0; }
 }
+
+/* Hero eyebrow version badge (moved out of the H1) */
+.hero-eyebrow-version {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
+    margin-bottom: 0;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+    -webkit-text-fill-color: var(--color-code);
+    background-clip: unset;
+    -webkit-background-clip: unset;
+}
+
+/* Install trust note (small print, unobtrusive) */
+.install-trust {
+    font-size: 0.8rem;
+    color: var(--color-quaternary);
+    line-height: 1.5;
+    margin: 0.9rem 0 0 0;
+}
+.install-trust code {
+    font-size: 0.78rem;
+    color: var(--color-code);
+}
+
+/* Proof section stat cards */
+.proof-card .proof-stat {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 0.4rem;
+    line-height: 1.2;
+}
+.proof-card .proof-vs {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--color-quaternary);
+    white-space: nowrap;
+}
+.proof-negative {
+    font-size: 0.9rem;
+    color: var(--color-tertiary);
+    line-height: 1.6;
+    margin: 1.25rem 0 0 0;
+    padding-left: 0.9rem;
+    border-left: 2px solid rgba(254, 40, 87, 0.5);
+}
+.proof-provenance {
+    font-size: 0.8rem;
+    color: var(--color-quaternary);
+    line-height: 1.6;
+    margin: 1rem 0 0.5rem 0;
+}
+.proof-provenance code { font-size: 0.78rem; color: var(--color-code); }
+.proof-provenance a { color: var(--color-link); text-decoration: none; }
+.proof-provenance a:hover { text-decoration: underline; }
+
+/* Carousel: right-edge fade so the clipped last tile reads as an
+   intentional "scroll for more" affordance, not a broken cut. */
+.videos-box {
+    position: relative;
+}
+.videos-box::after {
+    content: "";
+    position: absolute;
+    top: 1.5rem;
+    right: 0;
+    bottom: 1.5rem;
+    width: 2.5rem;
+    pointer-events: none;
+    background: linear-gradient(to right, rgba(20, 20, 30, 0), rgba(20, 20, 30, 0.55));
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
