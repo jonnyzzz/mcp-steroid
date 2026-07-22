@@ -38,6 +38,16 @@ const val CUSTOM_REPO_URL = "https://mcp-steroid.jonnyzzz.com/updatePlugins.xml"
 /** Outcome of a connect-ide attempt, for the caller to narrate/decide on. */
 enum class ConnectIdeOutcome { ALREADY_CONNECTED, NO_IDE, OFFERED_VIA_HTTP, OFFERED_VIA_BROWSER, MANUAL_INSTRUCTIONS }
 
+/**
+ * Process exit code for a [ConnectIdeOutcome]: 1 when no IDE was found or the caller was left with
+ * manual instructions (nothing was actually offered/connected automatically), 0 otherwise.
+ */
+fun connectIdeExitCode(outcome: ConnectIdeOutcome): Int =
+    when (outcome) {
+        ConnectIdeOutcome.NO_IDE, ConnectIdeOutcome.MANUAL_INSTRUCTIONS -> 1
+        ConnectIdeOutcome.ALREADY_CONNECTED, ConnectIdeOutcome.OFFERED_VIA_HTTP, ConnectIdeOutcome.OFFERED_VIA_BROWSER -> 0
+    }
+
 enum class HostOs { MAC, WINDOWS, LINUX }
 
 /** Map a `System.getProperty("os.name")` value to a HostOs (defaults to LINUX for unknown/unix). */
@@ -96,7 +106,10 @@ suspend fun runConnectIde(
     for (ide in candidates) {
         val label = ide.productFullName ?: ide.productName ?: ide.baseUrl
         try {
-            client.request(installPluginUrl(ide.baseUrl, "checkCompatibility", pluginId))
+            val compat = client.request(installPluginUrl(ide.baseUrl, "checkCompatibility", pluginId))
+            if (compat.statusCode !in 200..299) {
+                err.println("[devrig] $label: compatibility check returned HTTP ${compat.statusCode}; offering install anyway.")
+            }
             val install = client.request(installPluginUrl(ide.baseUrl, "install", pluginId))
             if (install.statusCode in 200..299) {
                 httpOffered = true
@@ -104,8 +117,10 @@ suspend fun runConnectIde(
             } else {
                 err.println("[devrig] $label: install request returned HTTP ${install.statusCode}.")
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            err.println("[devrig] $label: install request failed: ${e.message ?: e::class.simpleName}")
+            err.println("[devrig] $label: install offer failed: ${e.message ?: e::class.simpleName}")
         }
     }
     if (httpOffered) {
