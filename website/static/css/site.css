@@ -419,7 +419,7 @@ margin-bottom: 2rem;
     h1 {
 font-size: 2.5rem;
 margin-bottom: 0.75rem;
-background: var(--gradient-brand);
+background: linear-gradient(135deg, #8A7AFF 0%, #FF5277 100%);
 -webkit-background-clip: text;
 -webkit-text-fill-color: transparent;
 background-clip: text;
