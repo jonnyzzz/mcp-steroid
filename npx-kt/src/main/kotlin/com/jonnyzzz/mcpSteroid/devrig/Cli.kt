@@ -13,26 +13,50 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.double
 import com.github.ajalt.clikt.parameters.types.int
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import kotlinx.serialization.json.JsonObject
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
 /**
- * The closed set of every devrig subcommand token (including nested `backend` verbs and the hidden
- * `mpc` alias). Used to recover the command name from raw tokens when a [CliktError] aborts parsing
- * before a variant's flags are captured — reliable precisely because the grammar is subcommand-first
- * over this fixed set and every global flag is boolean (so an option VALUE never precedes the
- * subcommand). Kept next to the subcommand registration in [DevrigRootCommand] so the two stay in sync.
+ * The devrig subcommands that are NOT schema-driven `steroid_*`-as-CLI tools: the lifecycle/config verbs,
+ * the hidden `mpc` alias of `mcp`, and the nested `backend` verbs. The tool tokens are derived separately
+ * from [devrigCliTools] metadata and unioned in [DEVRIG_SUBCOMMAND_NAMES], so adding a tool never needs an
+ * edit here (issue #284).
  */
-val DEVRIG_SUBCOMMAND_NAMES: Set<String> = setOf(
+val FIXED_DEVRIG_SUBCOMMAND_NAMES: Set<String> = setOf(
+    // `mpc` is the original (mis-spelled) hidden alias of `mcp` — see issue #85.
     "mcp", "mpc", "backend", "project", "install",
-    "prompt", "fetch_resource", "execute_code", "list_projects", "list_windows",
-    "open_project", "take_screenshot", "input", "execute_feedback",
     "help", "version",
     // nested `backend` verbs
     "download", "start", "stop", "provision",
 )
+
+/**
+ * The closed set of every devrig subcommand token. Used to recover the command name from raw tokens when a
+ * [CliktError] aborts parsing before a variant's flags are captured — reliable precisely because the
+ * grammar is subcommand-first over this fixed set and every global flag is boolean (so an option VALUE
+ * never precedes the subcommand). Derived from the canonical tool names + aliases in [devrigCliTools]
+ * (the single source of truth for the tool-as-CLI surface) unioned with [FIXED_DEVRIG_SUBCOMMAND_NAMES],
+ * so a newly added tool's command name is recovered without editing this list (issue #284).
+ */
+val DEVRIG_SUBCOMMAND_NAMES: Set<String> =
+    FIXED_DEVRIG_SUBCOMMAND_NAMES + devrigCliTools().flatMap { listOf(it.cli.name) + it.cli.aliases }
+
+/**
+ * Builds one generic [SchemaToolCliCommand] per visible spec in [tools] (defaulting to the canonical
+ * [devrigCliTools] list), in factory order, so adding a tool to `devrigToolSpecs(...)` adds its canonical
+ * CLI command with no new command class. A `cli.hidden` spec contributes no command. The commands are
+ * parse-only: each selects an inert [DevrigCommand.RunTool] whose runtime resolution happens later in the
+ * service layer (issue #284).
+ */
+fun schemaToolCliCommands(
+    selected: SelectedDevrigCommand,
+    parent: DevrigCliktCommand?,
+    tools: List<CliToolSpec> = devrigCliTools(),
+): List<SchemaToolCliCommand> =
+    tools.filterNot { it.cli.hidden }.map { SchemaToolCliCommand(it, selected, parent) }
 
 /**
  * Recovers the subcommand name from raw CLI tokens for a parse-error envelope. Prefers the first token
@@ -242,7 +266,20 @@ private fun stripAnsiCodes(text: String): String = ANSI_ESCAPE_CODES.replace(tex
 
 fun parseDevrigCommand(rawArgs: Array<String>): DevrigCommand {
     val selected = SelectedDevrigCommand()
-    val root = DevrigRootCommand(selected)
+    return parseDevrigCommandWithRoot(DevrigRootCommand(selected), selected, rawArgs)
+}
+
+/**
+ * Parses [rawArgs] against [root], returning the [DevrigCommand] the root's commands selected into
+ * [selected], or a [DevrigCommand.DevrigCommandParseError] recovered from the raw tokens when parsing
+ * aborts. Split out from [parseDevrigCommand] so a root wired with generated tool commands can reuse the
+ * identical parse-error/`--json`-envelope recovery (issue #284).
+ */
+fun parseDevrigCommandWithRoot(
+    root: DevrigCliktCommand,
+    selected: SelectedDevrigCommand,
+    rawArgs: Array<String>,
+): DevrigCommand {
     return try {
         root.parse(rawArgs)
         selected.command ?: DevrigCommand.DevrigCommandHelp()

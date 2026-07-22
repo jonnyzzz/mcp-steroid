@@ -2,6 +2,7 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
+import com.jonnyzzz.mcpSteroid.mcp.cliOptional
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.description
@@ -82,10 +83,14 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
 
     val projectName = CommonToolParams.projectName().registerToSchema()
 
+    // MCP-required, but CLI-optional: the devrig CLI can synthesize the body from `--code-file`
+    // (or stdin) when `--code` is absent, so the generated grammar must not force it. cliOptional is a
+    // CLI-only projection — the MCP `inputSchema` keeps `code` in its `required` list (issue #284).
     val code = InputSchemaElement.param("code")
         .description("Kotlin suspend method body")
         .string()
         .required()
+        .cliOptional()
         .registerToSchema()
 
     val taskId = CommonToolParams.taskId().registerToSchema()

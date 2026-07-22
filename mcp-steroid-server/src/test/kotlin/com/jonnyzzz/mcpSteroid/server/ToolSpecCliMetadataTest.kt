@@ -4,6 +4,8 @@ package com.jonnyzzz.mcpSteroid.server
 import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -92,6 +94,20 @@ class ToolSpecCliMetadataTest {
             assertTrue(projectName.required, "${tool.name}: project_name must stay MCP-required")
             assertFalse(projectName.cliSynopsis.isNullOrBlank(), "${tool.name}: project_name needs a curated cliSynopsis")
         }
+    }
+
+    @Test
+    fun `execute_code code is CLI-optional yet stays MCP-required and never leaks into inputSchema`() {
+        // The devrig CLI synthesizes the body from --code-file (or stdin) when --code is absent, so the
+        // generated grammar treats `code` as optional. That is a CLI-only projection: the MCP inputSchema
+        // must be byte-identical — `code` stays in the required list and no cliOptional hint appears.
+        val codeParam = executeCode.schema.asCliParams().single { it.name == "code" }
+        assertTrue(codeParam.cliOptional, "code must be cliOptional so the CLI can synthesize it from --code-file")
+        assertTrue(codeParam.required, "code must stay MCP-required")
+        val required = executeCode.inputSchema["required"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(required.contains("code"), "code must stay in the MCP required list: $required")
+        val rendered = Json.encodeToString(JsonObject.serializer(), executeCode.inputSchema)
+        assertFalse(rendered.contains("cliOptional"), "cliOptional must not leak into the MCP inputSchema")
     }
 
     @Test
