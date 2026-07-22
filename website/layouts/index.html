@@ -36,20 +36,7 @@
     <div class="about-content">
         <h2 class="section-title">Install <span class="lighter">devrig</span> &mdash; one command</h2>
         <p class="section-lede"><span class="lighter">devrig</span> is the primary way in: one line installs the CLI and everything it needs to run &mdash; no manual setup.</p>
-        <div class="install-cta">
-            <div class="install-cmd" data-cmd="curl -fsSL https://devrig.dev/install.sh | sh">
-                <span class="install-cmd-os">macOS / Linux</span>
-                <code class="install-cmd-text">curl -fsSL https://devrig.dev/install.sh | sh</code>
-                <button type="button" class="install-copy" aria-label="Copy the macOS / Linux install command">Copy</button>
-            </div>
-            <div class="install-cmd" data-cmd="irm https://devrig.dev/install.ps1 | iex">
-                <span class="install-cmd-os">Windows</span>
-                <code class="install-cmd-text">irm https://devrig.dev/install.ps1 | iex</code>
-                <button type="button" class="install-copy" aria-label="Copy the Windows install command">Copy</button>
-            </div>
-            <p class="install-cta-sub">Then register your agent: <code>devrig install claude|codex|gemini</code>. <a href="{{ "/docs/devrig/" | relURL }}">Read the devrig guide &rarr;</a></p>
-            <p class="install-cta-sub">In your JetBrains IDE, also install the <strong>MCP&nbsp;Steroid</strong> plugin &rarr; <a href="https://plugins.jetbrains.com/plugin/30019-mcp-steroid" target="_blank" rel="noopener">JetBrains Marketplace</a>.</p>
-        </div>
+        {{ partial "install-cta.html" (dict "marketplace" true) }}
     </div>
 </section>
 
@@ -167,25 +154,4 @@
 </section>
 
 {{ partial "support-section.html" . }}
-
-<script>
-    // Install-command copy buttons (progressive enhancement; the command text is
-    // also selectable as a fallback when clipboard access is unavailable).
-    document.querySelectorAll('.install-cmd').forEach(function (row) {
-        var btn = row.querySelector('.install-copy');
-        var cmd = row.getAttribute('data-cmd');
-        if (!btn) return;
-        btn.addEventListener('click', function () {
-            var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1600); };
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(cmd).then(done, function () { btn.textContent = 'Select & copy'; });
-            } else {
-                var sel = window.getSelection(); var range = document.createRange();
-                range.selectNodeContents(row.querySelector('.install-cmd-text'));
-                sel.removeAllRanges(); sel.addRange(range);
-                btn.textContent = 'Select & copy';
-            }
-        });
-    });
-</script>
 {{ end }}

@@ -1,0 +1,62 @@
+{{/*
+  Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com)
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/}}
+{{/*
+  Shared install-command block: styled macOS/Linux + Windows rows with working
+  Copy buttons, plus the "register your agent" line. Used by the homepage
+  (layouts/index.html) and the getting-started page (via the install-cta
+  shortcode) so both stay in sync. Optional param "marketplace" (bool) appends
+  the JetBrains Marketplace plugin line (homepage only).
+*/}}
+<div class="install-cta">
+    <div class="install-cmd" data-cmd="curl -fsSL https://devrig.dev/install.sh | sh">
+        <span class="install-cmd-os">macOS / Linux</span>
+        <code class="install-cmd-text">curl -fsSL https://devrig.dev/install.sh | sh</code>
+        <button type="button" class="install-copy" aria-label="Copy the macOS / Linux install command">Copy</button>
+    </div>
+    <div class="install-cmd" data-cmd="irm https://devrig.dev/install.ps1 | iex">
+        <span class="install-cmd-os">Windows</span>
+        <code class="install-cmd-text">irm https://devrig.dev/install.ps1 | iex</code>
+        <button type="button" class="install-copy" aria-label="Copy the Windows install command">Copy</button>
+    </div>
+    <p class="install-cta-sub">Then register your agent: <code>devrig install claude|codex|gemini</code>. <a href="{{ "/docs/devrig/" | relURL }}">Read the devrig guide &rarr;</a></p>
+    {{ if .marketplace }}
+    <p class="install-cta-sub">In your JetBrains IDE, also install the <strong>MCP&nbsp;Steroid</strong> plugin &rarr; <a href="https://plugins.jetbrains.com/plugin/30019-mcp-steroid" target="_blank" rel="noopener">JetBrains Marketplace</a>.</p>
+    {{ end }}
+</div>
+<script>
+    // Install-command copy buttons (progressive enhancement; the command text is
+    // also selectable as a fallback when clipboard access is unavailable).
+    // Guarded so multiple install-cta blocks on one page bind their handlers once.
+    if (!window.__installCtaCopyBound) {
+        window.__installCtaCopyBound = true;
+        document.querySelectorAll('.install-cmd').forEach(function (row) {
+            var btn = row.querySelector('.install-copy');
+            var cmd = row.getAttribute('data-cmd');
+            if (!btn) return;
+            btn.addEventListener('click', function () {
+                var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1600); };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(cmd).then(done, function () { btn.textContent = 'Select & copy'; });
+                } else {
+                    var sel = window.getSelection(); var range = document.createRange();
+                    range.selectNodeContents(row.querySelector('.install-cmd-text'));
+                    sel.removeAllRanges(); sel.addRange(range);
+                    btn.textContent = 'Select & copy';
+                }
+            });
+        });
+    }
+</script>

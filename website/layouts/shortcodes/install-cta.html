@@ -1,0 +1,3 @@
+{{/* Renders the shared install-command block in markdown content pages.
+     Usage: {{< install-cta >}}  or  {{< install-cta marketplace="true" >}} */}}
+{{ partial "install-cta.html" (dict "marketplace" (eq (.Get "marketplace") "true")) }}

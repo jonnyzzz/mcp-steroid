@@ -18,17 +18,7 @@ You install devrig; devrig uses MCP Steroid.
 
 ## 1. Install devrig — one command
 
-**macOS / Linux**
-
-```bash
-curl -fsSL https://devrig.dev/install.sh | sh
-```
-
-**Windows (PowerShell)**
-
-```powershell
-irm https://devrig.dev/install.ps1 | iex
-```
+{{< install-cta >}}
 
 This installs the `devrig` CLI together with its own runtime into `~/.mcp-steroid` —
 there is nothing else to set up by hand.
