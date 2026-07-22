@@ -23,31 +23,77 @@
                 <span class="lighter">devrig</span> is the CLI you install and run. It connects your MCP-capable coding agent &mdash; Claude&nbsp;Code, Codex, Gemini &mdash; to a real JetBrains IDE through the <strong>MCP&nbsp;Steroid</strong> plugin, so the agent can use typed refactors, inspections, the debugger, and real test runs instead of only editing text.
             </p>
 
-            <div class="install-cta">
-                <p class="install-cta-label">Install <span class="lighter">devrig</span> &mdash; one command:</p>
-                <div class="install-cmd" data-cmd="curl -fsSL https://devrig.dev/install.sh | sh">
-                    <span class="install-cmd-os">macOS / Linux</span>
-                    <code class="install-cmd-text">curl -fsSL https://devrig.dev/install.sh | sh</code>
-                    <button type="button" class="install-copy" aria-label="Copy the macOS / Linux install command">Copy</button>
-                </div>
-                <div class="install-cmd" data-cmd="irm https://devrig.dev/install.ps1 | iex">
-                    <span class="install-cmd-os">Windows</span>
-                    <code class="install-cmd-text">irm https://devrig.dev/install.ps1 | iex</code>
-                    <button type="button" class="install-copy" aria-label="Copy the Windows install command">Copy</button>
-                </div>
-                <p class="install-cta-sub">Then register your agent: <code>devrig install claude|codex|gemini</code>. <a href="{{ "/docs/devrig/" | relURL }}">Read the devrig guide &rarr;</a></p>
+            <div class="cta-buttons">
+                <a href="#install" class="btn btn-primary">Install <span class="lighter">devrig</span></a>
+                <a href="{{ "/releases/" | relURL }}" class="btn btn-secondary">Get the IDE plugin</a>
             </div>
 
             <p class="hero-sublinks">
-                <a href="{{ "/demos/" | relURL }}">Watch demos</a>
-                <span class="hero-sublink-sep">&middot;</span>
                 <a href="{{ "/docs/capabilities/" | relURL }}">What your agent can do</a>
                 <span class="hero-sublink-sep">&middot;</span>
-                <a href="{{ "/releases/" | relURL }}">Already use the plugin? Install a release</a>
+                <a href="{{ "/docs/devrig/" | relURL }}">Read the <span class="lighter">devrig</span> guide</a>
             </p>
         </div>
     </div>
 </div>
+
+<section class="about-section" id="install">
+    <div class="about-content">
+        <h2 class="section-title">Install <span class="lighter">devrig</span> &mdash; one command</h2>
+        <p class="section-lede"><span class="lighter">devrig</span> is the primary way in: one line installs the CLI and its own Java&nbsp;25 runtime. Already run a JetBrains IDE? The <strong>MCP&nbsp;Steroid</strong> plugin also installs on its own.</p>
+        <div class="install-cta">
+            <div class="install-cmd" data-cmd="curl -fsSL https://devrig.dev/install.sh | sh">
+                <span class="install-cmd-os">macOS / Linux</span>
+                <code class="install-cmd-text">curl -fsSL https://devrig.dev/install.sh | sh</code>
+                <button type="button" class="install-copy" aria-label="Copy the macOS / Linux install command">Copy</button>
+            </div>
+            <div class="install-cmd" data-cmd="irm https://devrig.dev/install.ps1 | iex">
+                <span class="install-cmd-os">Windows</span>
+                <code class="install-cmd-text">irm https://devrig.dev/install.ps1 | iex</code>
+                <button type="button" class="install-copy" aria-label="Copy the Windows install command">Copy</button>
+            </div>
+            <p class="install-cta-sub">Then register your agent: <code>devrig install claude|codex|gemini</code>. <a href="{{ "/docs/devrig/" | relURL }}">Read the devrig guide &rarr;</a></p>
+        </div>
+    </div>
+</section>
+
+<section class="videos-section" id="demos-preview">
+    <div class="about-content videos-box">
+        <h2 class="section-title">See it drive a real IDE</h2>
+        <div class="videos-carousel">
+            {{ range first 4 .Site.Params.featuredVideos }}
+            <div class="video-card">
+                <a href="https://www.youtube.com/watch?v={{ .id }}&list=PLitZWClhc4Qgz3w8qrtctMR_lpIc81n0f" target="_blank" rel="noopener">
+                    <div class="video-thumbnail">
+                        <img src="https://img.youtube.com/vi/{{ .id }}/mqdefault.jpg" alt="{{ .title }}" loading="lazy">
+                        <span class="video-duration">{{ .duration }}</span>
+                        <div class="video-play-overlay">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="video-info">
+                        <div class="video-title">{{ .title }}</div>
+                        <div class="video-meta">{{ .meta }}</div>
+                    </div>
+                </a>
+            </div>
+            {{ end }}
+            <div class="video-card view-more-card">
+                <a href="{{ "/demos/" | relURL }}">
+                    <div class="view-more-content">
+                        <svg class="view-more-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                        <span class="view-more-text">Watch demos</span>
+                        <span class="view-more-count">All videos &amp; what&rsquo;s new</span>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
 
 <section class="about-section" id="value">
     <div class="about-content">

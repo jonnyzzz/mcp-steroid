@@ -398,7 +398,8 @@ a:focus-visible {
  *
  * Without the hash, no min-height applies and the section sits
  * tight against the footer at its natural content height. */
-#support {
+#support,
+#install {
     scroll-margin-top: 4rem;
 }
 #support:target {
