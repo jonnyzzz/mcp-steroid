@@ -1,18 +1,18 @@
 ---
-title: "Devrig CLI"
+title: "devrig CLI"
 description: "A standalone CLI that registers MCP Steroid with your AI Agent, bridges it to a running IDE, and can download and start a managed IntelliJ backend"
 weight: 15
 group: "Getting Started"
 ---
 
-> **Independent open-source project.** MCP Steroid and Devrig are independent
+> **Independent open-source project.** MCP Steroid and devrig are independent
 > open-source projects. They are **not made by, endorsed by, or affiliated
 > with JetBrains s.r.o.** *IntelliJ IDEA, PyCharm, GoLand, WebStorm, Rider,
 > CLion, and JetBrains are trademarks of JetBrains s.r.o.*
 
-## What is Devrig?
+## What is devrig?
 
-**Devrig** is a small standalone command-line tool that connects your AI Agent
+**devrig** is a small standalone command-line tool that connects your AI Agent
 to a JetBrains IDE running MCP Steroid — with no manual MCP configuration.
 
 It does three jobs:
@@ -39,7 +39,7 @@ download and start more on demand:
 <figcaption style="color:#909090;font-size:0.85rem;margin-top:0.4rem;">One <code>devrig</code> process bridges your agent to every IntelliJ-family IDE running on the machine — and can start more.</figcaption>
 </figure>
 
-Devrig is a Java application. The one-command installer downloads devrig
+devrig is a Java application. The one-command installer downloads devrig
 together with a matching Java runtime into `~/.mcp-steroid`, so there is nothing
 to set up by hand. To run devrig under a Java you manage instead, point
 `DEVRIG_JAVA_HOME` (or `JAVA_HOME`) at it.
