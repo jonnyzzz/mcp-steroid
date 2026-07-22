@@ -100,10 +100,14 @@ a:hover {
 .nav-title {
     font-weight: 700;
     font-size: var(--nav-font-size);
-    background: var(--gradient-brand);
+}
+/* Shared light-gradient "special presentation" for the brand word "devrig". */
+.lighter {
+    background: linear-gradient(135deg, #A99CFF 0%, #FF6E8E 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    color: transparent;
 }
 .nav-links {
     display: flex;
