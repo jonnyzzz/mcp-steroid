@@ -75,7 +75,7 @@ a:hover {
 }
 .nav-brand {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.75rem;
     text-decoration: none;
     color: var(--color-primary);
@@ -86,16 +86,13 @@ a:hover {
 .nav-logo {
     width: 32px;
     height: 32px;
-    /* logo has no text baseline; keep it visually centered while the two
-       brand tokens (.nav-title / .nav-badge) share a text baseline */
-    align-self: center;
 }
 /* Ensure minimum touch target size (44x44px) */
 .nav-brand {
     padding: 6px 0;
     min-height: 44px;
     display: flex;
-    align-items: baseline;
+    align-items: center;
 }
 .nav-title {
     font-weight: 700;
