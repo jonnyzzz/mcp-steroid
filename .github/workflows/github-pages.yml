@@ -87,3 +87,19 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # Post-deploy live canonicalization check (issue #332). Runs only after a real
+  # deploy (which only happens on the `website` branch). Verifies the live
+  # redirect + SEO contract; failing here flags a live regression without
+  # blocking the deploy that already shipped. Redirect permanence is NOT asserted
+  # (the legacy-host rule is intentionally a 307).
+  live-check:
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for propagation
+        run: sleep 15
+      - name: Live canonicalization checks
+        working-directory: website
+        run: bash scripts/check-live.sh

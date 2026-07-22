@@ -56,6 +56,10 @@ build: update-config
 	@# Remove symlinks in output dir — they escape Docker mount boundary and break Hugo stat
 	@find mcp-steroid-public/mcp-steroid-plugin -type l -delete 2>/dev/null || true
 	docker compose run --rm --user "$$(id -u):$$(id -g)" build
+	@# Fail the build if the rendered output violates the canonicalization contract
+	@# (canonical/OG/Twitter/sitemap/robots on https://devrig.dev — see issue #332).
+	@# Plain grep/find on the host output dir, so no extra container round-trip.
+	sh scripts/assert-canonicalization.sh mcp-steroid-public/mcp-steroid-plugin
 	@# `=> website.zip` (with the .zip extension) tells TeamCity to bundle the matched
 	@# files into a single archive artifact instead of publishing the directory tree
 	@# verbatim. See https://www.jetbrains.com/help/teamcity/configuring-general-settings.html#Artifact+Paths
