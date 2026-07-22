@@ -1,7 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -112,9 +114,16 @@ class McpAsCliParseTest {
 
     @Test
     fun `list_projects and list_windows parse with --json`() {
-        assertTrue(parse("list_projects", "--json") is DevrigCommand.DevrigCommandListProjects)
-        assertTrue((parse("list_projects", "--json") as DevrigCommand.DevrigCommandListProjects).json)
-        assertTrue(parse("list_windows") is DevrigCommand.DevrigCommandListWindows)
+        // Both listers are now schema-generated: they parse into the inert RunTool carrying the canonical
+        // tool name, the typed command name, and the --json flag (issue #284).
+        val projects = parse("list_projects", "--json") as DevrigCommand.RunTool
+        assertEquals("steroid_list_projects", projects.toolName)
+        assertEquals("list_projects", projects.commandName)
+        assertTrue(projects.json)
+        val windows = parse("list_windows") as DevrigCommand.RunTool
+        assertEquals("steroid_list_windows", windows.toolName)
+        assertEquals("list_windows", windows.commandName)
+        assertFalse(windows.json)
     }
 
     // ------------------------------ parse/runtime boundary ------------------------------
@@ -124,7 +133,13 @@ class McpAsCliParseTest {
         // The parse phase must never create a service, backend, or handler: DevrigServices is built after
         // parsing (see Main.runCli). A parsed command is therefore a plain data object carrying only the
         // typed tokens — pinned here by data-class equality with a freshly constructed instance.
-        assertEquals(DevrigCommand.DevrigCommandListWindows(json = true), parse("list_windows", "--json"))
+        assertEquals(
+            DevrigCommand.RunTool(
+                toolName = "steroid_list_windows", commandName = "list_windows",
+                arguments = JsonObject(emptyMap()), json = true,
+            ),
+            parse("list_windows", "--json"),
+        )
         assertEquals(
             DevrigCommand.DevrigCommandFetchResource(uri = "mcp-steroid://a", commandName = "fetch_resource"),
             parse("fetch_resource", "--uri=mcp-steroid://a"),

@@ -160,18 +160,6 @@ sealed interface DevrigCommand {
         override val json: Boolean = false,
     ) : DevrigCommand
 
-    /** `devrig list_projects` — steroid_list_projects (reconciled with `devrig project`). */
-    data class DevrigCommandListProjects(
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
-    /** `devrig list_windows` — steroid_list_windows. */
-    data class DevrigCommandListWindows(
-        override val debug: Boolean = false,
-        override val json: Boolean = false,
-    ) : DevrigCommand
-
     /** `devrig open_project` — steroid_open_project. `--wait` polls until the project is ready. */
     data class DevrigCommandOpenProject(
         val projectPath: String? = null,
@@ -377,6 +365,13 @@ private class DevrigRootCommand(
 
     init {
         val backend = BackendCommand(selected, this)
+        // list_projects / list_windows are generated from their `CliToolSpec` metadata and dispatched at
+        // runtime through the single `RunTool` arm (issue #284); the other tools carry their own command
+        // classes.
+        val generatedListers = schemaToolCliCommands(
+            selected, this,
+            tools = devrigCliTools().filter { it.cli.name == "list_projects" || it.cli.name == "list_windows" },
+        )
         subcommands(
             // `mcp` is the canonical, advertised spelling. `mpc` is the original
             // (mis-spelled) subcommand kept as a hidden alias so existing agent
@@ -390,8 +385,7 @@ private class DevrigRootCommand(
             PromptCliCommand(selected, this),
             FetchResourceCliCommand(selected, this),
             ExecuteCodeCliCommand(selected, this),
-            ListProjectsCliCommand(selected, this),
-            ListWindowsCliCommand(selected, this),
+            *generatedListers.toTypedArray(),
             OpenProjectCliCommand(selected, this),
             ScreenshotCliCommand(selected, this),
             InputCliCommand(selected, this),
@@ -555,28 +549,6 @@ private class ExecuteCodeCliCommand(
             projectName = projectName, code = code, codeFile = codeFile, taskId = taskId,
             reason = reason, modal = modal, timeout = timeout, debug = options.debug, json = options.json,
         ))
-    }
-}
-
-/** `devrig list_projects [--json]` — steroid_list_projects (shares the `devrig project` render path). */
-private class ListProjectsCliCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("list_projects", selected, parent) {
-    override fun run() {
-        val options = options()
-        select(DevrigCommand.DevrigCommandListProjects(debug = options.debug, json = options.json))
-    }
-}
-
-/** `devrig list_windows [--json]` — steroid_list_windows. */
-private class ListWindowsCliCommand(
-    selected: SelectedDevrigCommand,
-    parent: DevrigCliktCommand,
-) : DevrigCliktCommand("list_windows", selected, parent) {
-    override fun run() {
-        val options = options()
-        select(DevrigCommand.DevrigCommandListWindows(debug = options.debug, json = options.json))
     }
 }
 
@@ -809,7 +781,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
     return try {
         when (command) {
             is DevrigCommand.MCP -> error("runCli called with DevrigCommand.MCP")
-            is DevrigCommand.RunTool -> error("runCli reached a schema-driven RunTool without a registered runtime dispatcher: $command")
+            is DevrigCommand.RunTool -> runGeneratedToolCommand(command)
             is DevrigCommand.DevrigCommandHelp -> printTopicHelp(command.topic, mcpStdout)
             is DevrigCommand.DevrigCommandVersion -> printVersion(mcpStdout)
             is DevrigCommand.DevrigCommandParseError -> {
@@ -833,8 +805,6 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             // MCP-as-CLI (epic #188)
             is DevrigCommand.DevrigCommandFetchResource -> runFetchResourceCommand(command)
             is DevrigCommand.DevrigCommandExecuteCode -> runExecuteCodeCommand(command)
-            is DevrigCommand.DevrigCommandListProjects -> runListProjectsCommand(command)
-            is DevrigCommand.DevrigCommandListWindows -> runListWindowsCommand(command)
             is DevrigCommand.DevrigCommandOpenProject -> runOpenProjectCommand(command)
             is DevrigCommand.DevrigCommandScreenshot -> runScreenshotCommand(command)
             is DevrigCommand.DevrigCommandInput -> runInputCommand(command)

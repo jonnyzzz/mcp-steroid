@@ -10,6 +10,7 @@ import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -111,8 +112,8 @@ class McpAsCliContractTest {
             )
         }, CliExit.UNAVAILABLE, expectError = true)
         assertEnvelope(runCliCommand(homePaths()) {
-            runListWindowsCommand(
-                DevrigCommand.DevrigCommandListWindows(json = true),
+            runGeneratedToolCommand(
+                DevrigCommand.RunTool(toolName = "steroid_list_windows", commandName = "list_windows", arguments = JsonObject(emptyMap()), json = true),
                 fakeTools(ListWindowsToolHandler::class.java to ThrowingListWindows(ex())),
             )
         }, CliExit.UNAVAILABLE, expectError = true)

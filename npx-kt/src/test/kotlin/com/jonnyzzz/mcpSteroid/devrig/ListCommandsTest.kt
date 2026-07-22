@@ -17,7 +17,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 
-/** Glue tests for `devrig list_windows` and `devrig list_projects` — the unified envelope + human render. */
+/**
+ * Glue tests for `devrig list_windows` and `devrig list_projects` — the unified `{tool, command, isError,
+ * data}` envelope + human render, now produced by the single schema-driven [DevrigServices.runGeneratedToolCommand]
+ * dispatcher (issue #284). Each test PARSES the real generated command and then executes it against
+ * injected fake tools, so it pins that the parse→dispatch→render path is byte-compatible with the
+ * pre-schema list envelopes.
+ */
 class ListCommandsTest {
 
     @TempDir lateinit var home: Path
@@ -26,6 +32,10 @@ class ListCommandsTest {
     private class FakeListProjects(val resp: ListProjectsResponse) : ListProjectsToolHandler {
         override suspend fun collectListProjectsResponse() = resp
     }
+
+    /** Parses [args] into the inert [DevrigCommand.RunTool] the generated lister command selects. */
+    private fun runTool(vararg args: String): DevrigCommand.RunTool =
+        parseDevrigCommand(arrayOf(*args)) as DevrigCommand.RunTool
 
     private fun window() = ListedWindow(
         projectName = "app-key", projectPath = "/p/app", title = "app", isActive = true, isVisible = true,
@@ -39,8 +49,8 @@ class ListCommandsTest {
     fun `list_windows --json uses the unified envelope`() {
         val windows = SequencedListWindows(listOf(ListWindowsResponse(listOf(window()), emptyList())))
         val run = runCliCommand(homePaths()) {
-            runListWindowsCommand(
-                DevrigCommand.DevrigCommandListWindows(json = true),
+            runGeneratedToolCommand(
+                runTool("list_windows", "--json"),
                 fakeTools(ListWindowsToolHandler::class.java to windows),
             )
         }
@@ -56,8 +66,8 @@ class ListCommandsTest {
     fun `list_windows human output lists window_id and state`() {
         val windows = SequencedListWindows(listOf(ListWindowsResponse(listOf(window()), emptyList())))
         val run = runCliCommand(homePaths()) {
-            runListWindowsCommand(
-                DevrigCommand.DevrigCommandListWindows(json = false),
+            runGeneratedToolCommand(
+                runTool("list_windows"),
                 fakeTools(ListWindowsToolHandler::class.java to windows),
             )
         }
@@ -74,8 +84,8 @@ class ListCommandsTest {
             ListedProject(projectName = "app-9fk2", name = "app", path = "/p/app", backendName = "iu-abc"),
         )))
         val run = runCliCommand(homePaths()) {
-            runListProjectsCommand(
-                DevrigCommand.DevrigCommandListProjects(json = true),
+            runGeneratedToolCommand(
+                runTool("list_projects", "--json"),
                 fakeTools(ListProjectsToolHandler::class.java to fake),
             )
         }
@@ -93,7 +103,7 @@ class ListCommandsTest {
     fun `list_projects human path runs without an IDE`() {
         // No fake needed: the human path delegates to `devrig project` (real routing, empty here).
         val run = runCliCommand(homePaths()) {
-            runListProjectsCommand(DevrigCommand.DevrigCommandListProjects(json = false))
+            runGeneratedToolCommand(runTool("list_projects"))
         }
         assertEquals(CliExit.OK, run.exit)
         assertTrue(run.stdout.isNotBlank(), "human path should print a listing/empty message")

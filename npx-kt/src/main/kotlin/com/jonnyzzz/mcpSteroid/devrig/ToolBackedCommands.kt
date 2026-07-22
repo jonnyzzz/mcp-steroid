@@ -7,12 +7,15 @@ import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRouteNotFoundException
 import com.jonnyzzz.mcpSteroid.devrig.server.StubMcpSteroidTools
 import com.jonnyzzz.mcpSteroid.devrig.server.callToolViaSpec
 import com.jonnyzzz.mcpSteroid.devrig.server.resolveProjectFromCwd
+import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolSpec
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolSpec
+import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
@@ -21,6 +24,7 @@ import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolSpec
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolSpec
+import com.jonnyzzz.mcpSteroid.server.devrigToolSpecs
 import java.io.IOException
 import java.io.PrintStream
 import java.nio.file.Files
@@ -30,8 +34,19 @@ import java.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+
+/**
+ * The MCP tool names whose CLI face renders its structured response directly (as the `--json` envelope
+ * `data`, and a dedicated human table) rather than the generic `{content:[...]}` tool-result envelope.
+ * They mirror `ListProjectsToolSpec.name` / `ListWindowsToolSpec.name` — the two tools with no per-call
+ * argument or content shape (issue #284).
+ */
+private const val LIST_PROJECTS_TOOL_NAME = "steroid_list_projects"
+private const val LIST_WINDOWS_TOOL_NAME = "steroid_list_windows"
 
 /**
  * `devrig` subcommands that map 1:1 onto a bridge tool handler and return a [ToolCallResult].
@@ -43,17 +58,22 @@ import kotlinx.serialization.json.put
  */
 
 /**
- * Runs [block] against [tools], turning routing/bridge failures into meaningful exit codes + agent-usable
- * stderr messages, then renders the [ToolCallResult] through [presentation].
+ * The single error-mapping pipeline for every tool-backed command: runs [call] against [tools], turning
+ * the frozen failure modes into the frozen exit codes + agent-usable enveloped messages
+ * ([ProjectRouteNotFoundException] → USAGE 64 with a `list_projects` hint, [CancellationException]
+ * rethrown, [IllegalArgumentException] → USAGE 64, any other failure → UNAVAILABLE 69). On success the
+ * [ToolCallResult] is handed to [renderSuccess] to produce the exit code, so a command can either render
+ * the generic result envelope or a byte-compatible per-command projection.
  */
-private inline fun DevrigServices.runToolCall(
+private inline fun DevrigServices.dispatchToolCall(
     commandName: String,
     presentation: Presentation,
     tools: McpSteroidTools,
-    crossinline block: suspend (McpSteroidTools) -> ToolCallResult,
+    crossinline call: suspend (McpSteroidTools) -> ToolCallResult,
+    renderSuccess: (ToolCallResult) -> Int,
 ): Int {
     val result = try {
-        runBlocking(Dispatchers.IO) { block(tools) }
+        runBlocking(Dispatchers.IO) { call(tools) }
     } catch (e: ProjectRouteNotFoundException) {
         return presentation.renderError(
             commandName,
@@ -72,7 +92,20 @@ private inline fun DevrigServices.runToolCall(
             CliExit.UNAVAILABLE, mcpStdout,
         )
     }
-    return presentation.render(result, command = commandName, out = mcpStdout)
+    return renderSuccess(result)
+}
+
+/**
+ * Runs [block] against [tools] through [dispatchToolCall], then renders the [ToolCallResult] through the
+ * generic [presentation] result envelope.
+ */
+private inline fun DevrigServices.runToolCall(
+    commandName: String,
+    presentation: Presentation,
+    tools: McpSteroidTools,
+    crossinline block: suspend (McpSteroidTools) -> ToolCallResult,
+): Int = dispatchToolCall(commandName, presentation, tools, block) { result ->
+    presentation.render(result, command = commandName, out = mcpStdout)
 }
 
 /** Builds this command's [Presentation] once from its `--json` flag; console images go to [HomePaths.screenshotTmpDir]. */
@@ -468,3 +501,79 @@ private fun waitForProjectReady(
     }
     return false
 }
+
+// ----------------------------------- schema-driven runtime dispatch -----------------------------------
+
+/**
+ * The single runtime dispatcher for a schema-driven [DevrigCommand.RunTool] (issue #284). Clikt has
+ * already routed, tokenized, and typed every parameter into [DevrigCommand.RunTool.arguments]; here the
+ * live [CliToolSpec] is resolved by [DevrigCommand.RunTool.toolName] and executed through the same
+ * `ToolSpec.call()` path (`callToolViaSpec`) the `devrig mcp` stdio proxy uses, inside the one shared
+ * error-mapping pipeline ([dispatchToolCall]).
+ *
+ * `tools` is defaulted so tests can inject a fake snapshot without a live IDE.
+ */
+fun DevrigServices.runGeneratedToolCommand(
+    command: DevrigCommand.RunTool,
+    tools: McpSteroidTools = StubMcpSteroidTools(this),
+): Int {
+    // Resolve the LIVE spec (with its real handler wiring), never a metadata-only parser spec.
+    val spec = liveToolSpec(command.toolName, tools)
+
+    // Human `list_projects` reuses the richer `devrig project` routing table (issue #191): that table
+    // draws on port-scan + backend metadata absent from the tool's ListProjectsResponse, so it renders
+    // directly and issues no bridge call.
+    if (!command.json && command.toolName == LIST_PROJECTS_TOOL_NAME) {
+        return runProjectCommand(DevrigCommand.DevrigCommandProject(debug = command.debug, json = false))
+    }
+
+    val presentation = presentationFor(command.json)
+    return dispatchToolCall(
+        command.commandName, presentation, tools,
+        call = { callToolViaSpec(spec, command.arguments, stderrProgressReporter()) },
+    ) { result -> renderGeneratedToolResult(command, result) }
+}
+
+/**
+ * The one live [CliToolSpec] whose MCP [toolName] matches, resolved from the canonical [devrigToolSpecs]
+ * list — the same list that feeds stdio registration and `--help`. A missing or duplicated match is an
+ * invariant violation (a generated command routed to a tool the runtime list does not uniquely provide),
+ * never a silent fallback to a handler-free metadata spec.
+ */
+fun liveToolSpec(toolName: String, tools: McpSteroidTools): CliToolSpec {
+    val matches = devrigToolSpecs(tools).filter { it.name == toolName }
+    return matches.singleOrNull()
+        ?: error(
+            "runGeneratedToolCommand: expected exactly one live tool spec named '$toolName' in " +
+                "devrigToolSpecs, found ${matches.size}",
+        )
+}
+
+/**
+ * Renders a generated tool's [result]. The two listers carry a single structured-JSON text content that
+ * IS the payload, so `--json` lifts it into the envelope `data` verbatim (byte-identical to the
+ * pre-schema list envelopes: [McpJson] and [CLI_ENVELOPE_JSON] both encode defaults and omit nulls) and
+ * the human path prints each command's dedicated table.
+ */
+private fun DevrigServices.renderGeneratedToolResult(command: DevrigCommand.RunTool, result: ToolCallResult): Int {
+    if (command.json) {
+        mcpStdout.println(cliEnvelopeJson(command.commandName, isError = result.isError, data = result.jsonResponseData()))
+        return if (result.isError) CliExit.TOOL_ERROR else CliExit.OK
+    }
+    return when (command.toolName) {
+        LIST_WINDOWS_TOOL_NAME -> {
+            renderListWindowsText(McpJson.decodeFromString(ListWindowsResponse.serializer(), result.singleTextContent()), mcpStdout)
+            CliExit.OK
+        }
+        else -> error("runGeneratedToolCommand: no human renderer registered for '${command.toolName}'")
+    }
+}
+
+/** The single text content item a structured-response tool returns; an invariant for the list tools. */
+private fun ToolCallResult.singleTextContent(): String =
+    content.filterIsInstance<ContentItem.Text>().singleOrNull()?.text
+        ?: error("expected exactly one text content item from a generated tool, got $content")
+
+/** The tool's single JSON-object text content, parsed for use verbatim as the envelope `data`. */
+private fun ToolCallResult.jsonResponseData(): JsonObject =
+    CLI_ENVELOPE_JSON.parseToJsonElement(singleTextContent()).jsonObject
