@@ -420,7 +420,7 @@ a:focus-visible {
 .hero {
     text-align: left;
     max-width: 1000px;
-    margin: 0 auto 3rem auto;
+    margin: 0 auto 1.5rem auto;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -777,7 +777,7 @@ text-decoration: underline;
     /* Responsive design */
     @media (max-width: 768px) {
         .hero {
-            margin-bottom: 3rem;
+            margin-bottom: 1.75rem;
         }
 h1 {
     font-size: 2rem;
@@ -1495,6 +1495,13 @@ h1 {
     max-width: 680px;
     margin: 2rem 0 0.5rem 0;
     width: 100%;
+}
+/* Homepage install card: the command block and its sub-lines fill the card
+ * width (removing the dead space on the right of the 680px block), and follow
+ * the section lede tightly instead of the default 2rem gap. */
+#install .install-cta {
+    max-width: none;
+    margin-top: 0.75rem;
 }
 .install-cta-label {
     font-weight: 600;
