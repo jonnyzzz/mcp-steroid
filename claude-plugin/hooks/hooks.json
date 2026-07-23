@@ -20,6 +20,14 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/check-devrig"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/offer-ide"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
