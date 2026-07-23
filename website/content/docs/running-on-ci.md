@@ -55,6 +55,10 @@ Install devrig and provision or connect to an IDE exactly as on a developer mach
 
 - Size the virtual display large enough for the IDE (e.g. `1920x1080x24`); a too-small display
   can clip dialogs and screenshots.
+- Under Xvfb, also run a lightweight window manager (e.g. `fluxbox`) before launching the IDE.
+  Without one there is no focus management and popups can draw at `0,0`. In the project's own
+  integration tests the IDE runs inside a Docker container on Linux under Xvfb with a window
+  manager — see the post linked below.
 - Everything else is unchanged from a local run: `devrig install <agent>` registration, the
   `devrig mcp` bridge, and `devrig backend download|start|stop` all work identically once a
   display is available.
@@ -64,3 +68,9 @@ Install devrig and provision or connect to an IDE exactly as on a developer mach
 - [Getting Started](/docs/getting-started/) — install devrig and connect your agent
 - [devrig CLI](/docs/devrig/) — the full command set, including managed backends
 - [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177) — why true headless launches are unsupported
+
+## Further reading
+
+- [IntelliJ in Docker integration tests](https://jonnyzzz.com/blog/2026/07/05/intellij-in-docker-integration-tests/)
+  — how the project runs a real IntelliJ inside a Docker container on Linux under Xvfb (with a
+  window manager and a live screen feed) for its integration tests.
