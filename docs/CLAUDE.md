@@ -32,6 +32,11 @@ rather than mirroring their contents into per-folder guides):
   content-addressed cache, bundled Corretto JDK, two-key signed
   self-update, auto-GC, agent registration wizard, dev-mode
   pre-population, and a native-binary alternative appendix.
+- [`native-mcp-tools-design.md`](native-mcp-tools-design.md) —
+  research record + spec for listing/calling the IntelliJ MCP Server
+  plugin's native tools: validated LIST/CALL recipes (261→master),
+  the devrig `native-tools` bridge endpoint + `devrig project tools`
+  CLI, and the `mcp-steroid://skill/native-mcp-tools` article outline.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — top-level architecture
   map.
 - [`TESTING-STRATEGY.md`](TESTING-STRATEGY.md) — test layout +

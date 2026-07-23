@@ -1,5 +1,17 @@
 # TODO
 
+- [ ] **Native MCP tools — implement per `docs/native-mcp-tools-design.md`** (spec landed first;
+  research 3×-quorum validated + live-tested on IU-261.25134.95, 2026-07-22):
+  - [ ] Scenario B (chosen first step): `IntelliJMcpServerProbe.listNativeTools()` (+ drop the
+    banned `internal` on `IntelliJMcpServerProbeImpl`), `GET …/native-tools` bridge route,
+    `mcp-steroid-server` DTOs (`available`/`unfiltered` on the wire, no `backend_name`),
+    `devrig project tools <project_name> [--json]` (ProjectCommand → `invokeWithoutSubcommand`),
+    explicit 404="plugin too old" branch, WirePristinenessTest + contract pins,
+    `:test-integration` canary (list + `find_files_by_glob` call), wire-table entry.
+  - [ ] Scenario A follow-up: `prompts/src/main/prompts/skill/native-mcp-tools.md` article
+    (guard fence → LIST → schema-first → CALL → caveats), one full KtBlock matrix run before
+    merge; same PR fixes stale `required_plugins` in `coding-with-intellij-patterns.md` (3 sites).
+
 - [ ] **runInspectionsDirectly follow-ups (#69 ask 1)** — deliberately deferred, not work-in-progress.
   - *Deferred:* a `PsiFile`-accepting overload (and any richer per-file batch surface). It is a
     `McpScriptContext` surface growth — gated by PHILOSOPHY Tenet 3 / the 3-reviewer consensus, same
