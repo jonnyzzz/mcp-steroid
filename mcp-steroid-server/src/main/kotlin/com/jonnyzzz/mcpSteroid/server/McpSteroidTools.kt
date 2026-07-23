@@ -22,7 +22,7 @@ abstract class McpSteroidTools {
 }
 
 /**
- * The ONE canonical list of devrig-surface tool specs (issue #284). Every devrig surface — the
+ * The ONE canonical list of devrig-surface tool specs. Every devrig surface — the
  * `devrig mcp` stdio server and the generated `devrig --help` "MCP tools as CLI" block — builds from
  * this single list, so they can never advertise a different set of tools. Returns [CliToolSpec] (not
  * `McpTool`) directly, so callers read `.cli`/`.schema` without a cast and a newly added tool can never

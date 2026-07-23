@@ -80,7 +80,7 @@ fun fakeTools(vararg pairs: Pair<Class<*>, Any>): FakeMcpSteroidTools =
     FakeMcpSteroidTools(pairs.toMap())
 
 /**
- * The inert [DevrigCommand.RunTool] that parsing `devrig execute_code …` produces (issue #284): typed
+ * The inert [DevrigCommand.RunTool] that parsing `devrig execute_code …` produces: typed
  * schema flags land in `arguments`, and the CLI-only `--code-file` source rides in [ToolCliExtras]. Only
  * the flags actually supplied are present, so cwd inference / code-file resolution runs at runtime in
  * `runGeneratedToolCommand`, exactly as after a real parse. A test-only fixture that mirrors the parse
@@ -110,7 +110,7 @@ fun executeCodeRunTool(
     json = json,
 )
 
-/** The inert [DevrigCommand.RunTool] that parsing `devrig execute_feedback …` produces (issue #284). */
+/** The inert [DevrigCommand.RunTool] that parsing `devrig execute_feedback …` produces. */
 fun executeFeedbackRunTool(
     projectName: String? = null,
     taskId: String? = null,
@@ -135,7 +135,7 @@ fun executeFeedbackRunTool(
     json = json,
 )
 
-/** The inert [DevrigCommand.RunTool] that parsing `devrig input …` produces (issue #284). */
+/** The inert [DevrigCommand.RunTool] that parsing `devrig input …` produces. */
 fun inputRunTool(
     projectName: String? = null,
     windowId: String? = null,
@@ -156,7 +156,7 @@ fun inputRunTool(
     json = json,
 )
 
-/** The inert [DevrigCommand.RunTool] that parsing `devrig take_screenshot …` produces (issue #284). */
+/** The inert [DevrigCommand.RunTool] that parsing `devrig take_screenshot …` produces. */
 fun takeScreenshotRunTool(
     projectName: String? = null,
     taskId: String? = null,
@@ -178,7 +178,7 @@ fun takeScreenshotRunTool(
 )
 
 /**
- * The inert [DevrigCommand.RunTool] that parsing `devrig open_project …` produces (issue #284). A null
+ * The inert [DevrigCommand.RunTool] that parsing `devrig open_project …` produces. A null
  * [trustProject] mirrors an omitted `--trust_project`: the key is absent from `arguments`, so the tool
  * default (true) stays owned by `OpenProjectToolSpec.call()`.
  */

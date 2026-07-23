@@ -41,7 +41,7 @@ class McpToolRegistry : McpToolRegistrar {
     /**
      * Get the registered [McpTool] instances themselves (registration order preserved), so callers that
      * need the richer metadata — the CLI [CliToolSpec.cli] descriptor and the tool's schema — can read it
-     * without the lossy [Tool] wire projection. Used by the devrig CLI help generator (issue #284).
+     * without the lossy [Tool] wire projection. Used by the devrig CLI help generator.
      */
     fun listMcpTools(): List<McpTool> = tools.values.toList()
 

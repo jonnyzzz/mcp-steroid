@@ -31,7 +31,7 @@ class McpAsCliParseTest {
     @Test
     fun `prompt takes a positional uri`() {
         // The positional-`<uri>` alias selects the SAME RunTool the canonical fetch_resource command does,
-        // reporting command:"prompt" (issue #284).
+        // reporting command:"prompt".
         val command = parse("prompt", "mcp-steroid://x/y")
         assertTrue(command is DevrigCommand.RunTool, "expected a RunTool, got $command")
         command as DevrigCommand.RunTool
@@ -76,7 +76,7 @@ class McpAsCliParseTest {
 
     @Test
     fun `execute_code maps all flags`() {
-        // Schema-generated command (issue #284): typed schema flags land in RunTool.arguments, and the
+        // Schema-generated command: typed schema flags land in RunTool.arguments, and the
         // CLI-only --code-file rides in extras. The `code` body is synthesized from --code-file at runtime.
         val command = parse(
             "execute_code",
@@ -137,7 +137,7 @@ class McpAsCliParseTest {
     @Test
     fun `list_projects and list_windows parse with --json`() {
         // Both listers are now schema-generated: they parse into the inert RunTool carrying the canonical
-        // tool name, the typed command name, and the --json flag (issue #284).
+        // tool name, the typed command name, and the --json flag.
         val projects = parse("list_projects", "--json") as DevrigCommand.RunTool
         assertEquals("steroid_list_projects", projects.toolName)
         assertEquals("list_projects", projects.commandName)
@@ -182,7 +182,7 @@ class McpAsCliParseTest {
         assertEquals("/abs/p", command.arguments["project_path"]?.jsonPrimitive?.content)
         assertTrue(command.extras.wait)
         // trust_project is a nullableFlag: an omitted flag stays absent so the tool default (true) owned by
-        // OpenProjectToolSpec.call() is preserved — a CLI-synthesized false must never be serialized (#284).
+        // OpenProjectToolSpec.call() is preserved — a CLI-synthesized false must never be serialized.
         assertFalse(command.arguments.containsKey("trust_project"), "absent trust_project must not be serialized")
     }
 

@@ -22,7 +22,7 @@ const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
  * The devrig subcommands that are NOT schema-driven `steroid_*`-as-CLI tools: the lifecycle/config verbs,
  * the hidden `mpc` alias of `mcp`, and the nested `backend` verbs. The tool tokens are derived separately
  * from [devrigCliTools] metadata and unioned in [DEVRIG_SUBCOMMAND_NAMES], so adding a tool never needs an
- * edit here (issue #284).
+ * edit here.
  */
 val FIXED_DEVRIG_SUBCOMMAND_NAMES: Set<String> = setOf(
     // `mpc` is the original (mis-spelled) hidden alias of `mcp` — see issue #85.
@@ -38,7 +38,7 @@ val FIXED_DEVRIG_SUBCOMMAND_NAMES: Set<String> = setOf(
  * grammar is subcommand-first over this fixed set and every global flag is boolean (so an option VALUE
  * never precedes the subcommand). Derived from the canonical tool names + aliases in [devrigCliTools]
  * (the single source of truth for the tool-as-CLI surface) unioned with [FIXED_DEVRIG_SUBCOMMAND_NAMES],
- * so a newly added tool's command name is recovered without editing this list (issue #284).
+ * so a newly added tool's command name is recovered without editing this list.
  */
 val DEVRIG_SUBCOMMAND_NAMES: Set<String> =
     FIXED_DEVRIG_SUBCOMMAND_NAMES + devrigCliTools().flatMap { listOf(it.cli.name) + it.cli.aliases }
@@ -48,7 +48,7 @@ val DEVRIG_SUBCOMMAND_NAMES: Set<String> =
  * [devrigCliTools] list), in factory order, so adding a tool to `devrigToolSpecs(...)` adds its canonical
  * CLI command with no new command class. A `cli.hidden` spec contributes no command. The commands are
  * parse-only: each selects an inert [DevrigCommand.RunTool] whose runtime resolution happens later in the
- * service layer (issue #284).
+ * service layer.
  */
 fun schemaToolCliCommands(
     selected: SelectedDevrigCommand,
@@ -188,7 +188,7 @@ fun parseDevrigCommand(rawArgs: Array<String>): DevrigCommand {
  * Parses [rawArgs] against [root], returning the [DevrigCommand] the root's commands selected into
  * [selected], or a [DevrigCommand.DevrigCommandParseError] recovered from the raw tokens when parsing
  * aborts. Split out from [parseDevrigCommand] so a root wired with generated tool commands can reuse the
- * identical parse-error/`--json`-envelope recovery (issue #284).
+ * identical parse-error/`--json`-envelope recovery.
  */
 fun parseDevrigCommandWithRoot(
     root: DevrigCliktCommand,
@@ -298,7 +298,7 @@ private class DevrigRootCommand(
     init {
         val backend = BackendCommand(selected, this)
         // Every visible `steroid_*`-as-CLI tool is generated from its `CliToolSpec` metadata and dispatched
-        // at runtime through the single `RunTool` arm (issue #284): adding a tool to `devrigToolSpecs(...)`
+        // at runtime through the single `RunTool` arm: adding a tool to `devrigToolSpecs(...)`
         // adds its canonical subcommand here with no new command class. `prompt` is the one documented
         // exception — a positional-`<uri>` alias for `fetch_resource` whose grammar the shared metadata
         // cannot carry, so it keeps a tiny adapter that selects the same `RunTool`.
@@ -383,7 +383,7 @@ private class InstallCommand(
     }
 }
 
-// ============================ MCP-as-CLI alias adapter (epic #188 / issue #284) ============================
+// ============================ MCP-as-CLI alias adapter ============================
 //
 // The canonical `steroid_*`-as-CLI commands are generated from `CliToolSpec` metadata
 // (see [schemaToolCliCommands]). Only `prompt` needs a hand-written adapter: its positional-`<uri>`

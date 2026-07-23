@@ -63,7 +63,7 @@ suspend fun runStubStdioMcpServer(
 
     onServerReady(server)
 
-    // Register the ONE canonical devrig tool surface (issue #284): the same `List<CliToolSpec>` the
+    // Register the ONE canonical devrig tool surface: the same `List<CliToolSpec>` the
     // generated `devrig --help` and the CLI consume, so the stdio server can never advertise a different
     // set. Its steroid_open_project carries the required `backend_name` routing param (devrigToolSpecs
     // uses includeBackendName = true) since devrig routes to one of several discovered IDEs.

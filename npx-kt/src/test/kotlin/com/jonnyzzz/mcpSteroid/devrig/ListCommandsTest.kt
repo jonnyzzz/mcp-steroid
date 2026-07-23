@@ -20,7 +20,7 @@ import java.nio.file.Path
 /**
  * Glue tests for `devrig list_windows` and `devrig list_projects` — the unified `{tool, command, isError,
  * data}` envelope + human render, now produced by the single schema-driven [DevrigServices.runGeneratedToolCommand]
- * dispatcher (issue #284). Each test PARSES the real generated command and then executes it against
+ * dispatcher. Each test PARSES the real generated command and then executes it against
  * injected fake tools, so it pins that the parse→dispatch→render path is byte-compatible with the
  * pre-schema list envelopes.
  */

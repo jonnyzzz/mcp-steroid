@@ -20,8 +20,8 @@ interface McpTool {
 }
 
 /**
- * An [McpTool] that also projects itself onto the devrig `steroid_*`-as-subcommand CLI surface
- * (issue #284). The CLI generator consumes [cli] (command descriptor) and [schema] (`asCliParams()`)
+ * An [McpTool] that also projects itself onto the devrig `steroid_*`-as-subcommand CLI surface.
+ * The CLI generator consumes [cli] (command descriptor) and [schema] (`asCliParams()`)
  * directly — no cast — while MCP clients still see only the narrow [McpTool] surface. [McpToolBase]
  * is the canonical implementation; the `devrigToolSpecs(...)` factory returns `List<CliToolSpec>` so a
  * new tool can never be silently dropped from the CLI.

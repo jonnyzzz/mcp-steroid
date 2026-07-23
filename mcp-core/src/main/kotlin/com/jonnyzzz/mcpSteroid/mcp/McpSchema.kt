@@ -21,9 +21,8 @@ data class InputSchemaParamSpec(
     val required: Boolean,
     /** Additional JSON keys merged into the property body (e.g. `minimum`, `maximum`, `items`). */
     val extra: JsonObjectBuilder.() -> Unit = {},
-    // --- CLI hints (Phase A, issue #284) -------------------------------------------------------
-    // Consumed by the devrig CLI generator via [ToolSchema.asCliParams]; never serialized into the
-    // MCP `inputSchema` JSON (see [InputSchemaElement.buildSchema], which reads only the fields above).
+    // CLI hints: consumed by the devrig CLI generator via [ToolSchema.asCliParams]; never serialized
+    // into the MCP `inputSchema` JSON (see [InputSchemaElement.buildSchema], which reads only the fields above).
     /** CLI flag for this parameter; defaults to `--<name>` (e.g. `project_name` -> `--project_name`). */
     val cliFlag: String = "--$name",
     /** Short one-line flag help for the CLI; when null the generator falls back to a trimmed [description]. */
@@ -34,8 +33,8 @@ data class InputSchemaParamSpec(
     val cliHidden: Boolean = false,
     /**
      * True when the CLI treats this parameter as OPTIONAL even though [required] is true for the MCP call.
-     * Used for params the CLI can supply itself (e.g. `project_name` inferred from the current directory,
-     * issue #266): the MCP `inputSchema` keeps it required, but the CLI help renders it bracketed.
+     * Used for params the CLI can supply itself (e.g. `project_name` inferred from the current
+     * directory): the MCP `inputSchema` keeps it required, but the CLI help renders it bracketed.
      * Read only by the CLI projection/rendering; never affects [asMcpJson].
      */
     val cliOptional: Boolean = false,

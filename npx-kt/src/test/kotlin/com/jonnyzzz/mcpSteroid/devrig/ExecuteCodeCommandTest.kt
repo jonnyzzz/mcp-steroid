@@ -14,7 +14,7 @@ import java.nio.file.Path
 
 /**
  * Glue test for `devrig execute_code`: the generated [DevrigCommand.RunTool] → runtime preprocessing
- * (cwd project inference, --code-file/stdin) → ExecCodeParams → render/exit, via a fake handler (#284).
+ * (cwd project inference, --code-file/stdin) → ExecCodeParams → render/exit, via a fake handler.
  */
 class ExecuteCodeCommandTest {
 

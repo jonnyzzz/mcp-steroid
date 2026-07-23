@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Phase A (issue #284): every real `*ToolSpec` must carry curated CLI metadata alongside its MCP schema,
+ * Every real `*ToolSpec` must carry curated CLI metadata alongside its MCP schema,
  * and the metadata must stay invisible to MCP clients. The parser stays encapsulated — only param specs
  * escape via [com.jonnyzzz.mcpSteroid.mcp.ToolSchema.asCliParams].
  */

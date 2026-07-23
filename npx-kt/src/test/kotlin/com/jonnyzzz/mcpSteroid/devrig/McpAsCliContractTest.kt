@@ -41,7 +41,7 @@ class McpAsCliContractTest {
     private fun homePaths() = HomePaths(home).also { it.mkdirsAll() }
 
     // Project-scoped commands (routing can fail with ProjectRouteNotFoundException). execute_code /
-    // execute_feedback are schema-generated RunTool commands dispatched via runGeneratedToolCommand (#284).
+    // execute_feedback are schema-generated RunTool commands dispatched via runGeneratedToolCommand.
     private fun execCmd(json: Boolean) =
         executeCodeRunTool(projectName = "k", code = "x", taskId = "t", reason = "r", json = json)
     private fun feedbackCmd(json: Boolean) =

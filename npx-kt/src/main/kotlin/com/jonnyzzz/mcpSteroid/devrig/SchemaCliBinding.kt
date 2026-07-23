@@ -27,8 +27,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * One Clikt parameter binding per non-hidden [InputSchemaParamSpec], created from tool metadata (issue
- * #284). Clikt converts the raw token exactly once — into an `Int`, `Double`, `Boolean`, `String`, or
+ * One Clikt parameter binding per non-hidden [InputSchemaParamSpec], created from tool metadata.
+ * Clikt converts the raw token exactly once — into an `Int`, `Double`, `Boolean`, `String`, or
  * typed list held by the stored delegate — and [appendTo] serializes that already-typed value
  * straight into the tool-call [JsonObject]. There is no `Map<String, String?>` staging, no `toString()`
  * round trip, and no `split(delimiter)`/`toInt()`/`toDouble()`/`toBoolean()` re-parse: a
@@ -57,7 +57,7 @@ class SchemaCliBinding private constructor(
          * `.required()`, so parsing does not abort at Clikt finalization before the command's `run()` gets
          * a chance to short-circuit `--help`; the generated command then re-checks presence itself after
          * that short-circuit. Left false (the default), an MCP-required parameter is a Clikt-required
-         * option — the standalone binding contract exercised without a `run()` help hook (issue #284).
+         * option — the standalone binding contract exercised without a `run()` help hook.
          */
         fun bindAll(
             command: CliktCommand,

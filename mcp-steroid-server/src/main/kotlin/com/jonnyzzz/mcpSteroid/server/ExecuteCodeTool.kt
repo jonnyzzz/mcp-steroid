@@ -85,7 +85,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
 
     // MCP-required, but CLI-optional: the devrig CLI can synthesize the body from `--code-file`
     // (or stdin) when `--code` is absent, so the generated grammar must not force it. cliOptional is a
-    // CLI-only projection — the MCP `inputSchema` keeps `code` in its `required` list (issue #284).
+    // CLI-only projection — the MCP `inputSchema` keeps `code` in its `required` list.
     val code = InputSchemaElement.param("code")
         .description("Kotlin suspend method body")
         .string()

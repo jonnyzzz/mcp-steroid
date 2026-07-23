@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Phase-A hardening (issue #284): `devrigToolSpecs(...)` is the ONE canonical list of devrig-surface tool
- * specs. These tests pin that it enumerates every devrig tool exactly once and that registering it into an
+ * `devrigToolSpecs(...)` is the ONE canonical list of devrig-surface tool specs. These tests pin that it
+ * enumerates every devrig tool exactly once and that registering it into an
  * [McpToolRegistry] advertises exactly that same set — the guarantee that stdio + help + CLI can never
  * drift, and a new tool can never be silently dropped.
  */

@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Locks the two foundations of the schema-driven CLI (issue #284):
+ * Locks the two foundations of the schema-driven CLI:
  *
  * 1. The parse/runtime boundary — a generated [SchemaToolCliCommand] parses `list_windows --json` into an
  *    inert [DevrigCommand.RunTool] and never resolves a handler, service, or backend. Runtime dispatch is
@@ -49,9 +49,9 @@ class SchemaCliBindingTest {
     // ------------------------------ parse/runtime boundary ------------------------------
 
     /**
-     * A root that registers exactly one generated [SchemaToolCliCommand] for [spec], mirroring how Task 3
-     * will register the canonical tool commands under `DevrigRootCommand` — without pulling in the full
-     * production root while the wiring is still being built.
+     * A root that registers exactly one generated [SchemaToolCliCommand] for [spec], mirroring how the
+     * canonical tool commands are registered under `DevrigRootCommand` — without pulling in the full
+     * production root.
      */
     private class SchemaTestRoot(
         selected: SelectedDevrigCommand,

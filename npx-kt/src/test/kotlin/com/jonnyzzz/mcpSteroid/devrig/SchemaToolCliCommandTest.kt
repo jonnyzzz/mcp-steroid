@@ -14,7 +14,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 
 /**
- * Pins the generic registration of schema-driven tool commands (issue #284): the eight
+ * Pins the generic registration of schema-driven tool commands: the eight
  * visible [devrigCliTools] specs each produce exactly one canonical `SchemaToolCliCommand` in factory
  * order, hidden specs produce none, an unknown flag is a USAGE (exit 64) parse error, and every root
  * token (canonical names + aliases + the fixed non-tool/nested verbs) is unique so nothing is registered

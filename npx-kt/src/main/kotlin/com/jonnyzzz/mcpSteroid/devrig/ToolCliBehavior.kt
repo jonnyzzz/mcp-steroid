@@ -39,7 +39,7 @@ data class ToolCliExtras(
 )
 
 /**
- * The CLI-only parse behavior for one generated tool command (issue #284). It carries three tool-local
+ * The CLI-only parse behavior for one generated tool command. It carries three tool-local
  * concerns the generic schema binding cannot: the tool's CLI-only options (its [ToolCliExtras], which have
  * no MCP-schema parameter); the parse-only validations Clikt's typed grammar cannot express (the
  * `--code`/`--code-file` one-of rule, a positive `--timeout`); and the curated, agent-facing error wording

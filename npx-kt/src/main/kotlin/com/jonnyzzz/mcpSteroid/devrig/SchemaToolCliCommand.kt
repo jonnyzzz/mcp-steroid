@@ -13,7 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * routing and tokenization, and [run] selects an inert [DevrigCommand.RunTool]. The command and tool
  * names come from [spec] metadata ([CliToolSpec.cli] / [CliToolSpec.name]); the tool's handler, and any
  * service or backend, are never touched during parsing. Runtime execution belongs to the service layer,
- * which resolves the live spec by [DevrigCommand.RunTool.toolName] (issue #284).
+ * which resolves the live spec by [DevrigCommand.RunTool.toolName].
  *
  * Each non-hidden schema parameter is a typed [SchemaCliBinding]: Clikt converts the token once and the
  * binding serializes the already-typed value directly into [DevrigCommand.RunTool.arguments], so nothing

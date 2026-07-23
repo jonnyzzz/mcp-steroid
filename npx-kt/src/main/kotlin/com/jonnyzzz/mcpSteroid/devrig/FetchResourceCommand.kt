@@ -17,8 +17,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * `devrig prompt <uri>` / `devrig fetch_resource --uri=...` — the CLI face of `steroid_fetch_resource`
- * (issue #284). Runtime behavior for the schema-driven [DevrigCommand.RunTool]: the canonical grammar is
+ * `devrig prompt <uri>` / `devrig fetch_resource --uri=...` — the CLI face of `steroid_fetch_resource`.
+ * Runtime behavior for the schema-driven [DevrigCommand.RunTool]: the canonical grammar is
  * `--uri` (and the `prompt` alias's positional `<uri>`), both typed into [DevrigCommand.RunTool.arguments].
  *
  * Bundled `mcp-steroid://` articles ship inside the devrig binary, so this resolves **without a

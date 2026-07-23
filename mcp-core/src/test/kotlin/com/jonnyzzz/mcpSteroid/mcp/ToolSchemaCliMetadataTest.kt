@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Phase A (issue #284): the CLI metadata that rides the shared tool/param types must be readable
+ * The CLI metadata that rides the shared tool/param types must be readable
  * without touching the MCP `inputSchema` JSON. These tests pin the derivations and the projections
  * of [ToolSchema], and prove the new fields never leak into the MCP schema.
  */

@@ -39,7 +39,7 @@ import kotlinx.serialization.json.put
  * The MCP tool names whose CLI face renders its structured response directly (as the `--json` envelope
  * `data`, and a dedicated human table) rather than the generic `{content:[...]}` tool-result envelope.
  * They mirror `ListProjectsToolSpec.name` / `ListWindowsToolSpec.name` — the two tools with no per-call
- * argument or content shape (issue #284).
+ * argument or content shape.
  */
 private const val LIST_PROJECTS_TOOL_NAME = "steroid_list_projects"
 private const val LIST_WINDOWS_TOOL_NAME = "steroid_list_windows"
@@ -177,7 +177,7 @@ private fun requireProjectName(explicit: String?, cwd: Path, routes: List<Projec
 // ----------------------------------- input -----------------------------------
 
 /**
- * `steroid_input` runtime behavior (issue #284): generic schema mapping plus cwd `project_name`
+ * `steroid_input` runtime behavior: generic schema mapping plus cwd `project_name`
  * inference. The sequence is forwarded verbatim — [VisionInputToolSpec] is constructed with
  * `parseSequence = false` so devrig never rejects a step this (possibly older) parser doesn't recognise;
  * the target plugin parses `rawSequence` with its own version. Stack-frame noise is stripped ONLY from an
@@ -219,7 +219,7 @@ private fun ToolCallResult.sanitizeErrorContent(): ToolCallResult = copy(
 // ----------------------------------- take_screenshot -----------------------------------
 
 /**
- * `steroid_take_screenshot` runtime behavior (issue #284): generic schema mapping plus cwd `project_name`
+ * `steroid_take_screenshot` runtime behavior: generic schema mapping plus cwd `project_name`
  * inference. `--out` is the only CLI-only extra ([ToolCliExtras.out]); on success its image is decoded and
  * written ONCE ([writeScreenshotOut]) and the saved path is preserved as the envelope `savedOut` field.
  * The image-carrying result NEVER goes through the verbatim JSON lift; without `--out` (or on an error) it
@@ -320,7 +320,7 @@ private fun writeScreenshotOut(out: String, bytes: ByteArray, mimeType: String):
 // ----------------------------------- open_project -----------------------------------
 
 /**
- * `steroid_open_project` runtime behavior (issue #284): `backend_name` is already schema-generated
+ * `steroid_open_project` runtime behavior: `backend_name` is already schema-generated
  * (devrig's `OpenProjectToolSpec(includeBackendName = true)`), so only `--wait` is a CLI-only extra
  * ([ToolCliExtras.wait]). The relative `--project_path` is resolved against the caller cwd here, and an
  * ABSENT `trust_project` is left out of the arguments so the tool default (`true`) stays owned by
@@ -436,7 +436,7 @@ private fun waitForProjectReady(
 // ----------------------------------- schema-driven runtime dispatch -----------------------------------
 
 /**
- * The single runtime entry point for a schema-driven [DevrigCommand.RunTool] (issue #284). Clikt has
+ * The single runtime entry point for a schema-driven [DevrigCommand.RunTool]. Clikt has
  * already routed, tokenized, and typed every parameter into [DevrigCommand.RunTool.arguments]; here the
  * command is routed to its runtime behavior by [DevrigCommand.RunTool.toolName].
  *
@@ -508,7 +508,7 @@ private fun DevrigServices.runSchemaDispatchToolCommand(
  * an already-typed value (task_id/reason/timeout/modal/success_rating/execution_id are copied verbatim);
  * a tool with no such inputs (the listers) gets its typed arguments back unchanged. The generic mapping
  * keeps `execution_id` — `ExecuteFeedbackToolSpec.call()` owns that it is contextual and absent from
- * `FeedbackParams`, so CLI glue must not drop it (issue #284).
+ * `FeedbackParams`, so CLI glue must not drop it.
  */
 private fun DevrigServices.toolRuntimeArguments(
     command: DevrigCommand.RunTool,
@@ -574,7 +574,7 @@ fun liveToolSpec(toolName: String, tools: McpSteroidTools): CliToolSpec {
  *
  * Every other (content) tool returns free-form content items, so both modes render through the shared
  * [presentation]: `--json` emits `data:{content:[...]}` and human mode prints each item — byte-identical
- * to the pre-schema per-tool render path (issue #284).
+ * to the pre-schema per-tool render path.
  */
 private fun DevrigServices.renderGeneratedToolResult(
     command: DevrigCommand.RunTool,
