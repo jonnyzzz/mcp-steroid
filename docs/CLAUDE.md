@@ -41,7 +41,8 @@ rather than mirroring their contents into per-folder guides):
   research record + spec for listing/calling the IntelliJ MCP Server
   plugin's native tools: validated LIST/CALL recipes (261→master),
   the devrig `native-tools` bridge endpoint + `devrig project tools`
-  CLI, and the `mcp-steroid://skill/native-mcp-tools` article outline.
+  CLI, and the `mcp-steroid://skill/native-mcp-tools` index +
+  dynamic per-tool resource pages.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — top-level architecture
   map.
 - [`TESTING-STRATEGY.md`](TESTING-STRATEGY.md) — test layout +

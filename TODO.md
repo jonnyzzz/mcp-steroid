@@ -77,9 +77,13 @@
     `devrig project tools <project_name> [--json]` (ProjectCommand → `invokeWithoutSubcommand`),
     explicit 404="plugin too old" branch, WirePristinenessTest + contract pins,
     `:test-integration` canary (list + `find_files_by_glob` call), wire-table entry.
-  - [ ] Scenario A follow-up: `prompts/src/main/prompts/skill/native-mcp-tools.md` article
-    (guard fence → LIST → schema-first → CALL → caveats), one full KtBlock matrix run before
-    merge; same PR fixes stale `required_plugins` in `coding-with-intellij-patterns.md` (3 sites).
+  - [ ] Scenario A follow-up: short static index `skill/native-mcp-tools.md` (guard + LIST
+    fallback) with a live tool-index overlay, plus dynamic per-tool pages
+    `mcp-steroid://skill/native-mcp-tools/<tool-name>` rendered fresh per fetch via a
+    `NativeToolPagesHandler` seam in `FetchResourceToolHandler` (in-IDE: probe-backed; devrig:
+    fed by the `/native-tools` bridge endpoint; shared renderer in `mcp-steroid-server`);
+    one full KtBlock matrix run before merge; same PR fixes stale `required_plugins` in
+    `coding-with-intellij-patterns.md` (3 sites).
 
 - [ ] **runInspectionsDirectly follow-ups (#69 ask 1)** — deliberately deferred, not work-in-progress.
   - *Deferred:* a `PsiFile`-accepting overload (and any richer per-file batch surface). It is a

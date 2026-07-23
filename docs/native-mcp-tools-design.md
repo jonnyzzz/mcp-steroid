@@ -2,8 +2,8 @@
 
 **Status:** research complete and 3×-quorum validated (2026-07-22, live-tested on IU-261.25134.95);
 implementation not started. The chosen first implementation step is the **devrig dedicated
-list-tools API** (Scenario B below); the agent-facing prompt article (Scenario A) is the specced
-companion follow-up.
+list-tools API** (Scenario B below); the agent-facing index + dynamic per-tool resource pages
+(Scenario A) are the specced companion follow-up.
 
 ## Goal
 
@@ -13,7 +13,9 @@ Steroid. Two consumption scenarios:
 
 - **Scenario A — MCP Steroid's MCP**: an agent uses `steroid_execute_code` to enumerate and invoke
   native tools directly (tool named by string, arguments built with `buildJsonObject { }`), taught
-  by a `mcp-steroid://` prompt article. No new `steroid_*` tool, no `McpScriptContext` method.
+  by a short `mcp-steroid://skill/native-mcp-tools` index plus dynamically generated
+  `…/native-mcp-tools/<tool-name>` per-tool pages. No new `steroid_*` tool, no
+  `McpScriptContext` method.
 - **Scenario B — devrig**: a dedicated API to ask a running IDE for **all its native MCP tools**
   (name + description + input schema), over devrig's own transport, scoped by `project_name`
   as a routing key.
@@ -268,8 +270,9 @@ construction).
    `CancellationException`-first rethrow: the probe lives on the `ij-plugin/.../server/` hot path,
    where every `catch (Exception)` must match CE/PCE first and rethrow without logging
    (`ij-plugin/CLAUDE.md` → Error handling). Each `descriptor` maps to
-   `{name, description, inputSchema}` using **only public non-impl types**
-   (descriptor getters + `McpToolSchema.prettyPrint()`; no `McpServerService`, no `McpCallInfo` —
+   `{name, description, inputSchemaJson, category}` using **only public non-impl types**
+   (descriptor getters — `category` = `descriptor.category.fullyQualifiedName` — plus
+   `McpToolSchema.prettyPrint()`; no `McpServerService`, no `McpCallInfo` —
    listing is independent of whether the native MCP server is enabled/running, and keeps the
    precompiled probe restricted to the binary-stable getter surface).
 3. While touching the file: drop the `internal` modifier from `IntelliJMcpServerProbeImpl`
@@ -298,8 +301,14 @@ construction).
      name: String,
      description: String,
      inputSchemaJson: String,     // McpToolSchema.prettyPrint() output
+     category: String? = null,    // descriptor.category.fullyQualifiedName — used by the
+                                  // per-tool resource pages to attach category-keyed caveats
    )
    ```
+
+   This endpoint is also the data source for devrig's dynamic
+   `mcp-steroid://skill/native-mcp-tools/*` resource pages (see Scenario A) — one wire surface
+   feeds the CLI and the resource pages.
 
    `backend_name` **never appears on the wire** — it is devrig-computed CLI output only (extend
    `WirePristinenessTest` to pin this for the new DTOs).
@@ -341,36 +350,140 @@ construction).
 - Wire-table entry added to `ij-plugin/CLAUDE.md` → "devrig ↔ plugin wire contract" listing the
   new endpoint + DTOs.
 
-## Spec — Scenario A: prompt article (follow-up companion)
+## Spec — Scenario A: index article + dynamic per-tool pages (follow-up companion)
 
-File `prompts/src/main/prompts/skill/native-mcp-tools.md` → `mcp-steroid://skill/native-mcp-tools`
-(generated class `NativeMcpToolsPromptArticle`; production Kotlin references it only via
-`NativeMcpToolsPromptArticle().uri` — `NoHardcodedMcpSteroidUriUsageTest`). Content, in order:
+The article surface is split in two: a **short static index** at
+`mcp-steroid://skill/native-mcp-tools` and **dynamically generated per-tool pages** at
+`mcp-steroid://skill/native-mcp-tools/<tool-name>`. Per-tool pages cannot be static corpus files —
+the tool set is live, per-IDE, and never cached — so they are rendered on every fetch from the
+same data source as the devrig endpoint.
 
-1. Plugin-enabled guard fence first — `isPluginInstalled` alone passes for an
-   installed-but-**disabled** plugin while the script classpath only spans *loaded* plugins, so
-   the guard must be `PluginManagerCore.isPluginInstalled(id) &&
-   !PluginManagerCore.isDisabled(id)` (both public and unannotated on 261 and master), with the
-   Android Studio note — a deterministic "plugin missing/disabled" message beats a bare
-   `unresolved reference: mcpserver` compile error.
-2. The LIST fence (per-provider try/catch; "never cache; recompute per call").
-3. Schema-first guidance: print `inputSchema.prettyPrint()` before calling; wrong param names
-   throw raw `IllegalStateException`.
-4. The CALL fence exactly as validated above (complete and compilable — the KtBlock matrix
-   compiles every ` ```kotlin ` fence; all 8 downloaded IDE distributions bundle
-   `plugins/mcpserver/lib/mcpserver.jar`, verified on disk).
-5. Caveats: consent-dialog × modal-watchdog interaction (name the gated tools; never `DONT_ASK`);
-   raw-vs-served list and schema differences (implicit `projectPath`, `outputSchema`); tool-name
-   churn; router/elicitation degradation marked **2026.2+ only**; `ClientInfo.name` consumption;
-   `McpSessionOptions` drift note inline ("if this line stops compiling, check its current
-   constructor — params are added with defaults").
-6. Same PR: fix the stale `required_plugins` references (3 sites: lines 41, 54, 316) in
-   `prompts/src/main/prompts/skill/coding-with-intellij-patterns.md`.
+### Resolution seam
 
-CI cost honesty: any kotlin-fence change triggers the 60–120 min KtBlock matrix. Iterate prose
-with `./gradlew :prompts:test --tests '*MarkdownArticleContract*'`; schedule exactly one full
-matrix run before merge. The pre-existing `testNoNonKotlinFences` failure
-(`debugger/debug-attach-remote-jvm.md`) is unrelated debt already logged in `TODO.md`.
+`FetchResourceToolHandler` (`mcp-steroid-server`) today resolves URIs by **exact match** against
+the static `ResourcesIndex()` corpus. It gains a second constructor dependency alongside
+`PromptsContextHandler` — a `NativeToolPagesHandler` interface (same `handler<T>()` factory
+wiring pattern; mirror `PromptsContextHandler`'s shape, e.g.
+`suspend fun toolsSnapshot(projectName: String): NativeMcpToolsResponse?` with `null` meaning
+"surface cannot answer"), with two implementations:
+
+- **In-IDE** (`McpSteroidToolsIJ` wiring): registered **unconditionally in the main
+  `plugin.xml`** (like `PromptsContextHandler` → `PromptsContextHandlerIJ`) — NOT in
+  `mcpServer-integration.xml`, because `McpSteroidToolsIJ.handler()` is a bare `getService()`
+  and an optional-config registration would NPE on Android Studio instead of rendering the
+  "not available" note. The impl consults `IntelliJMcpServerProbe.getInstanceOrNull()`
+  internally (the Scenario B probe method); probe absent → `available=false`.
+- **devrig** (`StubMcpSteroidTools` wiring): devrig's `steroid_fetch_resource` runs **locally**
+  against the bundled static corpus (`DevrigPromptsContextHandler` only resolves the IDE build
+  for conditionals — nothing is proxied), so the devrig implementation fetches
+  `GET …/native-tools` (the Scenario B bridge endpoint) for the routed IDE and renders from the
+  wire DTOs; an HTTP 404 (old plugin without the route) renders the same "plugin too old —
+  update the MCP Steroid plugin" note as the CLI branch. **One data source feeds the CLI and
+  both surfaces' resource pages.**
+
+Rendering is a **shared pure function** in `mcp-steroid-server`
+(`List<NativeMcpToolInfo> → markdown`), so IDE-served and devrig-served pages are identical.
+To support per-tool caveat blocks, `NativeMcpToolInfo` carries
+`category: String? = null` (additive; `descriptor.category.fullyQualifiedName`).
+
+Handler resolution order: exact match on the index URI → static stub content + appended live
+index; URI starts with `<index-uri>/` → per-tool page from the provider (tool-name segment
+validated against `[a-zA-Z0-9_.-]+`, matched against `descriptor.name`; unknown name →
+`isError=true` result — same shape as "Resource not found" — naming the index URI); everything
+else → existing corpus lookup. The prefix deliberately shadows any future corpus article under
+it; a guard test asserts no corpus article other than the stub has a URI equal to or prefixed
+by `NativeMcpToolsPromptArticle().uri + "/"` (nested corpus folders would otherwise auto-mint a
+colliding TOC article). Per-tool pages are **fetch-only** (not enumerated anywhere): consistent
+with the corpus, which is already exposed solely through `steroid_fetch_resource`.
+
+### The index page (short, static stub + live overlay)
+
+Static corpus file `prompts/src/main/prompts/skill/native-mcp-tools.md` (generated class
+`NativeMcpToolsPromptArticle`; production Kotlin references URIs only via
+`NativeMcpToolsPromptArticle().uri`; per-tool URIs are built as `uri + "/" + name`, never as
+literals — the implementation PR must also extend `NoHardcodedMcpSteroidUriUsageTest`'s
+`sourceRoots` to `mcp-steroid-server/src/main/kotlin` and `npx-kt/src/main/kotlin`, since the
+seam/renderer modules are not scanned today). The stub stays short:
+
+1. One line: what native tools are + the plugin-enabled guard (must be
+   `PluginManagerCore.isPluginInstalled(id) && !PluginManagerCore.isDisabled(id)` — installed-but-
+   disabled passes the install check while the script classpath only spans *loaded* plugins; both
+   symbols public and unannotated on 261 and master), with the Android Studio note.
+2. "Fetch `<index-uri>/<tool-name>` for any tool's full page."
+3. The LIST fence as fallback (per-provider try/catch with the CE-first rethrow; "never cache").
+
+Stub constraints: its kotlin fences stay **unannotated** (no `[IU,…]` product filters — fence
+filters AND into the article's own filter, so an annotated fence would make the whole index
+"Resource not found" on Android Studio instead of rendering the not-available note), and the
+per-tool URI pattern appears in prose only, never in `# See also` (the See-also validator
+checks links against the static corpus).
+
+At fetch time the handler **appends the live index** when the provider is available, opening
+with its own `#` heading (the overlay lands after the stub's generated `# See also`): one line
+per tool — `name — first sentence of description — <per-tool URI>` (~59 lines) — computed
+fresh per fetch. Provider unavailable → stub + an explicit "native tools not available in this
+IDE (plugin missing/disabled)" note. Provider available but zero tools (e.g. every provider
+threw) → the overlay heading + a "0 tools reported" line, distinct from the not-available note.
+Discoverability follow-up: mention the index URI (via the generated class) from the
+`steroid_fetch_resource` tool-description entry points — the arena finding is that resources
+are rarely fetched unprompted.
+
+### Per-tool pages (fully dynamic)
+
+Each `mcp-steroid://skill/native-mcp-tools/<tool-name>` page renders, fresh per fetch:
+
+1. `name`, full `description`, category.
+2. The input schema (`inputSchemaJson` / `prettyPrint()` output) — schema-first: wrong param
+   names throw a raw reflection `IllegalStateException`, so agents read this before calling.
+3. A ready-to-paste **CALL fence with the tool name inlined** and args scaffolded from the
+   schema's **required** properties only (`projectPath` is never required, so it never appears)
+   — the scaffold emits type-correct, compilable, runnable placeholder literals: strings → a
+   descriptive placeholder value, enums → the first enum value, numbers/booleans → a sensible
+   literal, arrays/objects → empty `buildJsonArray { }` / `buildJsonObject { }`. The fence must
+   run verbatim (the canary executes it). Shape: the validated named-args `McpCallInfo` +
+   `McpCallAdditionalDataElement` recipe, CE-first catch discipline,
+   `RESPECT_GLOBAL_SETTINGS`, distinct negative callId, and the `McpSessionOptions` drift note
+   inline.
+4. **Tool-specific caveats keyed off a single pinned list in the shared renderer** (name +
+   category FQN, so both surfaces agree): consent-dialog × modal-watchdog warning on
+   `execute_terminal_command` (`…toolsets.terminal.TerminalToolset`),
+   `execute_run_configuration` (`…toolsets.general.ExecutionToolset`), and
+   `xdebug_start_debugger_session` (`com.intellij.debuggerMcp.DebuggerToolset`); never
+   `DONT_ASK`. The raw-vs-served schema note (implicit `projectPath`, `outputSchema`) goes on
+   every page; router/elicitation degradation marked **2026.2+ only**. The pinned list is a
+   maintained snapshot — upstream can add gated tools without our pages noticing; revisit on
+   IDE-baseline bumps.
+
+### Tests / CI
+
+- The static stub is governed by the usual corpus contracts (`MarkdownArticleContractTest`;
+  its kotlin fences compile in the KtBlock matrix — all 8 downloaded IDE distributions bundle
+  `plugins/mcpserver/lib/mcpserver.jar`, verified on disk). CI cost honesty: any kotlin-fence
+  change triggers the 60–120 min matrix; iterate prose with
+  `./gradlew :prompts:test --tests '*MarkdownArticleContract*'`; one full matrix run before
+  merge. The pre-existing `testNoNonKotlinFences` failure
+  (`debugger/debug-attach-remote-jvm.md`) is unrelated debt already logged in `TODO.md`.
+- The shared renderer gets unit tests over fixed `NativeMcpToolInfo` fixtures (index shape,
+  per-tool shape, caveat attachment, unknown-name error).
+- The `:test-integration` canary extends to: fetch the index (expect the live overlay), fetch
+  one per-tool page, then execute its embedded CALL fence via `steroid_execute_code`
+  (a **non-consent** tool — `find_files_by_glob`) — proving the generated fence compiles and
+  runs against the live IDE, since dynamic pages are outside the KtBlock matrix. The canary
+  covers **both surfaces**: index + page fetched through devrig's stdio MCP (exercising the
+  bridge-backed provider) and through the in-IDE MCP server (probe-backed provider).
+- A namespace-guard test (in `:prompts` or `mcp-steroid-server`) asserts no corpus article
+  other than the stub has a URI equal to or prefixed by
+  `NativeMcpToolsPromptArticle().uri + "/"`.
+- Rejected: IntelliJ's own `McpToolsMarkdownExporter`. On **261** — the shipping floor — it has
+  no per-tool API (only `generateMarkdown(Map<McpToolCategory, List<McpTool>>)` and
+  `generateMarkdownForAllTools()`, each returning one monolithic String). Master's newer
+  `generateMarkdownForTool` / `generateMarkdownTree` does emit an index + per-tool pages
+  (convergent prior art for our index-line shape), but it is 262+-only, consumes live `McpTool`
+  objects the devrig/wire-DTO side never has, and couples our page format to an unversioned
+  upstream layout — we render ourselves from the wire DTOs.
+
+Same PR as the article work: fix the stale `required_plugins` references (3 sites: lines 41,
+54, 316) in `prompts/src/main/prompts/skill/coding-with-intellij-patterns.md`.
 
 ## API stability tiers (referenced surface only)
 
