@@ -43,9 +43,10 @@ In your JetBrains IDE, install **MCP Steroid** from the
 ### Requirements
 
 - A JetBrains IDE — IntelliJ IDEA, PyCharm, GoLand, WebStorm, Rider, CLion, or Android Studio
-- The IDE must run with its normal UI or as a remote development backend — headless launches
-  (`-Djava.awt.headless=true`) are unsupported (best-effort, see
-  [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177))
+- The IDE runs with a real display: the normal GUI on macOS/Windows, or under Xvfb (a virtual
+  X display) on Linux/CI. True headless launches (`-Djava.awt.headless=true`) are unsupported
+  (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)) — see
+  [Running devrig in CI](/docs/running-on-ci/)
 - An MCP-compatible AI agent (Claude Code, Codex, Gemini, or any MCP client)
 
 ## Verify the connection
@@ -86,8 +87,9 @@ If port 6315 is in use, change it:
 If `idea.log` contains the WARN `MCP Steroid is running in a headless IDE`, the IDE was
 launched without a UI (e.g. `-Djava.awt.headless=true`). Headless mode is unsupported
 (best-effort): long blocking waits and deadlocks in platform code have been observed — see
-[#177](https://github.com/jonnyzzz/mcp-steroid/issues/177). Run a normal desktop IDE or a
-remote development backend instead.
+[#177](https://github.com/jonnyzzz/mcp-steroid/issues/177). Run the normal desktop GUI on
+macOS/Windows, or, on Linux/CI, start the IDE under Xvfb (a virtual X display) — see
+[Running devrig in CI](/docs/running-on-ci/).
 
 ## Next Steps
 
