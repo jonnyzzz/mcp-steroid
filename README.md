@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <strong>Give AI the whole IntelliJ, not just the files</strong><br>
-  <em>AI agents can finally SEE your IDE — not just read code</em>
+  <strong>Connect your AI coding agent to a real JetBrains IDE</strong><br>
+  <em>Install <code>devrig</code>, and your agent works through the whole IntelliJ — not just the files</em>
 </p>
 
 <p align="center">
@@ -26,109 +26,99 @@
 
 ---
 
-## About MCP Steroid
+## What is devrig?
 
-**MCP Steroid** is an open-source [Model Context Protocol](https://modelcontextprotocol.io/) server that runs inside JetBrains IDEs and exposes the full power of the IntelliJ Platform to AI agents.
+**[`devrig`](https://devrig.dev/docs/devrig/)** is the product you install: a small command-line
+tool that connects your AI coding agent (Claude Code, Codex, or Gemini) to a real JetBrains IDE.
+It brings **its own runtime**, registers itself with your agent, and bridges the agent's calls to
+the IDE — no manual MCP wiring.
 
-Unlike file-only assistants, MCP Steroid gives AI agents the same capabilities developers use: semantic code understanding, advanced refactorings, debugging, test running, visual awareness, and the entire IntelliJ API surface.
+devrig reaches the IDE through **MCP Steroid**, a JetBrains IDE plugin (this repo) that exposes the
+IDE's real semantic actions — typed refactorings, inspections, the debugger, and test runs — over
+the open [Model Context Protocol](https://modelcontextprotocol.io/). You install devrig; devrig
+uses MCP Steroid.
 
-There are **two ways to run it**. Start with the new **[`devrig`](https://devrig.dev/docs/devrig/) CLI** (preview): a standalone tool that bridges any MCP-capable agent into a real IntelliJ-family IDE over stdio — through one bridge it connects to **every IDE you already have open at once** (across projects), or **downloads, installs, and starts one for the agent** (great for headless, CI, and fresh machines). Or run the **JetBrains IDE plugin** in-IDE over HTTP. The project is gradually moving toward the **Devrig** name.
+Unlike file-only assistants, this gives AI agents the same capabilities developers use: semantic
+code understanding, advanced refactorings, debugging, test running, visual awareness, and the
+entire IntelliJ API surface — all inside the running IDE's JVM.
 
 ### One bridge, every IDE
 
-A single `devrig` process connects your AI Agent to **all** the IntelliJ-family IDEs running on your machine at once — each open on a different project — and can download and start more on demand.
+A single `devrig` process connects your AI Agent to **all** the IntelliJ-family IDEs running on
+your machine at once — each open on a different project — and can download and start more on demand.
 
 <p align="center">
   <img src="website/static/devrig-bridge.svg" alt="One devrig bridge connects your AI Agent to all running IDEs at once — and can start more" width="720">
 </p>
 
-### What Makes It Unique
+### What your agent gets
 
-MCP Steroid is the **only MCP server** offering ALL of:
-
-- **Visual IDE understanding** — Screenshots + OCR + component tree
-- **UI automation** — Control the IDE like a human developer
+- **Visual IDE understanding** — screenshots + OCR + component tree
+- **UI automation** — control the IDE like a human developer
 - **Native IntelliJ APIs** — PSI, inspections, refactorings, and more
-- **Kotlin scripting** — Full platform access at runtime
-- **Standard MCP protocol** — Works with ANY MCP-compatible AI agent
+- **Kotlin scripting** — full platform access at runtime via `steroid_execute_code`
+- **Standard MCP protocol** — connects to MCP-compatible AI agents
 
-### Benchmarks
-
-On [DPAIA](https://dpaia.org) Spring Boot tasks, agents with MCP Steroid are **20–54% faster** than file-only workflows on complex multi-file operations:
-
-| Case | Task | MCP Time | No-MCP Time | &Delta; |
-|------|------|----------|-------------|---------|
-| dpaia\_jhipster\_sample\_app-3 | Rename ROLE_ADMIN across app (9 files) | 202s | 440s | **-54%** |
-| dpaia\_empty\_maven\_springboot3-1 | JWT auth from scratch (5+ new files) | 288s | 396s | **-27%** |
-| dpaia\_feature\_service-25 | Parent-child JPA + Flyway (10 files) | 382s | 523s | **-27%** |
-| dpaia\_feature\_service-125 | Multi-layer JPA+service+controller (15 files) | 788s | 1002s | **-21%** |
-| dpaia\_spring\_petclinic\_rest-14 | Simple URL prefix replace (7 files) | 188s | 181s | +4% |
-| dpaia\_train\_ticket-1 | Extend OrderRepository JPQL (4 files) | 727s | 633s | +15% |
-
-Tasks requiring semantic understanding show the largest speed gains. Simple text replacements perform similarly with or without IDE access.
+We continuously measure IDE-access vs plain-shell agents on real codebases. See the
+[experiment findings](https://devrig.dev/docs/experiment-findings/) for the evidence-based results.
 
 ---
 
 ## Install
 
-**Requirements:** IntelliJ IDEA 2026.1+ (or any IntelliJ-based IDE: Rider, Android Studio, GoLand, WebStorm, PyCharm, CLion, etc.). The IDE must run with its normal UI or as a remote development backend — headless launches (`-Djava.awt.headless=true`) are unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)).
+### 1. Install devrig — one command
 
-### JetBrains Marketplace
-
-Search for **MCP Steroid** in **Settings > Plugins > Marketplace**, or install from [plugins.jetbrains.com](https://plugins.jetbrains.com/plugin/30019-mcp-steroid).
-
-### Custom Plugin Repository (recommended for faster updates)
-
-Add this URL in **Settings > Plugins > Gear icon > Manage Plugin Repositories...**:
-
-```
-https://devrig.dev/updatePlugins.xml
-```
-
-### Manual Download
-
-Download the latest ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-steroid/releases) and install via **Settings > Plugins > Gear icon > Install Plugin from Disk**.
-
----
-
-## Connect Your AI Agent
-
-**[`devrig`](https://devrig.dev/docs/devrig/)** is the standalone CLI for connecting agents to MCP Steroid. It runs a stdio MCP bridge and connects your agent to **every running IntelliJ instance at once** (across projects), discovered automatically — and when none is open it can **download, prepare, and start a managed IDE backend** for the agent (IDEA Community/Ultimate, PyCharm, Android Studio). It's the recommended way to wire up Claude Code, Codex CLI, and Gemini CLI — one registration per agent, applies to every project on the machine.
-
-> **Requirement: JDK 25.** `devrig` is a Kotlin/JVM application and is **not** bundled with a JRE. A **JDK/JRE 25** is the supported runtime and must be available on the machine that runs it — either on `PATH` or via `JAVA_HOME` (the `devrig` launcher honours `JAVA_HOME` first). The binaries target **Java 21 bytecode** (class-file v65 — so the IDE plugin also loads in JBR-21 IDEs like Android Studio, and a Java 21+ runtime technically works), but JDK 25 is what the installer provisions and what we test against. A Java older than 21 fails at startup with `UnsupportedClassVersionError ... class file version 65.0`. Install e.g. [Amazon Corretto 25](https://aws.amazon.com/corretto/) or [Eclipse Temurin 25](https://adoptium.net/), and point `JAVA_HOME` at it if your default `java` is older.
-
-### One-time setup (from a checkout of this repo)
+**macOS / Linux**
 
 ```bash
-# Build :npx-kt:installDist, stage it under ~/.mcp-steroid/devrig/, and regenerate the stable
-# ~/.mcp-steroid/bin/devrig launcher (the task runs `devrig install devrig` — the same
-# self-registration the public install scripts use). `deployNpx` remains as an alias.
-./gradlew deployDevrig
+curl -fsSL https://devrig.dev/install.sh | sh
+```
 
-# Register `mcp-steroid` (stdio) at user scope for each agent — once per machine.
-# The registrations point at the stable launcher ~/.mcp-steroid/bin/devrig, so they survive
-# devrig upgrades. deployDevrig also tries to link it onto PATH as `devrig` (into a writable
-# PATH dir under $HOME); if no such dir exists, add ~/.mcp-steroid/bin to PATH yourself —
-# the full-path invocation below works either way.
-~/.mcp-steroid/bin/devrig install claude
+**Windows**
+
+```powershell
+irm https://devrig.dev/install.ps1 | iex
+```
+
+The script does exactly two things: it installs the `devrig` CLI with its own bundled runtime into `~/.mcp-steroid`, and it registers the stable `devrig` launcher on your `PATH` (if `devrig` is not found afterwards, open a new terminal or add `~/.mcp-steroid/bin` to `PATH`). It never touches your agent configs or your IDEs — it finishes by printing the explicit next-step commands (steps 2 and 3 below). Installation is idempotent; re-run it any time to update.
+
+### 2. Register your AI agent
+
+```bash
+devrig install claude
 devrig install codex
 devrig install gemini
 ```
 
-Each `install` call delegates to the agent's own `mcp add` CLI, so the entry lands in the user-scope config (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`) and is visible from every project.
+`devrig install <agent>` registers devrig as the `mcp-steroid` MCP server in Claude Code, Codex, or Gemini (one of `claude`, `codex`, `gemini`). The entry lands in the user-scope config, so it is visible from every project. For any other MCP client, `devrig install config` prints the manual `mcp.json` snippet to paste. See the [devrig CLI guide](https://devrig.dev/docs/devrig/) for the full command set.
 
-### Refreshing the launcher
-
-After pulling new commits, run `./gradlew deployDevrig` again. It rebuilds `:npx-kt:installDist`, re-syncs `~/.mcp-steroid/devrig/`, and regenerates `~/.mcp-steroid/bin/devrig` — the launcher path stays the same, so no re-registration is needed. Runtime state under `~/.mcp-steroid/{backends,caches,logs,markers,state}` is preserved.
-
-### Verifying it works
+### 3. Install the MCP Steroid plugin
 
 ```bash
-claude mcp list                                 # mcp-steroid: ... - ✓ Connected
-claude -p "List all open projects using steroid_list_projects"
+devrig install plugin
 ```
 
-The plugin also writes the raw server URL to `.idea/mcp-steroid.md` in each open project at `http://127.0.0.1:6315/mcp` (Streamable HTTP transport) for clients that prefer to talk to the IDE directly.
+`devrig install plugin` installs (or updates) the MCP Steroid plugin into every JetBrains IDE currently running on your machine — each IDE asks for your confirmation with its own native install dialog, so nothing is installed silently. Alternatively, install **MCP Steroid** from the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30019-mcp-steroid) (search **MCP Steroid** in **Settings > Plugins > Marketplace**).
+
+**Requirements**
+
+- A JetBrains IDE — IntelliJ IDEA, PyCharm, GoLand, WebStorm, Rider, CLion, or Android Studio.
+- The IDE runs with a real display: the normal GUI on macOS/Windows, or under **Xvfb** (a virtual X display) on Linux/CI. True headless launches (`-Djava.awt.headless=true`) are unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)) — see [Running devrig in CI](https://devrig.dev/docs/running-on-ci/).
+- An MCP-compatible AI agent (Claude Code, Codex, or Gemini).
+
+**Faster plugin updates (optional):** add `https://devrig.dev/updatePlugins.xml` in **Settings > Plugins > Gear icon > Manage Plugin Repositories...**. Or install a ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-steroid/releases) via **Install Plugin from Disk**.
+
+### Verify the connection
+
+When the plugin starts, it writes the connection details to `.idea/mcp-steroid.md` in each open project. Ask your agent to list the open projects:
+
+```bash
+claude -p "List all open projects using steroid_list_projects"
+codex exec "List all open projects using steroid_list_projects"
+gemini "List all open projects using steroid_list_projects"
+```
+
+If you see your open IntelliJ projects, the connection works. The plugin also serves the raw server URL at `http://127.0.0.1:6315/mcp` (Streamable HTTP transport) for clients that prefer to talk to the IDE directly.
 
 ### Local development loop (deploy both halves from a checkout)
 
@@ -159,16 +149,13 @@ Both tasks fail loudly instead of half-deploying: `deployDevrig` fails when `dev
 
 ## Compatible AI Agents
 
-Works with ANY MCP-compatible client:
+`devrig install` registers MCP Steroid directly with:
 
-- **Claude** (Claude Code, Claude Desktop)
-- **ChatGPT** with MCP support
-- **Gemini** CLI
+- **Claude** (Claude Code)
 - **Codex** CLI
-- **Cursor** IDE
-- **Junie**
-- **OpenCode**
-- Any other MCP-compatible client
+- **Gemini** CLI
+
+MCP Steroid speaks the standard Model Context Protocol, so other MCP-capable clients can also connect to the plugin's server directly — see [How it works](https://devrig.dev/docs/how-it-works/).
 
 ---
 
@@ -242,8 +229,8 @@ See the full [Configuration Documentation](https://devrig.dev/docs/configuration
 
 ## Architecture
 
-- **Technology:** Kotlin 2.3.20 on Java 25 (Java 21 bytecode target — runs in JBR-21 IDEs like Android Studio)
-- **HTTP Server:** Ktor 3.1.0 (Streamable HTTP + SSE)
+- **Technology:** Kotlin on the JVM, running inside the IDE process
+- **HTTP Server:** Ktor 3.3.2 (Streamable HTTP + SSE)
 - **Protocol:** Model Context Protocol (MCP)
 - **Default Port:** 6315
 - **OCR:** Tesseract 5.5.1
