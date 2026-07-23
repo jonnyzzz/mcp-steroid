@@ -1141,6 +1141,10 @@ h1 {
 @media (max-width: 900px) {
     .docs-layout {
         flex-direction: column;
+        /* In the column layout, stretch children to the container width.
+           Without this the flex-start cross-axis alignment lets .docs-content
+           size to its content and overflow the viewport horizontally. */
+        align-items: stretch;
     }
 }
 /* Docs layout responsive */
