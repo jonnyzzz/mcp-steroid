@@ -722,8 +722,9 @@ throw RuntimeException("Debug marker")
 behaves differently without a UI and long blocking waits/deadlocks in platform code have been
 observed — see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177). On startup the plugin
 logs an `IDE run mode: ...` INFO line and, for a plain headless IDE, a
-`MCP Steroid is running in a headless IDE` WARN in `idea.log`. Prefer a normal desktop IDE or a
-remote development backend; the workarounds below are best-effort only.
+`MCP Steroid is running in a headless IDE` WARN in `idea.log`. Give the IDE a real display instead: the normal GUI on
+macOS/Windows, or a virtual one via Xvfb on Linux/CI (see [Running devrig in CI](/docs/running-on-ci/)). The workarounds
+below are best-effort only.
 
 **Approach:**
 - Don't rely on UI automation

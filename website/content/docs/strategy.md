@@ -20,7 +20,7 @@ inspections, debugger, test runs -- so the Agent finishes in fewer attempts and 
 
 devrig is an AI-agent-first product: the CLI you install and run. MCP Steroid is how it reaches your IDE -- today delivered
 as a JetBrains IDE plugin, which is where existing users already work. The long-term product direction is the same surface
-in a headless runtime so it serves AI agents anywhere they execute, not only when a developer's IDE is open.
+in a self-contained runtime so it serves AI agents anywhere they execute, not only when a developer's IDE is open.
 
 On tasks that depend on IDE capabilities, AI agents with devrig should complete more work with fewer interventions,
 lower token usage, and less rework on the human side than the same AI agents without it.
@@ -29,7 +29,7 @@ lower token usage, and less rework on the human side than the same AI agents wit
 
 1. **Phase 1 -- Plugin distribution:** ship the surface as a JetBrains IDE plugin (current)
 2. **Phase 2 -- Fine-tune:** evals, benchmarks, prompt optimization
-3. **Phase 3 -- Scale:** headless mode, packaging, SaaS, B2B distribution
+3. **Phase 3 -- Scale:** self-contained runtime, packaging, SaaS, B2B distribution
 
 ### Phase 1: Plugin distribution (current)
 
@@ -50,9 +50,12 @@ completed roughly seven optimization rounds so far, primarily on the MCP Steroid
 
 This validation loop is described in [Learning Methodology](/docs/learning-methodology/). See also [IntelliJ as a Skill Factory](/docs/skill-factory/) for how skills turn one-off API explorations into reusable AI agent capabilities.
 
-### Phase 3: Scale -- headless runtime, SaaS, B2B
+### Phase 3: Scale -- self-contained runtime, SaaS, B2B
 
-The long-term target is a self-contained runtime, available both as SaaS and as an end-user product, that serves as the headless IDE for AI agents.
+The long-term target is a self-contained runtime, available both as SaaS and as an end-user product, that runs the IDE for
+AI agents without a developer's desktop session. That runtime still gives the IDE a real display -- the normal GUI on
+macOS/Windows, or a virtual one via Xvfb on Linux and CI; a true headless launch (`-Djava.awt.headless=true`) is
+unsupported (see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177) and [Running devrig in CI](/docs/running-on-ci/)).
 
 ## Easy experimentation
 
