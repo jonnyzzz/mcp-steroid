@@ -8,7 +8,7 @@ group: "Getting Started"
 Once [devrig](/docs/devrig/) connects your agent to a JetBrains IDE through MCP Steroid,
 the agent stops guessing through file edits and calls the IDE's real semantic actions.
 
-## What your AI Agent can do
+## What your AI agent can do
 
 <ul class="features-list">
     <li><strong>Refactor safely</strong>: rename a symbol across the whole project in one operation, extract methods, move classes</li>
@@ -42,7 +42,7 @@ the agent stops guessing through file edits and calls the IDE's real semantic ac
 ## Works with your agents and IDEs
 
 Use it with MCP-capable coding agents &mdash; including Claude, Codex, Gemini, Cursor, and OpenCode &mdash;
-and with IntelliJ-family IDEs such as IntelliJ IDEA, PyCharm, GoLand, WebStorm, Rider, and Android Studio.
+and with IntelliJ-family IDEs such as IntelliJ IDEA, PyCharm, GoLand, WebStorm, Rider, CLion, and Android Studio.
 
 <div class="agents-list">
     <span class="agent-badge">Claude</span>

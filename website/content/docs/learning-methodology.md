@@ -9,10 +9,10 @@ aliases:
 
 ## Why this exists
 
-MCP Steroid targets fast-changing AI Agents on fast-changing IntelliJ-based IDE platform. Static documentation alone
+MCP Steroid targets fast-changing AI Agents on the fast-changing IntelliJ-based IDE platform. Static documentation alone
 is not enough. We need a repeatable loop that measures what works, what fails, and what should change next.
 
-We treat the MCP server itself as a always improving product, that learn from usages. Every prompt, skill description, and tool schema is 
+We treat the MCP server itself as an always-improving product that learns from usage. Every prompt, skill description, and tool schema is 
 refined through data-driven iteration -- a user manual designed specifically for AI Agents, our primary audience.
 
 ## The operating loop

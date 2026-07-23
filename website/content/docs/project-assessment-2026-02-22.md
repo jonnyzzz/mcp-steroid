@@ -13,7 +13,7 @@ group: "Vision"
 | **Current Version** | 0.88.0 |
 | **What It Does** | Exposes full IntelliJ IDE APIs to AI agents (Claude, Codex, Gemini) via Model Context Protocol (MCP), enabling agents to write, compile, debug, refactor, and test code through the IDE rather than raw file editing |
 | **Creator** | Eugene Petrenko (jonnyzzz) |
-| **Website** | [mcp-steroid.jonnyzzz.com](https://mcp-steroid.jonnyzzz.com/) |
+| **Website** | [devrig.dev](https://devrig.dev/) |
 | **Target Platform** | IntelliJ IDEA 2025.3+ (GoLand, WebStorm expansion underway) |
 
 ---

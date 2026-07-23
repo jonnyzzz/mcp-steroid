@@ -38,7 +38,7 @@ Ready-to-run CLI commands for each supported agent — click the copy icon to gr
 |--------|---------|
 | Claude | `claude mcp add --transport http --scope user mcp-steroid http://...` |
 | Codex  | `codex mcp add mcp-steroid --url http://...` |
-| Gemini | `mcp add mc --type http ...` |
+| Gemini | `gemini mcp add mcp-steroid --type http http://... --scope user --trust` |
 
 ### JSON Config
 

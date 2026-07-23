@@ -85,7 +85,7 @@ staticDir = ['static', 'build/generated-static']
 
 [[params.whatsnew]]
   date = "2026-04-18"
-  text = "v0.93.0 released — Plugin verifier compliance, rewritten MCP instructions, Maven test fix, steroid_fetch_resource"
+  text = "v0.93.0 released — Open for collaboration, drop-in LSP replacement, Maven test fix, plugin verifier compliance"
 
 [[params.whatsnew]]
   date = "2026-04-08"

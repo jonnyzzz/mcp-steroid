@@ -61,7 +61,7 @@ The agent calls `initialize` once to discover all available tools. From that poi
 
 ## The tools
 
-MCP Steroid exposes nine tools. Most are supporting utilities — the core capability is `steroid_execute_code`.
+MCP Steroid exposes eight tools. Most are supporting utilities — the core capability is `steroid_execute_code`.
 
 | Tool | What it does |
 |------|-------------|

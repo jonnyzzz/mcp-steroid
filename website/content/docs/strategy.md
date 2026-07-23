@@ -10,11 +10,11 @@ aliases:
 ## Reliable code changes for AI agents
 
 MCP Steroid makes your AI agent change code with fewer cleanup loops. File-only workflows break on real tasks because the
-Agent cannot run inspections, execute refactorings, launch debugger flows, or use live IDE context and actions. The larger
-the repository, the more research the Agent must do -- and the more tokens it burns -- without IDE-grade understanding.
+agent cannot run inspections, execute refactorings, launch debugger flows, or use live IDE context and actions. The larger
+the repository, the more research the agent must do -- and the more tokens it burns -- without IDE-grade understanding.
 
 MCP Steroid closes that gap by giving AI agents the same semantic actions JetBrains IDEs give humans -- typed refactors,
-inspections, debugger, test runs -- so the Agent finishes in fewer attempts and humans spend less time verifying its output.
+inspections, debugger, test runs -- so the agent finishes in fewer attempts and humans spend less time verifying its output.
 
 ## Strategic thesis
 
