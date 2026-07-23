@@ -50,8 +50,8 @@ fun runConnectClaude(settingsPath: Path, out: PrintStream, err: PrintStream): In
 fun DevrigServices.runConnectIdeCommand(command: DevrigCommand.DevrigCommandConnectIde): Int =
     runBlocking(Dispatchers.IO) {
         val discovered = portDiscovery.stateSnapshot()
-        // Marker count = IDEs already advertising the MCP Steroid plugin; >0 means the bridge works.
-        val pluginMarkerCount = collectIdeReachability().discovered
+        // Count of live plugin-bearing IDEs (marker-based, no network probe); >0 means the bridge already works.
+        val pluginMarkerCount = ideDiscovery.stateSnapshot().size
         val client = InstallPluginClient { url ->
             val response = commandHttpClient.get(url) {
                 // /api/installPlugin trusts localhost callers (RestService.isHostTrusted -> isLocalhost);

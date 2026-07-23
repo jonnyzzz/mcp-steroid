@@ -88,7 +88,7 @@ class ConnectIdeTest {
     }
 
     @Test fun `exit code maps outcome to process exit status`() {
-        assertEquals(1, connectIdeExitCode(ConnectIdeOutcome.NO_IDE))
+        assertEquals(2, connectIdeExitCode(ConnectIdeOutcome.NO_IDE))
         assertEquals(1, connectIdeExitCode(ConnectIdeOutcome.MANUAL_INSTRUCTIONS))
         assertEquals(0, connectIdeExitCode(ConnectIdeOutcome.ALREADY_CONNECTED))
         assertEquals(0, connectIdeExitCode(ConnectIdeOutcome.OFFERED_VIA_HTTP))
