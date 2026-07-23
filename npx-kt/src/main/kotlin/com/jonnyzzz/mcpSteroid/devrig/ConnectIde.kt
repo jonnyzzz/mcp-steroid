@@ -39,12 +39,15 @@ const val CUSTOM_REPO_URL = "https://mcp-steroid.jonnyzzz.com/updatePlugins.xml"
 enum class ConnectIdeOutcome { ALREADY_CONNECTED, NO_IDE, OFFERED_VIA_HTTP, OFFERED_VIA_BROWSER, MANUAL_INSTRUCTIONS }
 
 /**
- * Process exit code for a [ConnectIdeOutcome]: 1 when no IDE was found or the caller was left with
- * manual instructions (nothing was actually offered/connected automatically), 0 otherwise.
+ * Process exit code for a [ConnectIdeOutcome]: 2 when no IDE was found at all (nothing to act on yet —
+ * callers like the onboarding hook should retry later without burning a one-shot offer), 1 when the
+ * caller was left with manual instructions (an IDE was found but nothing could be offered
+ * automatically), 0 otherwise.
  */
 fun connectIdeExitCode(outcome: ConnectIdeOutcome): Int =
     when (outcome) {
-        ConnectIdeOutcome.NO_IDE, ConnectIdeOutcome.MANUAL_INSTRUCTIONS -> 1
+        ConnectIdeOutcome.NO_IDE -> 2
+        ConnectIdeOutcome.MANUAL_INSTRUCTIONS -> 1
         ConnectIdeOutcome.ALREADY_CONNECTED, ConnectIdeOutcome.OFFERED_VIA_HTTP, ConnectIdeOutcome.OFFERED_VIA_BROWSER -> 0
     }
 
