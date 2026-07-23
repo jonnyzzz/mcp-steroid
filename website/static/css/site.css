@@ -1407,7 +1407,13 @@ h1 {
     width: 22px;
     height: 22px;
 }
-@media (max-width: 768px) {
+/* Show the standalone heart quick-link as soon as the horizontal menu
+   collapses into the hamburger (960px — see the .nav-toggle breakpoint above).
+   Previously this was 768px, leaving a 769–960px dead zone where the menu was
+   already collapsed but neither the in-menu "PoC & Support" heart nor this
+   standalone heart was visible. Keeping both breakpoints at 960px makes the
+   header degrade monotonically: the heart is always present once the menu hides. */
+@media (max-width: 960px) {
     .nav-heart-mobile {
         display: flex;
     }
