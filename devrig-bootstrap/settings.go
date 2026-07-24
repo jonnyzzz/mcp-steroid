@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 func claudeSettingsPath(home string) string {
@@ -21,14 +20,6 @@ func writeStatuslineOwner(home, mode string) {
 	if err := os.WriteFile(statuslineOwnerPath(home), []byte(mode), 0o644); err != nil {
 		os.Stderr.WriteString("devrig-bootstrap: write statusline.owner: " + err.Error() + "\n")
 	}
-}
-
-func statuslineOwner(home string) string {
-	b, err := os.ReadFile(statuslineOwnerPath(home))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(b))
 }
 
 // fileStatusLine inspects a settings file's statusLine. `present` is true if a statusLine key exists;

@@ -14,8 +14,8 @@ func TestInitializeHandshake(t *testing.T) {
 			`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n" +
 			`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` + "\n")
 	var out strings.Builder
-	if err := runProxy(in, &out, home); err != nil {
-		t.Fatalf("runProxy: %v", err)
+	if err := newProxy(in, &out, home).run(); err != nil {
+		t.Fatalf("proxy run: %v", err)
 	}
 	sc := bufio.NewScanner(strings.NewReader(out.String()))
 

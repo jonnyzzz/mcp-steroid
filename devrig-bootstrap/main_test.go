@@ -25,8 +25,8 @@ func TestApplyStatusLineMode(t *testing.T) {
 	if mode := applyStatusLineMode(home); mode != "bar" {
 		t.Fatalf("no user status line -> want bar, got %q", mode)
 	}
-	if statuslineOwner(home) != "bar" {
-		t.Fatalf("owner marker should be bar, got %q", statuslineOwner(home))
+	if readStatuslineOwner(home) != "bar" {
+		t.Fatalf("owner marker should be bar, got %q", readStatuslineOwner(home))
 	}
 	b, _ := os.ReadFile(claudeSettingsPath(home))
 	if !strings.Contains(string(b), statuslineFlag) {
@@ -42,11 +42,20 @@ func TestApplyStatusLineMode(t *testing.T) {
 	if mode := applyStatusLineMode(home2); mode != "hook" {
 		t.Fatalf("existing status line -> want hook, got %q", mode)
 	}
-	if statuslineOwner(home2) != "hook" {
-		t.Fatalf("owner marker should be hook, got %q", statuslineOwner(home2))
+	if readStatuslineOwner(home2) != "hook" {
+		t.Fatalf("owner marker should be hook, got %q", readStatuslineOwner(home2))
 	}
 	b2, _ := os.ReadFile(claudeSettingsPath(home2))
 	if !strings.Contains(string(b2), "mine.py") {
 		t.Fatalf("existing status line must be preserved, got %s", b2)
 	}
+}
+
+// readStatuslineOwner reads back the owner marker written by writeStatuslineOwner, for test assertions.
+func readStatuslineOwner(home string) string {
+	b, err := os.ReadFile(statuslineOwnerPath(home))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }

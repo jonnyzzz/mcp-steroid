@@ -48,11 +48,6 @@ func newProxy(in io.Reader, out io.Writer, home string) *proxy {
 	}
 }
 
-// runProxy is the production entry point (main calls this).
-func runProxy(in io.Reader, out io.Writer, home string) error {
-	return newProxy(in, out, home).run()
-}
-
 func (p *proxy) run() error {
 	go p.watchForIde()
 	go p.watchForInstall()
