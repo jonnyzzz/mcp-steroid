@@ -14,6 +14,7 @@ import kotlinx.serialization.Serializable
 class ListWindowsToolSpec(val handler: () -> ListWindowsToolHandler) : McpToolBase() {
     override val name = "steroid_list_windows"
     override val description = "List open IDE windows and their background tasks, with per-window readiness (modal/indexing/initialized) and a `window_id` for screenshot/input targeting in multi-window setups. Each window and background-task entry references its project by `project_name` — the single routing key for the project-scoped tools; look up that project's human-readable `name` and `path` via steroid_list_projects by the key (they are not duplicated here). `project_name` is null for windows not tied to a project. Resolve an entry's `backend_name` to the owning IDE's identity (`intellij` = `{name, version, build}`) via the `backends` lookup in the same response."
+    override val cliSynopsis = "list IDE windows, readiness, and background tasks"
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val response = handler().collectListWindowsResponse()

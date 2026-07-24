@@ -1,6 +1,8 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
+import com.jonnyzzz.mcpSteroid.mcp.cliOptional
+import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
@@ -12,7 +14,10 @@ import com.jonnyzzz.mcpSteroid.mcp.string
  * `.registerToSchema()` to attach it to their tool's input schema.
  */
 object CommonToolParams {
-    /** Required `project_name` used to dispatch a tool call to an already-open IDE project. */
+    /**
+     * Required `project_name` used to dispatch a tool call to an already-open IDE project.
+     * MCP-required, but CLI-optional because devrig can infer it from the current directory.
+     */
     fun projectName() =
         InputSchemaElement.param("project_name")
             .description(
@@ -20,8 +25,10 @@ object CommonToolParams {
                         "folder name). steroid_list_projects returns both `project_name` (the unique key " +
                         "to pass here) and `name` (the raw folder name, informational only); they are not equal."
             )
+            .cliSynopsis("routing key from `devrig list_projects` (NOT the folder name); inferred from the cwd when omitted")
             .string()
             .required()
+            .cliOptional()
 
     /** Required `task_id` used to group related executions in audit logs. */
     fun taskId() =

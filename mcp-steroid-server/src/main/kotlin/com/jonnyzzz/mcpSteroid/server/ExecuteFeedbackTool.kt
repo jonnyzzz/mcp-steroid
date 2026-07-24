@@ -44,6 +44,7 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
 
             Feedback helps track execution history and identify patterns for improvement.
         """.trimIndent()
+    override val cliSynopsis = "rate an execution and suggest improvements"
 
     val projectName = CommonToolParams.projectName().registerToSchema()
 

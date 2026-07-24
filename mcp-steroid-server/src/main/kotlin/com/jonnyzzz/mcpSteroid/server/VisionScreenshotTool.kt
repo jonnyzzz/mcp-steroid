@@ -32,6 +32,7 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
 
         After execution, call steroid_execute_feedback to log your feedback.
     """.trimIndent()
+    override val cliSynopsis = "capture a screenshot of the IDE"
 
     val projectName = CommonToolParams.projectName().registerToSchema()
 

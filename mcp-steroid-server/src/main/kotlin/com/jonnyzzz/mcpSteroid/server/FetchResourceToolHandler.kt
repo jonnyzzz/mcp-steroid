@@ -31,7 +31,7 @@ class FetchResourceToolHandler(
     private val handler: () -> PromptsContextHandler,
 ) : McpToolBase() {
 
-    private val log = thisLogger()
+    private val log by lazy { thisLogger() }
 
     override val name = "steroid_fetch_resource"
 
@@ -50,6 +50,9 @@ class FetchResourceToolHandler(
                 "Any IDE task? → $skillUri | " +
                 "Full reference? → $codingGuideUri"
     }
+
+    override val cliSynopsis = "fetch a mcp-steroid:// guide by URI"
+    override val cliAliases = listOf("prompt")
 
     val uri = InputSchemaElement.param("uri")
         .description("The mcp-steroid:// URI to fetch (see the tool description for the canonical entry points, or fetch mcp-steroid://prompt/skill for the index)")

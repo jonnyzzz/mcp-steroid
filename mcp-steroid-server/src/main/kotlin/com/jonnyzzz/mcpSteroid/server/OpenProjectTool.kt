@@ -40,6 +40,7 @@ class OpenProjectToolSpec(
         append(BASE_DESCRIPTION)
         if (includeBackendName) append("\n\n").append(BACKEND_NAME_DESCRIPTION)
     }
+    override val cliSynopsis = "open a project in the IDE"
 
     val projectPath = InputSchemaElement.param("project_path")
         .description("Absolute path to the project directory to open.")

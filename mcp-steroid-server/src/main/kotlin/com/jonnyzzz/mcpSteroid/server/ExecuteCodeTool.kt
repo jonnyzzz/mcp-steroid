@@ -4,6 +4,7 @@ import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.cliOptional
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.enumString
 import com.jonnyzzz.mcpSteroid.mcp.get
@@ -79,9 +80,12 @@ data class ExecCodeParams(
 class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBase() {
     override val name = "steroid_execute_code"
     override val description get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
+    override val cliSynopsis = "run a Kotlin script in the target IDE"
 
     val projectName = CommonToolParams.projectName().registerToSchema()
 
+    // MCP callers must send code directly. A CLI frontend may synthesize it from a file or stdin, so
+    // this remains MCP-required while the CLI projection treats it as optional.
     val code = InputSchemaElement.param("code")
         .description(
             "Kotlin code. The response carries an execution_id header plus ONLY what the script " +
@@ -98,6 +102,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         )
         .string()
         .required()
+        .cliOptional()
         .registerToSchema()
 
     val taskId = CommonToolParams.taskId().registerToSchema()

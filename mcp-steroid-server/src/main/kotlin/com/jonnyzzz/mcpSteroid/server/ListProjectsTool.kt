@@ -14,6 +14,7 @@ import kotlinx.serialization.Serializable
 class ListProjectsToolSpec(val handler: () -> ListProjectsToolHandler) : McpToolBase() {
     override val name = "steroid_list_projects"
     override val description = "List all open projects in the IDE. Each entry has `project_name` (a unique routing key — pass it to steroid_execute_code and the other project-scoped tools) and `name` (the raw folder name, informational only); they are not equal. Resolve an entry's `backend_name` to the owning IDE's identity (`intellij` = `{name, version, build}`) via the `backends` lookup in the same response."
+    override val cliSynopsis = "list open projects and their routing keys"
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val response = handler().collectListProjectsResponse()
