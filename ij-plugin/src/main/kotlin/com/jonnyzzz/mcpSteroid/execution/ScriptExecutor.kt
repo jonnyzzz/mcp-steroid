@@ -18,6 +18,7 @@ import com.intellij.util.concurrency.ThreadingAssertions
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.intellij.diagnostic.ThreadDumper
+import java.nio.file.Path
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
@@ -227,6 +228,7 @@ class ScriptExecutor(
         }
     }
 
+    @OptIn(InternalCoroutinesApi::class)
     private suspend fun executeCodeBlocks(
         exec: ExecCodeParams,
         context: McpScriptContextImpl,
@@ -234,8 +236,26 @@ class ScriptExecutor(
         executionId: ExecutionId,
         resultBuilder: ExecutionResultBuilder
     ) {
+        // Bridge between the completion handler (fires synchronously on the canceller's thread
+        // the instant the body starts cancelling — even if the body is wedged and never unwinds)
+        // and the timeout catch below (a different thread). The handler completes this exactly once;
+        // the catch reads it bounded + under NonCancellable so a racing external cancel can't strand it.
+        val dumpPath = CompletableDeferred<Path?>()
         try {
+            // withTimeout installs its own child Job; register the native-dump capture on THAT job,
+            // now that the execution folder is known. onCancelling = true makes the handler run on the
+            // Cancelling transition — before the body is torn down — so the deadlocked frames are captured.
+            // This is the same idiom the platform's coroutine<->indicator bridge uses (coroutines.kt).
             withTimeout(exec.timeout.seconds) {
+                coroutineContext.job.invokeOnCompletion(onCancelling = true) { cause ->
+                    // Fire only on the timeout (TimeoutCancellationException), not on a normal completion
+                    // or an ordinary external cancel — a deadlock is the case we want a dump for.
+                    if (cause is TimeoutCancellationException) {
+                        dumpPath.complete(TimeoutDiagnosticDump.writeBlocking(project, executionId))
+                    } else {
+                        dumpPath.complete(null)
+                    }
+                }
                 val capturedBlocks = evalResult.result
                 for ((index, block) in capturedBlocks.withIndex()) {
                     yield()
@@ -251,7 +271,16 @@ class ScriptExecutor(
             // Timeout - report as error (must be caught before CancellationException since it's a subclass)
             log.warn("Execution $executionId timed out: ${e.message}")
             resultBuilder.logRemappedException("Execution timed out", e, evalResult.lineMapping)
-            resultBuilder.reportFailed("Execution timed out after ${exec.timeout} seconds")
+            // The onCancelling handler above already captured the native dump into the execution folder;
+            // read the path it wrote (bounded, and under NonCancellable so a concurrent external cancel of
+            // the whole tool call can't strand this read) and mention ONLY the path — never the dump content.
+            val diagnosticPath = withContext(NonCancellable) {
+                withTimeoutOrNull(5.seconds) { dumpPath.await() }
+            }
+            val suffix = if (diagnosticPath != null) {
+                " Diagnostic thread + coroutine dump stored at $diagnosticPath"
+            } else ""
+            resultBuilder.reportFailed("Execution timed out after ${exec.timeout} seconds.$suffix")
         } catch (e: CancellationException) {
             throw e
         } catch (e: ProcessCanceledException) {
