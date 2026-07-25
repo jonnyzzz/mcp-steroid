@@ -2,7 +2,7 @@
   "mcpServers": {
     "devrig": {
       "type": "stdio",
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp.cmd"
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp"
     }
   }
 }

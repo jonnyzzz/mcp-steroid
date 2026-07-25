@@ -1,0 +1,5 @@
+#!/bin/sh
+# devrig -- MCP stdio launcher. Execs the INSTALLED devrig; no bundled fallback (script-only, #253).
+# Emits nothing on stdout (the JSON-RPC channel) before exec. If devrig is not installed, exec fails and
+# the MCP server does not start until /devrig:setup installs it (check-devrig nudges the user).
+exec "$HOME/.mcp-steroid/bin/devrig" mcp
