@@ -15,6 +15,8 @@ repositories {
 }
 
 dependencies {
+    implementation(libs.kotlin.build.tools.api)
+    implementation(libs.kotlin.build.tools.impl)
     testImplementation("junit:junit:4.13.2")
 }
 
