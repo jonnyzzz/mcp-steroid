@@ -1,23 +1,14 @@
 #!/bin/sh
 :; # ===== POSIX sh (Windows cmd skips :; lines) =====
-:; # UserPromptSubmit hook. Two jobs, by the bootstrap-chosen mode:
-:; #   bar  (user has no status line): RE-ASSERT the bar now. The bar was written during this instance's
-:; #        startup — before its settings-watcher armed — so the instance that triggered the download
-:; #        missed the change and doesn't render it. Re-writing on the first prompt (watcher now armed)
-:; #        makes it appear. Emit no visible text (the bar shows the progress).
-:; #   hook (user already has a status line): show an inline "⏳ …" progress line instead.
-:; # Stdout is the JSON hook channel — nothing else on it.
-:; OWNER="$HOME/.mcp-steroid/markers/statusline.owner"
-:; MODE=""; [ -f "$OWNER" ] && MODE=$(cat "$OWNER" 2>/dev/null)
-:; # ---- Live phase (issue #245) -------------------------------------------------------------------
-:; # Once devrig is installed the download-progress branches below fall silent, so nothing re-reminds
-:; # the model that the whole-IDE bridge exists and it drifts back to Grep/Bash on longer sessions. When
-:; # the installed launcher is present, re-assert the bridge on IDE-shaped prompts via MODEL-ONLY
-:; # additionalContext (no visible systemMessage). Read the hook JSON from stdin and keyword-match it;
-:; # grepping the raw payload keeps the shell simple (a stray match in cwd only injects a benign hint).
+:; # UserPromptSubmit hook (issue #245). Once devrig is installed, re-assert the whole-IDE bridge on
+:; # IDE-shaped prompts via MODEL-ONLY additionalContext (no visible systemMessage) -- otherwise longer
+:; # sessions drift back to Grep/Bash with nothing to remind the model the bridge exists. When devrig is
+:; # not installed, emit nothing. Stdout is the JSON hook channel -- nothing else on it.
 :; DEVRIG="$HOME/.mcp-steroid/bin/devrig"; DEVRIG_WIN="$HOME/.mcp-steroid/bin/devrig.cmd"
 :; if [ -x "$DEVRIG" ] || [ -f "$DEVRIG_WIN" ]; then
 :;   IN=$(cat 2>/dev/null)
+:;   # Read the hook JSON from stdin and keyword-match it; grepping the raw payload keeps the shell
+:;   # simple (a stray match in cwd only injects a benign hint).
 :;   if printf '%s' "$IN" | grep -qiE 'tests?|unit test|junit|gradlew|gradle|mvn|maven|debug|breakpoint|thread dump|stack ?trace|step over|evaluate|remote debug|attach to|refactor|rename|extract|introduce variable|inline|move class|move method|safe delete|change signature|pull up|push down|generate|override|compil|build error|warning|exception|inspection|duplicat|find usages|usages|callers|callees|implementations|subclasses|supertypes|references|hierarchy|go to|navigate|definition|declaration|implement|optimize import|reformat|structural search|project search|search for|find the|where is|grep|class |interface|method|function|symbol|dependenc|classpath|blame|annotate|who changed|who wrote|git history|invoke action|ide action|spring|bug|run the|run config|run tests|at caret|failing test|flaky|intellij|jetbrains|psi'; then
 :;     printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Reminder: a JetBrains IDE is connected via devrig (MCP Steroid) — prefer its tools over shell for this. Build/run/tests → IDE run configurations; find code → PSI / find-usages / hierarchy (not grep); pattern or bulk edits → Structural Search (not regex/sed); rename/extract/move/inline & multi-file edits → IDE refactorings / `applyPatch { }`; errors/warnings → inspections; debug → breakpoints, evaluate, attach to a JVM; blame/history → IDE VCS annotations. Drive it with steroid_execute_code; steroid_fetch_resource mcp-steroid://prompt/skill for the exact recipe."}}'
 :;   else
@@ -25,52 +16,22 @@
 :;   fi
 :;   exit 0
 :; fi
-:; ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
-:; os=$(uname -s | tr '[:upper:]' '[:lower:]'); case "$os" in darwin) os=darwin;; linux) os=linux;; esac
-:; arch=$(uname -m); case "$arch" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; esac
-:; BOOT="$ROOT/bin/bootstrap-$os-$arch"
-:; if [ "$MODE" = "bar" ]; then
-:;   [ -x "$BOOT" ] && "$BOOT" --install-statusline >/dev/null 2>&1
-:;   echo '{}'; exit 0
-:; fi
-:; [ "$MODE" = "hook" ] || { echo '{}'; exit 0; }
-:; SEG=""; [ -x "$BOOT" ] && SEG=$(NO_COLOR=1 "$BOOT" --statusline 2>/dev/null)
-:; if [ -n "$SEG" ] && printf '%s' "$SEG" | grep -q '%'; then
-:;   printf '{"systemMessage":"⏳ %s","hookSpecificOutput":{"hookEventName":"UserPromptSubmit"}}\n' "$SEG"
-:; else
-:;   echo '{}'
-:; fi
+:; echo '{}'
 :; exit 0
 @echo off
 rem ===== Windows cmd =====
-set "OWNER=%USERPROFILE%\.mcp-steroid\markers\statusline.owner"
-set "MODE="
-if exist "%OWNER%" set /p MODE=<"%OWNER%"
-rem ---- Live phase (issue #245): once devrig is installed, re-remind the model on IDE-shaped prompts.
-rem findstr reads the hook JSON from stdin; each /c: term is an OR'd literal (case-insensitive via /i).
-rem Labels (not a parenthesized block) so the parentheses inside additionalContext echo literally.
+rem UserPromptSubmit hook (issue #245): once devrig is installed, re-remind the model on IDE-shaped
+rem prompts. findstr reads the hook JSON from stdin; each /c: term is an OR'd literal (case-insensitive
+rem via /i). Labels (not a parenthesized block) so the parentheses inside additionalContext echo literally.
 set "DEVRIG=%USERPROFILE%\.mcp-steroid\bin\devrig"
 set "DEVRIGCMD=%USERPROFILE%\.mcp-steroid\bin\devrig.cmd"
-if not exist "%DEVRIG%" if not exist "%DEVRIGCMD%" goto :notlive
+if not exist "%DEVRIG%" if not exist "%DEVRIGCMD%" goto :notinstalled
 findstr /i /c:"test" /c:"junit" /c:"gradle" /c:"mvn" /c:"maven" /c:"debug" /c:"breakpoint" /c:"thread dump" /c:"stack trace" /c:"stacktrace" /c:"step over" /c:"evaluate" /c:"remote debug" /c:"attach to" /c:"refactor" /c:"rename" /c:"extract" /c:"introduce variable" /c:"inline" /c:"move class" /c:"move method" /c:"safe delete" /c:"change signature" /c:"pull up" /c:"push down" /c:"generate" /c:"override" /c:"compil" /c:"build error" /c:"warning" /c:"exception" /c:"inspection" /c:"duplicat" /c:"usages" /c:"callers" /c:"callees" /c:"implementations" /c:"subclasses" /c:"supertypes" /c:"references" /c:"hierarchy" /c:"go to" /c:"navigate" /c:"definition" /c:"declaration" /c:"implement" /c:"optimize import" /c:"reformat" /c:"structural search" /c:"project search" /c:"search for" /c:"find the" /c:"where is" /c:"grep" /c:"class " /c:"interface" /c:"method" /c:"function" /c:"symbol" /c:"dependenc" /c:"classpath" /c:"blame" /c:"annotate" /c:"who changed" /c:"who wrote" /c:"git history" /c:"invoke action" /c:"ide action" /c:"spring" /c:"bug" /c:"run the" /c:"run config" /c:"run tests" /c:"at caret" /c:"failing test" /c:"flaky" /c:"intellij" /c:"jetbrains" /c:"psi" >nul && goto :nudge
 echo {}
 exit /b 0
 :nudge
 echo {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Reminder: a JetBrains IDE is connected via devrig (MCP Steroid) - prefer its tools over shell for this. Build/run/tests via IDE run configurations; find code via PSI / find-usages / hierarchy (not grep); pattern or bulk edits via Structural Search (not regex/sed); rename/extract/move/inline and multi-file edits via IDE refactorings / applyPatch; errors/warnings via inspections; debug via breakpoints, evaluate, attach to a JVM; blame/history via IDE VCS annotations. Drive it with steroid_execute_code, and steroid_fetch_resource mcp-steroid://prompt/skill for the exact recipe."}}
 exit /b 0
-:notlive
-set "ROOT=%CLAUDE_PLUGIN_ROOT%"
-if "%ROOT%"=="" set "ROOT=%~dp0.."
-set "ARCH=amd64"
-if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "ARCH=arm64"
-set "BOOT=%ROOT%\bin\bootstrap-windows-%ARCH%.exe"
-if "%MODE%"=="bar" (
-  if exist "%BOOT%" "%BOOT%" --install-statusline >nul 2>&1
-  echo {} & exit /b 0
-)
-if not "%MODE%"=="hook" ( echo {} & exit /b 0 )
-if not exist "%BOOT%" ( echo {} & exit /b 0 )
-for /f "delims=" %%S in ('set NO_COLOR=1 ^& "%BOOT%" --statusline 2^>nul') do set "SEG=%%S"
-if not defined SEG ( echo {} & exit /b 0 )
-echo {"systemMessage":"* %SEG%","hookSpecificOutput":{"hookEventName":"UserPromptSubmit"}}
+:notinstalled
+echo {}
 exit /b 0
