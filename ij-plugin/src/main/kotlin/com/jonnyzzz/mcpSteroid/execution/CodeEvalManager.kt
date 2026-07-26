@@ -7,6 +7,8 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.registry.Registry
+import com.intellij.util.execution.ParametersListUtil
 import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession
 import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession.Companion.DEFAULT_JVM_TARGET
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
@@ -37,6 +39,7 @@ class CodeEvalManager(
     private val project: Project,
 ) : Disposable {
     override fun dispose() {
+        kotlinBuildsSession.close()
         @OptIn(ExperimentalPathApi::class)
         try {
             btaWorkingDir.deleteRecursively()
@@ -90,7 +93,7 @@ class CodeEvalManager(
             inputKt.writeText(wrappedCode.code)
 
             // TODO: decide on extraParams handling?
-            //val extraParams = ParametersListUtil.parse(Registry.stringValue("mcp.steroid.kotlinc.parameters"))
+            val extraParams = ParametersListUtil.parse(Registry.stringValue("mcp.steroid.kotlinc.parameters"))
 
             // TODO: compilation timeout 120_000 ms
             // TODO: structured output
