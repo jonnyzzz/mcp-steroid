@@ -18,14 +18,6 @@ val promptGeneratorClasspath = configurations.create("promptGeneratorClasspath")
     isCanBeResolved = true
 }
 
-// Consume kotlinc distribution from kotlin-cli subproject
-val kotlincDist = configurations.create("kotlincDist") {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-    attributes {
-        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "kotlinc-dist"))
-    }
-}
 
 // Configuration to resolve intellij-downloader as a classpath for the download task
 val ideDownloaderClasspath = configurations.create("ideDownloaderClasspath") {
@@ -57,7 +49,6 @@ dependencies {
     testImplementation(project(":kotlin-cli"))
     testImplementation(project(":prompt-generator"))
 
-    kotlincDist(project(":kotlin-cli"))
     ideDownloaderClasspath(project(":intellij-downloader"))
 }
 
@@ -212,7 +203,6 @@ tasks.test {
     for ((_, _, task) in ideDownloadTasks) {
         dependsOn(task)
     }
-    dependsOn(kotlincDist)
     dependsOn(ktblockExtraClasspath)
 
     doFirst {
@@ -223,9 +213,6 @@ tasks.test {
                 systemProperty(spec.systemProperty, home.absolutePath)
             }
         }
-
-        val kotlincHome = kotlincDist.singleFile
-        systemProperty("mcp.steroid.kotlinc.home", kotlincHome.absolutePath)
 
         // ij-plugin source directory for McpScriptContext/McpScriptBuilder sources
         val ijSources = rootProject.layout.projectDirectory
