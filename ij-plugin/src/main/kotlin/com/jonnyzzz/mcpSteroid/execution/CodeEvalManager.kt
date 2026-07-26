@@ -8,14 +8,14 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.registry.Registry
-import com.intellij.util.execution.ParametersListUtil
 import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession
-import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession.Companion.DEFAULT_JVM_TARGET
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.koltinc.scriptClassLoaderFactory
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.deleteRecursively
 import kotlinx.coroutines.CancellationException
@@ -25,6 +25,7 @@ import kotlin.io.path.div
 import kotlin.io.path.writeText
 import kotlinx.coroutines.TimeoutCancellationException
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
+import org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 
@@ -97,12 +98,12 @@ class CodeEvalManager(
                 .split(",")
                 .map { it.trim() }
 
-            // TODO: structured output
+            val compilerMessageRenderer = RecordingCompilerMessageRenderer()
             val compileResult = try {
                 kotlinBuildsSession.compileKotlin(
                     sources = listOf(inputKt),
                     destinationDir = outputJar,
-                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS
+                    compilerMessageRenderer = compilerMessageRenderer,
                 ) {
                     set(JvmCompilerArguments.CLASSPATH, compileClasspath)
 
@@ -117,6 +118,31 @@ class CodeEvalManager(
             } catch (_: TimeoutCancellationException) {
                 resultBuilder.reportFailed("kotlinc stopped on timeout")
                 return null
+            }
+
+            val compilerMessages = compilerMessageRenderer.getRecordedMessages()
+            compilerMessages.forEach {
+                when(it.severity) {
+                    CompilerMessageRenderer.Severity.DEBUG,
+                    CompilerMessageRenderer.Severity.INFO -> resultBuilder
+                        .logProgress("Compiler output: ${it.message} at ${it.location?.remappedLocation(wrappedCode.lineMapping)}")
+                    CompilerMessageRenderer.Severity.WARNING -> resultBuilder
+                        .logMessage("Compiler warning: ${it.message} at ${it.location?.remappedLocation(wrappedCode.lineMapping)}")
+                    CompilerMessageRenderer.Severity.ERROR -> resultBuilder
+                        .logMessage("Compiler error: ${it.message} at ${it.location?.remappedLocation(wrappedCode.lineMapping)}")
+                }
+            }
+
+            if (compilerMessages.isNotEmpty()) {
+                project.executionStorage.writeCodeExecutionData(
+                    executionId,
+                    "kotlin.txt",
+                    """
+                    $compileResult
+                    ---
+                    ${compilerMessages.joinToString { "${it.severity}: ${it.message} at ${it.location?.locationString}" }}
+                    """.trimIndent()
+                )
             }
 
             when (compileResult) {
@@ -134,45 +160,6 @@ class CodeEvalManager(
                     return null
                 }
             }
-
-//            run {
-//                val rawCompilerOutput = kotlincResult.stdout.trim()
-//                val rawCompilerError = kotlincResult.stderr.trim()
-//
-//                // Remap line numbers from wrapped-file coordinates to user-code coordinates
-//                // so agents see meaningful line references instead of wrapper boilerplate offsets.
-//                val compilerOutput = wrappedCode.lineMapping.remapCompilerOutput(rawCompilerOutput)
-//                val compilerError = wrappedCode.lineMapping.remapCompilerOutput(rawCompilerError)
-//
-//                if (compilerOutput.isNotEmpty()) {
-//                    resultBuilder.logProgress("Compiler Output:\n$compilerOutput")
-//                }
-//
-//                if (compilerError.isNotEmpty()) {
-//                    // Log stderr output (warnings/errors) for transparency.
-//                    // Actual failure is determined by the exit code check below,
-//                    // since stderr may contain mere warnings that don't block compilation.
-//                    resultBuilder.logMessage("Compiler Errors/Warnings:\n$compilerError")
-//                }
-//
-//                if (rawCompilerOutput.isNotEmpty() || rawCompilerError.isNotEmpty()) {
-//                    // Write raw (non-remapped) output to storage for debugging purposes
-//                    project.executionStorage.writeCodeExecutionData(
-//                        executionId,
-//                        "kotlinc.txt",
-//                        "${kotlincResult.exitCode}\n--- STDOUT ---\n$rawCompilerOutput\n\n--- STDERR ---\n$rawCompilerError"
-//                    )
-//                }
-//
-//                if (kotlincResult.isTimeout) {
-//                    resultBuilder.reportFailed("kotlinc stopped on timeout")
-//                }
-//
-//                if (kotlincResult.exitCode != 0) {
-//                    resultBuilder.reportFailed("kotlinc exited with code: ${kotlincResult.exitCode}\n$compilerError")
-//                    return null
-//                }
-//            }
 
             val capturedBlocks = try {
                 val builder = McpScriptBuilder()
@@ -271,5 +258,50 @@ class CodeEvalManager(
 
         override val isDebugEnabled: Boolean
             get() = logger.isDebugEnabled
+    }
+
+    private data class CompilerMessage(
+        val severity: CompilerMessageRenderer.Severity,
+        val message: String,
+        val location: CompilerMessageRenderer.SourceLocation?,
+    )
+
+    private val CompilerMessageRenderer.SourceLocation.locationString: String
+        get() = buildString {
+            val fileUri = Paths.get(path).toUri()
+            append(fileUri)
+            if (line > 0 && column > 0) {
+                append(":$line:$column")
+            }
+            append(' ')
+        }
+
+    private fun CompilerMessageRenderer.SourceLocation.remappedLocation(lineMapping: LineMapping): String =
+        lineMapping.remapCompilerOutput(locationString)
+
+    private class RecordingCompilerMessageRenderer : CompilerMessageRenderer {
+        private val bufferedDiagnostics = ConcurrentLinkedQueue<CompilerMessage>()
+
+        override fun render(
+            severity: CompilerMessageRenderer.Severity,
+            message: String,
+            location: CompilerMessageRenderer.SourceLocation?
+        ): String {
+            bufferedDiagnostics.add(CompilerMessage(severity, message, location))
+
+            return buildString {
+                location?.apply {
+                    val fileUri = Paths.get(path).toUri()
+                    append(fileUri)
+                    if (line > 0 && column > 0) {
+                        append(":$line:$column")
+                    }
+                    append(' ')
+                }
+                append(message)
+            }
+        }
+
+        fun getRecordedMessages(): List<CompilerMessage> = bufferedDiagnostics.toList()
     }
 }
