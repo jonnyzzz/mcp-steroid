@@ -8,6 +8,11 @@ import kotlin.io.path.createDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.walk
+import kotlin.time.Duration
+import kotlin.time.DurationUnit
+import kotlin.time.toDuration
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeout
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
@@ -47,14 +52,18 @@ class KotlinBuildsSession(
      * @param sources A list of paths pointing to the Kotlin source files to be compiled.
      * @param destinationDir The path to the directory where the compiled outputs will be stored. Either could be a directory or jar file.
      * @param executionPolicy Specifies the execution policy for the compilation process. Defaults to [CompilationExecutionPolicy.DAEMON].
+     * @param compilationTimeout maximum time compilation is allowed to run. The default is 120_000ms.
      * @param argumentsConf A lambda that allows configuration of additional JVM compiler arguments. '-no-stdlib' and '-no-reflect' arguments are always added.
      * @return A [CompilationResult] encapsulating the result of the compilation process.
+     *
+     * @throws kotlinx.coroutines.TimeoutCancellationException on reaching configured timeout during compilation
      */
-    fun compileKotlin(
-         sources: List<Path>,
-         destinationDir: Path,
-         executionPolicy: CompilationExecutionPolicy = CompilationExecutionPolicy.DAEMON,
-         argumentsConf: JvmCompilerArguments.Builder.() -> Unit = {}
+    suspend fun compileKotlin(
+        sources: List<Path>,
+        destinationDir: Path,
+        executionPolicy: CompilationExecutionPolicy = CompilationExecutionPolicy.DAEMON,
+        compilationTimeout: Duration = 120_000L.toDuration(DurationUnit.MILLISECONDS),
+        argumentsConf: JvmCompilerArguments.Builder.() -> Unit = {}
     ): CompilationResult {
          val buildSession = synchronized(this) {
              buildSession ?: buildToolsApi.createBuildSession().also {
@@ -75,14 +84,22 @@ class KotlinBuildsSession(
              argumentsConf()
          }
 
-         return buildSession.executeOperation(
-             operation = jvmCompilationBuilder.build(),
-             executionPolicy = when (executionPolicy) {
-                 CompilationExecutionPolicy.IN_PROCESS -> inProcessExecutionStrategy
-                 CompilationExecutionPolicy.DAEMON -> daemonExecutionPolicy
-             },
-             logger = kotlinLogger,
-         )
+        val jvmOperation = jvmCompilationBuilder.build()
+        return try {
+            withTimeout(compilationTimeout) {
+                buildSession.executeOperation(
+                    operation = jvmOperation,
+                    executionPolicy = when (executionPolicy) {
+                        CompilationExecutionPolicy.IN_PROCESS -> inProcessExecutionStrategy
+                        CompilationExecutionPolicy.DAEMON -> daemonExecutionPolicy
+                    },
+                    logger = kotlinLogger,
+                )
+            }
+        } catch (e: CancellationException) {
+            jvmOperation.cancel()
+            throw e
+        }
     }
 
     /**
