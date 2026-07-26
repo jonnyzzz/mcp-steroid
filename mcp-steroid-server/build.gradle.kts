@@ -16,10 +16,9 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.13")
 
     val kotlinxSerialization = providers.gradleProperty("mcp.kotlinx.serialization.version").get()
-    val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerialization")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:$kotlinxSerialization")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
+    implementation(libs.kotlinx.coroutines.core)
 
     // MCP protocol types (McpTool, ToolCallContext, JsonRpc*, PromptsContextProvider)
     api(project(":mcp-core"))

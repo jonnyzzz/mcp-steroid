@@ -47,7 +47,7 @@ dependencies {
     // generate the pre-start jdk.table.xml (mirrors IntelliJ's own approach).
     implementation("org.jdom:jdom2:2.0.6.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation(libs.kotlinx.coroutines.core)
 
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

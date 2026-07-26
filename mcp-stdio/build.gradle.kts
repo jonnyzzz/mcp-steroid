@@ -16,10 +16,9 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.13")
 
     val kotlinxSerialization = providers.gradleProperty("mcp.kotlinx.serialization.version").get()
-    val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerialization")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:$kotlinxSerialization")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
+    implementation(libs.kotlinx.coroutines.core)
 
     // MCP protocol types, JSON-RPC helpers
     api(project(":mcp-core"))
@@ -28,7 +27,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(kotlin("test-junit5"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$kotlinxCoroutines")
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 tasks.test {
