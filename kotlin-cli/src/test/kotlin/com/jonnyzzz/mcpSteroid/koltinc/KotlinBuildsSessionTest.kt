@@ -23,7 +23,7 @@ class KotlinBuildsSessionTest {
         fun main() { println("Hello") }
         """.trimIndent())
 
-        KotlinBuildsSession().use {
+        KotlinBuildsSession(tempFolder.newFolder("bta-temp").toPath()).use {
             it.compileKotlin(
                 sources = listOf(source),
                 destinationDir = outputJar,

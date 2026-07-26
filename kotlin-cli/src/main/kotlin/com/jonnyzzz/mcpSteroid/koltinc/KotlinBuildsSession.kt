@@ -1,9 +1,13 @@
 package com.jonnyzzz.mcpSteroid.koltinc
 
+import java.nio.file.FileSystems
 import java.nio.file.Path
 import java.nio.file.Paths
+import kotlin.io.path.copyTo
+import kotlin.io.path.createDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
+import kotlin.io.path.walk
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
@@ -24,6 +28,7 @@ import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jv
  */
 @OptIn(ExperimentalBuildToolsApi::class)
 class KotlinBuildsSession(
+    val workingDir: Path,
     val kotlinLogger: KotlinLogger? = null,
 ) : AutoCloseable {
 
@@ -97,7 +102,22 @@ class KotlinBuildsSession(
     private fun getBtaImplJars(): List<Path> {
         val btaImplUrl = this::class.java.getResource("/BTA-IMPL")?.toURI()
             ?: throw IllegalStateException("Could not find 'BTA-IMPL' in jar resources!")
-        val btaImplDir = Paths.get(btaImplUrl)
+        if (btaImplUrl.scheme == "file") {
+            return Paths.get(btaImplUrl).listDirectoryEntries()
+        }
+
+        require(btaImplUrl.scheme == "jar") {
+            "Unsupported BTA-IMPL resource protocol: $btaImplUrl"
+        }
+
+        val btaImplDir = workingDir.resolve("bta-impl")
+        btaImplDir.createDirectory()
+        FileSystems.newFileSystem(btaImplUrl, emptyMap<String, Any>()).use { jarFs ->
+            jarFs.getPath("/BTA-IMPL").walk().forEach {
+                it.copyTo(btaImplDir.resolve(it.fileName))
+            }
+        }
+
         return btaImplDir.listDirectoryEntries()
     }
 
