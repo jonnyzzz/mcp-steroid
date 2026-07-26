@@ -92,8 +92,9 @@ class CodeEvalManager(
             val inputKt = compilerDir / "input.kt"
             inputKt.writeText(wrappedCode.code)
 
-            // TODO: decide on extraParams handling?
-            val extraParams = ParametersListUtil.parse(Registry.stringValue("mcp.steroid.kotlinc.parameters"))
+            val extraParams = Registry.stringValue("mcp.steroid.kotlinc.parameters")
+                .split(",")
+                .map { it.trim() }
 
             // TODO: compilation timeout 120_000 ms
             // TODO: structured output
@@ -102,7 +103,14 @@ class CodeEvalManager(
                 destinationDir = outputJar,
             ) {
                 set(JvmCompilerArguments.CLASSPATH, compileClasspath)
-                set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET,)
+                set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET)
+                if (extraParams.isNotEmpty()) {
+                    try {
+                        applyArgumentStrings(extraParams)
+                    } catch (e: Exception) {
+                        resultBuilder.logException("Failed to apply extra arguments ${extraParams.joinToString()}", e)
+                    }
+                }
             }
 
             when (compileResult) {
