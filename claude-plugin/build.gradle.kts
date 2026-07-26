@@ -31,9 +31,6 @@ fun normalizeToSemver(raw: String): String {
 fun patchPluginJsonVersion(json: String, newVersion: String): String =
     json.replace(Regex(""""version"\s*:\s*"[^"]*""""), """"version": "$newVersion"""")
 
-val bootstrapBins by configurations.creating { isCanBeResolved = true; isCanBeConsumed = false }
-dependencies { bootstrapBins(project(mapOf("path" to ":devrig-bootstrap", "configuration" to "bootstrapBinaries"))) }
-
 // Patches the version placeholder in plugin.json and copies all plugin files
 // into build/plugin/ so the Zip task has a clean, versioned staging area.
 val preparePluginFiles = tasks.register("preparePluginFiles") {
@@ -46,7 +43,6 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
     inputs.property("pluginVersion", pluginVersion)
     inputs.dir(sourceDir.resolve(".claude-plugin"))
     inputs.dir(sourceDir.resolve("bin"))
-    inputs.files(bootstrapBins)
     inputs.dir(sourceDir.resolve("commands"))
     inputs.dir(sourceDir.resolve("hooks"))
     inputs.file(sourceDir.resolve(".mcp.json"))
@@ -62,27 +58,16 @@ val preparePluginFiles = tasks.register("preparePluginFiles") {
         val pluginJson = sourceDir.resolve(".claude-plugin/plugin.json").readText()
         pluginDir.resolve("plugin.json").writeText(patchPluginJsonVersion(pluginJson, pluginVersion))
 
-        // bin/ -- copy everything from the committed source bin/ except bootstrap-* (those are no
-        // longer committed; they come from the fresh :devrig-bootstrap build below). Windows
-        // artifacts (.ps1, .exe) carry no POSIX exec bit; everything else Claude must spawn -- the
-        // POSIX scripts, the devrig-mcp.cmd polyglot launcher, and the suffix-less Go bootstrap
-        // binaries -- is marked executable.
+        // bin/ -- copy everything from the committed source bin/ as-is. Windows artifacts (.ps1, .exe)
+        // carry no POSIX exec bit; everything else Claude must spawn -- the POSIX scripts and the
+        // devrig-mcp.cmd polyglot launcher -- is marked executable.
         val binOut = out.resolve("bin").also { it.mkdirs() }
         sourceDir.resolve("bin").listFiles()?.forEach { f ->
-            if (f.name.startsWith("bootstrap-")) return@forEach   // built binaries come from :devrig-bootstrap, not source
             val dest = binOut.resolve(f.name)
             f.copyTo(dest, overwrite = true)
             val windowsOnly = f.name.endsWith(".ps1") || f.name.endsWith(".exe")
             if (!windowsOnly) dest.setExecutable(true)
         }
-        // bootstrap-* : copied from the freshly cross-compiled :devrig-bootstrap output (never committed).
-        bootstrapBins.singleFile.listFiles { f -> f.name.startsWith("bootstrap-") }
-            ?.forEach { f ->
-                val dest = binOut.resolve(f.name)
-                f.copyTo(dest, overwrite = true)
-                if (!f.name.endsWith(".exe")) dest.setExecutable(true)
-            }
-            ?: throw GradleException(":devrig-bootstrap produced no bootstrap-* binaries")
 
         // .mcp.json -- MCP server registration for Claude Code
         out.resolve(".mcp.json").writeText(sourceDir.resolve(".mcp.json").readText())
@@ -139,14 +124,9 @@ val verifyPluginFiles = tasks.register("verifyPluginFiles") {
             "bin/check-devrig",
             "bin/devrig-progress",
             "bin/devrig-recover",
+            "bin/devrig-mcp",
             "bin/devrig-mcp.cmd",
             "bin/offer-ide",
-            "bin/bootstrap-darwin-arm64",
-            "bin/bootstrap-darwin-amd64",
-            "bin/bootstrap-linux-amd64",
-            "bin/bootstrap-linux-arm64",
-            "bin/bootstrap-windows-amd64.exe",
-            "bin/bootstrap-windows-arm64.exe",
             "commands/help.md",
             "commands/setup.md",
             "commands/status.md",

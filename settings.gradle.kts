@@ -44,7 +44,6 @@ include(":test-experiments")
 include(":npx")
 include(":npx-kt")
 include(":claude-plugin")
-include(":devrig-bootstrap")
 
 include(":installer-gen")
 include(":website-gen")
