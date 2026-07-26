@@ -75,7 +75,11 @@ repositories {
 
 // Libraries provided by IntelliJ platform - exclude from bundling
 configurations.named("implementation") {
-    exclude(group = "org.jetbrains.kotlin")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-common")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-reflect")
     exclude(group = "org.jetbrains.kotlinx")
     exclude(group = "org.jetbrains", module = "annotations")
     exclude(group = "org.slf4j")
@@ -617,6 +621,8 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
             "lib/okio-jvm-3.2.0.jar",
             "lib/posthog-6.4.0.jar",
             "lib/posthog-server-2.3.0.jar",
+
+            "lib/kotlin-build-tools-api-2.4.0.jar",
 
         ).toSortedSet()
 

@@ -4,24 +4,26 @@ package com.jonnyzzz.mcpSteroid.execution
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.registry.Registry
-import com.intellij.util.execution.ParametersListUtil
-import com.jonnyzzz.mcpSteroid.koltinc.KotlincCommandLine
+import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession
+import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession.Companion.DEFAULT_JVM_TARGET
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
-import com.jonnyzzz.mcpSteroid.koltinc.builder
-import com.jonnyzzz.mcpSteroid.koltinc.kotlincProcessClient
 import com.jonnyzzz.mcpSteroid.koltinc.scriptClassLoaderFactory
-import com.jonnyzzz.mcpSteroid.koltinc.toArgFile
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
+import java.nio.file.Files
+import kotlin.io.path.ExperimentalPathApi
+import kotlin.io.path.deleteRecursively
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.io.path.div
-import kotlin.io.path.writeLines
 import kotlin.io.path.writeText
+import org.jetbrains.kotlin.buildtools.api.CompilationResult
+import org.jetbrains.kotlin.buildtools.api.KotlinLogger
+import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 
 data class EvalResult(
     val result: List<suspend McpScriptContext.() -> Unit>,
@@ -34,10 +36,20 @@ inline val Project.codeEvalManager: CodeEvalManager get() = service()
 class CodeEvalManager(
     private val project: Project,
 ) : Disposable {
-    override fun dispose() = Unit
+    override fun dispose() {
+        @OptIn(ExperimentalPathApi::class)
+        try {
+            btaWorkingDir.deleteRecursively()
+        } catch (_: Exception) {}
+    }
 
     private val log = thisLogger()
     private val compilationMutex = Mutex()
+    private val btaWorkingDir = Files.createTempDirectory("kotlin-bta")
+    private val kotlinBuildsSession = KotlinBuildsSession(
+        workingDir = btaWorkingDir,
+        kotlinLogger = KotlinLoggerWrapper(log),
+    )
 
     suspend fun evalCode(executionId: ExecutionId, code: String, resultBuilder: ExecutionResultBuilder): EvalResult? {
         if (compilationMutex.isLocked) {
@@ -77,65 +89,73 @@ class CodeEvalManager(
             val inputKt = compilerDir / "input.kt"
             inputKt.writeText(wrappedCode.code)
 
-            (compilerDir / "classpath.txt").writeLines(compileClasspath.map { it.toString() })
-            val classpathArgsFile = compilerDir / "kotlinc.args"
+            // TODO: decide on extraParams handling?
+            //val extraParams = ParametersListUtil.parse(Registry.stringValue("mcp.steroid.kotlinc.parameters"))
 
-            val extraParams = ParametersListUtil.parse(Registry.stringValue("mcp.steroid.kotlinc.parameters"))
+            // TODO: compilation timeout 120_000 ms
+            // TODO: structured output
+            val compileResult = kotlinBuildsSession.compileKotlin(
+                sources = listOf(inputKt),
+                destinationDir = outputJar,
+            ) {
+                set(JvmCompilerArguments.CLASSPATH, compileClasspath)
+                set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET,)
+            }
 
-            val cmd = KotlincCommandLine
-                .builder(outputJar)
-                .withNoStdLib(true)
-                .withExtraParameters(extraParams)
-                .addClasspathEntries(compileClasspath)
-                .addSource(inputKt)
-                .build()
-                .toArgFile(classpathArgsFile)
-
-            val kotlincResult = kotlincProcessClient.kotlinc(
-                cmd.args,
-                compilerDir,
-            )
-
-            run {
-                val rawCompilerOutput = kotlincResult.stdout.trim()
-                val rawCompilerError = kotlincResult.stderr.trim()
-
-                // Remap line numbers from wrapped-file coordinates to user-code coordinates
-                // so agents see meaningful line references instead of wrapper boilerplate offsets.
-                val compilerOutput = wrappedCode.lineMapping.remapCompilerOutput(rawCompilerOutput)
-                val compilerError = wrappedCode.lineMapping.remapCompilerOutput(rawCompilerError)
-
-                if (compilerOutput.isNotEmpty()) {
-                    // Real content, not progress (#154): kotlinc stdout is empty on a clean
-                    // compile, so when it IS present the agent must see it in the result.
-                    resultBuilder.logMessage("Compiler Output:\n$compilerOutput")
+            when (compileResult) {
+                CompilationResult.COMPILATION_SUCCESS -> Unit
+                CompilationResult.COMPILATION_ERROR -> {
+                    resultBuilder.reportFailed("Kotlin compilation has failed")
+                    return null
                 }
-
-                if (compilerError.isNotEmpty()) {
-                    // Log stderr output (warnings/errors) for transparency.
-                    // Actual failure is determined by the exit code check below,
-                    // since stderr may contain mere warnings that don't block compilation.
-                    resultBuilder.logMessage("Compiler Errors/Warnings:\n$compilerError")
+                CompilationResult.COMPILATION_OOM_ERROR -> {
+                    resultBuilder.reportFailed("Kotlin compilation has failed with OutOfMemoryException")
+                    return null
                 }
-
-                if (rawCompilerOutput.isNotEmpty() || rawCompilerError.isNotEmpty()) {
-                    // Write raw (non-remapped) output to storage for debugging purposes
-                    project.executionStorage.writeCodeExecutionData(
-                        executionId,
-                        "kotlinc.txt",
-                        "${kotlincResult.exitCode}\n--- STDOUT ---\n$rawCompilerOutput\n\n--- STDERR ---\n$rawCompilerError"
-                    )
-                }
-
-                if (kotlincResult.isTimeout) {
-                    resultBuilder.reportFailed("kotlinc stopped on timeout")
-                }
-
-                if (kotlincResult.exitCode != 0) {
-                    resultBuilder.reportFailed("kotlinc exited with code: ${kotlincResult.exitCode}\n$compilerError")
+                CompilationResult.COMPILER_INTERNAL_ERROR -> {
+                    resultBuilder.reportFailed("Kotlin compiler has crashed")
                     return null
                 }
             }
+
+//            run {
+//                val rawCompilerOutput = kotlincResult.stdout.trim()
+//                val rawCompilerError = kotlincResult.stderr.trim()
+//
+//                // Remap line numbers from wrapped-file coordinates to user-code coordinates
+//                // so agents see meaningful line references instead of wrapper boilerplate offsets.
+//                val compilerOutput = wrappedCode.lineMapping.remapCompilerOutput(rawCompilerOutput)
+//                val compilerError = wrappedCode.lineMapping.remapCompilerOutput(rawCompilerError)
+//
+//                if (compilerOutput.isNotEmpty()) {
+//                    resultBuilder.logProgress("Compiler Output:\n$compilerOutput")
+//                }
+//
+//                if (compilerError.isNotEmpty()) {
+//                    // Log stderr output (warnings/errors) for transparency.
+//                    // Actual failure is determined by the exit code check below,
+//                    // since stderr may contain mere warnings that don't block compilation.
+//                    resultBuilder.logMessage("Compiler Errors/Warnings:\n$compilerError")
+//                }
+//
+//                if (rawCompilerOutput.isNotEmpty() || rawCompilerError.isNotEmpty()) {
+//                    // Write raw (non-remapped) output to storage for debugging purposes
+//                    project.executionStorage.writeCodeExecutionData(
+//                        executionId,
+//                        "kotlinc.txt",
+//                        "${kotlincResult.exitCode}\n--- STDOUT ---\n$rawCompilerOutput\n\n--- STDERR ---\n$rawCompilerError"
+//                    )
+//                }
+//
+//                if (kotlincResult.isTimeout) {
+//                    resultBuilder.reportFailed("kotlinc stopped on timeout")
+//                }
+//
+//                if (kotlincResult.exitCode != 0) {
+//                    resultBuilder.reportFailed("kotlinc exited with code: ${kotlincResult.exitCode}\n$compilerError")
+//                    return null
+//                }
+//            }
 
             val capturedBlocks = try {
                 val builder = McpScriptBuilder()
@@ -206,5 +226,33 @@ class CodeEvalManager(
             resultBuilder.reportFailed(message)
             return null
         }
+    }
+
+
+    private class KotlinLoggerWrapper(
+        private val logger: Logger,
+    ) : KotlinLogger {
+        override fun debug(msg: String) {
+            logger.debug(msg)
+        }
+
+        override fun error(msg: String, throwable: Throwable?) {
+            logger.error(msg, throwable)
+        }
+
+        override fun info(msg: String) {
+            logger.info(msg)
+        }
+
+        override fun lifecycle(msg: String) {
+            logger.info(msg)
+        }
+
+        override fun warn(msg: String, throwable: Throwable?) {
+            logger.warn(msg, throwable)
+        }
+
+        override val isDebugEnabled: Boolean
+            get() = logger.isDebugEnabled
     }
 }
