@@ -13,7 +13,9 @@ import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeout
+import org.jetbrains.kotlin.buildtools.api.BaseCompilationOperation
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
+import org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer
 import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
 import org.jetbrains.kotlin.buildtools.api.KotlinToolchains
@@ -53,6 +55,7 @@ class KotlinBuildsSession(
      * @param destinationDir The path to the directory where the compiled outputs will be stored. Either could be a directory or jar file.
      * @param executionPolicy Specifies the execution policy for the compilation process. Defaults to [CompilationExecutionPolicy.DAEMON].
      * @param compilationTimeout maximum time compilation is allowed to run. The default is 120_000ms.
+     * @param compilerMessageRenderer optional [CompilerMessageRenderer] to collect and transform compiler messages.
      * @param argumentsConf A lambda that allows configuration of additional JVM compiler arguments. '-no-stdlib' and '-no-reflect' arguments are always added.
      * @return A [CompilationResult] encapsulating the result of the compilation process.
      *
@@ -63,6 +66,7 @@ class KotlinBuildsSession(
         destinationDir: Path,
         executionPolicy: CompilationExecutionPolicy = CompilationExecutionPolicy.DAEMON,
         compilationTimeout: Duration = 120_000L.toDuration(DurationUnit.MILLISECONDS),
+        compilerMessageRenderer: CompilerMessageRenderer? = null,
         argumentsConf: JvmCompilerArguments.Builder.() -> Unit = {}
     ): CompilationResult {
          val buildSession = synchronized(this) {
@@ -77,6 +81,9 @@ class KotlinBuildsSession(
                  sources = sources,
                  destinationDirectory = destinationDir,
              )
+        compilerMessageRenderer?.let {
+            jvmCompilationBuilder[BaseCompilationOperation.COMPILER_MESSAGE_RENDERER] = it
+        }
 
          with(jvmCompilationBuilder.compilerArguments) {
              set(JvmCompilerArguments.NO_STDLIB, true)
