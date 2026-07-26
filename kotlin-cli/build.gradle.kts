@@ -23,6 +23,7 @@ val btaImplClasspath = configurations.resolvable("kotlinBuildToolsImplClasspath"
 
 dependencies {
     api(libs.kotlin.buildTools.api)
+    api(libs.kotlinx.coroutines.core)
 
     btaImplDecl.name(libs.kotlin.buildTools.impl)
     btaImplDecl.name(libs.kotlin.buildTools.compat)

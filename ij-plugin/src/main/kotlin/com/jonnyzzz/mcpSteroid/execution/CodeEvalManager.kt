@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.io.path.div
 import kotlin.io.path.writeText
+import kotlinx.coroutines.TimeoutCancellationException
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
@@ -96,21 +97,26 @@ class CodeEvalManager(
                 .split(",")
                 .map { it.trim() }
 
-            // TODO: compilation timeout 120_000 ms
             // TODO: structured output
-            val compileResult = kotlinBuildsSession.compileKotlin(
-                sources = listOf(inputKt),
-                destinationDir = outputJar,
-            ) {
-                set(JvmCompilerArguments.CLASSPATH, compileClasspath)
-                set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET)
-                if (extraParams.isNotEmpty()) {
-                    try {
-                        applyArgumentStrings(extraParams)
-                    } catch (e: Exception) {
-                        resultBuilder.logException("Failed to apply extra arguments ${extraParams.joinToString()}", e)
+            val compileResult = try {
+                kotlinBuildsSession.compileKotlin(
+                    sources = listOf(inputKt),
+                    destinationDir = outputJar,
+                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS
+                ) {
+                    set(JvmCompilerArguments.CLASSPATH, compileClasspath)
+                    set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET)
+                    if (extraParams.isNotEmpty()) {
+                        try {
+                            applyArgumentStrings(extraParams)
+                        } catch (e: Exception) {
+                            resultBuilder.logException("Failed to apply extra arguments ${extraParams.joinToString()}", e)
+                        }
                     }
                 }
+            } catch (_: TimeoutCancellationException) {
+                resultBuilder.reportFailed("kotlinc stopped on timeout")
+                return null
             }
 
             when (compileResult) {
