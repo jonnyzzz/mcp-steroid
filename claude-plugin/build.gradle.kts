@@ -392,8 +392,8 @@ val validateCheckDevrig = tasks.register("validateCheckDevrig") {
             throw GradleException("check-devrig: must exit 0 (a non-blocking SessionStart hook)")
         if (!content.contains("systemMessage"))
             throw GradleException("check-devrig: must emit a top-level systemMessage when devrig is absent")
-        if (!content.contains("background"))
-            throw GradleException("check-devrig: downloading message must describe the background download, not a registration nag")
+        if (!content.contains("is not installed yet"))
+            throw GradleException("check-devrig: not-installed branch must surface a clear not-installed message")
         // Live-session charter (issue #245): once devrig is installed, EVERY session must carry the
         // model-only "drive the whole IDE via devrig" charter as additionalContext. Guard its key pieces.
         if (!content.contains("EXTREMELY_IMPORTANT"))
@@ -499,19 +499,22 @@ val validateCheckDevrigRuns = tasks.register("validateCheckDevrigRuns") {
         val secondRunOut = runHook(firstRunHome)
         assertLiveCharter(secondRunOut, "returning")
 
-        // 3. Nothing installed, no failure -> report background download, and must NOT surface /devrig:setup.
+        // 3. Nothing installed, no failure -> the only way in is /devrig:setup (script-only, no download).
         val emptyOut = runHook(makeHome("empty", null))
-        if (!emptyOut.contains("systemMessage") || !emptyOut.contains("background")) {
-            throw GradleException("check-devrig must report the background download when devrig is absent. Output:\n$emptyOut")
+        if (!emptyOut.contains("systemMessage") || !emptyOut.contains("/devrig:setup")) {
+            throw GradleException("check-devrig must point the user at /devrig:setup when devrig is absent. Output:\n$emptyOut")
         }
-        if (emptyOut.contains("/devrig:setup")) {
-            throw GradleException("check-devrig must NOT mention /devrig:setup while merely downloading. Output:\n$emptyOut")
+        if (emptyOut.contains("retry")) {
+            throw GradleException("check-devrig must not talk about retrying an install that never ran. Output:\n$emptyOut")
         }
 
-        // 4. Failed install (marker present, no launcher) -> MUST point at /devrig:setup.
+        // 4. Failed install (marker present, no launcher) -> MUST point at /devrig:setup, phrased as a retry.
         val failedOut = runHook(makeHome("failed", null, failed = true))
         if (!failedOut.contains("systemMessage") || !failedOut.contains("/devrig:setup")) {
             throw GradleException("check-devrig must point at /devrig:setup when the install failed. Output:\n$failedOut")
+        }
+        if (!failedOut.contains("retry")) {
+            throw GradleException("check-devrig failure branch must phrase the nudge as a retry. Output:\n$failedOut")
         }
     }
 }
@@ -626,7 +629,7 @@ val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
 
 val validateMcpJson = tasks.register("validateMcpJson") {
     group = "verification"
-    description = "Validate .mcp.json registers one devrig stdio server via the polyglot launcher"
+    description = "Validate .mcp.json registers one devrig stdio server via the POSIX launcher"
     val f = projectDir.resolve(".mcp.json")
     inputs.file(f)
     doLast {
@@ -636,22 +639,44 @@ val validateMcpJson = tasks.register("validateMcpJson") {
         val devrig = servers["devrig"] as? Map<*, *> ?: throw GradleException(".mcp.json: missing 'devrig' server")
         if (devrig["type"] != "stdio") throw GradleException(".mcp.json: devrig must be stdio")
         val cmd = devrig["command"]?.toString().orEmpty()
-        if (!cmd.contains("\${CLAUDE_PLUGIN_ROOT}") || !cmd.contains("/bin/devrig-mcp.cmd"))
-            throw GradleException(".mcp.json: command must be \${CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp.cmd, got '$cmd'")
+        if (!cmd.contains("\${CLAUDE_PLUGIN_ROOT}") || !cmd.contains("/bin/devrig-mcp") || cmd.endsWith(".cmd"))
+            throw GradleException(".mcp.json: command must be \${CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp (extensionless), got '$cmd'")
     }
 }
 
+// Static checks on both MCP launchers (bin/devrig-mcp -- POSIX, referenced by .mcp.json -- and the legacy
+// bin/devrig-mcp.cmd polyglot). Script-only, #253: neither bundles a bootstrap fallback anymore; both must
+// exec the INSTALLED devrig directly and emit nothing on stdout before exec (stdout is the JSON-RPC channel).
 val validateDevrigMcpLauncher = tasks.register("validateDevrigMcpLauncher") {
     group = "verification"
-    description = "Validate bin/devrig-mcp.cmd routes correctly and writes nothing to stdout pre-exec"
-    val s = projectDir.resolve("bin/devrig-mcp.cmd")
-    inputs.file(s)
+    description = "Validate bin/devrig-mcp(.cmd) exec the installed devrig and write nothing to stdout pre-exec"
+    val posix = projectDir.resolve("bin/devrig-mcp")
+    val cmd = projectDir.resolve("bin/devrig-mcp.cmd")
+    inputs.file(posix)
+    inputs.file(cmd)
     doLast {
-        val c = s.readText()
+        // bin/devrig-mcp -- the new POSIX-only launcher .mcp.json actually invokes.
+        val p = posix.readText()
+        if (!p.startsWith("#!/bin/sh"))
+            throw GradleException("devrig-mcp: must start with #!/bin/sh")
+        if (!p.contains("\$HOME/.mcp-steroid/bin/devrig") || !p.contains("mcp"))
+            throw GradleException("devrig-mcp: must exec \$HOME/.mcp-steroid/bin/devrig mcp")
+        if (p.contains("bootstrap"))
+            throw GradleException("devrig-mcp: must NOT reference a bundled bootstrap (script-only, #253)")
+        posix.readLines().forEach { ln ->
+            val t = ln.trim()
+            if (t.startsWith("echo ") && !t.contains(">&2"))
+                throw GradleException("devrig-mcp: stdout echo would corrupt JSON-RPC: $ln")
+        }
+
+        // bin/devrig-mcp.cmd -- legacy polyglot; same contract, both halves.
+        val c = cmd.readText()
         if (!c.contains(".mcp-steroid")) throw GradleException("devrig-mcp.cmd: must check the installed launcher path")
-        if (!c.contains("bootstrap-")) throw GradleException("devrig-mcp.cmd: must reference the bundled bootstrap")
+        if (!c.contains("devrig")) throw GradleException("devrig-mcp.cmd: must exec the installed devrig")
+        if (c.contains("bootstrap"))
+            throw GradleException("devrig-mcp.cmd: must NOT reference a bundled bootstrap (script-only, #253)")
         // No bare `echo`/`Write-Host` to stdout: POSIX echoes must be >&2; cmd echoes must be 1>&2.
-        s.readLines().forEach { ln ->
+        cmd.readLines().forEach { ln ->
             val t = ln.trim().removePrefix(":;").trim()
             if (t.startsWith("echo ") && !t.contains(">&2"))
                 throw GradleException("devrig-mcp.cmd: stdout echo would corrupt JSON-RPC: $ln")
@@ -659,31 +684,26 @@ val validateDevrigMcpLauncher = tasks.register("validateDevrigMcpLauncher") {
     }
 }
 
+// Script-only, #253: there is no bundled bootstrap fallback anymore, so this only proves the launcher execs
+// whatever is installed at $HOME/.mcp-steroid/bin/devrig, with nothing extra on stdout pre-exec. The
+// devrig-absent case is exercised by check-devrig/devrig-progress (they nudge /devrig:setup); the launcher
+// itself has no absent-devrig behavior to assert beyond "exec fails, no stray stdout", which we still check.
 val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRuns") {
     group = "verification"
-    description = "Run bin/devrig-mcp.cmd against synthetic HOMEs (POSIX routing + stdout silence)"
+    description = "Run bin/devrig-mcp(.cmd) against synthetic HOMEs (execs installed devrig + stdout silence)"
     enabled = !System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
 
-    val script = projectDir.resolve("bin/devrig-mcp.cmd")
-    inputs.file(script)
+    val posixScript = projectDir.resolve("bin/devrig-mcp")
+    val cmdScript = projectDir.resolve("bin/devrig-mcp.cmd")
+    inputs.file(posixScript)
+    inputs.file(cmdScript)
     val work = layout.buildDirectory.dir("devrig-mcp-test")
     outputs.dir(work)
 
     doLast {
-        // Routing-to-bootstrap requires a present, executable bootstrap for THIS os/arch.
-        // Provide a fake one so the launcher's exec target exists.
-        val os = System.getProperty("os.name").lowercase().let { if (it.contains("mac")) "darwin" else "linux" }
-        val arch = System.getProperty("os.arch").lowercase().let { if (it.contains("aarch64") || it.contains("arm")) "arm64" else "amd64" }
-        val fakeBoot = work.get().asFile.resolve("plugin/bin/bootstrap-$os-$arch")
-        fakeBoot.parentFile.mkdirs()
-        fakeBoot.writeText("#!/bin/sh\necho BOOTSTRAP_RAN\n"); fakeBoot.setExecutable(true)
-        script.copyTo(work.get().asFile.resolve("plugin/bin/devrig-mcp.cmd"), overwrite = true).setExecutable(true)
-
-        fun run(home: java.io.File): Pair<String, String> {
-            val launcher = work.get().asFile.resolve("plugin/bin/devrig-mcp.cmd")
+        fun run(launcher: java.io.File, home: java.io.File): Pair<String, String> {
             val p = ProcessBuilder(launcher.absolutePath)
                 .also { it.environment()["HOME"] = home.absolutePath }
-                .also { it.environment()["CLAUDE_PLUGIN_ROOT"] = work.get().asFile.resolve("plugin").absolutePath }
                 .redirectErrorStream(false).start()
             val out = p.inputStream.bufferedReader().readText()
             val err = p.errorStream.bufferedReader().readText()
@@ -691,19 +711,28 @@ val validateDevrigMcpLauncherRuns = tasks.register("validateDevrigMcpLauncherRun
             return out to err
         }
 
-        // 1. devrig absent -> routes to bootstrap (our fake prints BOOTSTRAP_RAN on stdout).
-        val absent = work.get().asFile.resolve("absent").apply { mkdirs() }
-        val (aout, _) = run(absent)
-        if (aout.trimEnd('\n') != "BOOTSTRAP_RAN")
-            throw GradleException("absent HOME: stdout must be exactly BOOTSTRAP_RAN (launcher emitted extra stdout?); got: $aout")
+        fun checkLauncher(script: java.io.File, label: String) {
+            val staged = work.get().asFile.resolve("$label/launcher").apply { parentFile.mkdirs() }
+            script.copyTo(staged, overwrite = true).setExecutable(true)
 
-        // 2. devrig present -> routes to installed launcher (prints INSTALLED_RAN).
-        val present = work.get().asFile.resolve("present").apply { mkdirs() }
-        present.resolve(".mcp-steroid/bin").mkdirs()
-        present.resolve(".mcp-steroid/bin/devrig").apply { writeText("#!/bin/sh\necho INSTALLED_RAN\n"); setExecutable(true) }
-        val (pout, _) = run(present)
-        if (pout.trimEnd('\n') != "INSTALLED_RAN")
-            throw GradleException("present HOME: stdout must be exactly INSTALLED_RAN (launcher emitted extra stdout?); got: $pout")
+            // 1. devrig absent -> exec fails (no installed target); the launcher itself must still emit
+            //    nothing on stdout -- any complaint goes to stderr, never corrupting the JSON-RPC channel.
+            val absent = work.get().asFile.resolve("$label/absent").apply { mkdirs() }
+            val (aout, _) = run(staged, absent)
+            if (aout.isNotEmpty())
+                throw GradleException("$label absent HOME: stdout must stay empty when devrig isn't installed; got: $aout")
+
+            // 2. devrig present -> execs the installed launcher (our fake marks its own stdout).
+            val present = work.get().asFile.resolve("$label/present").apply { mkdirs() }
+            present.resolve(".mcp-steroid/bin").mkdirs()
+            present.resolve(".mcp-steroid/bin/devrig").apply { writeText("#!/bin/sh\necho INSTALLED_RAN\n"); setExecutable(true) }
+            val (pout, _) = run(staged, present)
+            if (pout.trimEnd('\n') != "INSTALLED_RAN")
+                throw GradleException("$label present HOME: stdout must be exactly INSTALLED_RAN (launcher emitted extra stdout?); got: $pout")
+        }
+
+        checkLauncher(posixScript, "posix")
+        checkLauncher(cmdScript, "cmd")
     }
 }
 
