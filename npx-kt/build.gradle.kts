@@ -44,7 +44,7 @@ val sevenZipBinaries = configurations.create("sevenZipBinaries") {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation(libs.kotlinx.coroutines.core)
     implementation("com.github.ajalt.clikt:clikt:4.4.0")
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")

@@ -392,7 +392,7 @@ tasks {
         // a paired bump is a one-line edit shared by all six implementation modules.
         systemProperty(
             "mcp.steroid.test.expected.kotlinxCoroutinesVersion",
-            providers.gradleProperty("mcp.kotlinx.coroutines.version").get(),
+            libs.versions.kotlinx.coroutines,
         )
         systemProperty(
             "mcp.steroid.test.expected.kotlinxSerializationVersion",
