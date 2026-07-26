@@ -194,7 +194,7 @@ class CodeEvalManager(
 
             if (e.toString().contains("Service is dying", ignoreCase = true)) {
                 log.warn("Kotlin daemon is dying detected: ${e.message}", e)
-                kotlinDaemonManager.forceKillKotlinDaemon()
+                kotlinBuildsSession.close()
                 resultBuilder.logMessage("WARN: Script compilation/evaluation failed: Kotlin Daemon is dying. TRY AGAIN otherwise let user know")
                 project.executionStorage.writeCodeExecutionData(
                     executionId,
