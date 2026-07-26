@@ -1,6 +1,7 @@
 [versions]
 kotlin = "2.3.20"
 kotlin-build-tools-api = "2.4.0"
+undercouch-download = "5.7.0"
 
 [libraries]
 kotlin-buildTools-api = { group = "org.jetbrains.kotlin", name = "kotlin-build-tools-api", version.ref = "kotlin-build-tools-api" }
@@ -8,4 +9,4 @@ kotlin-buildTools-compat = { group = "org.jetbrains.kotlin", name = "kotlin-buil
 kotlin-buildTools-impl = { group = "org.jetbrains.kotlin", name = "kotlin-build-tools-impl", version.ref = "kotlin" }
 
 [plugins]
-
+download = { id = "de.undercouch.download", version.ref = "undercouch-download" }
