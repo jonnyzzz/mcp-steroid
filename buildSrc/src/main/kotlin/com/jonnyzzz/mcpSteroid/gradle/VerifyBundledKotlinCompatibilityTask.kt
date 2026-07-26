@@ -24,12 +24,11 @@ abstract class VerifyBundledKotlinCompatibilityTask : DefaultTask() {
     @get:Classpath
     abstract val mainRuntimeClasspath: ConfigurableFileCollection
 
-    @get:InputDirectory
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val kotlincHome: DirectoryProperty
-
     @get:Input
     abstract val kotlinPluginVersion: Property<String>
+
+    @get:Input
+    abstract val bundledKotlinVersion: Property<String>
 
     @get:OutputFile
     abstract val reportFile: RegularFileProperty
@@ -37,24 +36,25 @@ abstract class VerifyBundledKotlinCompatibilityTask : DefaultTask() {
     @TaskAction
     fun verify() {
         val ideKotlinVersion = probeKotlinVersionFromMainRuntimeClasspath(mainRuntimeClasspath.files.map { it.toPath() })
-        val bundledKotlincVersion = detectBundledKotlincVersion(kotlincHome.get().asFile.toPath())
         val pluginVersion = KotlinVersionCompatibility.parseStrictVersion(kotlinPluginVersion.get())
             ?: throw GradleException("Cannot parse Kotlin plugin version: ${kotlinPluginVersion.get()}")
 
-        val bundledCompatible = KotlinVersionCompatibility.isCompatible(ideKotlinVersion, bundledKotlincVersion)
+        val bundledKotlinVersion = KotlinVersionCompatibility.parseVersionFromText(bundledKotlinVersion.get())
+            ?: throw IllegalArgumentException("Could not parse bundled Kotlin version: ${bundledKotlinVersion.get()}")
+        val bundledCompatible = KotlinVersionCompatibility.isCompatible(ideKotlinVersion, bundledKotlinVersion)
         val pluginNotNewer = pluginVersion <= ideKotlinVersion
         val latestStableKotlinVersion = fetchLatestStableKotlinVersionOrNull()
         val latestStableStatus = when {
             latestStableKotlinVersion == null -> "Latest stable Kotlin release: unavailable"
-            latestStableKotlinVersion == bundledKotlincVersion ->
+            latestStableKotlinVersion == bundledKotlinVersion ->
                 "Latest stable Kotlin release: $latestStableKotlinVersion (bundled kotlinc is up to date)"
-            else -> "Latest stable Kotlin release: $latestStableKotlinVersion (WARNING: bundled kotlinc is $bundledKotlincVersion)"
+            else -> "Latest stable Kotlin release: $latestStableKotlinVersion (WARNING: bundled kotlinc is $bundledKotlinVersion)"
         }
 
         val report = buildString {
             appendLine("IDE Kotlin version: $ideKotlinVersion")
             appendLine("Kotlin plugin version: $pluginVersion")
-            appendLine("Bundled kotlinc version: $bundledKotlincVersion")
+            appendLine("Bundled kotlinc version: $bundledKotlinVersion")
             appendLine("Kotlin plugin not newer than IDE: $pluginNotNewer")
             appendLine("Bundled kotlinc compatible (major match, minor diff <= 1): $bundledCompatible")
             appendLine(latestStableStatus)
@@ -73,7 +73,7 @@ abstract class VerifyBundledKotlinCompatibilityTask : DefaultTask() {
 
         if (!bundledCompatible) {
             throw GradleException(
-                "Bundled kotlinc $bundledKotlincVersion is too far from IDE kotlin-stdlib $ideKotlinVersion. " +
+                "Bundled kotlinc $bundledKotlinVersion is too far from IDE kotlin-stdlib $ideKotlinVersion. " +
                         "Expected same major and minor distance <= 1.\n$report"
             )
         }
@@ -83,9 +83,9 @@ abstract class VerifyBundledKotlinCompatibilityTask : DefaultTask() {
                 "Unable to verify latest stable Kotlin release; continuing without failing the build."
             )
 
-            latestStableKotlinVersion != bundledKotlincVersion -> logger.warn(
+            latestStableKotlinVersion != bundledKotlinVersion -> logger.warn(
                 "Bundled kotlinc {} is not the latest stable Kotlin release {}.",
-                bundledKotlincVersion,
+                bundledKotlinVersion,
                 latestStableKotlinVersion,
             )
         }
@@ -167,31 +167,6 @@ abstract class VerifyBundledKotlinCompatibilityTask : DefaultTask() {
     private fun isKotlinPluginBundledArtifact(file: Path): Boolean {
         val s = file.toString().replace('\\', '/')
         return s.contains("/plugins/Kotlin/kotlinc/") || s.contains("/plugins/Kotlin/lib/")
-    }
-
-    private fun detectBundledKotlincVersion(kotlincRoot: Path): KotlinVersion {
-        val executable = kotlincRoot.resolve(if (isWindows()) "bin/kotlinc.bat" else "bin/kotlinc")
-        if (!Files.exists(executable)) {
-            throw GradleException("Bundled kotlinc executable not found: $executable")
-        }
-
-        val command = if (isWindows()) {
-            listOf("cmd", "/c", executable.toString(), "-version")
-        } else {
-            listOf(executable.toString(), "-version")
-        }
-
-        // cwd is irrelevant for `kotlinc -version`; kotlincRoot keeps Task.project out of the
-        // execution path (deprecated in Gradle 9, config-cache incompatible, error in Gradle 10).
-        val output = runCommand(command, kotlincRoot)
-        if (output.exitCode != 0) {
-            throw GradleException("Failed to execute bundled kotlinc.\n${output.output}")
-        }
-
-        return KotlinVersionCompatibility.parseKotlincVersionOutput(output.output)
-            ?: throw GradleException(
-                "Cannot parse bundled kotlinc version from output:\n${output.output}"
-            )
     }
 
     private fun runCommand(command: List<String>, workDir: Path): CommandOutput {
