@@ -105,7 +105,7 @@ class CodeEvalManager(
                     executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS
                 ) {
                     set(JvmCompilerArguments.CLASSPATH, compileClasspath)
-                    set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET)
+
                     if (extraParams.isNotEmpty()) {
                         try {
                             applyArgumentStrings(extraParams)
