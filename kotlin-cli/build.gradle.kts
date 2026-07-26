@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 import de.undercouch.gradle.tasks.download.Download
 import java.security.MessageDigest
 
@@ -14,14 +16,39 @@ repositories {
     mavenCentral()
 }
 
+val btaImplDecl = configurations.resolvable("kotlinBuildToolsImpl")
+val btaImplClasspath = configurations.resolvable("kotlinBuildToolsImplClasspath") {
+    extendsFrom(btaImplDecl)
+
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.JAVA_RUNTIME))
+    }
+}
+
 dependencies {
-    implementation(libs.kotlin.build.tools.api)
-    implementation(libs.kotlin.build.tools.impl)
+    api(libs.kotlin.buildTools.api)
+
+    btaImplDecl.name(libs.kotlin.buildTools.impl)
+    btaImplDecl.name(libs.kotlin.buildTools.compat)
+
     testImplementation("junit:junit:4.13.2")
 }
 
 tasks.test {
     useJUnit()
+}
+
+val copyForResourcesTask = tasks.register<Copy>("copyBtaImpForResources") {
+    val btaImplLocation = layout.buildDirectory.dir("bta-impl-jars/BTA-IMPL")
+
+    from(btaImplClasspath)
+    into(btaImplLocation)
+}
+
+sourceSets.main.configure {
+    resources.srcDir(
+        copyForResourcesTask.map { it.destinationDir.parentFile }
+    )
 }
 
 // --- kotlinc download and distribution ---

@@ -3,8 +3,9 @@ kotlin = "2.3.20"
 kotlin-build-tools-api = "2.4.0"
 
 [libraries]
-kotlin-build-tools-api = { group = "org.jetbrains.kotlin", name = "kotlin-build-tools-api", version.ref = "kotlin-build-tools-api" }
-kotlin-build-tools-impl = { group = "org.jetbrains.kotlin", name = "kotlin-build-tools-impl", version.ref = "kotlin" }
+kotlin-buildTools-api = { group = "org.jetbrains.kotlin", name = "kotlin-build-tools-api", version.ref = "kotlin-build-tools-api" }
+kotlin-buildTools-compat = { group = "org.jetbrains.kotlin", name = "kotlin-build-tools-compat", version.ref = "kotlin" }
+kotlin-buildTools-impl = { group = "org.jetbrains.kotlin", name = "kotlin-build-tools-impl", version.ref = "kotlin" }
 
 [plugins]
 
