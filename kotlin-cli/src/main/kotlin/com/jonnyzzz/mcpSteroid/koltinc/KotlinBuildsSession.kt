@@ -81,6 +81,7 @@ class KotlinBuildsSession(
          with(jvmCompilationBuilder.compilerArguments) {
              set(JvmCompilerArguments.NO_STDLIB, true)
              set(JvmCompilerArguments.NO_REFLECT, true)
+             set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET)
              argumentsConf()
          }
 
