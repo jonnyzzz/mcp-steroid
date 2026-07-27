@@ -5,6 +5,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.copyTo
 import kotlin.io.path.createDirectory
+import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.walk
@@ -139,8 +140,10 @@ class KotlinBuildsSession(
         val btaImplDir = workingDir.resolve("bta-impl")
         btaImplDir.createDirectory()
         FileSystems.newFileSystem(btaImplUrl, emptyMap<String, Any>()).use { jarFs ->
-            jarFs.getPath("/BTA-IMPL").walk().forEach {
-                it.copyTo(btaImplDir.resolve(it.fileName))
+            jarFs.getPath("/BTA-IMPL").walk().forEach { file ->
+                if (file.isRegularFile()) {
+                    file.copyTo(btaImplDir.resolve(file.fileName.toString()))
+                }
             }
         }
 
