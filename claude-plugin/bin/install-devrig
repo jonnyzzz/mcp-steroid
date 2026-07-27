@@ -10,25 +10,45 @@ set -eu
 # TODO: Probably temp, i'll think about putting it into some config
 INSTALL_URL="https://mcp-steroid.jonnyzzz.com/install.sh"
 DEVRIG="$HOME/.mcp-steroid/bin/devrig"
+MARKER_DIR="$HOME/.mcp-steroid/markers"
+FAILED="$MARKER_DIR/bootstrap-install.failed"
+
+# Records why the install failed so check-devrig (SessionStart hook) can surface it and
+# devrig_status can report the detail. Must run even though the script uses `set -eu` --
+# callers below drop -e around the risky command, capture its status, then call this.
+fail() {
+  mkdir -p "$MARKER_DIR" 2>/dev/null || true
+  printf '%s\n' "$1" > "$FAILED" 2>/dev/null || true
+  echo "devrig: $1" >&2
+  exit 1
+}
 
 echo "devrig: installing devrig via $INSTALL_URL" >&2
 
 if command -v curl >/dev/null 2>&1; then
+  set +e
   curl -fsSL "$INSTALL_URL" | sh >&2
+  status=$?
+  set -e
+  [ "$status" -eq 0 ] || fail "install command failed (curl | sh exited $status)"
 elif command -v wget >/dev/null 2>&1; then
+  set +e
   wget -qO- "$INSTALL_URL" | sh >&2
+  status=$?
+  set -e
+  [ "$status" -eq 0 ] || fail "install command failed (wget | sh exited $status)"
 else
-  echo "devrig: need curl or wget to install devrig" >&2
-  exit 1
+  fail "need curl or wget to install devrig"
 fi
 
 # The canonical installer is idempotent; verify it actually produced the launcher so a
 # truncated download or interrupted run fails loudly instead of looking successful
 if [ ! -x "$DEVRIG" ]; then
-  echo "devrig: install finished but devrig was not found at $DEVRIG" >&2
-  echo "devrig: the install may have been interrupted -- run /devrig:setup again" >&2
-  exit 1
+  fail "install finished but devrig was not found at $DEVRIG (the install may have been interrupted -- run /devrig:setup again)"
 fi
+
+# Success -- clear any prior failure marker so check-devrig stops warning about it.
+rm -f "$FAILED" 2>/dev/null || true
 
 echo "devrig: devrig installed at $DEVRIG" >&2
 echo "devrig: restart Claude so the devrig MCP server can start" >&2
