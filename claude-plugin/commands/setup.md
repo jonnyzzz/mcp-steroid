@@ -1,20 +1,20 @@
 ---
-description: Pre-download the devrig IDE bridge now (~611 MB). Optional — the plugin downloads it automatically in the background.
+description: Install the devrig IDE bridge (~611 MB). Required before the IDE tools work.
 disable-model-invocation: true
 allowed-tools:
   - Bash
 ---
 
 The **devrig** plugin already registers its MCP server automatically (via the
-bundled `.mcp.json`) and downloads the devrig binary in the background on first
-use. Run this command only to **fetch the ~611 MB binary now** instead of waiting
-for the background download.
+bundled `.mcp.json`), but the server cannot start until devrig itself is
+installed — there is no automatic background download. Run this command to
+**install the ~611 MB devrig binary now**.
 
 Do the following:
 
 1. Detect the operating system.
 
-2. **Pre-download devrig.** Run the bundled installer wrapper for that OS with the
+2. **Install devrig.** Run the bundled installer wrapper for that OS with the
    Bash tool, showing its output as it runs:
    - **macOS / Linux:** `sh "${CLAUDE_PLUGIN_ROOT}/bin/install-devrig"`
    - **Windows:** `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/bin/install-devrig.ps1"`
@@ -29,9 +29,9 @@ Do the following:
      idempotent and only removes a stale duplicate). The plugin's `.mcp.json`
      handles MCP server registration, so do not attempt to register devrig manually.
 
-4. On success, tell the user devrig is downloaded and that they should **restart
-   Claude** so the plugin's `devrig` MCP server switches from the bootstrap to the
-   full IDE bridge.
+4. On success, tell the user devrig is installed and that they should **restart
+   Claude** (or start a new session) so the plugin's `devrig` MCP server can start
+   now that devrig is installed. IDE tools activate after that.
 
 Do not attempt to download devrig yourself or reimplement the installer — only run
 the wrapper script and the cleanup above.

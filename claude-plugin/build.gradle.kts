@@ -952,12 +952,12 @@ claudePluginZip.configure { finalizedBy(verifyPluginFiles) }
 // Rewrites the committed .claude-plugin/plugin.json `version` to the current VERSION (normalized
 // to semver). Run this during a release, in the same commit as the VERSION bump, so the change
 // lands on main and marketplace `/plugin update` picks up the released version. Writes into the
-// tracked source tree on purpose (mirrors updateBundledBinaries); guarded by validatePluginJson.
+// tracked source tree on purpose; guarded by validatePluginJson.
 val syncClaudePluginVersion = tasks.register("syncClaudePluginVersion") {
     group = "claude-plugin"
     description = "Sync .claude-plugin/plugin.json version from the root VERSION file"
-    // No outputs declared: like updateBundledBinaries this writes into the tracked source tree on
-    // purpose, so it always runs and never becomes an implicit dependency of the validators.
+    // No outputs declared: this writes into the tracked source tree on purpose, so it always runs
+    // and never becomes an implicit dependency of the validators.
     inputs.file(versionFile)
     doLast {
         val target = normalizeToSemver(versionFile.readText())
