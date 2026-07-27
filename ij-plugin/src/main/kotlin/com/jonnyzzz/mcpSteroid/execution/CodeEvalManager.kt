@@ -105,15 +105,15 @@ class CodeEvalManager(
                     destinationDir = outputJar,
                     compilerMessageRenderer = compilerMessageRenderer,
                 ) {
-                    set(JvmCompilerArguments.CLASSPATH, compileClasspath)
-
                     if (extraParams.isNotEmpty()) {
                         try {
+                            // Currently, it may wipe previously configured arguments, so it should be applied first
                             applyArgumentStrings(extraParams)
                         } catch (e: Exception) {
                             resultBuilder.logException("Failed to apply extra arguments ${extraParams.joinToString()}", e)
                         }
                     }
+                    set(JvmCompilerArguments.CLASSPATH, compileClasspath)
                 }
             } catch (_: TimeoutCancellationException) {
                 resultBuilder.reportFailed("kotlinc stopped on timeout")

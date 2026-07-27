@@ -2,6 +2,7 @@ package com.jonnyzzz.mcpSteroid.koltinc
 
 import kotlin.io.path.exists
 import kotlin.io.path.writeText
+import kotlinx.coroutines.runBlocking
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -24,12 +25,14 @@ class KotlinBuildsSessionTest {
         """.trimIndent())
 
         KotlinBuildsSession(tempFolder.newFolder("bta-temp").toPath()).use {
-            it.compileKotlin(
-                sources = listOf(source),
-                destinationDir = outputJar,
-                executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
-            ) {
-                set(JvmCompilerArguments.CLASSPATH, listOf(it.defaultStdlibJar))
+            runBlocking {
+                it.compileKotlin(
+                    sources = listOf(source),
+                    destinationDir = outputJar,
+                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
+                ) {
+                    set(JvmCompilerArguments.CLASSPATH, listOf(it.defaultStdlibJar))
+                }
             }
 
             assertTrue(outputJar.exists())

@@ -87,10 +87,10 @@ class KotlinBuildsSession(
         }
 
          with(jvmCompilationBuilder.compilerArguments) {
+             argumentsConf()
              set(JvmCompilerArguments.NO_STDLIB, true)
              set(JvmCompilerArguments.NO_REFLECT, true)
              set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET)
-             argumentsConf()
          }
 
         val jvmOperation = jvmCompilationBuilder.build()
