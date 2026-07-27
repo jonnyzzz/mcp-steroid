@@ -205,6 +205,8 @@ tasks.test {
     }
     dependsOn(ktblockExtraClasspath)
 
+    val kotlinVersion = libs.versions.kotlin.asProvider()
+
     doFirst {
         for ((spec, unpackDir, _) in ideDownloadTasks) {
             val dir = unpackDir.get().asFile
@@ -218,6 +220,7 @@ tasks.test {
         val ijSources = rootProject.layout.projectDirectory
             .dir("ij-plugin/src/main/kotlin").asFile.absolutePath
         systemProperty("mcp.steroid.ij.sources", ijSources)
+        systemProperty("mcp.steroid.kotlin.version", kotlinVersion.get())
 
         // Extra binary classpath entries the per-block kotlinc subprocess
         // needs because the inlined ij-plugin sources reference classes that

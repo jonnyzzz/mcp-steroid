@@ -2,22 +2,24 @@
 package com.jonnyzzz.mcpSteroid.prompts
 
 import com.jonnyzzz.mcpSteroid.koltinc.CodeWrapperForCompilation
-import com.jonnyzzz.mcpSteroid.koltinc.KotlincCommandLineBuilder
-import com.jonnyzzz.mcpSteroid.koltinc.toArgFile
-import com.jonnyzzz.mcpSteroid.testHelper.process.RunProcessRequest
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
-import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
-import org.junit.jupiter.api.Assertions
+import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.time.Duration
 import java.time.Instant
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 import kotlin.io.path.walk
+import kotlinx.coroutines.runBlocking
+import org.jetbrains.kotlin.buildtools.api.CompilationResult
+import org.jetbrains.kotlin.buildtools.api.arguments.CommonToolArguments
+import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.io.TempDir
 
 /**
  * Base class for generated KtBlock compilation tests (JUnit 5).
@@ -32,7 +34,7 @@ import kotlin.io.path.walk
  *
  * System properties:
  * - `mcp.steroid.ide.home` — path to the unpacked IDE distribution
- * - `mcp.steroid.kotlinc.home` — path to the unpacked kotlinc distribution (parent of `kotlinc/`)
+ * - `mcp.steroid.kotlin.version` — Kotlin version used to compile Kotlin code
  * - `mcp.steroid.ij.sources` — path to ij-plugin/src/main/kotlin (for McpScriptContext/McpScriptBuilder sources)
  * - `mcp.steroid.ktblock.cache.dir` — path to compilation cache directory (optional but recommended)
  */
@@ -100,14 +102,6 @@ abstract class KtBlockCompilationTestBase {
         val classpath = classpathFor(home) + extraClasspath()
         val extraSourcesContent = ijPluginSourceFiles().map { Files.readString(it, StandardCharsets.UTF_8) }
 
-        // Compiler options (must match what KotlincCommandLineBuilder produces)
-        val compilerOptions = buildList {
-            if (werror) add("-Werror")
-            add("-jvm-target")
-            add(KotlincCommandLineBuilder.DEFAULT_JVM_TARGET)
-            add("-no-stdlib")
-        }
-
         // product-info.json content for IDE identity
         val productInfoContent = readProductInfo(home)
 
@@ -123,7 +117,10 @@ abstract class KtBlockCompilationTestBase {
 
         // Check compilation cache
         val cacheDir = cacheDir()
-        val cacheKey = computeCacheKey(wrapped, relativeClasspath, compilerOptions, productInfoContent, extraSourcesContent, kotlincVersion)
+        val cacheCompilerOptions = buildList {
+            if (werror) add("-werror")
+        }
+        val cacheKey = computeCacheKey(wrapped, relativeClasspath, cacheCompilerOptions, productInfoContent, extraSourcesContent, kotlincVersion)
 
         val cacheFile = cacheDir.resolve("$cacheKey.txt")
         if (cacheFile.isFile) {
@@ -136,56 +133,48 @@ abstract class KtBlockCompilationTestBase {
             val sourceFile = tempDir.resolve("Script.kt")
             Files.writeString(sourceFile, wrapped, StandardCharsets.UTF_8)
             val outputJar = tempDir.resolve("out.jar")
-            val extraParams = if (werror) listOf("-Werror") else emptyList()
-            val builder = KotlincCommandLineBuilder(outputJar)
-                .withNoStdLib(true)
-                .withExtraParameters(extraParams)
-                .addClasspathEntries(classpath)
-                .addSource(sourceFile)
 
-            for (sourceExtra in ijPluginSourceFiles()) {
-                builder.addSource(sourceExtra)
-            }
-
-            val cmd = builder.build()
-            val argFile = tempDir.resolve("kotlinc.args")
-            val argCmd = cmd.toArgFile(argFile)
-
-            val kotlincBin = resolveKotlincBin()
-            val result = RunProcessRequest(
-                workingDir = tempDir.toFile(),
-                args = listOf(kotlincBin.absolutePath) + argCmd.args,
-                logPrefix = "kotlinc",
-                timeout = Duration.ofMinutes(3),
-                quietly = false,
-            ).startProcess().assertExitCode(0) {
-                buildString {
-                    appendLine("Compilation failed or has warnings (-Werror) [IDE: $homeProperty]:")
-                    if (stdout.isNotBlank()) {
-                        appendLine("STDOUT:")
-                        appendLine(stdout)
-                    }
-                    if (stderr.isNotBlank()) {
-                        appendLine("STDERR:")
-                        appendLine(stderr)
-                    }
+            val compilationResult = runBlocking {
+                buildsSession.compileKotlin(
+                    sources = listOf(sourceFile) + ijPluginSourceFiles(),
+                    destinationDir = outputJar,
+                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
+                ) {
+                    if (werror) set(CommonToolArguments.WERROR, true)
+                    set(JvmCompilerArguments.CLASSPATH, classpath)
                 }
             }
 
+            assertEquals(CompilationResult.COMPILATION_SUCCESS, compilationResult)
+
             // Cache successful compilation
-            writeCacheEntry(cacheDir, cacheKey, wrapped, compilerOptions)
+            writeCacheEntry(cacheDir, cacheKey, wrapped, cacheCompilerOptions)
         } finally {
             tempDir.toFile().deleteRecursively()
         }
     }
 
     companion object {
+        private lateinit var buildsSession: KotlinBuildsSession
+
+        @BeforeAll
+        @JvmStatic
+        fun beforeAll(@TempDir workingDir: Path) {
+            buildsSession = KotlinBuildsSession(workingDir)
+        }
+
+        @AfterAll
+        @JvmStatic
+        fun afterAll() {
+            buildsSession.close()
+        }
+
         private val classpathCache = mutableMapOf<String, List<Path>>()
 
         /**
          * Verifies the JRE running this test has the same major version as the
          * JBR bundled inside [home]. The kotlinc subprocess derives `-jvm-target`
-         * from `java.specification.version` ([KotlincCommandLineBuilder.DEFAULT_JVM_TARGET]),
+         * from `java.specification.version` ([KotlinBuildsSession.DEFAULT_JVM_TARGET]),
          * so that target must equal the IDE's bundled JBR major — otherwise the
          * IDE's inline bytecode (compiled against its bundled JBR) will be
          * rejected by kotlinc (`cannot inline bytecode built with JVM target N
@@ -206,7 +195,7 @@ abstract class KtBlockCompilationTestBase {
             val bundledMajor = readIdeBundledJreMajor(home)
             val testMajor = System.getProperty("java.specification.version")
                 ?: error("System property 'java.specification.version' is not set on the test JVM")
-            Assertions.assertEquals(
+            assertEquals(
                 bundledMajor, testMajor,
                 "Test JRE major version ($testMajor) does not match the IDE-bundled JBR " +
                     "major version ($bundledMajor) at [$homeProperty]=$home. The kotlinc " +
@@ -279,23 +268,9 @@ abstract class KtBlockCompilationTestBase {
 
         private fun ijPluginSourceFiles(): List<Path> = ijPluginSourceFilesCache
 
-        private fun resolveKotlincBin(): File {
-            val kotlincHome = System.getProperty("mcp.steroid.kotlinc.home")
-                ?: error("Missing system property 'mcp.steroid.kotlinc.home'")
-            val kotlincDir = File(kotlincHome, "kotlinc")
-            val isWindows = System.getProperty("os.name", "").lowercase().startsWith("windows")
-            val binName = if (isWindows) "kotlinc.bat" else "kotlinc"
-            val bin = File(kotlincDir, "bin/$binName")
-            require(bin.isFile) { "kotlinc binary not found at: $bin" }
-            return bin
-        }
-
         private val kotlincVersionCache: String by lazy {
-            val kotlincHome = System.getProperty("mcp.steroid.kotlinc.home")
+            System.getProperty("mcp.steroid.kotlin.version")
                 ?: error("Missing system property 'mcp.steroid.kotlinc.home'")
-            val buildTxt = File(kotlincHome, "kotlinc/build.txt")
-            require(buildTxt.isFile) { "kotlinc build.txt not found at: $buildTxt" }
-            buildTxt.readText(StandardCharsets.UTF_8).trim()
         }
 
         private fun readKotlincVersion(): String = kotlincVersionCache
