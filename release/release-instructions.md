@@ -219,12 +219,8 @@ git commit --amend --no-edit   # fold into the version-bump commit
 new `VERSION` (normalized to semver). Forgetting it fails CI: `validatePluginJson` asserts the
 manifest version matches the VERSION-derived semver.
 
-**Go toolchain requirement**: any build that touches `:claude-plugin` (e.g.
-`./gradlew :claude-plugin:claudePluginZip`) now **requires the Go toolchain** (Go 1.23+, matching
-the `go` directive in `devrig-bootstrap/go.mod`). The 6 `bin/bootstrap-*` binaries are cross-compiled
-at build time by `:devrig-bootstrap:buildBootstrapBinaries` and consumed by
-`:claude-plugin:preparePluginFiles` — they are **not** committed to the repo. If Go is missing or
-too old, `buildBootstrapBinaries` fails loudly rather than silently skipping the binaries.
+The Claude plugin is pure scripts (`claude-plugin/bin/*`) — no native binary is built or bundled
+for it, so `:claude-plugin:claudePluginZip` needs no Go toolchain or other extra build tooling.
 
 ### Stage 4: Website Release Page + Homepage Update
 
