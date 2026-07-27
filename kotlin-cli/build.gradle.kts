@@ -24,7 +24,11 @@ tasks.test {
 
 // --- kotlinc download and distribution ---
 
-val kotlincVersion = "2.3.20"
+// Must stay within 1 minor of the Kotlin bundled by the IDEs we attach to
+// (Kotlin reads metadata at most +1 minor ahead). IDE 263 bundles Kotlin
+// 2.5.0, so 2.3.x is 2 minors behind and fails to read plugins/Kotlin/lib.
+// 2.4.10 is the newest publicly released kotlinc and covers 2.3-2.5 IDEs.
+val kotlincVersion = "2.4.10"
 val kotlincUrl = "https://github.com/JetBrains/kotlin/releases/download/v${kotlincVersion}/kotlin-compiler-${kotlincVersion}.zip"
 val kotlincSha256Url = "$kotlincUrl.sha256"
 val kotlincDownloadDir = layout.buildDirectory.dir("kotlinc-zip/$kotlincVersion")
