@@ -10,6 +10,10 @@
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Invoke-WebRequest renders a per-chunk progress bar by default, which is extremely slow on Windows
+# (repeated console redraws). The "downloading $kind (...)..." log line below is the textual progress
+# instead; disabling the built-in bar restores normal download throughput.
+$ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 # PowerShell's default progress bar redraws on every byte read (Invoke-WebRequest) and every entry
 # unpacked (Expand-Archive), turning a multi-hundred-MB download + JDK unpack into a UI-bound crawl
