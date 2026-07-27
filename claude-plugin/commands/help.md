@@ -41,7 +41,7 @@ Try one of these — just paste it as your next message:
 
 Related commands:
 - `/devrig:status` — is devrig installed and connected? (read-only)
-- `/devrig:setup` — pre-download or repair the devrig bridge
+- `/devrig:setup` — install or repair the devrig bridge
 
 If a JetBrains IDE isn't open yet, open one with the MCP Steroid plugin installed and
 the tools connect automatically — no restart needed.
