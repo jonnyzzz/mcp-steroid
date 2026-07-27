@@ -50,9 +50,9 @@ promote_tree() {
   fi
 }
 
-# install_artifact <kind> <url> <sha256> <format>  -> prints the target dir on stdout
+# install_artifact <kind> <url> <sha256> <format> <size_bytes>  -> prints the target dir on stdout
 install_artifact() {
-  ia_kind="$1"; ia_url="$2"; ia_sha="$3"; ia_fmt="$4"
+  ia_kind="$1"; ia_url="$2"; ia_sha="$3"; ia_fmt="$4"; ia_size="${5:-0}"
   ia_sha12=$(printf '%s' "$ia_sha" | cut -c1-12)
   ia_target="$BINARIES_DIR/${ia_kind}-${key}-${VERSION}-${ia_sha12}"
   if [ -d "$ia_target" ]; then
@@ -63,7 +63,7 @@ install_artifact() {
   ia_tmp="$BINARIES_DIR/.tmp.$$.${ia_kind}.${ia_ext}"
   ia_unpack="$BINARIES_DIR/.tmp.$$.${ia_kind}.unpack"
   rm -rf "$ia_tmp" "$ia_unpack"
-  log "downloading ${ia_kind} ($ia_url)..."
+  log "downloading ${ia_kind} (~$((ia_size / 1024 / 1024)) MB) from $ia_url ..."
   # Retry the download+verify as a unit: a transient network failure OR a corrupted (sha-mismatch)
   # transfer both re-download, up to $DL_ATTEMPTS times with growing backoff. Only the final failure is
   # fatal. `fetch` carries connect + stall timeouts (below) so a dead connection fails — and thus
@@ -174,7 +174,7 @@ main() {
   # connect, and --speed-limit/--speed-time (curl) / --timeout (wget read timeout) abort a STALLED
   # transfer without capping a legitimately slow — but progressing — ~600 MB download.
   if command -v curl >/dev/null 2>&1; then
-    fetch() { curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 30 "$1" -o "$2"; }
+    fetch() { curl -fL --progress-bar -S --connect-timeout 30 --speed-limit 1024 --speed-time 30 "$1" -o "$2"; }
   else
     fetch() { wget -q --timeout=30 --tries=1 "$1" -O "$2"; }
   fi
@@ -200,8 +200,8 @@ main() {
     fail "insufficient disk space in $BINARIES_DIR: need ~$((need_kib / 1024)) MB (download + unpack), have ~$((avail_kib / 1024)) MB free — free up space and re-run"
   fi
 
-  devrig_target=$(install_artifact devrig "$DEVRIG_URL" "$DEVRIG_SHA256" "$DEVRIG_FORMAT")
-  jdk_target=$(install_artifact jdk "$jdk_url" "$jdk_sha256" "$jdk_format")
+  devrig_target=$(install_artifact devrig "$DEVRIG_URL" "$DEVRIG_SHA256" "$DEVRIG_FORMAT" "$DEVRIG_SIZE")
+  jdk_target=$(install_artifact jdk "$jdk_url" "$jdk_sha256" "$jdk_format" "$jdk_size")
 
   # ── locate the unpacked launcher + the bundled JAVA_HOME ──
   # DEVRIG_BINSUB is the generator-computed, asserted subpath (devrig-<version>-<hash>/bin/devrig).
