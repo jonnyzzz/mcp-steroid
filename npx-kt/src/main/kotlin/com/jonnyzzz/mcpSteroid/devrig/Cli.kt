@@ -80,6 +80,18 @@ sealed interface DevrigCommand {
         override val json: Boolean = false,
     ) : DevrigCommand
 
+    /** `devrig connect claude` — enable the marketplace devrig plugin in ~/.claude/settings.json. */
+    data class DevrigCommandConnectClaude(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
+    /** `devrig connect ide` — offer to install the MCP Steroid plugin into a running JetBrains IDE. */
+    data class DevrigCommandConnectIde(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
     data class DevrigCommandHelp(
         override val debug: Boolean = false,
         override val json: Boolean = false,
@@ -183,6 +195,7 @@ private class DevrigRootCommand(
             backend,
             ProjectCommand(selected, this),
             InstallCommand(selected, this),
+            ConnectCommand(selected, this),
             HelpCommand(selected, this),
             VersionCommand(selected, this),
         )
@@ -269,6 +282,45 @@ private class VersionCommand(
     override fun run() {
         val options = options()
         select(DevrigCommand.DevrigCommandVersion(debug = options.debug, json = options.json))
+    }
+}
+
+private class ConnectCommand(
+    selected: SelectedDevrigCommand,
+    parent: DevrigCliktCommand,
+) : DevrigCliktCommand("connect", selected, parent, invokeWithoutSubcommand = true) {
+    init {
+        subcommands(
+            ConnectClaudeCommand(selected, this),
+            ConnectIdeCommand(selected, this),
+        )
+    }
+
+    override fun run() {
+        // `connect` with no subcommand is a usage error surfaced as help; select nothing here so the
+        // parser reports the missing subcommand rather than silently doing nothing.
+        val options = options()
+        if (options.help) select(DevrigCommand.DevrigCommandHelp(debug = options.debug, json = options.json))
+    }
+}
+
+private class ConnectClaudeCommand(
+    selected: SelectedDevrigCommand,
+    parent: DevrigCliktCommand,
+) : DevrigCliktCommand("claude", selected, parent) {
+    override fun run() {
+        val options = options()
+        select(DevrigCommand.DevrigCommandConnectClaude(debug = options.debug, json = options.json))
+    }
+}
+
+private class ConnectIdeCommand(
+    selected: SelectedDevrigCommand,
+    parent: DevrigCliktCommand,
+) : DevrigCliktCommand("ide", selected, parent) {
+    override fun run() {
+        val options = options()
+        select(DevrigCommand.DevrigCommandConnectIde(debug = options.debug, json = options.json))
     }
 }
 
@@ -360,6 +412,8 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
             is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
             is DevrigCommand.DevrigCommandInstallDevrig -> runInstallDevrigCommand(command)
+            is DevrigCommand.DevrigCommandConnectClaude -> runConnectClaudeCommand(command)
+            is DevrigCommand.DevrigCommandConnectIde -> runConnectIdeCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

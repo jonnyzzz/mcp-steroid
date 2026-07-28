@@ -12,8 +12,8 @@ import java.io.PrintStream
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
 
-private const val DEVRIG_MCP_SERVER_NAME = "mcp-steroid"
-private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
+private const val DEVRIG_MCP_SERVER_NAME = "devrig"
+private const val DEVRIG_LEGACY_SERVER_NAME = "mcp-steroid"
 
 /** Exit code of `devrig install <agent> --check` when install would change anything (drift detected). */
 const val INSTALL_CHECK_DRIFT_EXIT_CODE = 1
@@ -38,7 +38,7 @@ const val INSTALL_CHECK_DRIFT_EXIT_CODE = 1
 fun DevrigServices.runInstallDevrigCommand(command: DevrigCommand.DevrigCommandInstallDevrig): Int {
     val installScript = command.installScript
     if (installScript.isNullOrBlank()) {
-        System.err.println("[mcp-steroid] 'devrig install devrig' requires --install-script=<full path>")
+        System.err.println("[devrig] 'devrig install devrig' requires --install-script=<full path>")
         return 64
     }
     // --jdk-home is what the wrapper pins as DEVRIG_JAVA_HOME; fall back to the JDK we run under.
@@ -49,12 +49,12 @@ fun DevrigServices.runInstallDevrigCommand(command: DevrigCommand.DevrigCommandI
     val launcher = DevrigUserLauncher.path(homePaths)
     if (!launcher.isRegularFile()) {
         System.err.println(
-            "[mcp-steroid] ERROR: 'devrig install devrig' did not create the launcher $launcher " +
+            "[devrig] ERROR: 'devrig install devrig' did not create the launcher $launcher " +
                 "(DEVRIG_BIN_NO_AUTO_REGISTER may opt out of writing it).",
         )
         return 64
     }
-    System.err.println("[mcp-steroid] devrig is on PATH via $launcher")
+    System.err.println("[devrig] devrig is on PATH via $launcher")
     return 0
 }
 
@@ -85,7 +85,7 @@ fun DevrigServices.runInstallCommand(
     val launcher = DevrigUserLauncher.path(homePaths)
     if (!launcher.isRegularFile()) {
         System.err.println(
-            "[mcp-steroid] ERROR: cannot register the MCP server — the launcher $launcher was not created.",
+            "[devrig] ERROR: cannot register the MCP server — the launcher $launcher was not created.",
         )
         System.err.println(
             "  This usually means DEVRIG_BIN_NO_AUTO_REGISTER opts out of writing it. Unset that " +
@@ -103,14 +103,14 @@ fun DevrigServices.runInstallCommand(
 }
 
 /**
- * Registers devrig as the `mcp-steroid` stdio MCP server in [command]'s agent, narrating each step so
+ * Registers devrig as the `devrig` stdio MCP server in [command]'s agent, narrating each step so
  * the user understands exactly what is being changed.
  *
  * The registration is an **idempotent, consolidating upsert**:
  *  1. it reviews the agent's currently registered MCP servers;
  *  2. it removes every devrig-owned entry it finds — any named `mcp-steroid` or `devrig`, or whose
  *     launch command runs the devrig binary — collapsing duplicates/stale variants into one;
- *  3. it adds a single canonical `mcp-steroid` entry.
+ *  3. it adds a single canonical `devrig` entry.
  *
  * That is what makes re-running `devrig install` safe and self-healing: it repairs a stale entry (old
  * launcher path or subcommand) and merges stray duplicates instead of failing with "already exists",
@@ -179,6 +179,24 @@ fun runInstallCommand(
         removed.forEach { out.println("  - removed '$it'") }
     }
 
+    // The devrig Claude plugin registers this server from its own .mcp.json — it shows up as
+    // 'plugin:devrig:devrig'. Adding a user-scope entry on top would start a SECOND devrig server, so stop
+    // here: the duplicates cleared above are gone and the plugin's registration stands as the canonical one.
+    val pluginProvided = detected.filter { it.isPluginProvided() }
+    if (pluginProvided.isNotEmpty()) {
+        out.println(
+            "Step 3/3: skipped — ${agent.displayName}'s devrig plugin already provides this server " +
+                "(${pluginProvided.joinToString(", ") { "'${it.name}'" }}).",
+        )
+        out.println()
+        out.println(
+            "Done — devrig is registered for ${agent.displayName} by its plugin; nothing to add " +
+                "(a user-scope entry would duplicate the server).",
+        )
+        out.println("  Verify with: ${agent.binary} mcp list")
+        return 0
+    }
+
     // Step 3 — add the single canonical registration.
     out.println("Step 3/3: registering '$DEVRIG_MCP_SERVER_NAME' with ${agent.displayName}…")
     val addInvocation = mcpAddStdioInvocation(agent, mcpCommand, DEVRIG_MCP_SERVER_NAME)
@@ -214,10 +232,14 @@ private fun emitAgentOutput(result: AiAgentCliResult, err: PrintStream) {
  * never drift from what install actually does: every detected devrig-owned entry, the canonical name
  * (always, so the re-add is clean even if the listing missed it), plus the legacy name when the agent's
  * list could not be read.
+ *
+ * Plugin-provided entries (`plugin:devrig:devrig`) are EXCLUDED: they are owned by the plugin's own
+ * `.mcp.json`, `claude mcp remove` cannot delete them, and they are the canonical registration in a
+ * plugin install — see [McpServerRef.isPluginProvided].
  */
 internal fun installRemovalNames(detected: List<McpServerRef>, listReadable: Boolean): Set<String> {
     val names = LinkedHashSet<String>()
-    detected.forEach { names += it.name }
+    detected.filterNot { it.isPluginProvided() }.forEach { names += it.name }
     names += DEVRIG_MCP_SERVER_NAME
     if (!listReadable) names += DEVRIG_LEGACY_SERVER_NAME
     return names
@@ -258,7 +280,9 @@ fun DevrigServices.collectIdeReachability(): IdeReachabilityReport {
  *
  * Returns 0 when the registration is already canonical (re-running install would change nothing) and
  * [INSTALL_CHECK_DRIFT_EXIT_CODE] when install would change anything — including when the agent's server
- * list cannot be read, since the state cannot be verified then.
+ * list cannot be read, since the state cannot be verified then. A registration contributed by the agent's
+ * own devrig PLUGIN ([McpServerRef.isPluginProvided]) counts as canonical: it is a working server that
+ * install must neither remove nor duplicate.
  *
  * Stateless by design (Tenet 3): the only agent CLI invocation is the read-only `mcp list`, the IDE probe
  * reads markers/ports on demand, and the check writes nothing — two concurrent `--check` runs are safe.
@@ -313,11 +337,33 @@ fun runInstallCheckCommand(
     }
     out.println()
 
-    // Canonical = exactly one devrig-owned entry, under the canonical name, launching the exact command
-    // install would register. Anything else — stale launcher/subcommand, duplicates, a custom name, no
-    // entry, or an unreadable list — is drift.
-    val canonical = listReadable &&
-        detected.singleOrNull()?.let { it.name == DEVRIG_MCP_SERVER_NAME && it.commandLine == renderedCommand } == true
+    // A devrig entry contributed by the agent's PLUGIN (`plugin:devrig:devrig`) is already canonical: the
+    // plugin's .mcp.json owns it and launches devrig through ${CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp. Install
+    // neither can nor should touch it — registering a second user-scope 'devrig' would only duplicate the
+    // server — so in that case the only thing left to reconcile is a stale user-scope duplicate.
+    val pluginProvided = detected.filter { it.isPluginProvided() }
+    val userScope = detected.filterNot { it.isPluginProvided() }
+
+    // Canonical = the plugin provides it and there is no user-scope duplicate; or (no plugin entry)
+    // exactly one user-scope entry, under the canonical name, launching the exact command install would
+    // register. Anything else — stale launcher/subcommand, duplicates, a custom name, no entry, or an
+    // unreadable list — is drift.
+    val canonical = listReadable && if (pluginProvided.isNotEmpty()) {
+        userScope.isEmpty()
+    } else {
+        userScope.singleOrNull()?.let {
+            it.name == DEVRIG_MCP_SERVER_NAME && mcpCommandLinesEquivalent(it.commandLine, renderedCommand)
+        } == true
+    }
+
+    if (pluginProvided.isNotEmpty()) {
+        out.println(
+            "The ${agent.displayName} devrig plugin provides this server " +
+                "(${pluginProvided.joinToString(", ") { "'${it.name}'" }}) — its .mcp.json owns the " +
+                "registration, so devrig does not add a second, user-scope one.",
+        )
+        out.println()
+    }
 
     out.println("What 'devrig install ${agent.binary}' would change:")
     if (canonical) {
@@ -325,11 +371,12 @@ fun runInstallCheckCommand(
     } else {
         // The EXACT removal set install would issue (shared via installRemovalNames) — names install
         // clears defensively even when not detected are annotated "if present".
-        val detectedNames = detected.map { it.name }.toSet()
+        val detectedNames = userScope.map { it.name }.toSet()
         for (name in installRemovalNames(detected, listReadable)) {
             out.println("  - remove '$name'" + if (name in detectedNames) "" else ", if present")
         }
-        out.println("  - add '$DEVRIG_MCP_SERVER_NAME' → $renderedCommand")
+        // With a plugin-provided entry present, install stops after the cleanup — it never re-adds.
+        if (pluginProvided.isEmpty()) out.println("  - add '$DEVRIG_MCP_SERVER_NAME' → $renderedCommand")
     }
     out.println()
 
@@ -337,7 +384,11 @@ fun runInstallCheckCommand(
     out.println()
 
     return if (canonical) {
-        out.println("No drift — '$DEVRIG_MCP_SERVER_NAME' is registered canonically for ${agent.displayName}.")
+        if (pluginProvided.isNotEmpty()) {
+            out.println("No drift — devrig is provided by the ${agent.displayName} plugin.")
+        } else {
+            out.println("No drift — '$DEVRIG_MCP_SERVER_NAME' is registered canonically for ${agent.displayName}.")
+        }
         0
     } else {
         out.println("Drift detected — run 'devrig install ${agent.binary}' to repair.")

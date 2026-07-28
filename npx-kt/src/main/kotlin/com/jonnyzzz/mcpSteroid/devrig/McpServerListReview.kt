@@ -31,6 +31,18 @@ fun McpServerRef.matchesDevrigCommand(): Boolean = commandLine.contains("devrig"
  */
 fun McpServerRef.isDevrigOwned(): Boolean = matchesDevrigName() || matchesDevrigCommand()
 
+/**
+ * True when this registration comes from an installed Claude Code **plugin** — a `.mcp.json` inside the
+ * plugin — rather than from user/project scope. `claude mcp list` reports those under a
+ * `plugin:<plugin>:<server>` name.
+ *
+ * This matters because the devrig Claude plugin registers devrig exactly that way
+ * (`plugin:devrig:devrig` → `${'$'}{CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp`). Such an entry is a WORKING,
+ * canonical registration that `claude mcp remove` cannot delete, so it must never be reported as drift,
+ * scheduled for removal, or shadowed by a second user-scope `devrig` entry (issue #253).
+ */
+fun McpServerRef.isPluginProvided(): Boolean = name.startsWith("plugin:")
+
 /** Human-readable reason this entry was detected, naming which signal(s) matched — for install narration. */
 fun McpServerRef.devrigMatchReason(): String = when {
     matchesDevrigName() && matchesDevrigCommand() -> "name + config"
@@ -38,6 +50,23 @@ fun McpServerRef.devrigMatchReason(): String = when {
     matchesDevrigCommand() -> "config"
     else -> "no match"
 }
+
+/**
+ * True when two rendered launch command lines are equivalent for canonical-registration purposes —
+ * tolerant of differences that do not change what is executed.
+ *
+ * The motivating case (Windows): [DevrigUserLauncher.invocation] double-quotes the `cmd.exe` launcher
+ * path so it survives a `%USERPROFILE%` with spaces, so the command devrig REGISTERS (and the canonical
+ * form it compares against) is `cmd.exe /d /c "<path>" mcp`. But `claude mcp list` echoes the stored
+ * command back WITHOUT those quotes (`cmd.exe /d /c <path> mcp`). An exact string compare then reports
+ * permanent false "drift" that re-running install can never fix. Normalizing away the quotes — and
+ * collapsing runs of whitespace — makes the compare reflect the actual launch, not its cosmetic quoting.
+ */
+fun mcpCommandLinesEquivalent(a: String, b: String): Boolean =
+    normalizeMcpCommandLine(a) == normalizeMcpCommandLine(b)
+
+private fun normalizeMcpCommandLine(commandLine: String): String =
+    commandLine.replace("\"", "").trim().replace(Regex("\\s+"), " ")
 
 /**
  * Parse the output of `<agent> mcp list` into the registered servers. codex emits a JSON array

@@ -118,6 +118,13 @@ class DevrigCommandTest {
         assertIs<DevrigCommand.DevrigCommandParseError>(command("install", "devrig", "--check"))
     }
 
+    @Test
+    fun `connect claude and connect ide select their commands`() {
+        assertIs<DevrigCommand.DevrigCommandConnectClaude>(command("connect", "claude"))
+        assertIs<DevrigCommand.DevrigCommandConnectIde>(command("connect", "ide"))
+        assertIs<DevrigCommand.DevrigCommandParseError>(command("connect", "bogus"))
+    }
+
     private fun command(vararg args: String): DevrigCommand =
         parseDevrigCommand(args.toList().toTypedArray())
 }

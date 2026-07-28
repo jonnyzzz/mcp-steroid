@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliResult
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliRunner
+import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Path
@@ -38,12 +39,12 @@ class InstallCommandTest {
         ]
     """.trimIndent()
 
-    // A CANONICAL claude listing: exactly one 'mcp-steroid' entry whose command is the stable wrapper
+    // A CANONICAL claude listing: exactly one 'devrig' entry whose command is the stable wrapper
     // install would register ("$launcherPath mcp"). Re-running install would change nothing.
     private val claudeCanonicalList = """
         Checking MCP server health…
 
-        mcp-steroid: $launcherPath mcp - ✓ Connected
+        devrig: $launcherPath mcp - ✓ Connected
         playwright: npx @playwright/mcp@latest - ✓ Connected
     """.trimIndent()
 
@@ -52,7 +53,7 @@ class InstallCommandTest {
     // not valid unescaped inside a JSON string.
     private val codexCanonicalJson = """
         [
-          {"name":"mcp-steroid","transport":{"type":"stdio","command":"$launcherPathJsonEscaped","args":["mcp"]}},
+          {"name":"devrig","transport":{"type":"stdio","command":"$launcherPathJsonEscaped","args":["mcp"]}},
           {"name":"playwright","transport":{"type":"stdio","command":"npx","args":["@playwright/mcp@latest"]}}
         ]
     """.trimIndent()
@@ -71,8 +72,8 @@ class InstallCommandTest {
         val result = runInstall(AiAgentCli.CLAUDE, RecordingRunner())
         assertEquals(0, result.exitCode)
         assertEquals(
-            listOf("mcp", "add", "--scope", "user", "mcp-steroid", "--", launcherPath, "mcp"),
-            result.addInvocation.args,
+            listOf("mcp", "add", "--scope", "user", "devrig", "--", launcherPath, "mcp"),
+            result.addInvocation?.args,
         )
     }
 
@@ -80,17 +81,17 @@ class InstallCommandTest {
     fun `install add invocation per agent (codex, gemini)`() {
         val codex = runInstall(AiAgentCli.CODEX, RecordingRunner())
         assertEquals(
-            listOf("mcp", "add", "mcp-steroid", "--", launcherPath, "mcp"),
-            codex.addInvocation.args,
+            listOf("mcp", "add", "devrig", "--", launcherPath, "mcp"),
+            codex.addInvocation?.args,
         )
 
         val gemini = runInstall(AiAgentCli.GEMINI, RecordingRunner())
         assertEquals(
             listOf(
-                "mcp", "add", "--type", "stdio", "--scope", "user", "--trust", "mcp-steroid",
+                "mcp", "add", "--type", "stdio", "--scope", "user", "--trust", "devrig",
                 launcherPath, "mcp",
             ),
-            gemini.addInvocation.args,
+            gemini.addInvocation?.args,
         )
     }
 
@@ -248,6 +249,31 @@ class InstallCommandTest {
     }
 
     @Test
+    fun `check treats the Windows cmd-exe launcher as canonical despite mcp list dropping the path quotes`() {
+        // On Windows the launcher path is double-quoted so cmd.exe survives a path with spaces
+        // (DevrigUserLauncher.invocation), but `claude mcp list` echoes the stored command back WITHOUT
+        // those quotes. An exact string compare then reports permanent false "drift" that re-running
+        // install can never fix — the real Windows bug. The canonical check must tolerate the quoting.
+        val winCommand = DevrigUserLauncher.invocation(home, listOf("mcp"), windows = true)
+        val winLauncher = "/home/user/.mcp-steroid/bin/devrig.cmd"
+        val claudeWinList = """
+            Checking MCP server health…
+
+            devrig: cmd.exe /d /c $winLauncher mcp - ✓ Connected
+            playwright: npx @playwright/mcp@latest - ✓ Connected
+        """.trimIndent()
+
+        val r = runCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, claudeWinList)),
+            mcpCommand = winCommand,
+        )
+        assertEquals(0, r.exitCode)
+        assertContains(r.stdout, "already canonical")
+        assertContains(r.stdout, "No drift")
+    }
+
+    @Test
     fun `check reports no drift for a canonical codex (--json) registration and exits 0`() {
         val r = runCheck(AiAgentCli.CODEX, RecordingRunner(listResult = AiAgentCliResult(0, codexCanonicalJson)))
         assertEquals(0, r.exitCode)
@@ -264,7 +290,7 @@ class InstallCommandTest {
         // Detected by its command (not name) → removed WITHOUT the "if present" qualifier.
         assertContains(r.stdout, "remove 'old-steroid'")
         assertFalse(r.stdout.contains("remove 'old-steroid', if present"), r.stdout)
-        assertContains(r.stdout, "add 'mcp-steroid'")
+        assertContains(r.stdout, "add 'devrig'")
     }
 
     @Test
@@ -299,7 +325,7 @@ class InstallCommandTest {
         assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
         assertContains(r.stdout, "Drift detected")
         assertContains(r.stdout, "remove 'mcp-steroid'")
-        assertContains(r.stdout, "add 'mcp-steroid' → $launcherPath mcp")
+        assertContains(r.stdout, "add 'devrig' → $launcherPath mcp")
     }
 
     @Test
@@ -310,7 +336,7 @@ class InstallCommandTest {
         )
         assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
         assertTrue(r.stdout.contains("no existing", ignoreCase = true), r.stdout)
-        assertContains(r.stdout, "add 'mcp-steroid'")
+        assertContains(r.stdout, "add 'devrig'")
     }
 
     @Test
@@ -321,8 +347,8 @@ class InstallCommandTest {
         )
         assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
         assertTrue(r.stdout.contains("could not read", ignoreCase = true), r.stdout)
-        // Unreadable → install would defensively clear the legacy 'devrig' name too (shared installRemovalNames).
-        assertContains(r.stdout, "remove 'devrig'")
+        // Unreadable → install would defensively clear the legacy 'mcp-steroid' name too (shared installRemovalNames).
+        assertContains(r.stdout, "remove 'mcp-steroid'")
     }
 
     @Test
@@ -335,6 +361,83 @@ class InstallCommandTest {
         assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
         assertContains(r.stderr, "IDE discovery failed")
         assertContains(r.stdout, "discovery failed")
+    }
+
+    // ── plugin-provided registration (the devrig Claude plugin's own .mcp.json, issue #253) ──
+
+    // What `claude mcp list` shows when the devrig Claude PLUGIN registers the server: a
+    // `plugin:<plugin>:<server>` name whose command is the plugin's bin/devrig-mcp launcher. `claude mcp
+    // remove` cannot delete it, and it is a working registration — so it must read as canonical.
+    private val claudePluginProvidedList = """
+        Checking MCP server health…
+
+        plugin:devrig:devrig: /Users/me/.claude/plugins/marketplaces/jonnyzzz/claude-plugin/bin/devrig-mcp - ✓ Connected
+        playwright: npx @playwright/mcp@latest - ✓ Connected
+    """.trimIndent()
+
+    @Test
+    fun `check reports no drift when the Claude plugin provides devrig, exit 0`() {
+        val r = runCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, claudePluginProvidedList)),
+        )
+        assertEquals(0, r.exitCode)
+        assertContains(r.stdout, "plugin:devrig:devrig")
+        assertContains(r.stdout, "plugin provides this server")
+        assertContains(r.stdout, "already canonical")
+        assertContains(r.stdout, "No drift")
+        // It must never propose removing (impossible) or duplicating (harmful) the plugin's entry.
+        assertFalse(r.stdout.contains("remove 'plugin:devrig:devrig'"), r.stdout)
+        assertFalse(r.stdout.contains("add 'devrig'"), r.stdout)
+    }
+
+    @Test
+    fun `check flags a user-scope duplicate alongside the plugin entry, removing only the duplicate`() {
+        val listing = """
+            Checking MCP server health…
+
+            plugin:devrig:devrig: /Users/me/.claude/plugins/marketplaces/jonnyzzz/claude-plugin/bin/devrig-mcp - ✓ Connected
+            devrig: $launcherPath mcp - ✓ Connected
+        """.trimIndent()
+
+        val r = runCheck(AiAgentCli.CLAUDE, RecordingRunner(listResult = AiAgentCliResult(0, listing)))
+
+        assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
+        assertContains(r.stdout, "remove 'devrig'")
+        assertFalse(r.stdout.contains("remove 'plugin:devrig:devrig'"), r.stdout)
+        // The plugin already provides the server, so the plan must not re-add a user-scope entry.
+        assertFalse(r.stdout.contains("add 'devrig'"), r.stdout)
+    }
+
+    @Test
+    fun `install skips the add when the Claude plugin already provides devrig`() {
+        val result = runInstall(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, claudePluginProvidedList)),
+        )
+
+        assertEquals(0, result.exitCode)
+        assertFalse(
+            result.invocations.any { it.args.contains("add") },
+            "install must not register a second devrig server: ${result.invocations}",
+        )
+        assertFalse(
+            result.removeNames.contains("plugin:devrig:devrig"),
+            "the plugin's own entry cannot be removed by 'claude mcp remove': ${result.removeNames}",
+        )
+        assertContains(result.stdout, "plugin already provides this server")
+    }
+
+    @Test
+    fun `installRemovalNames never schedules a plugin-provided entry for removal`() {
+        val names = installRemovalNames(
+            detected = listOf(
+                McpServerRef("plugin:devrig:devrig", "/plugins/devrig/bin/devrig-mcp"),
+                McpServerRef("mcp-steroid", "/old/devrig mpc"),
+            ),
+            listReadable = true,
+        )
+        assertEquals(setOf("mcp-steroid", "devrig"), names)
     }
 
     @Test
@@ -353,6 +456,7 @@ class InstallCommandTest {
         reachability: IdeReachabilityReport = IdeReachabilityReport(reachable = 0, discovered = 0),
         reachabilityThrows: Boolean = false,
         missingLauncherPath: Path? = null,
+        mcpCommand: StdioMcpCommand = this.mcpCommand,
     ): CheckRunResult {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
@@ -396,7 +500,8 @@ class InstallCommandTest {
             invocations = runner.invocations,
             removeNames = removeInvocations.map { it.args.last() },
             removedNames = runner.removed,
-            addInvocation = runner.invocations.last { it.args.contains("add") },
+            // Null when install deliberately skipped the add (the agent's plugin already provides devrig).
+            addInvocation = runner.invocations.lastOrNull { it.args.contains("add") },
             stdout = stdout.toString(Charsets.UTF_8).replace("\r\n", "\n"),
             stderr = stderr.toString(Charsets.UTF_8).replace("\r\n", "\n"),
         )
@@ -433,7 +538,7 @@ class InstallCommandTest {
         val invocations: List<AiAgentCliInvocation>,
         val removeNames: List<String>,
         val removedNames: List<String>,
-        val addInvocation: AiAgentCliInvocation,
+        val addInvocation: AiAgentCliInvocation?,
         val stdout: String,
         val stderr: String,
     )
