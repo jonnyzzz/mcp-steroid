@@ -182,7 +182,7 @@ class KotlinBuildsSession(
 
         private fun getDefaultJvmTarget(): JvmTarget {
             val jvmTargetStr = System.getProperty("java.specification.version") ?: "21"
-            return JvmTarget.entries.find { it.name == jvmTargetStr } ?: JvmTarget.JVM_21
+            return JvmTarget.entries.find { it.stringValue == jvmTargetStr } ?: JvmTarget.JVM_21
         }
     }
 }
