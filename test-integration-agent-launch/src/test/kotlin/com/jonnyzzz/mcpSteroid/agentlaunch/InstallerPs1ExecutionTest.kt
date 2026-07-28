@@ -103,8 +103,8 @@ class InstallerPs1ExecutionTest {
             // Render install.ps1 through the SHIPPING code path (writeInstallerScripts). All 5
             // platforms must be present in the table (installer-gen contract), but install.ps1
             // reads only its own Windows platform hashtable at runtime.
-            val jdkEntryWin = JdkScriptEntry("$baseUrl/jdk.zip", jdkSha, "zip", "jdk")
-            val jdkEntryPosix = JdkScriptEntry("$baseUrl/jdk.zip", jdkSha, "tar.gz", "jdk")
+            val jdkEntryWin = JdkScriptEntry("$baseUrl/jdk.zip", jdkSha, "zip", "jdk", Files.size(jdkZip))
+            val jdkEntryPosix = JdkScriptEntry("$baseUrl/jdk.zip", jdkSha, "tar.gz", "jdk", Files.size(jdkZip))
             val table = ALL_PLATFORMS.associateWith { key ->
                 if (key.startsWith("windows-")) jdkEntryWin else jdkEntryPosix
             }
@@ -112,6 +112,7 @@ class InstallerPs1ExecutionTest {
                 url = "$baseUrl/devrig.zip", sha256 = devrigSha,
                 launcherPosix = "devrig-$VERSION/bin/devrig",
                 launcherWindows = "devrig-$VERSION/bin/devrig.bat",
+                size = Files.size(devrigZip),
             )
             writeInstallerScripts(genDir, table, devrig, VERSION)
             val ps1 = genDir.resolve("install.ps1")

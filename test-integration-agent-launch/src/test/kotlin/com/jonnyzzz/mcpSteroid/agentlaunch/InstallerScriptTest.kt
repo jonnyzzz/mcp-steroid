@@ -24,25 +24,34 @@ class InstallerScriptTest {
     private val isWindows = System.getProperty("os.name").lowercase().contains("win")
     private val sha = "a".repeat(64)
 
+    /** Stand-in for a real artifact byte length; the script is parsed, never executed. */
+    private val FAKE_SIZE = 123_456_789L
+
     private fun renderPs1(): String {
         val tmpl = Path.of(System.getProperty("installer.ps1.template")).readText()
-        val table = "\$Platforms = @{ 'win32-x64' = @{ url = 'https://example.invalid/j.zip'; sha256 = '$sha'; binsub = 'jdk\\bin' } }"
+        // JdkSize mirrors what renderPsTable emits: the scripts read it for the pre-download
+        // disk-space check, so a table without it would not represent a real generated installer.
+        val table = "\$Platforms = @{ 'win32-x64' = @{ url = 'https://example.invalid/j.zip'; " +
+            "sha256 = '$sha'; binsub = 'jdk\\bin'; JdkSize = $FAKE_SIZE } }"
         return tmpl
             .replace("@@VERSION@@", "0.0.0-test")
             .replace("@@DEVRIG_URL@@", "https://example.invalid/devrig.zip")
             .replace("@@DEVRIG_SHA256@@", sha)
             .replace("@@DEVRIG_FORMAT@@", "zip")
+            .replace("@@DEVRIG_SIZE@@", FAKE_SIZE.toString())
             .replace("@@DEVRIG_BINSUB@@", "devrig\\bin\\devrig.bat")
             .replace("@@PLATFORM_TABLE_PS@@", table)
     }
 
     private fun renderSh(): String {
         val tmpl = Path.of(System.getProperty("installer.sh.template")).readText()
-        val case = "    linux-x64) jdk_url='https://example.invalid/j.tgz'; jdk_sha256='$sha'; jdk_format='tar.gz'; jdk_javahome='jdk';;"
+        val case = "    linux-x64) jdk_url='https://example.invalid/j.tgz'; jdk_sha256='$sha'; " +
+            "jdk_format='tar.gz'; jdk_javahome='jdk'; jdk_size='$FAKE_SIZE';;"
         return tmpl
             .replace("@@VERSION@@", "0.0.0-test")
             .replace("@@DEVRIG_URL@@", "https://example.invalid/devrig.tgz")
             .replace("@@DEVRIG_FORMAT@@", "tar.gz")
+            .replace("@@DEVRIG_SIZE@@", FAKE_SIZE.toString())
             .replace("@@DEVRIG_BINSUB@@", "devrig/bin/devrig")
             .replace("@@PLATFORM_CASE_SH@@", case)
     }

@@ -52,10 +52,10 @@ class InstallerBootstrapTest {
     fun `generated install_sh refuses musl (alpine)`() = runWithCloseableStack { lifetime ->
         val genDir = createInstallerWorkDir("installer-musl-gen")
         // A minimal valid model (nothing is downloaded on the musl-reject path) → renders a real install.sh.
-        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("https://example.com/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk") }
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("https://example.com/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", 1L) }
         writeInstallerScripts(
             genDir.toPath(), table,
-            DevrigEntry("https://example.com/devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat"),
+            DevrigEntry("https://example.com/devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", 1L),
             version,
         )
         makeWorldReadable(genDir)
@@ -110,11 +110,12 @@ class InstallerBootstrapTest {
         // ── 3. render install.sh from a synthetic model: all 5 platforms point at the one fake jdk.tar.gz
         //       (javaHome="jdk"), served by the side-car. This is the new seam — no real JDK download. ──
         val genDir = createInstallerWorkDir("installer-gen-out")
-        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/jdk.tar.gz", jdkSha, "tar.gz", "jdk") }
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/jdk.tar.gz", jdkSha, "tar.gz", "jdk", jdkTarGz.length()) }
         // The fixture zip unpacks to devrig-<version>/, so that's the computed+asserted launcher subpath.
         val devrig = DevrigEntry(
             url = "http://$nginxIp/devrig.zip", sha256 = devrigSha,
             launcherPosix = "devrig-$version/bin/devrig", launcherWindows = "devrig-$version/bin/devrig.bat",
+            size = devrigZip.length(),
         )
         writeInstallerScripts(genDir.toPath(), table, devrig, version)
         require(File(genDir, "install.sh").isFile) { "did not produce install.sh in $genDir" }
@@ -172,6 +173,107 @@ class InstallerBootstrapTest {
         reRun.assertNoMessageInOutput("downloading devrig")
 
         log("ALL INSTALLER ASSERTIONS PASSED on ubuntu (glibc) — download + delegate to devrig install devrig")
+    }
+
+    /**
+     * Error resilience (#228), disk precheck: bake an ABSURD artifact size so the required space
+     * (size x3) exceeds any real disk. The generated install.sh must refuse BEFORE downloading, with a
+     * clear "insufficient disk space" message. No nginx/fixtures needed — the check fires pre-download.
+     * The download tools must still be present (preflight runs first), so we install curl+unzip.
+     */
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.MINUTES)
+    fun `generated install_sh fails clearly when disk space is insufficient`() = runWithCloseableStack { lifetime ->
+        val genDir = createInstallerWorkDir("installer-disk-gen")
+        val huge = 10_000_000_000_000L // 10 TB each -> required (x3) dwarfs any CI disk
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://192.0.2.1/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", huge) }
+        writeInstallerScripts(
+            genDir.toPath(), table,
+            DevrigEntry("http://192.0.2.1/devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", huge),
+            version,
+        )
+        makeWorldReadable(genDir)
+
+        val install = startDockerContainerAndDispose(
+            lifetime,
+            StartContainerRequest()
+                .image(installImage)
+                .logPrefix("installer-disk")
+                .volumes(ContainerVolume(genDir, "/gen", "ro"))
+                .entryPoint(
+                    "sh", "-c",
+                    "apt-get update -qq && apt-get install -y -qq curl unzip >/dev/null 2>&1; mkdir -p \"$homeDir\"; sleep 3000",
+                ),
+        )
+        awaitToolsInstalled(install)
+
+        val r = install.startProcessInContainer {
+            args("sh", "/gen/install.sh").timeoutSeconds(120).description("install.sh with absurd disk need")
+                .extraEnv(mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
+        }.awaitForProcessFinish()
+
+        require(r.exitCode != 0) { "install.sh must FAIL when disk is insufficient, but exited 0:\n$r" }
+        r.assertOutputContains("insufficient disk space", message = "must explain the disk-space shortfall")
+        r.assertNoMessageInOutput("downloading") // refused before any download (TEST-NET url never dialed)
+        log("insufficient-disk rejection verified (exit ${r.exitCode})")
+    }
+
+    /**
+     * Error resilience (#228), retry + backoff + cleanup: point the artifact URLs at an nginx side-car
+     * that 404s every path. The generated install.sh must RETRY the download DL_ATTEMPTS times with
+     * backoff, then fail cleanly with a final message — and the cleanup trap must leave no .tmp.* staging
+     * behind. Sizes are tiny (1) so the disk check passes and we reach the download.
+     */
+    @Test
+    @Timeout(value = 12, unit = TimeUnit.MINUTES)
+    fun `generated install_sh retries a failing download then fails cleanly and cleans up staging`() = runWithCloseableStack { lifetime ->
+        val emptyHtml = createInstallerWorkDir("installer-404-html") // nginx serves this; every artifact path 404s
+        makeWorldReadable(emptyHtml)
+        val nginx = startDockerContainerAndDispose(
+            lifetime,
+            StartContainerRequest()
+                .image(NGINX_IMAGE)
+                .logPrefix("installer-404-nginx")
+                .volumes(ContainerVolume(emptyHtml, "/usr/share/nginx/html", "ro")),
+        )
+        val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
+
+        val genDir = createInstallerWorkDir("installer-404-gen")
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/missing-jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", 1L) }
+        writeInstallerScripts(
+            genDir.toPath(), table,
+            DevrigEntry("http://$nginxIp/missing-devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", 1L),
+            version,
+        )
+        makeWorldReadable(genDir)
+
+        val install = startDockerContainerAndDispose(
+            lifetime,
+            StartContainerRequest()
+                .image(installImage)
+                .logPrefix("installer-404")
+                .volumes(ContainerVolume(genDir, "/gen", "ro"))
+                .entryPoint(
+                    "sh", "-c",
+                    "apt-get update -qq && apt-get install -y -qq curl unzip >/dev/null 2>&1; mkdir -p \"$homeDir\"; sleep 3000",
+                ),
+        )
+        awaitToolsInstalled(install)
+
+        val r = install.startProcessInContainer {
+            args("sh", "/gen/install.sh").timeoutSeconds(180).description("install.sh against 404 artifacts")
+                .extraEnv(mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
+        }.awaitForProcessFinish()
+
+        require(r.exitCode != 0) { "install.sh must FAIL when the download 404s, but exited 0:\n$r" }
+        r.assertOutputContains("downloading devrig", message = "must attempt the download")
+        r.assertOutputContains("attempt 1/3 failed", "attempt 2/3 failed", message = "must retry the download with backoff")
+        r.assertOutputContains("after 3 attempts", message = "must give up with a clear final error after DL_ATTEMPTS")
+
+        // the cleanup trap removed THIS run's staging: no .tmp.* left in binaries/
+        val leftovers = sh(install, "ls -A \"$homeDir/.mcp-steroid/binaries\" 2>/dev/null | grep -c '^[.]tmp[.]' || true")
+        leftovers.assertOutputContains("0", message = "cleanup trap must remove this run's .tmp.* staging on failure")
+        log("permanent-failure retry + staging cleanup verified (exit ${r.exitCode})")
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
