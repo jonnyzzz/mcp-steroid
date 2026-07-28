@@ -9,12 +9,12 @@ class DevrigSetupTest {
     @Test
     fun `installer argv is per-OS and pipes the canonical installer`() {
         assertEquals(
-            listOf("/bin/sh", "-c", "curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh"),
+            listOf("/bin/sh", "-c", "curl -fsSL https://devrig.dev/install.sh | sh"),
             installerArgv(windows = false),
         )
         assertEquals(
             listOf("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                "irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex"),
+                "irm https://devrig.dev/install.ps1 | iex"),
             installerArgv(windows = true),
         )
     }

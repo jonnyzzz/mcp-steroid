@@ -26,8 +26,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
 
-const val INSTALL_SH_URL = "https://mcp-steroid.jonnyzzz.com/install.sh"
-const val INSTALL_PS1_URL = "https://mcp-steroid.jonnyzzz.com/install.ps1"
+const val INSTALL_SH_URL = "https://devrig.dev/install.sh"
+const val INSTALL_PS1_URL = "https://devrig.dev/install.ps1"
 
 /** The stable devrig launcher path for this OS. */
 fun devrigBinPath(userHome: Path, windows: Boolean): Path =
