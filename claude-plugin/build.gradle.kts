@@ -342,18 +342,41 @@ val validateHooksJson = tasks.register("validateHooksJson") {
         }
 
         // Issue #246: the PostToolUse hook injects a recovery hint after a recoverable devrig tool
-        // error. It must be scoped to the devrig MCP tools (matcher `mcp__devrig__.*`) so it never
-        // fires on unrelated tools, and it must run bin/devrig-recover via ${CLAUDE_PLUGIN_ROOT}.
+        // error. It must be scoped to the devrig MCP tools so it never fires on unrelated tools, and it
+        // must run bin/devrig-recover via ${CLAUDE_PLUGIN_ROOT}.
         val postToolUse = hooks["PostToolUse"] as? List<*>
             ?: throw GradleException("hooks.json: missing 'hooks.PostToolUse' array (issue #246 recovery hint)")
         val ptuGroup = postToolUse.firstOrNull() as? Map<*, *>
             ?: throw GradleException("hooks.json: 'hooks.PostToolUse' has no matcher-group entries")
         val ptuMatcher = ptuGroup["matcher"]?.toString().orEmpty()
-        // Anchored on the devrig MCP server prefix so only `mcp__devrig__*` tool results are scanned.
-        if (!ptuMatcher.contains("mcp__devrig__")) {
+        // The matcher is asserted BY BEHAVIOUR, not by substring: a literal `mcp__devrig__` prefix looks
+        // right but never fires in the distribution that ships this hook. When devrig's MCP server comes
+        // from THIS plugin, Claude namespaces its tools `mcp__plugin_<plugin>_<server>__<tool>` — e.g.
+        // `mcp__plugin_devrig_devrig__steroid_execute_code` — which no `mcp__devrig__…` pattern matches.
+        // So the matcher must match both spellings while still ignoring every non-devrig tool.
+        val ptuRegex = try {
+            Regex(ptuMatcher)
+        } catch (e: Exception) {
+            throw GradleException("hooks.json: PostToolUse matcher '$ptuMatcher' is not a valid regex: ${e.message}")
+        }
+        fun matches(tool: String) = ptuRegex.containsMatchIn(tool)
+        val mustMatch = listOf(
+            "mcp__devrig__steroid_execute_code",                 // standalone `claude mcp add devrig`
+            "mcp__plugin_devrig_devrig__steroid_execute_code",   // this plugin's own .mcp.json
+            "mcp__plugin_devrig_devrig__steroid_fetch_resource",
+        )
+        val mustNotMatch = listOf("Bash", "Read", "Edit", "mcp__github__create_issue", "mcp__playwright__click")
+        mustMatch.filterNot { matches(it) }.takeIf { it.isNotEmpty() }?.let { missed ->
             throw GradleException(
-                "hooks.json: PostToolUse matcher '$ptuMatcher' must target the devrig MCP tools " +
-                    "(contain 'mcp__devrig__') so the recovery hint never fires on unrelated tools."
+                "hooks.json: PostToolUse matcher '$ptuMatcher' does not match devrig tool name(s) " +
+                    "$missed, so bin/devrig-recover would never run for them (issue #246). Note plugin-" +
+                    "provided MCP servers are namespaced 'mcp__plugin_<plugin>_<server>__<tool>'."
+            )
+        }
+        mustNotMatch.filter { matches(it) }.takeIf { it.isNotEmpty() }?.let { overreach ->
+            throw GradleException(
+                "hooks.json: PostToolUse matcher '$ptuMatcher' also matches unrelated tool(s) " +
+                    "$overreach; the recovery hint must fire only on devrig tools."
             )
         }
         val ptuActions = ptuGroup["hooks"] as? List<*>
@@ -608,7 +631,17 @@ val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
     description = "Validate .claude-plugin/marketplace.json structure"
 
     val marketplaceFile = rootProject.projectDir.resolve(".claude-plugin/marketplace.json")
+    // Claude keys a marketplace by the `name` DECLARED here (see ~/.claude/plugins/known_marketplaces.json),
+    // so `devrig connect claude` and the IDE's onboarding check must use the same name — otherwise they
+    // write / look for `devrig@<wrong-marketplace>`, which names no real plugin. Both constants are
+    // cross-checked below.
+    val connectSource = rootProject.projectDir
+        .resolve("npx-kt/src/main/kotlin/com/jonnyzzz/mcpSteroid/devrig/ClaudePluginConnect.kt")
+    val onboardingSource = rootProject.projectDir
+        .resolve("ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/onboarding/OnboardingDecision.kt")
     inputs.file(marketplaceFile)
+    inputs.file(connectSource)
+    inputs.file(onboardingSource)
 
     doLast {
         @Suppress("UNCHECKED_CAST")
@@ -624,6 +657,24 @@ val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
         if (devrig["source"] != "./claude-plugin") {
             throw GradleException("marketplace.json: the 'devrig' plugin source must be './claude-plugin', got '${devrig["source"]}'")
         }
+
+        val marketplaceName = json["name"].toString()
+        val pluginKey = "devrig@$marketplaceName"
+
+        fun assertConstant(file: java.io.File, constant: String, expected: String) {
+            val text = file.readText()
+            val actual = Regex("""const\s+val\s+$constant\s*=\s*"([^"]*)"""").find(text)?.groupValues?.get(1)
+                ?: throw GradleException("${file.name}: could not find `const val $constant = \"…\"`")
+            if (actual != expected) {
+                throw GradleException(
+                    "${file.name}: $constant is '$actual' but .claude-plugin/marketplace.json declares " +
+                        "name '$marketplaceName', so it must be '$expected'. Claude keys marketplaces by " +
+                        "that declared name, so a mismatch makes the enabled-plugin key name no real plugin."
+                )
+            }
+        }
+        assertConstant(connectSource, "CLAUDE_MARKETPLACE_NAME", marketplaceName)
+        assertConstant(onboardingSource, "CLAUDE_DEVRIG_PLUGIN_KEY", pluginKey)
     }
 }
 
@@ -947,6 +998,95 @@ val validateDevrigRecoverRuns = tasks.register("validateDevrigRecoverRuns") {
     }
 }
 
+// Runs bin/offer-ide against a fake $HOME whose `devrig` exits with a chosen code, and asserts the
+// once-per-machine `ide-offered` marker is burned ONLY for outcomes devrig actually reported (0 = offered
+// or already connected, 1 = manual instructions). Any other code means no offer happened — 2 = NO_IDE,
+// 64 = an older devrig without `connect ide` (a plugin update can land before the devrig update), 126/127
+// = launch failure — and burning the marker there would silently lose the offer forever.
+val validateOfferIdeRuns = tasks.register("validateOfferIdeRuns") {
+    group = "verification"
+    description = "Run bin/offer-ide against fake HOMEs and assert the once-per-machine marker gating"
+
+    enabled = !System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+
+    val script = projectDir.resolve("bin/offer-ide")
+    inputs.file(script)
+    val work = layout.buildDirectory.dir("offer-ide-test")
+    outputs.dir(work)
+
+    doLast {
+        val root = work.get().asFile
+        root.deleteRecursively()
+
+        // A fake $HOME whose ~/.mcp-steroid/bin/devrig exits with [exitCode] (null = devrig not installed).
+        fun makeHome(name: String, exitCode: Int?): java.io.File {
+            val home = java.io.File(root, name).apply { mkdirs() }
+            java.io.File(home, ".mcp-steroid/markers").mkdirs()
+            if (exitCode != null) {
+                val bin = java.io.File(home, ".mcp-steroid/bin").apply { mkdirs() }
+                java.io.File(bin, "devrig").apply {
+                    writeText("#!/bin/sh\necho \"fake devrig $*\" >&2\nexit $exitCode\n")
+                    setExecutable(true)
+                }
+            }
+            return home
+        }
+
+        fun runHook(home: java.io.File): String {
+            val proc = ProcessBuilder("sh", script.absolutePath)
+                .also { it.environment()["HOME"] = home.absolutePath }
+                .redirectErrorStream(false)
+                .start()
+            proc.outputStream.close()
+            val out = proc.inputStream.bufferedReader().readText()
+            proc.errorStream.bufferedReader().readText()
+            proc.waitFor()
+            if (proc.exitValue() != 0)
+                throw GradleException("offer-ide must exit 0; got ${proc.exitValue()} for ${home.name}")
+            return out
+        }
+
+        fun marker(home: java.io.File) = java.io.File(home, ".mcp-steroid/markers/ide-offered")
+
+        // Outcomes devrig reported -> burn the marker (the offer happened; never repeat it).
+        for (code in listOf(0, 1)) {
+            val home = makeHome("burn-$code", code)
+            val out = runHook(home)
+            if (!marker(home).isFile)
+                throw GradleException("offer-ide must burn the marker for exit $code (the offer was made)")
+            if (!out.contains("additionalContext"))
+                throw GradleException("offer-ide must emit the SessionStart nudge for exit $code. Output:\n$out")
+        }
+
+        // No offer happened -> keep the marker unwritten so a later session retries once.
+        for (code in listOf(2, 64, 127)) {
+            val home = makeHome("keep-$code", code)
+            runHook(home)
+            if (marker(home).isFile)
+                throw GradleException(
+                    "offer-ide must NOT burn the marker for exit $code — no offer was made, so a later " +
+                        "session must be able to offer again (2 = no IDE yet, 64 = devrig without " +
+                        "'connect ide', 127 = launch failure)."
+                )
+        }
+
+        // devrig not installed -> silent no-op (check-devrig owns the install nudge), marker untouched.
+        val notInstalled = makeHome("not-installed", null)
+        val silent = runHook(notInstalled)
+        if (silent.isNotBlank())
+            throw GradleException("offer-ide must stay silent when devrig is absent. Output:\n$silent")
+        if (marker(notInstalled).isFile)
+            throw GradleException("offer-ide must not burn the marker when devrig is absent")
+
+        // Already offered -> exits immediately without invoking devrig again.
+        val offered = makeHome("already-offered", 0)
+        marker(offered).writeText("")
+        val second = runHook(offered)
+        if (second.isNotBlank())
+            throw GradleException("offer-ide must stay silent once the marker exists. Output:\n$second")
+    }
+}
+
 claudePluginZip.configure { finalizedBy(verifyPluginFiles) }
 
 // Rewrites the committed .claude-plugin/plugin.json `version` to the current VERSION (normalized
@@ -993,4 +1133,5 @@ tasks.named("check") {
     dependsOn(validateDevrigProgressRuns)
     dependsOn(validateDevrigRecover)
     dependsOn(validateDevrigRecoverRuns)
+    dependsOn(validateOfferIdeRuns)
 }

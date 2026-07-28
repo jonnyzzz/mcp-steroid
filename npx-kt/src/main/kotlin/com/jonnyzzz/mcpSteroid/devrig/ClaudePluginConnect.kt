@@ -9,8 +9,15 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-/** Marketplace name Claude registers our plugin under, in `extraKnownMarketplaces`. */
-const val CLAUDE_MARKETPLACE_NAME = "mcp-steroid"
+/**
+ * Marketplace name Claude registers our plugin under, in `extraKnownMarketplaces`.
+ *
+ * Claude keys a marketplace by the `name` DECLARED in its `.claude-plugin/marketplace.json` — not by the
+ * repo it was added from (see `~/.claude/plugins/known_marketplaces.json`). So this must stay equal to
+ * that field, and the plugin id below must be `devrig@<that name>`; a mismatch makes `connect claude`
+ * write an entry that corresponds to no real plugin. Enforced by the `validateMarketplaceJson` build check.
+ */
+const val CLAUDE_MARKETPLACE_NAME = "jonnyzzz"
 
 /** GitHub `owner/repo` hosting `.claude-plugin/marketplace.json` for the marketplace above. */
 const val CLAUDE_MARKETPLACE_REPO = "jonnyzzz/mcp-steroid"

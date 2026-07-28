@@ -15,8 +15,6 @@ if [ -f "$MARKER" ]; then exit 0; fi
 
 # Run the offer; devrig decides (already-connected / no-IDE / install dialog / browser / manual) and
 # prints its narration to stderr. We don't parse it -- we only surface a one-line nudge to the agent.
-# Exit code 2 means NO_IDE (nothing found to act on yet) -- do not burn the once-per-machine marker in
-# that case so a later session (once an IDE is running) still gets offered.
 if [ -x "$DEVRIG" ]; then
   "$DEVRIG" connect ide >&2 2>&1
   code=$?
@@ -24,10 +22,20 @@ else
   code=0
 fi
 
-if [ "$code" != "2" ]; then
-  mkdir -p "$HOME/.mcp-steroid/markers" 2>/dev/null
-  : > "$MARKER" 2>/dev/null || echo "[devrig] warning: could not write $MARKER" >&2
-fi
+# Burn the once-per-machine marker ONLY for the outcomes devrig actually reported: 0 (already connected,
+# or an install offered via the IDE dialog / the browser) and 1 (manual instructions printed). Any other
+# code means the offer never happened -- 2 = NO_IDE (nothing running to act on yet), 64 = an older devrig
+# with no `connect ide` subcommand (a plugin update can land before the devrig update), 126/127 or
+# anything else = launch failure -- so leave the marker unwritten and let a later session try once more.
+case "$code" in
+  0|1)
+    mkdir -p "$HOME/.mcp-steroid/markers" 2>/dev/null
+    : > "$MARKER" 2>/dev/null || echo "[devrig] warning: could not write $MARKER" >&2
+    ;;
+  *)
+    echo "[devrig] 'devrig connect ide' exited $code -- no offer made; retrying in a later session" >&2
+    ;;
+esac
 
 cat <<'EOF'
 {

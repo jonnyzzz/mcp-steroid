@@ -70,7 +70,7 @@ class InstallCommandTest {
         assertEquals(0, result.exitCode)
         assertEquals(
             listOf("mcp", "add", "--scope", "user", "devrig", "--", launcherPath, "mcp"),
-            result.addInvocation.args,
+            result.addInvocation?.args,
         )
     }
 
@@ -79,7 +79,7 @@ class InstallCommandTest {
         val codex = runInstall(AiAgentCli.CODEX, RecordingRunner())
         assertEquals(
             listOf("mcp", "add", "devrig", "--", launcherPath, "mcp"),
-            codex.addInvocation.args,
+            codex.addInvocation?.args,
         )
 
         val gemini = runInstall(AiAgentCli.GEMINI, RecordingRunner())
@@ -88,7 +88,7 @@ class InstallCommandTest {
                 "mcp", "add", "--type", "stdio", "--scope", "user", "--trust", "devrig",
                 launcherPath, "mcp",
             ),
-            gemini.addInvocation.args,
+            gemini.addInvocation?.args,
         )
     }
 
@@ -360,6 +360,83 @@ class InstallCommandTest {
         assertContains(r.stdout, "discovery failed")
     }
 
+    // ── plugin-provided registration (the devrig Claude plugin's own .mcp.json, issue #253) ──
+
+    // What `claude mcp list` shows when the devrig Claude PLUGIN registers the server: a
+    // `plugin:<plugin>:<server>` name whose command is the plugin's bin/devrig-mcp launcher. `claude mcp
+    // remove` cannot delete it, and it is a working registration — so it must read as canonical.
+    private val claudePluginProvidedList = """
+        Checking MCP server health…
+
+        plugin:devrig:devrig: /Users/me/.claude/plugins/marketplaces/jonnyzzz/claude-plugin/bin/devrig-mcp - ✓ Connected
+        playwright: npx @playwright/mcp@latest - ✓ Connected
+    """.trimIndent()
+
+    @Test
+    fun `check reports no drift when the Claude plugin provides devrig, exit 0`() {
+        val r = runCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, claudePluginProvidedList)),
+        )
+        assertEquals(0, r.exitCode)
+        assertContains(r.stdout, "plugin:devrig:devrig")
+        assertContains(r.stdout, "plugin provides this server")
+        assertContains(r.stdout, "already canonical")
+        assertContains(r.stdout, "No drift")
+        // It must never propose removing (impossible) or duplicating (harmful) the plugin's entry.
+        assertFalse(r.stdout.contains("remove 'plugin:devrig:devrig'"), r.stdout)
+        assertFalse(r.stdout.contains("add 'devrig'"), r.stdout)
+    }
+
+    @Test
+    fun `check flags a user-scope duplicate alongside the plugin entry, removing only the duplicate`() {
+        val listing = """
+            Checking MCP server health…
+
+            plugin:devrig:devrig: /Users/me/.claude/plugins/marketplaces/jonnyzzz/claude-plugin/bin/devrig-mcp - ✓ Connected
+            devrig: $launcherPath mcp - ✓ Connected
+        """.trimIndent()
+
+        val r = runCheck(AiAgentCli.CLAUDE, RecordingRunner(listResult = AiAgentCliResult(0, listing)))
+
+        assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
+        assertContains(r.stdout, "remove 'devrig'")
+        assertFalse(r.stdout.contains("remove 'plugin:devrig:devrig'"), r.stdout)
+        // The plugin already provides the server, so the plan must not re-add a user-scope entry.
+        assertFalse(r.stdout.contains("add 'devrig'"), r.stdout)
+    }
+
+    @Test
+    fun `install skips the add when the Claude plugin already provides devrig`() {
+        val result = runInstall(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, claudePluginProvidedList)),
+        )
+
+        assertEquals(0, result.exitCode)
+        assertFalse(
+            result.invocations.any { it.args.contains("add") },
+            "install must not register a second devrig server: ${result.invocations}",
+        )
+        assertFalse(
+            result.removeNames.contains("plugin:devrig:devrig"),
+            "the plugin's own entry cannot be removed by 'claude mcp remove': ${result.removeNames}",
+        )
+        assertContains(result.stdout, "plugin already provides this server")
+    }
+
+    @Test
+    fun `installRemovalNames never schedules a plugin-provided entry for removal`() {
+        val names = installRemovalNames(
+            detected = listOf(
+                McpServerRef("plugin:devrig:devrig", "/plugins/devrig/bin/devrig-mcp"),
+                McpServerRef("mcp-steroid", "/old/devrig mpc"),
+            ),
+            listReadable = true,
+        )
+        assertEquals(setOf("mcp-steroid", "devrig"), names)
+    }
+
     @Test
     fun `check reports when no IDE backends are discovered`() {
         val r = runCheck(
@@ -420,7 +497,8 @@ class InstallCommandTest {
             invocations = runner.invocations,
             removeNames = removeInvocations.map { it.args.last() },
             removedNames = runner.removed,
-            addInvocation = runner.invocations.last { it.args.contains("add") },
+            // Null when install deliberately skipped the add (the agent's plugin already provides devrig).
+            addInvocation = runner.invocations.lastOrNull { it.args.contains("add") },
             stdout = stdout.toString(Charsets.UTF_8),
             stderr = stderr.toString(Charsets.UTF_8),
         )
@@ -457,7 +535,7 @@ class InstallCommandTest {
         val invocations: List<AiAgentCliInvocation>,
         val removeNames: List<String>,
         val removedNames: List<String>,
-        val addInvocation: AiAgentCliInvocation,
+        val addInvocation: AiAgentCliInvocation?,
         val stdout: String,
         val stderr: String,
     )

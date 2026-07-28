@@ -31,6 +31,18 @@ fun McpServerRef.matchesDevrigCommand(): Boolean = commandLine.contains("devrig"
  */
 fun McpServerRef.isDevrigOwned(): Boolean = matchesDevrigName() || matchesDevrigCommand()
 
+/**
+ * True when this registration comes from an installed Claude Code **plugin** — a `.mcp.json` inside the
+ * plugin — rather than from user/project scope. `claude mcp list` reports those under a
+ * `plugin:<plugin>:<server>` name.
+ *
+ * This matters because the devrig Claude plugin registers devrig exactly that way
+ * (`plugin:devrig:devrig` → `${'$'}{CLAUDE_PLUGIN_ROOT}/bin/devrig-mcp`). Such an entry is a WORKING,
+ * canonical registration that `claude mcp remove` cannot delete, so it must never be reported as drift,
+ * scheduled for removal, or shadowed by a second user-scope `devrig` entry (issue #253).
+ */
+fun McpServerRef.isPluginProvided(): Boolean = name.startsWith("plugin:")
+
 /** Human-readable reason this entry was detected, naming which signal(s) matched — for install narration. */
 fun McpServerRef.devrigMatchReason(): String = when {
     matchesDevrigName() && matchesDevrigCommand() -> "name + config"

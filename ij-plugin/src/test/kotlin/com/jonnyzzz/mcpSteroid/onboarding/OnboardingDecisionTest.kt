@@ -77,9 +77,13 @@ class OnboardingDecisionTest {
         assertFalse(isClaudePluginEnabled(null))
         assertFalse(isClaudePluginEnabled("{}"))
         assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"other@mp":true}}"""))
-        assertTrue(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@mcp-steroid":true}}"""))
+        // The key is `devrig@<marketplace name from .claude-plugin/marketplace.json>` — pinned as a
+        // literal on purpose so renaming the marketplace without updating the constant fails here.
+        assertTrue(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@jonnyzzz":true}}"""))
+        // The stale pre-fix key must NOT count as enabled.
+        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@mcp-steroid":true}}"""))
         // A quoted string "true" is NOT the JSON boolean true.
-        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@mcp-steroid":"true"}}"""))
+        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@jonnyzzz":"true"}}"""))
         // Malformed JSON -> treated as not enabled, no crash.
         assertFalse(isClaudePluginEnabled("{ not json"))
     }
