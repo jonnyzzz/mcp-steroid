@@ -92,7 +92,7 @@ if ($availBytes -lt $needBytes) {
     $BinariesDir, [long]($needBytes / 1MB), [long]($availBytes / 1MB))
 }
 
-function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fmt) {
+function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fmt, [long]$size) {
   $sha12  = $sha.Substring(0, 12)
   $name   = "$kind-$key-$Version-$sha12"
   $target = Join-Path $BinariesDir $name
@@ -104,7 +104,9 @@ function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fm
   $tmpUnpack = Join-Path $BinariesDir ".tmp.$pid_.$kind.unpack"
   Remove-Item -Recurse -Force $tmpZip, $tmpUnpack -ErrorAction SilentlyContinue
 
-  Write-Log "downloading $kind ($url)..."
+  # Same wording as install.sh on purpose: the IDE plugin parses this line to show a real progress
+  # fraction while it installs devrig for the user (InstallerProgress.parseInstallerLine).
+  Write-Log ("downloading {0} (~{1} MB) from {2} ..." -f $kind, [long]($size / 1MB), $url)
   # Retry download+verify as a unit (transient network failure OR sha mismatch both re-download), with
   # growing backoff; only the final failure is fatal. -TimeoutSec is a generous hard ceiling: PowerShell
   # has no stall-only timeout (unlike curl's --speed-time), so a very slow link relies on this ceiling.
@@ -147,8 +149,8 @@ function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fm
   return $target
 }
 
-$devrigTarget = Install-Artifact 'devrig' $DevrigUrl $DevrigSha256 $DevrigFormat
-$jdkTarget    = Install-Artifact 'jdk'    $p.JdkUrl  $p.JdkSha256  $p.JdkFormat
+$devrigTarget = Install-Artifact 'devrig' $DevrigUrl $DevrigSha256 $DevrigFormat $DevrigSize
+$jdkTarget    = Install-Artifact 'jdk'    $p.JdkUrl  $p.JdkSha256  $p.JdkFormat  $p.JdkSize
 
 # -- locate the unpacked launcher + the bundled JAVA_HOME --
 # $DevrigBinSub is the generator-computed, asserted subpath (devrig-<version>-<hash>\bin\devrig.bat).
