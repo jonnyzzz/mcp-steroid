@@ -97,6 +97,7 @@ class CodeEvalManager(
             val extraParams = Registry.stringValue("mcp.steroid.kotlinc.parameters")
                 .split(",")
                 .map { it.trim() }
+                .filter { it.isBlank() }
 
             val compilerMessageRenderer = RecordingCompilerMessageRenderer()
             val compileResult = try {
