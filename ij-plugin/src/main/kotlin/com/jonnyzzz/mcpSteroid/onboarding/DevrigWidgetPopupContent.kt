@@ -20,10 +20,12 @@ enum class DevrigWidgetAction {
  * Everything the status-bar popup shows, derived from the connection state. Kept as data (and therefore
  * unit-testable) so the wording of the one screen a user actually reads is not buried in Swing code.
  *
- * [lines] is one thought per element — what devrig is, then what it will cost or what is stale. The
- * renderer puts each on its own line: as a single paragraph the sentences ran together and the popup read
- * like a wall of text. The download size gets its own line, because a ~611 MB one-time download is the
- * fact a user needs before pressing the button.
+ * **Keep it terse.** This is a status-bar popup, not documentation: the title states the situation, the
+ * button states the action, and [lines] adds only what neither of them says — normally a single short
+ * sentence. Explanations of what devrig is, install sizes and next steps live in the docs behind the
+ * "Learn more" link; crowding them in here made the popup unreadable. [lines] exists so that when a state
+ * genuinely needs two facts (a version pair, say) each gets its own rendered line instead of running
+ * together in one paragraph. `DevrigWidgetPopupContentTest` enforces the length budget.
  */
 data class DevrigWidgetPopupContent(
     val title: String,
@@ -35,9 +37,6 @@ data class DevrigWidgetPopupContent(
     val message: String get() = lines.joinToString(" ")
 }
 
-/** Approximate size of a full devrig install (devrig + its pinned JDK), as the installer reports it. */
-private const val INSTALL_SIZE = "~611 MB"
-
 fun devrigWidgetPopupContent(state: DevrigConnectionState?): DevrigWidgetPopupContent {
     // State not computed yet (the widget was clicked before the first refresh finished): offer the
     // install anyway — it is the action the user came for, and the flow re-checks the state itself.
@@ -45,20 +44,15 @@ fun devrigWidgetPopupContent(state: DevrigConnectionState?): DevrigWidgetPopupCo
     return when (decision) {
         OnboardingDecision.OFFER_ENABLE -> DevrigWidgetPopupContent(
             title = "devrig is not connected",
-            lines = listOf(
-                "devrig lets Claude Code drive this IDE — run and debug tests, refactor, and read " +
-                    "inspections in the real IDE.",
-                "Connecting downloads devrig once ($INSTALL_SIZE, it bundles its own JDK).",
-            ),
+            lines = listOf("Let Claude Code run, debug and refactor in this IDE."),
             actionLabel = "Download and connect",
             action = DevrigWidgetAction.INSTALL,
         )
         OnboardingDecision.OFFER_UPDATE -> DevrigWidgetPopupContent(
             title = "devrig update available",
             lines = listOf(
-                "Installed ${state?.installedVersion ?: "build"} is behind " +
-                    "${state?.latestBaseVersion ?: "the current release"}.",
-                "Updating keeps the IDE bridge — and the plugin it carries — in sync.",
+                "Installed ${state?.installedVersion ?: "build"}, current " +
+                    "${state?.latestBaseVersion ?: "release is newer"}.",
             ),
             actionLabel = "Update devrig",
             action = DevrigWidgetAction.UPDATE,
@@ -67,17 +61,13 @@ fun devrigWidgetPopupContent(state: DevrigConnectionState?): DevrigWidgetPopupCo
             title = "devrig is connected",
             lines = listOf(
                 ("Claude Code can drive this IDE through devrig ${state?.installedVersion ?: ""}").trim() + ".",
-                "Start a new Claude session and ask it to run your tests here.",
             ),
             actionLabel = "Open settings",
             action = DevrigWidgetAction.OPEN_SETTINGS,
         )
         OnboardingDecision.OFFER_GET_AGENT -> DevrigWidgetPopupContent(
             title = "No AI agent found",
-            lines = listOf(
-                "devrig bridges a coding agent to this IDE, but no Claude Code CLI was found on this machine.",
-                "Install one first, then devrig can connect it.",
-            ),
+            lines = listOf("Install Claude Code — devrig bridges it to this IDE."),
             actionLabel = "How to get one",
             action = DevrigWidgetAction.LEARN_HOW,
         )
