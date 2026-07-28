@@ -71,6 +71,26 @@ class DevrigWidgetPopupContentTest {
     }
 
     @Test
+    fun `the explanation is split into separate lines, not one run-on paragraph`() {
+        val states = listOf(
+            null,
+            state(installed = false, version = null, latest = null),
+            state(version = "0.100", latest = "0.101"),
+            state(),
+            state(claude = false),
+        )
+        for (s in states) {
+            val lines = devrigWidgetPopupContent(s).lines
+            assertTrue("expected several lines for $s, got $lines", lines.size >= 2)
+            for (line in lines) {
+                assertTrue("blank line for $s", line.isNotBlank())
+                // Each line is rendered as its own paragraph, so it must not smuggle in markup itself.
+                assertTrue("line must not contain HTML: $line", !line.contains("<"))
+            }
+        }
+    }
+
+    @Test
     fun `every state yields a labelled button and a non-empty explanation`() {
         val states = listOf(
             null,

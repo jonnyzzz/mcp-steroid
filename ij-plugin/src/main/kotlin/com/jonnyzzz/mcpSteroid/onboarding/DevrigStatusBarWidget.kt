@@ -5,6 +5,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.wm.StatusBar
 import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
@@ -108,9 +109,13 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
         val panel = JPanel(BorderLayout(0, JBUI.scale(8))).apply {
             border = JBUI.Borders.empty(12)
         }
-        panel.add(JBLabel("<html><b>${content.title}</b></html>"), BorderLayout.NORTH)
+        panel.add(JBLabel("<html><b>${escape(content.title)}</b></html>"), BorderLayout.NORTH)
+        // One paragraph per thought, with a gap between them: as a single block the sentences ran together.
+        // Everything interpolated (versions come from a parsed launcher path) is escaped before it reaches
+        // the HTML renderer.
+        val body = content.lines.joinToString("") { "<p style='margin:0 0 6px 0'>${escape(it)}</p>" }
         panel.add(
-            JBLabel("<html><body style='width:300px'>${content.message}</body></html>"),
+            JBLabel("<html><body style='width:320px'>$body</body></html>"),
             BorderLayout.CENTER,
         )
 
@@ -144,6 +149,8 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
         val above = Point(0, -panel.preferredSize.height)
         popup.show(RelativePoint(event.component, above))
     }
+
+    private fun escape(text: String): String = StringUtil.escapeXmlEntities(text)
 
     private fun runWidgetAction(action: DevrigWidgetAction) {
         analyticsBeacon.capture(
