@@ -7,7 +7,9 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.getProjectCachePath
 import com.intellij.openapi.util.registry.Registry
+import com.intellij.project.stateStore
 import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.koltinc.scriptClassLoaderFactory
@@ -17,11 +19,14 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.io.path.ExperimentalPathApi
+import kotlin.io.path.createDirectories
+import kotlin.io.path.createDirectory
 import kotlin.io.path.deleteRecursively
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.io.path.div
+import kotlin.io.path.notExists
 import kotlin.io.path.writeText
 import kotlinx.coroutines.TimeoutCancellationException
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
@@ -52,7 +57,9 @@ class CodeEvalManager(
 
     private val log = thisLogger()
     private val compilationMutex = Mutex()
-    private val btaWorkingDir = Files.createTempDirectory("kotlin-bta")
+    private val btaWorkingDir = project.getProjectCachePath("kotlin-bta").also {
+        if (it.notExists()) it.createDirectories()
+    }
     private val kotlinBuildsSession = KotlinBuildsSession(
         workingDir = btaWorkingDir,
         kotlinLogger = KotlinLoggerWrapper(log),
