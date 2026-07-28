@@ -45,7 +45,9 @@ class CodeEvalManager(
         @OptIn(ExperimentalPathApi::class)
         try {
             btaWorkingDir.deleteRecursively()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            log.warn("Failed to delete Kotlin Build Tools API working directory", e)
+        }
     }
 
     private val log = thisLogger()
