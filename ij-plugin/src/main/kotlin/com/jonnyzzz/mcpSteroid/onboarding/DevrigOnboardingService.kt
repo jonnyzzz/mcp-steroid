@@ -81,7 +81,8 @@ class DevrigOnboardingService(private val scope: CoroutineScope) {
         val latest = state.latestBaseVersion ?: "a newer release"
         group().createNotification(
             "Update devrig",
-            "devrig $installed is behind $latest. Updating keeps the IDE bridge — and the plugin it " +
+            // <br> on purpose: without it the two sentences run together in the balloon.
+            "devrig $installed is behind $latest.<br>Updating keeps the IDE bridge — and the plugin it " +
                 "carries — current.",
             NotificationType.INFORMATION,
         ).withMigrationActions(project, decision, actionLabel = "Update").notify(project)

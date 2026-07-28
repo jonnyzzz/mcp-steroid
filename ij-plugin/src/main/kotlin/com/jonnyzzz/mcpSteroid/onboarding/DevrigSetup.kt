@@ -178,7 +178,8 @@ class DevrigSetupRunner {
             else -> "the installer finished but devrig was not found at ${devrigBinPath(userHome, windows)}"
         }
         writeFailureMarker(userHome, reason)
-        notify(project, NotificationType.ERROR, "devrig install failed", "$reason. See the IDE log for details.")
+        // The reason is a sentence of its own — keep the follow-up on the next line so they do not merge.
+        notify(project, NotificationType.ERROR, "devrig install failed", "$reason.<br>See the IDE log for details.")
         log.warn("devrig install failed: $reason\n${result.output.takeLast(4000)}")
         return false
     }
