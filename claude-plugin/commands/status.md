@@ -23,7 +23,9 @@ Do the following:
    - **Windows:** `"%USERPROFILE%\.mcp-steroid\bin\devrig.cmd" install claude --check`
 
 4. Interpret the exit code for the user:
-   - **exit 0** — devrig is installed and the `devrig` MCP server is registered canonically.
+   - **exit 0** — devrig is installed and the MCP server is registered canonically: either by this
+     plugin's own `.mcp.json` (the check prints `plugin:devrig:devrig` and "plugin provides this
+     server" — the normal case for a plugin install) or as a canonical user-scope `devrig` entry.
      Nothing to do. (If the tools still aren't available, suggest restarting Claude.)
    - **exit 1** — drift detected (not registered, stale launch command, duplicate, or
      registered under a different name). Tell the user to run `/devrig:setup` to repair it,
