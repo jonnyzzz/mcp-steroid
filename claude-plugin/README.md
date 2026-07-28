@@ -10,6 +10,15 @@ running IntelliJ-based IDE from Claude via the devrig bridge.
 /plugin install devrig@jonnyzzz
 ```
 
+Then `/devrig:setup` (installs devrig) and restart Claude — see the workflow below.
+
+> **Starting from the IDE instead?** If you already have the **MCP Steroid** plugin in your
+> JetBrains IDE, it offers to wire Claude Code up for you (one **Enable** click installs devrig
+> and enables this plugin) — you never run the two commands above by hand. The same offer also
+> lives in the IDE's status bar (**devrig: not connected** → click), so it cannot be lost by
+> dismissing a balloon. Both routes end in the same place; see "Connect Your AI Agent" in the
+> [repository README](../README.md).
+
 ## How it works (user workflow)
 
 The plugin is **pure scripts — no bundled native binary**. The `devrig` MCP server
@@ -49,6 +58,10 @@ not on `/reload-plugins`:
 | not installed yet | devrig is not installed yet. Run /devrig:setup to install it and unlock full IDE tools. |
 | last install attempt failed | ❌ devrig install failed. Run /devrig:setup to retry. |
 
+The failed state is the `~/.mcp-steroid/markers/bootstrap-install.failed` marker, written with the reason by
+whichever half attempted the install: `bin/install-devrig(.ps1)` here, or the IDE plugin's own "Enable"
+flow. Either way the next Claude session surfaces it, and a successful install clears it.
+
 **On each message** — `UserPromptSubmit` hook (`bin/devrig-progress`): once devrig is installed, keyword-matches
 the prompt (tests, debug, refactor, PSI, grep, …) and — only on a match — injects a short **model-only**
 reminder to prefer the IDE tools over shell. Silent (emits `{}`) when devrig isn't installed or the prompt
@@ -56,13 +69,17 @@ doesn't match.
 
 **Once per machine, after devrig is installed** — `SessionStart` hook (`bin/offer-ide`): probes for a
 running JetBrains IDE without the MCP Steroid plugin and offers to install it there (may pop an IDE dialog
-or open a browser page); silent afterward.
+or open a browser page); silent afterward. The once-per-machine marker
+(`~/.mcp-steroid/markers/ide-offered`) is written only when devrig actually made an offer — if no IDE is
+running yet, or devrig is too old to know `connect ide`, a later session tries again.
 
-**On demand** — the `devrig_status` tool (ask "devrig status" or run `/devrig:status`) and the read-only
-`/devrig:status` command report whether devrig is installed and registered, and any drift.
+**On demand** — the read-only `/devrig:status` command reports whether devrig is installed and registered
+(including when this plugin's own `.mcp.json` provides the server), and any drift.
 
 **After a devrig tool call fails recoverably** — `PostToolUse` hook (`bin/devrig-recover`), scoped to the
-devrig MCP tools (matcher `mcp__devrig__.*`). It scans the tool result for a known recoverable signature and
+devrig MCP tools (matcher `mcp__.*devrig.*`, which matches both a standalone `mcp__devrig__*` registration
+and this plugin's namespaced `mcp__plugin_devrig_devrig__*` tools). It scans the tool result for a known
+recoverable signature and
 injects a one-line, **model-only** recovery hint (never a visible banner) so the agent takes the right next
 step instead of retrying blindly. Silent on success and on errors it does not own:
 
@@ -137,9 +154,9 @@ npx-kt\build\install\devrig\bin\devrig.bat install devrig
 **Restart Claude.** `/devrig:status` now runs your local build. Repeat both steps
 after each code change.
 
-> **Note:** this "Restart Claude" step is a separate developer flow — you are
-> repointing the launcher at a local build. It is distinct from the automatic
-> no-restart activation that happens when the first background download finishes.
+> **Note:** the restart is needed because `bin/devrig-mcp` resolves
+> `~/.mcp-steroid/bin/devrig` when Claude starts the MCP server — repointing that
+> launcher mid-session has no effect until the next start.
 
 Revert to the released binary anytime by re-running the website installer:
 
