@@ -52,11 +52,18 @@ class UpdateChecker(
      * Performs a single update check.
      * Can be called manually for testing.
      */
-    suspend fun checkForUpdates() {
+    /**
+     * Fetch the published `version-base` from version.json, or null when the request or parse fails.
+     *
+     * The release process ships the plugin and devrig from one VERSION, so this single value is the
+     * "current release" line for BOTH — the onboarding flow reuses it to tell whether the devrig the
+     * user has installed is stale (see [com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService]).
+     */
+    suspend fun fetchLatestBaseVersion(): String? {
         val currentVersion = PluginDescriptorProvider.getInstance().version
         val ijBuild = ApplicationInfo.getInstance().build.asString()
         val url = "https://mcp-steroid.jonnyzzz.com/version.json?intellij-version=$ijBuild"
-        log.debug("Checking for updates at $url (current version: $currentVersion)")
+        log.debug("Fetching $url (current version: $currentVersion)")
 
         val response = withContext(Dispatchers.IO) {
             try {
@@ -69,17 +76,21 @@ class UpdateChecker(
                 log.debug("Update check failed: ${e.message}")
                 null
             }
-        } ?: return
+        } ?: return null
 
         val versionInfo = try {
             json.decodeFromString<VersionInfo>(response)
         } catch (e: Exception) {
             log.debug("Failed to parse version response: ${e.message}")
-            return
+            return null
         }
+        lastFetchedVersion = versionInfo.versionBase
+        return versionInfo.versionBase
+    }
 
-        val remoteVersion = versionInfo.versionBase
-        lastFetchedVersion = remoteVersion
+    suspend fun checkForUpdates() {
+        val currentVersion = PluginDescriptorProvider.getInstance().version
+        val remoteVersion = fetchLatestBaseVersion() ?: return
 
         log.info("Remote version: $remoteVersion, current version: $currentVersion")
 

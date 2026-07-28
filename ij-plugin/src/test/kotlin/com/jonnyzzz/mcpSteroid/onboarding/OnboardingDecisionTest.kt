@@ -29,6 +29,79 @@ class OnboardingDecisionTest {
     }
 
     @Test
+    fun `a stale devrig on a wired machine is offered as an update, not treated as done`() {
+        // The plugin's job is migration onto a CURRENT devrig, so "installed" alone is not success.
+        assertEquals(
+            OnboardingDecision.OFFER_UPDATE,
+            decideOnboarding(devrigInstalled = true, claudePresent = true, claudePluginEnabled = true, devrigOutdated = true),
+        )
+        // Outdated is irrelevant while something more fundamental is missing — that is still OFFER_ENABLE…
+        assertEquals(
+            OnboardingDecision.OFFER_ENABLE,
+            decideOnboarding(devrigInstalled = false, claudePresent = true, claudePluginEnabled = true, devrigOutdated = true),
+        )
+        assertEquals(
+            OnboardingDecision.OFFER_ENABLE,
+            decideOnboarding(devrigInstalled = true, claudePresent = true, claudePluginEnabled = false, devrigOutdated = true),
+        )
+        // …and no agent still wins over everything.
+        assertEquals(
+            OnboardingDecision.OFFER_GET_AGENT,
+            decideOnboarding(devrigInstalled = true, claudePresent = false, claudePluginEnabled = true, devrigOutdated = true),
+        )
+    }
+
+    @Test
+    fun `installedDevrigVersion reads the version out of the launcher script`() {
+        // Exactly what devrig's BinLauncher.renderPosixLauncher writes.
+        val posix = """
+            #!/bin/sh
+            # devrig launcher
+            DEVRIG_JAVA_HOME="/Users/u/.mcp-steroid/binaries/jdk-macos-arm64-0.101-aaaaaaaaaaaa/jdk"; export DEVRIG_JAVA_HOME
+            exec "/Users/u/.mcp-steroid/binaries/devrig-macos-arm64-0.101-bbbbbbbbbbbb/devrig-0.101/bin/devrig" "${'$'}@"
+        """.trimIndent()
+        assertEquals("0.101", installedDevrigVersion(posix))
+
+        // A snapshot build (what a local :npx-kt:installDist produces) keeps its full version string.
+        val snapshot = """exec "/home/u/.mcp-steroid/binaries/devrig-linux-x64-0.100-cccccccccccc/devrig-0.100.19999-SNAPSHOT-c6568a61/bin/devrig" "${'$'}@""""
+        assertEquals("0.100.19999-SNAPSHOT-c6568a61", installedDevrigVersion(snapshot))
+
+        // Windows `.cmd` hands off with `call` and backslashes.
+        val windows = """
+            @echo off
+            set "DEVRIG_JAVA_HOME=C:\Users\u\.mcp-steroid\binaries\jdk-windows-x64-0.101-aaaaaaaaaaaa\jdk"
+            call "C:\Users\u\.mcp-steroid\binaries\devrig-windows-x64-0.101-bbbbbbbbbbbb\devrig-0.101\bin\devrig.bat" %*
+        """.trimIndent()
+        assertEquals("0.101", installedDevrigVersion(windows))
+    }
+
+    @Test
+    fun `installedDevrigVersion returns null instead of guessing`() {
+        assertNull(installedDevrigVersion(null))
+        assertNull(installedDevrigVersion(""))
+        assertNull(installedDevrigVersion("   "))
+        // No exec/call handoff at all.
+        assertNull(installedDevrigVersion("#!/bin/sh\necho hello\n"))
+        // Handoff present, but the tree is not the versioned layout we know.
+        assertNull(installedDevrigVersion("""exec "/usr/local/bin/devrig" "${'$'}@""""))
+        assertNull(installedDevrigVersion("""exec "/opt/tools/custom/bin/devrig" "${'$'}@""""))
+    }
+
+    @Test
+    fun `isDevrigOutdated only fires when we actually know the user is behind`() {
+        assertTrue(isDevrigOutdated("0.100", "0.101"))
+        assertFalse(isDevrigOutdated("0.101", "0.101"))
+        // A snapshot of the current release counts as current (same semantics as the plugin's own check).
+        assertFalse(isDevrigOutdated("0.101-SNAPSHOT-abc1234", "0.101"))
+        assertTrue(isDevrigOutdated("0.100.19999-SNAPSHOT-c6568a61", "0.101"))
+        // Unknown inputs must never produce a nag.
+        assertFalse(isDevrigOutdated(null, "0.101"))
+        assertFalse(isDevrigOutdated("0.100", null))
+        assertFalse(isDevrigOutdated("0.100", ""))
+        assertFalse(isDevrigOutdated(null, null))
+    }
+
+    @Test
     fun `devrigInstalled checks the per-OS launcher file`() {
         val home = Files.createTempDirectory("home")
         assertFalse(devrigInstalled(home, windows = false))
