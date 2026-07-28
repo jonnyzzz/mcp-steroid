@@ -8,7 +8,7 @@
 set -eu
 
 # TODO: Probably temp, i'll think about putting it into some config
-INSTALL_URL="https://mcp-steroid.jonnyzzz.com/install.sh"
+INSTALL_URL="https://devrig.dev/install.sh"
 DEVRIG="$HOME/.mcp-steroid/bin/devrig"
 MARKER_DIR="$HOME/.mcp-steroid/markers"
 FAILED="$MARKER_DIR/bootstrap-install.failed"

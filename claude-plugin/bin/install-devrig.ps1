@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # TODO: same as for sh script, probably should put it in some config later
-$InstallUrl = 'https://mcp-steroid.jonnyzzz.com/install.ps1'
+$InstallUrl = 'https://devrig.dev/install.ps1'
 
 # Resolve the user home the same way the canonical installer does.
 $InstallRoot = $env:USERPROFILE

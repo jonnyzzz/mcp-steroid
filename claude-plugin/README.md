@@ -33,7 +33,7 @@ it has no fallback.
    unavailable. The `SessionStart` hook (`bin/check-devrig`) notices and tells the user to
    run **`/devrig:setup`**.
 3. **`/devrig:setup`** runs the canonical installer (`curl -fsSL
-   https://mcp-steroid.jonnyzzz.com/install.sh | sh`, or the PowerShell equivalent on
+   https://devrig.dev/install.sh | sh`, or the PowerShell equivalent on
    Windows) via `bin/install-devrig(.ps1)`. This is a normal foreground download — it
    finishes (or fails) before the command returns; there is no background download, no
    progress bar, and no bootstrap process.
@@ -162,6 +162,6 @@ after each code change.
 Revert to the released binary anytime by re-running the website installer:
 
 ```
-curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh    # macOS
-irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex         # Windows
+curl -fsSL https://devrig.dev/install.sh | sh    # macOS
+irm https://devrig.dev/install.ps1 | iex         # Windows
 ```
