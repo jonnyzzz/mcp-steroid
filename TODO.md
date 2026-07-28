@@ -1,5 +1,37 @@
 # TODO
 
+- [x] **Bundling devrig inside the IDE plugin — REJECTED** (2026-07-28). devrig is the future, not the
+  plugin, so the plugin stays bundled inside devrig; devrig fetching the plugin on demand would add a
+  runtime dependency on the plugin repository that can break in our own `backend download/start` flow.
+  Freshness is solved devrig-side instead (devrig keeps itself current → so does the plugin it carries;
+  known work, devrig-owned). Measurements + the full rationale:
+  [`docs/devrig-bundled-in-plugin-spike.md`](docs/devrig-bundled-in-plugin-spike.md).
+- [ ] **The IDE plugin is the migration path onto devrig** — it must move existing plugin users onto a
+  correct, current devrig by running our canonical install scripts (`DevrigSetup.kt` downloads
+  `install.sh` / `install.ps1` to `~/.mcp-steroid/update/install-<pid>.sh|.ps1` and runs the file via
+  `installerCommands`; the `curl … | sh` / `irm … | iex` one-liner is only the settings page's copyable
+  display string). Done since: the offer lives on the settings page with an **Install devrig** button,
+  every surface renders the one launcher-exists probe (`devrigInstalled` — devrig self-updates by
+  design, so there is no staleness axis; only the plugin's own update check compares `version.json`),
+  the installer's own output drives a cancellable progress bar, and a failure writes the shared
+  `~/.mcp-steroid/markers/bootstrap-install.failed` marker (its agent-side readers — `/devrig:status`,
+  the SessionStart hook — arrive with the unmerged `claude-plugin` branch). The install shares devrig's
+  own updater machinery (`UpdateCoordination` and `installerCommands`/`InstallerHost` in
+  `:devrig-common`; `DevrigVersion` in `:mcp-core`), so the two halves cannot start competing
+  multi-hundred-megabyte downloads. Remaining:
+  - **No funnel data**: `analyticsBeacon` records offered → install-ok, but nothing downstream, so
+    every claim about conversion (including "the settings page converts better than a balloon") is
+    still guesswork.
+  - **When, if ever, to show the startup offer**: the status-bar widget is deleted; the startup
+    notification is behind `mcp.steroid.devrig.widget.enabled` (default off; the key id predates the
+    widget and stays stable) until we have run with it ourselves. "Every IDE run" was the wrong
+    answer; we do not yet have a better one.
+  - **Two `version.json` fetch/parse stacks remain**: `ij-plugin`'s `UpdateChecker` (its own private
+    `VersionInfo` over `HttpRequests`) and `:npx-kt`'s `DevrigUpdateChecker`/`AutoUpdater`. Unifying
+    means promoting a shared version.json model + fetch into `:devrig-common` — new downloader code
+    there, deliberately NOT done as part of the onboarding collapse (out of scope). Follow-up only if
+    the two ever need to agree on more than `version-base`.
+
 - [ ] **dpaia/ee-dataset exporter strips trailing whitespace from patches (upstream fix)**: 11 of 304
   patches in the live `java-spring-ee-dataset.json` are damaged (blank context lines trimmed to empty,
   trailing context lines dropped) — the arena works because `repairTrimmedUnifiedDiff` repairs them at
@@ -15,7 +47,6 @@
   agent re-downloads the dist; low priority — not throttled today; must NOT be changed in-repo, the
   wrapper properties cannot be conditional); (c) FYI to JB infra: Maven Central began throttling the
   Equinix Mac egress between 2026-08-02 and 2026-08-04.
-
 - [ ] **KtBlock matrix has no GoLand/WebStorm/RubyMine/DataGrip lane** (noted in the #406 quorum
   review). Unannotated (all-IDE) prompt fences are compile-verified only against
   Idea/PyCharm/Rider/CLion (stable+EAP) yet render in GO/WS/RM/DB at runtime. Risk is low while
@@ -303,3 +334,24 @@
   Both #412 AS-lane runs log `JDK: 25.0.2` in idea.log for AI-261.26222.65 (2026.1.3). The
   bytecode-21 gate itself stays valuable (issue #157: older AS + minimum-supported baselines), but
   the KDoc's "AS 2026.1 bundles JBR 21" premise is stale and should be reworded against reality.
+
+- [ ] **Console mode prints a JSON payload as one minified line (#284)**: `devrig list_projects` (and any
+  generated tool whose result is a single JSON text item) emits one long minified blob, because
+  `Presentation.Console.render` prints a text content item verbatim. The fix does NOT need a per-tool
+  renderer: pretty-printing a text payload that happens to parse as JSON is tool-agnostic, so it belongs in
+  `Presentation.Console` in `CliToolSupport.kt`. Deliberately **console-only** — the `--json` envelope now
+  unpacks a JSON text payload under a `json` key (`contentDataJson`, so `jq` reaches it in one parse); that
+  path is settled and must not be reshaped again for a console concern. A richer per-tool table
+  (`devrig project`-style columns for the listers) is a different, larger question: it would need declared
+  rendering metadata, since a `when (toolName)` is exactly what #284 removes.
+
+- [ ] **Owner decision: fold `PidMarker.markerDirectory` into `HomePaths`** (external review of PR #367,
+  2026-08-06). Two structural residues survived the directive-A audit, both pre-existing and deliberate:
+  (a) `HomePaths.markersDir` ignores the receiver's `home` and always resolves under the REAL
+  `user.home` — the plugin↔devrig marker-discovery contract pins the location, but a member ignoring
+  its own receiver is an API wart, and sandboxed-home tests need the `DevrigServices.markersDir`
+  constructor seam solely because of it; (b) `PidMarker.markerDirectory` hand-joins
+  `userHome/.mcp-steroid/markers` (it IS the named route and uses `DEVRIG_HOME_DIR_NAME`, but a strict
+  "everything through HomePaths" reading would fold it in as `home.resolve("markers")` over the
+  receiver). Folding changes marker discovery under explicit test homes (today it escapes the sandbox
+  on purpose — see `GeneratedToolRuntimeTestSupport`), so it is a design decision, not a cleanup.
