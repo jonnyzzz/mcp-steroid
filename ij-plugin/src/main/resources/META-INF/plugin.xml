@@ -83,9 +83,18 @@
         <notificationGroup id="jonnyzzz.mcp.steroid.updates"
                            displayType="BALLOON"/>
 
-        <!-- IDE-first onboarding: offer to connect an AI agent to this IDE -->
+        <!-- IDE-first onboarding: offer to connect an AI agent to this IDE.
+             STICKY_BALLOON on purpose: a plain BALLOON auto-hides in ~10s, at the noisiest moment of the
+             session (project open + indexing), so the migration offer was routinely never seen. There is
+             deliberately no "don't ask again" — the offer repeats every IDE run until devrig is connected,
+             and the status-bar widget carries the same state without popping up. -->
         <notificationGroup id="jonnyzzz.mcp.steroid.onboarding"
-                           displayType="BALLOON"/>
+                           displayType="STICKY_BALLOON"/>
+
+        <!-- Always-visible devrig connection state; click = run the same install/update flow. -->
+        <statusBarWidgetFactory id="jonnyzzz.mcp.steroid.devrig"
+                                order="last"
+                                implementation="com.jonnyzzz.mcpSteroid.onboarding.DevrigStatusBarWidgetFactory"/>
 
         <!-- Settings | Tools | Devrig — MCP Steroid: informational page promoting the devrig CLI
              setup, showing the MCP server status, and keeping the legacy HTTP connection info. -->

@@ -53,7 +53,14 @@ class UpdateChecker(
      * Performs a single update check.
      * Can be called manually for testing.
      */
-    suspend fun checkForUpdates() {
+    /**
+     * Fetch the published `version-base` from version.json, or null when the request or parse fails.
+     *
+     * The release process ships the plugin and devrig from one VERSION, so this single value is the
+     * "current release" line for BOTH — the onboarding flow reuses it to tell whether the devrig the
+     * user has installed is stale (see [com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService]).
+     */
+    suspend fun fetchLatestBaseVersion(): String? {
         val currentVersion = getBuildVersion()
         val ijBuild = ApplicationInfo.getInstance().build.asString()
         val url = "https://devrig.dev/version.json?intellij-version=$ijBuild"
@@ -70,17 +77,21 @@ class UpdateChecker(
                 log.debug("Update check failed: ${e.message}")
                 null
             }
-        } ?: return
+        } ?: return null
 
         val versionInfo = try {
             json.decodeFromString<VersionInfo>(response)
         } catch (e: Exception) {
             log.debug("Failed to parse version response: ${e.message}")
-            return
+            return null
         }
+        lastFetchedVersion = versionInfo.versionBase
+        return versionInfo.versionBase
+    }
 
-        val remoteVersion = versionInfo.versionBase
-        lastFetchedVersion = remoteVersion
+    suspend fun checkForUpdates() {
+        val currentVersion = getBuildVersion()
+        val remoteVersion = fetchLatestBaseVersion() ?: return
 
         val promotedVersion = DevrigVersion.parse(remoteVersion)
         log.info("Promoted version: $promotedVersion, current version: $currentVersion")

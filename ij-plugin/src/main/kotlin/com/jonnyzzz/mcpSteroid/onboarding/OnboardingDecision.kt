@@ -16,19 +16,25 @@ import java.nio.file.Path
 const val CLAUDE_DEVRIG_PLUGIN_KEY = "devrig@jonnyzzz"
 
 /** What the IDE should offer the user on startup, given the detected connection state. */
-enum class OnboardingDecision { ALREADY_CONNECTED, OFFER_ENABLE, OFFER_GET_AGENT }
+enum class OnboardingDecision { ALREADY_CONNECTED, OFFER_ENABLE, OFFER_UPDATE, OFFER_GET_AGENT }
 
 /**
  * Decide the onboarding action. No agent CLI → offer to get one. Otherwise: fully wired (devrig
- * installed AND the Claude plugin enabled) → nothing to do; anything less → offer the one-click enable.
+ * installed AND the Claude plugin enabled) → nothing to do, unless the installed devrig is stale, in
+ * which case we offer the update; anything less → offer the one-click enable.
+ *
+ * The IDE plugin is the migration path onto devrig, so "installed" is not the goal — a *current* devrig
+ * is. An outdated devrig is treated as unfinished migration and offered just as insistently.
  */
 fun decideOnboarding(
     devrigInstalled: Boolean,
     claudePresent: Boolean,
     claudePluginEnabled: Boolean,
+    devrigOutdated: Boolean = false,
 ): OnboardingDecision = when {
     !claudePresent -> OnboardingDecision.OFFER_GET_AGENT
-    devrigInstalled && claudePluginEnabled -> OnboardingDecision.ALREADY_CONNECTED
+    devrigInstalled && claudePluginEnabled ->
+        if (devrigOutdated) OnboardingDecision.OFFER_UPDATE else OnboardingDecision.ALREADY_CONNECTED
     else -> OnboardingDecision.OFFER_ENABLE
 }
 
@@ -36,6 +42,40 @@ fun decideOnboarding(
 fun devrigInstalled(userHome: Path, windows: Boolean): Boolean {
     val name = if (windows) "devrig.cmd" else "devrig"
     return Files.isRegularFile(userHome.resolve(".mcp-steroid").resolve("bin").resolve(name))
+}
+
+/** `exec "<path>"` (POSIX) / `call "<path>"` (Windows `.cmd`) — the install-tree launcher the wrapper runs. */
+private val LAUNCHER_TARGET = Regex("""(?:^|\s)(?:exec|call)\s+"([^"]+)"""", RegexOption.MULTILINE)
+
+/**
+ * The devrig version currently installed, read from the text of the stable `~/.mcp-steroid/bin/devrig`
+ * wrapper — no process spawn. The wrapper (written by devrig's own `BinLauncher.renderPosixLauncher` /
+ * `renderWindowsCmd`) hands off to the content-addressed install tree, whose distribution directory
+ * carries the version: `…/binaries/devrig-<key>-<version>-<sha12>/devrig-<version>/bin/devrig`.
+ *
+ * Returns null when the wrapper is absent or its shape is not recognised — callers must treat that as
+ * "version unknown", NOT as outdated, so a launcher we cannot parse never produces a false update nag.
+ */
+fun installedDevrigVersion(launcherText: String?): String? {
+    val text = launcherText?.takeIf { it.isNotBlank() } ?: return null
+    val target = LAUNCHER_TARGET.find(text)?.groupValues?.get(1) ?: return null
+    // …/<distDir>/bin/devrig(.bat) — drop the trailing "bin/<launcher>" to land on the distribution dir.
+    val distDir = target.replace('\\', '/').trimEnd('/').split('/').dropLast(2).lastOrNull() ?: return null
+    if (!distDir.startsWith("devrig-")) return null
+    return distDir.removePrefix("devrig-").takeIf { it.isNotBlank() }
+}
+
+/**
+ * True iff [installedVersion] is not on the [latestBaseVersion] line (`version-base` from
+ * `version.json`). Uses the same `startsWith` semantics as the plugin's own update check
+ * ([com.jonnyzzz.mcpSteroid.updates.UpdateChecker]), so a snapshot of the current release
+ * (`0.101-SNAPSHOT-abc` vs `0.101`) counts as current, not stale.
+ *
+ * Unknown inputs are never "outdated" — we only nag when we actually know the user is behind.
+ */
+fun isDevrigOutdated(installedVersion: String?, latestBaseVersion: String?): Boolean {
+    if (installedVersion.isNullOrBlank() || latestBaseVersion.isNullOrBlank()) return false
+    return !installedVersion.startsWith(latestBaseVersion)
 }
 
 /** Locate the `claude` CLI: scan PATH entries, then fall back to ~/.local/bin. Null if not found. */
