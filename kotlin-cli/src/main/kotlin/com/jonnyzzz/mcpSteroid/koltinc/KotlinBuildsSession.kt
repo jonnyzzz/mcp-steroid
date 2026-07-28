@@ -8,6 +8,7 @@ import kotlin.io.path.createDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
+import kotlin.io.path.notExists
 import kotlin.io.path.walk
 import kotlin.time.Duration
 import kotlin.time.DurationUnit
@@ -138,7 +139,7 @@ class KotlinBuildsSession(
         }
 
         val btaImplDir = workingDir.resolve("bta-impl")
-        btaImplDir.createDirectory()
+        if (btaImplDir.notExists()) btaImplDir.createDirectory()
         FileSystems.newFileSystem(btaImplUrl, emptyMap<String, Any>()).use { jarFs ->
             jarFs.getPath("/BTA-IMPL").walk().forEach { file ->
                 if (file.isRegularFile()) {
