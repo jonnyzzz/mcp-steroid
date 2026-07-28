@@ -93,17 +93,87 @@ Download the latest ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-s
 
 ## Connect Your AI Agent
 
-**[`devrig`](https://mcp-steroid.jonnyzzz.com/docs/devrig/)** is the standalone CLI for connecting agents to MCP Steroid. It runs a stdio MCP bridge and connects your agent to **every running IntelliJ instance at once** (across projects), discovered automatically — and when none is open it can **download, prepare, and start a managed IDE backend** for the agent (IDEA Community/Ultimate, PyCharm, Android Studio). It's the recommended way to wire up Claude Code, Codex CLI, and Gemini CLI — one registration per agent, applies to every project on the machine.
+MCP Steroid has two halves, and you need both:
 
-> **Requirement: JDK 25.** `devrig` is a Kotlin/JVM application compiled for **Java 25** (class-file v69) and is **not** bundled with a JRE. A **JDK/JRE 25 or newer** must be available on the machine that runs it — either on `PATH` or via `JAVA_HOME` (the `devrig` launcher honours `JAVA_HOME` first). An older Java (21, etc.) fails at startup with `UnsupportedClassVersionError ... class file version 69.0`. Install e.g. [Amazon Corretto 25](https://aws.amazon.com/corretto/) or [Eclipse Temurin 25](https://adoptium.net/), and point `JAVA_HOME` at it if your default `java` is older.
+- the **IDE plugin** — runs inside your JetBrains IDE and exposes it (see [Install](#install) above);
+- **[`devrig`](https://mcp-steroid.jonnyzzz.com/docs/devrig/)** — a small CLI that bridges your AI agent to **every running IntelliJ instance at once** (across projects), discovered automatically. When no IDE is open it can even **download, prepare, and start one** for the agent (IDEA Community/Ultimate, PyCharm, Android Studio).
 
-### One-time setup (from a checkout of this repo)
+You can start from either end — pick the door you're standing at:
+
+| You're starting from… | Go to |
+|---|---|
+| **A JetBrains IDE that's already open** | [Path A — start in the IDE](#path-a--start-in-the-ide) |
+| **Claude Code in a terminal** | [Path B — start in Claude Code](#path-b--start-in-claude-code) |
+| **Codex CLI, Gemini CLI, or another MCP agent** | [Other agents](#other-agents-codex-cli-gemini-cli-) |
+
+### Path A — start in the IDE
+
+1. Install the **MCP Steroid** plugin ([Install](#install) above) and restart the IDE.
+2. The IDE checks whether an agent is wired up yet and shows a notification:
+   - **"Connect Claude Code to this IDE"** → click **Enable**. The IDE installs `devrig` for you (~611 MB — it bundles its own JDK) and enables the devrig plugin in Claude Code. The IDE's progress bar shows each phase and the megabytes as they land.
+   - **"Connect an AI agent to this IDE"** → no Claude Code found on this machine; **Learn how** opens the docs.
+   - **Nothing at all** → you're already connected.
+3. Restart Claude Code (or start a new session), then try: *"run the tests in the open IDE"*.
+
+No ports, tokens, or config files to touch.
+
+**Missed the notification?** The **devrig** entry in the IDE's status bar always shows the real state — *not connected*, *update available*, or *connected*. Click it for a one-paragraph explanation and a button that runs the same install. The notification itself does not auto-hide and returns on the next IDE start until the bridge is connected, so nothing is lost by dismissing it with **Later**.
+
+**Keeping it current:** when a newer devrig is published, the same offer comes back as **Update devrig** (and the status bar says *update available*). Updating re-runs the canonical installer, so the bridge and the plugin it carries stay in sync.
+
+### Path B — start in Claude Code
+
+1. Add the marketplace and install the plugin:
+
+   ```
+   /plugin marketplace add jonnyzzz/mcp-steroid
+   /plugin install devrig@jonnyzzz
+   ```
+
+2. Run **`/devrig:setup`** — it installs `devrig` (~611 MB, bundles its own JDK).
+3. **Restart Claude Code.** The IDE tools appear automatically.
+4. If your JetBrains IDE doesn't have the **MCP Steroid** plugin yet, devrig offers to install it there — approve the IDE's install dialog (or install it from **Settings > Plugins**), then restart the IDE.
+
+Useful anytime: **`/devrig:help`** (what it can do, with copy-paste example prompts), **`/devrig:status`** (read-only health check), **`/devrig:uninstall`** (remove devrig entirely). Details: [`claude-plugin/README.md`](claude-plugin/README.md).
+
+### Other agents (Codex CLI, Gemini CLI, …)
+
+Install `devrig` with the canonical installer, then register it with your agent — one registration per agent, covering every project on the machine:
+
+```bash
+# macOS / Linux
+curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh
+# Windows (PowerShell)
+irm https://mcp-steroid.jonnyzzz.com/install.ps1 | iex
+
+devrig install codex      # or: devrig install gemini / devrig install claude
+```
+
+Each `install` call delegates to the agent's own `mcp add` CLI, so the entry lands in the user-scope config (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`) and is visible from every project. The installer downloads a pinned JDK, so no Java setup is required.
+
+### Verifying it works
+
+```bash
+claude mcp list                                 # devrig: ... - ✓ Connected
+                                                # (plugin:devrig:devrig if you installed the Claude plugin)
+claude -p "List all open projects using steroid_list_projects"
+```
+
+The plugin also writes the raw server URL to `.idea/mcp-steroid.md` in each open project (Streamable HTTP transport, port `6315` by default) for clients that prefer to talk to the IDE directly.
+
+### From a source checkout (contributors)
+
+Building `devrig` yourself, instead of installing the released binary:
+
+> **Requirement: JDK 25.** A source-built `devrig` is a Kotlin/JVM application compiled for **Java 25** (class-file v69) and is **not** bundled with a JRE (unlike the installer above, which downloads a pinned JDK). A **JDK/JRE 25 or newer** must be available — either on `PATH` or via `JAVA_HOME` (the `devrig` launcher honours `JAVA_HOME` first). An older Java (21, etc.) fails at startup with `UnsupportedClassVersionError ... class file version 69.0`. Install e.g. [Amazon Corretto 25](https://aws.amazon.com/corretto/) or [Eclipse Temurin 25](https://adoptium.net/), and point `JAVA_HOME` at it if your default `java` is older.
+
+#### One-time setup
 
 ```bash
 # Build :npx-kt:installDist and stage the launcher under ~/.mcp-steroid/devrig/
 ./gradlew deployNpx
 
-# Register `mcp-steroid` (stdio) at user scope for each agent — once per machine.
+# Register `devrig` (stdio) at user scope for each agent — once per machine.
 # The first call (run by full path, since devrig is not on PATH yet) self-installs the stable
 # launcher ~/.mcp-steroid/bin/devrig, links it onto PATH as `devrig`, and registers THAT — so
 # registrations survive devrig upgrades. Use `devrig` (a fresh shell picks it up) thereafter.
@@ -112,20 +182,11 @@ devrig install codex
 devrig install gemini
 ```
 
-Each `install` call delegates to the agent's own `mcp add` CLI, so the entry lands in the user-scope config (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`) and is visible from every project.
+Using the Claude plugin instead of a standalone registration? Skip `install claude` — the plugin registers the server itself, and `devrig install claude` detects that and leaves it alone. To point the plugin's launcher at your build, see [`claude-plugin/README.md`](claude-plugin/README.md) → "Run a locally built devrig".
 
-### Refreshing the launcher
+#### Refreshing the launcher
 
 After pulling new commits, run `./gradlew deployNpx` again. It rebuilds `:npx-kt:installDist` and re-syncs `~/.mcp-steroid/devrig/` — the launcher path stays the same, so no re-registration is needed. Runtime state under `~/.mcp-steroid/{backends,caches,logs,markers,state}` is preserved.
-
-### Verifying it works
-
-```bash
-claude mcp list                                 # mcp-steroid: ... - ✓ Connected
-claude -p "List all open projects using steroid_list_projects"
-```
-
-The plugin also writes the raw server URL to `.idea/mcp-steroid.md` in each open project at `http://127.0.0.1:6315/mcp` (Streamable HTTP transport) for clients that prefer to talk to the IDE directly.
 
 ---
 
