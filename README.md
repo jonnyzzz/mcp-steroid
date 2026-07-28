@@ -117,9 +117,11 @@ You can start from either end — pick the door you're standing at:
 
 No ports, tokens, or config files to touch.
 
-**Missed the notification?** The **devrig** entry in the IDE's status bar always shows the real state — *not connected*, *update available*, or *connected*. Click it for a one-paragraph explanation and a button that runs the same install. The notification itself does not auto-hide and returns on the next IDE start until the bridge is connected, so nothing is lost by dismissing it with **Later**.
+**Missed the notification?** The **devrig** entry in the IDE's status bar always shows the real state — *not connected*, *update available*, *connected*, or *no agent*. Click it for a one-line summary and a button that runs the same install (plus a **Learn more** link to these docs). The notification itself does not auto-hide and returns on the next IDE start until the bridge is connected, so nothing is lost by dismissing it with **Later**.
 
 **Keeping it current:** when a newer devrig is published, the same offer comes back as **Update devrig** (and the status bar says *update available*). Updating re-runs the canonical installer, so the bridge and the plugin it carries stay in sync.
+
+Every state, message and progress step of this flow is tabulated in [`ij-plugin/README.md`](ij-plugin/README.md#what-the-user-sees).
 
 ### Path B — start in Claude Code
 

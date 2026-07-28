@@ -17,7 +17,8 @@ Then `/devrig:setup` (installs devrig) and restart Claude — see the workflow b
 > and enables this plugin) — you never run the two commands above by hand. The same offer also
 > lives in the IDE's status bar (**devrig: not connected** → click), so it cannot be lost by
 > dismissing a balloon. Both routes end in the same place; see "Connect Your AI Agent" in the
-> [repository README](../README.md).
+> [repository README](../README.md), and [`ij-plugin/README.md`](../ij-plugin/README.md#what-the-user-sees)
+> for what the IDE side shows.
 
 ## How it works (user workflow)
 
