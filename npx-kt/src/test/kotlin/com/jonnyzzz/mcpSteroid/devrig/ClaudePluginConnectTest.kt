@@ -55,6 +55,10 @@ class ClaudePluginConnectTest {
         assertFalse(isClaudePluginEnabled("{}"))
         assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"foo@other":true}}"""))
         assertTrue(isClaudePluginEnabled(enableClaudePluginInSettings(null)))
-        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@mcp-steroid":false}}"""))
+        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@jonnyzzz":false}}"""))
+        // The marketplace name must be the one declared in .claude-plugin/marketplace.json, so the
+        // pre-fix `devrig@mcp-steroid` key names no real plugin and must not read as enabled.
+        assertEquals("devrig@jonnyzzz", CLAUDE_DEVRIG_PLUGIN_KEY)
+        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@mcp-steroid":true}}"""))
     }
 }
