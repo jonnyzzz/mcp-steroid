@@ -282,6 +282,33 @@ class InstallerGeneratorTest {
         assertTrue(scripts.ps.contains("function Remove-Staging"), "install.ps1 missing staging cleanup")
     }
 
+    @Test
+    fun `both scripts announce the artifact size in the downloading line (parsed by the IDE plugin)`() {
+        // The IDE plugin installs devrig for the user and shows a real progress fraction by parsing this
+        // line (ij-plugin InstallerProgress.parseInstallerLine): the "(~N MB)" is the denominator. Both
+        // scripts must therefore log the size in the SAME shape — install.ps1 used to omit it, which left
+        // Windows users with an indeterminate bar for a ~611 MB download.
+        val scripts = renderInstallerScripts(jdkScriptTable(fullModel()), devrig, "1.2.3")
+
+        assertTrue(
+            scripts.sh.contains("""log "downloading ${'$'}{ia_kind} (~${'$'}((ia_size / 1024 / 1024)) MB) from ${'$'}ia_url ...""""),
+            "install.sh must log the artifact size in the downloading line",
+        )
+        assertTrue(
+            scripts.ps.contains("""Write-Log ("downloading {0} (~{1} MB) from {2} ..." -f ${'$'}kind, [long](${'$'}size / 1MB), ${'$'}url)"""),
+            "install.ps1 must log the artifact size in the downloading line",
+        )
+        // The size has to reach the function that logs it, for both artifacts.
+        assertTrue(
+            scripts.ps.contains("Install-Artifact 'devrig' \$DevrigUrl \$DevrigSha256 \$DevrigFormat \$DevrigSize"),
+            "install.ps1 must pass DevrigSize to Install-Artifact",
+        )
+        assertTrue(
+            scripts.ps.contains("\$p.JdkSize"),
+            "install.ps1 must pass the per-platform JdkSize to Install-Artifact",
+        )
+    }
+
     // ── devrig resolution: local override path (no network) ──────────────────────────────────────
 
     @Test
