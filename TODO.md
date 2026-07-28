@@ -1,5 +1,29 @@
 # TODO
 
+- [x] **Bundling devrig inside the IDE plugin — REJECTED** (2026-07-28). devrig is the future, not the
+  plugin, so the plugin stays bundled inside devrig; devrig fetching the plugin on demand would add a
+  runtime dependency on the plugin repository that can break in our own `backend download/start` flow.
+  Freshness is solved devrig-side instead (devrig keeps itself current → so does the plugin it carries;
+  known work, devrig-owned). Measurements + the full rationale:
+  [`docs/devrig-bundled-in-plugin-spike.md`](docs/devrig-bundled-in-plugin-spike.md).
+- [ ] **The IDE plugin is the migration path onto devrig** — it must move existing plugin users onto a
+  correct, current devrig by running our canonical install scripts. The mechanism already exists
+  (`DevrigSetup.kt:26-28` runs `curl … install.sh | sh` / `irm … install.ps1 | iex`, then
+  `devrig connect claude`). Remaining gaps, in order of value:
+  - **The offer is missable**: the onboarding notification group is `displayType="BALLOON"`
+    (`plugin.xml:100`) → auto-hides in ~10 s, fires once per IDE run at project open, and no decision
+    is persisted. Want `STICKY_BALLOON`, `Enable / Later / Don't ask again` with persisted state, and a
+    status-bar widget as the always-visible fallback.
+  - **"Installed" ≠ "migrated"**: `devrigInstalled()` (`OnboardingDecision.kt:36`) only checks that the
+    launcher file exists, so an ancient devrig counts as done. Compare against `version.json` (the
+    plugin already fetches it — `UpdateChecker.kt:58`) and offer the same install script to update.
+    devrig's own `DevrigUpdateChecker` only prints to stderr, which a Claude user never sees.
+  - **No progress on a ~611 MB download**: `ExecUtil.execAndGetOutput` buffers, so the background task
+    shows static text for up to 30 min. Stream the installer's progress into the `ProgressIndicator`.
+  - **No funnel data**: add `analyticsBeacon` events for offered → enabled → install-ok → connected.
+  - **Inconsistent failure state**: the IDE path only notifies; the claude-plugin wrappers write
+    `~/.mcp-steroid/markers/bootstrap-install.failed`. Write the same marker so `/devrig:status` and the
+    SessionStart hook can see an IDE-side failure.
 - [x] Fix `steroid_open_project` to trust a project path before opening it and cover the no-modal path with an integration test.
 - [x] Agent-driven backend management: evaluated new MCP tool vs CLI passthrough vs hybrid (judge panel). **Decision: no new MCP tool** — agents manage backends via the existing `devrig backend …` CLI (fails the PHILOSOPHY 3-gate for a new tool; the CLI already does it). Shipped `mcp-steroid://open-project/managing-backends` recipe + aligned `open_project` to prefer a running devrig-managed backend (`DevrigProjectRoutingService.openProjectTargetIde()`).
 - [ ] Backend management follow-ups (deferred, surfaced during the design):
