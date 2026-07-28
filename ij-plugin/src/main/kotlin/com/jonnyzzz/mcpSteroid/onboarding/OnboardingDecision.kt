@@ -7,8 +7,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** Claude Code `enabledPlugins` key that turns the devrig marketplace plugin on. */
-const val CLAUDE_DEVRIG_PLUGIN_KEY = "devrig@mcp-steroid"
+/**
+ * Claude Code `enabledPlugins` key that turns the devrig marketplace plugin on: `<plugin>@<marketplace>`,
+ * where the marketplace part is the `name` declared in `.claude-plugin/marketplace.json`. Must match
+ * devrig's own constant of the same name (npx-kt `ClaudePluginConnect.kt`) — otherwise this IDE keeps
+ * offering "Enable" on a machine that is already connected. Enforced by `validateMarketplaceJson`.
+ */
+const val CLAUDE_DEVRIG_PLUGIN_KEY = "devrig@jonnyzzz"
 
 /** What the IDE should offer the user on startup, given the detected connection state. */
 enum class OnboardingDecision { ALREADY_CONNECTED, OFFER_ENABLE, OFFER_GET_AGENT }
