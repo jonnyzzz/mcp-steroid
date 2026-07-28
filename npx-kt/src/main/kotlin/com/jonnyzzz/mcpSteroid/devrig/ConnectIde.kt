@@ -33,7 +33,7 @@ fun interface InstallPluginClient {
 const val MARKETPLACE_INSTALL_URL = "https://plugins.jetbrains.com/embeddable/install/$MCP_STEROID_PLUGIN_ID"
 
 /** Custom plugin repository URL for the manual last-resort instructions. */
-const val CUSTOM_REPO_URL = "https://mcp-steroid.jonnyzzz.com/updatePlugins.xml"
+const val CUSTOM_REPO_URL = "https://devrig.dev/updatePlugins.xml"
 
 /** Outcome of a connect-ide attempt, for the caller to narrate/decide on. */
 enum class ConnectIdeOutcome { ALREADY_CONNECTED, NO_IDE, OFFERED_VIA_HTTP, OFFERED_VIA_BROWSER, MANUAL_INSTRUCTIONS }
