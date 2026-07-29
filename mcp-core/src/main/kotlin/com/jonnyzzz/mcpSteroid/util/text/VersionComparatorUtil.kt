@@ -3,23 +3,26 @@
 // This file is derived from IntelliJ IDEA Community Edition:
 //   platform/util-rt/src/com/intellij/util/text/VersionComparatorUtil.java
 // Modifications (Apache License 2.0, Section 4(b)):
-//   - converted from Java to Kotlin: object instead of a final class with static members,
-//     Kotlin nullable types instead of org.jetbrains.annotations, cached enum `entries`
-//     instead of a hand-cached values() array
+//   - converted to idiomatic Kotlin: object instead of a final class with static members,
+//     Kotlin nullable types instead of org.jetbrains.annotations, Regex/split/getOrNull
+//     instead of Pattern/StringTokenizer/null-padded lists, leading-zero counts in
+//     compareNumbers
+//   - uses Kotlin's Unicode-aware trim() where the original used Java String.trim()
+//     (which strips only chars <= U+0020)
 //   - repackaged from com.intellij.util.text to com.jonnyzzz.mcpSteroid.util.text to avoid
 //     clashing with the identically-named platform class when loaded inside the IDE
 // See the NOTICE file at the repository root.
 package com.jonnyzzz.mcpSteroid.util.text
 
 import java.util.Locale
-import java.util.StringTokenizer
-import java.util.regex.Pattern
 
 /**
  * Provides advanced version comparison functionality with support for various version formats.
  * Superior to `com.intellij.openapi.util.text.StringUtil#compareVersionNumbers` by handling complex version patterns.
  *
  * Used for comparing versions of TeamCity plugins and Ruby gems (and probably more).
+ *
+ * See [Version] for a value type that wraps this ordering into [Comparable].
  *
  * @author Leonid Shalupov
  */
@@ -28,9 +31,8 @@ object VersionComparatorUtil {
     fun getPriority(token: String?): Int
   }
 
-  private val WORDS_SPLITTER = Pattern.compile("\\d+|[^\\d]+")
-  private val ZERO_PATTERN = Pattern.compile("0+")
-  private val DIGITS_PATTERN = Pattern.compile("\\d+")
+  /** Splits a token into runs of digits and runs of non-digits: `ab12ba6` -> `ab`, `12`, `ba`, `6`. */
+  private val WORDS_SPLITTER = Regex("""\d+|\D+""")
 
   val COMPARATOR: Comparator<String?> = Comparator { v1, v2 -> compare(v1, v2) }
 
@@ -40,6 +42,8 @@ object VersionComparatorUtil {
 
   fun min(v1: String?, v2: String?): String? = if (compare(v1, v2) < 0) v1 else v2
 
+  // Entries prefixed with '_' are synthetic token classes, never matched literally by
+  // lookup() — renaming _WS to WS would make the token "ws" classify as whitespace.
   enum class VersionTokenType(val priority: Int) {
     SNAP(10), SNAPSHOT(10),
     M(20),
@@ -56,51 +60,26 @@ object VersionComparatorUtil {
 
     companion object {
       fun lookup(str: String?): VersionTokenType {
-        if (str == null) {
-          return _WS
-        }
+        val trimmed = str?.trim().orEmpty()
+        if (trimmed.isEmpty()) return _WS
 
-        // Java String.trim() semantics (strips chars <= U+0020), not Kotlin's Unicode-aware trim()
-        val trimmed = str.trim { it <= ' ' }
-        if (trimmed.isEmpty()) {
-          return _WS
-        }
+        entries.firstOrNull { !it.name.startsWith('_') && it.name.equals(trimmed, ignoreCase = true) }
+          ?.let { return it }
 
-        for (token in entries) {
-          val name = token.name
-          if (name[0] != '_' && name.equals(trimmed, ignoreCase = true)) {
-            return token
-          }
+        return when {
+          trimmed.all { it == '0' } -> _WS
+          trimmed.all { it in '0'..'9' } -> _DIGITS
+          else -> _WORD
         }
-
-        if (ZERO_PATTERN.matcher(trimmed).matches()) {
-          return _WS
-        }
-
-        if (DIGITS_PATTERN.matcher(trimmed).matches()) {
-          return _DIGITS
-        }
-
-        return _WORD
       }
     }
   }
 
-  fun splitVersionString(ver: String): List<String> {
-    // Java String.trim() semantics (strips chars <= U+0020), not Kotlin's Unicode-aware trim()
-    val st = StringTokenizer(ver.trim { it <= ' ' }, "()._-;:/, +~")
-    val result = ArrayList<String>()
-
-    while (st.hasMoreTokens()) {
-      val matcher = WORDS_SPLITTER.matcher(st.nextToken())
-
-      while (matcher.find()) {
-        result.add(matcher.group())
-      }
-    }
-
-    return result
-  }
+  fun splitVersionString(ver: String): List<String> =
+    ver.trim()
+      .split('(', ')', '.', '_', '-', ';', ':', '/', ',', ' ', '+', '~')
+      .filter { it.isNotEmpty() }
+      .flatMap { token -> WORDS_SPLITTER.findAll(token).map { it.value } }
 
   /**
    * Compare two version strings. See TeamCity documentation on requirements comparison
@@ -112,80 +91,41 @@ object VersionComparatorUtil {
   fun compare(ver1: String?, ver2: String?): Int = compare(ver1, ver2, DEFAULT_TOKEN_PRIORITIZER)
 
   fun compare(ver1: String?, ver2: String?, tokenPriorityProvider: TokenPrioritizer): Int {
-    // todo duplicates com.intellij.openapi.util.text.StringUtil.compareVersionNumbers()
-    // todo please refactor next time you make changes here
-    if (ver1 == null) {
-      return if (ver2 == null) 0 else -1
-    }
-    if (ver2 == null) {
-      return 1
-    }
+    if (ver1 == null || ver2 == null) return compareValues(ver1, ver2)
 
-    val s1: MutableList<String?> = ArrayList(splitVersionString(ver1.lowercase(Locale.ENGLISH)))
-    val s2: MutableList<String?> = ArrayList(splitVersionString(ver2.lowercase(Locale.ENGLISH)))
+    val s1 = splitVersionString(ver1.lowercase(Locale.ENGLISH))
+    val s2 = splitVersionString(ver2.lowercase(Locale.ENGLISH))
 
-    padWithNulls(s1, s2)
+    for (i in 0 until maxOf(s1.size, s2.size)) {
+      val e1 = s1.getOrNull(i)
+      val e2 = s2.getOrNull(i)
 
-    for (i in s1.indices) {
-      val e1 = s1[i]
-      val e2 = s2[i]
-      val t1 = VersionTokenType.lookup(e1)
+      val byPriority = tokenPriorityProvider.getPriority(e1).compareTo(tokenPriorityProvider.getPriority(e2))
+      if (byPriority != 0) return byPriority
 
-      var res = tokenPriorityProvider.getPriority(e1).compareTo(tokenPriorityProvider.getPriority(e2))
-      if (res != 0) {
-        return res
+      // a padding token (past the shorter version's end) has no text to compare
+      if (e1 == null || e2 == null) continue
+
+      val byValue = when (VersionTokenType.lookup(e1)) {
+        VersionTokenType._WORD -> e1.compareTo(e2)
+        VersionTokenType._DIGITS -> compareNumbers(e1, e2)
+        else -> 0
       }
-      if (t1 == VersionTokenType._WORD) {
-        res = e1!!.compareTo(e2!!)
-      } else if (t1 == VersionTokenType._DIGITS) {
-        res = compareNumbers(e1!!, e2!!)
-      }
-
-      if (res != 0) {
-        return res
-      }
+      if (byValue != 0) return byValue
     }
 
     return 0
   }
 
-  private fun compareNumbers(number1: String, number2: String): Int {
-    var n1 = number1
-    var n2 = number2
-
-    // trim leading zeros
-    while (n1.isNotEmpty() && n2.isNotEmpty() && n1[0] == '0' && n2[0] == '0') {
-      n1 = n1.substring(1)
-      n2 = n2.substring(1)
-    }
-
-    // starts with zero => less
-    if (n1.isNotEmpty() && n1[0] == '0') {
-      return -1
-    }
-    if (n2.isNotEmpty() && n2[0] == '0') {
-      return 1
-    }
-
-    // compare as numbers
-    if (n1.length > n2.length) {
-      return 1
-    }
-    if (n2.length > n1.length) {
-      return -1
-    }
-
-    return n1.compareTo(n2)
-  }
-
-  private fun padWithNulls(s1: MutableList<String?>, s2: MutableList<String?>) {
-    if (s1.size != s2.size) {
-      while (s1.size < s2.size) {
-        s1.add(null)
-      }
-      while (s1.size > s2.size) {
-        s2.add(null)
-      }
+  private fun compareNumbers(n1: String, n2: String): Int {
+    val zeros1 = n1.takeWhile { it == '0' }.length
+    val zeros2 = n2.takeWhile { it == '0' }.length
+    return when {
+      // more leading zeros sorts lower: 1.2 > 1.02, 1.01 > 1.002
+      zeros1 != zeros2 -> zeros2.compareTo(zeros1)
+      // equally padded: a longer digit run is a bigger number
+      n1.length != n2.length -> n1.length.compareTo(n2.length)
+      else -> n1.compareTo(n2)
     }
   }
 }
