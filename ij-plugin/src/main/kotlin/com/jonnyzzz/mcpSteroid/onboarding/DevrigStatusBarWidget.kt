@@ -27,16 +27,41 @@ import javax.swing.JPanel
 const val DEVRIG_STATUS_WIDGET_ID: String = "jonnyzzz.mcp.steroid.devrig"
 
 /**
- * A permanently visible statement of whether this IDE is actually bridged to an agent.
+ * Whether the widget should occupy status-bar space at all.
  *
- * The startup notification can be missed — it is one balloon among many at the noisiest moment of the
- * session. This widget cannot: it sits in the status bar until the migration onto devrig is finished,
- * and one click starts it. It nags nobody, so it is the calm counterpart to the sticky offer.
+ * A plugin should not claim status-bar space permanently, so this widget is a transient onboarding aid
+ * rather than a fixture: it exists only while there is something to act on, and removes itself once the
+ * migration onto devrig is finished. If the situation regresses — devrig deleted, the Claude plugin
+ * disabled, a new release published — it comes back, see [DevrigConnectionStateService.refreshLocalAsync].
+ *
+ * An unknown state (before the first refresh) reports `false` so a fully-connected IDE never flashes a
+ * widget it is about to remove again. The first refresh runs at project open from
+ * [DevrigOnboardingService], which materialises the widget if there is anything to offer.
+ */
+fun shouldShowDevrigWidget(state: DevrigConnectionState?): Boolean =
+    state != null && state.decision != OnboardingDecision.ALREADY_CONNECTED
+
+/**
+ * The calm counterpart to the startup offer: the notification is one balloon among many at the noisiest
+ * moment of the session and is easy to miss, so the same state also sits in the status bar — until the
+ * migration is done, at which point [isAvailable] takes the widget away again.
+ *
+ * The user can also remove it at any time: [isConfigurable] and [isEnabledByDefault] are left at their
+ * platform defaults (both `true`), so right-clicking the status bar offers to hide this widget and the
+ * choice is persisted by the platform. We deliberately do not reimplement that in our own popup.
  */
 class DevrigStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getId(): String = DEVRIG_STATUS_WIDGET_ID
 
     override fun getDisplayName(): String = "devrig"
+
+    /**
+     * Availability is re-read only when the platform creates widgets or when
+     * [com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager.updateWidget] is called — the
+     * status bar never polls. [DevrigConnectionStateService] makes that call whenever this flips.
+     */
+    override fun isAvailable(project: Project): Boolean =
+        shouldShowDevrigWidget(DevrigConnectionStateService.getInstance().current())
 
     override fun createWidget(project: Project): StatusBarWidget = DevrigStatusBarWidget(project)
 }
@@ -55,7 +80,9 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
     override fun ID(): String = DEVRIG_STATUS_WIDGET_ID
 
     override fun install(statusBar: StatusBar) {
-        // First paint happens before any refresh has run, so kick one off; it calls updateWidget() back.
+        // Normally unreachable: the factory reports unavailable while the state is unknown, so the widget
+        // is only created after a refresh. Kept as a safety net — if some other path ever creates it
+        // early, this stops the widget sitting on "devrig: …" forever.
         if (DevrigConnectionStateService.getInstance().current() == null) {
             DevrigConnectionStateService.getInstance().refreshAsync()
         }

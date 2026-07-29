@@ -91,7 +91,10 @@
         <notificationGroup id="jonnyzzz.mcp.steroid.onboarding"
                            displayType="STICKY_BALLOON"/>
 
-        <!-- Always-visible devrig connection state; click = run the same install/update flow. -->
+        <!-- devrig connection state; click = run the same install/update flow. Present only while there
+             is something to act on: the factory reports itself unavailable once the IDE is connected, so
+             the plugin does not hold status-bar space permanently. The user can also hide it for good by
+             right-clicking the status bar (platform-provided, since the factory stays configurable). -->
         <statusBarWidgetFactory id="jonnyzzz.mcp.steroid.devrig"
                                 order="last"
                                 implementation="com.jonnyzzz.mcpSteroid.onboarding.DevrigStatusBarWidgetFactory"/>
@@ -159,6 +162,11 @@
     <applicationListeners>
         <listener class="com.jonnyzzz.mcpSteroid.server.SteroidsMcpServerAppLifecycleListener"
                   topic="com.intellij.ide.AppLifecycleListener"/>
+        <!-- Re-check the devrig state when the IDE regains focus. The status-bar widget removes itself
+             once everything is connected, and a removed widget cannot notice that devrig was deleted
+             afterwards — this is what brings it back inside the same session. Debounced + no network. -->
+        <listener class="com.jonnyzzz.mcpSteroid.onboarding.DevrigFocusRefreshListener"
+                  topic="com.intellij.openapi.application.ApplicationActivationListener"/>
     </applicationListeners>
 
 </idea-plugin>
