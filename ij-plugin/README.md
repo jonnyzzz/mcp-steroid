@@ -15,16 +15,28 @@ installer.
 
 ### Status bar
 
-The **devrig** widget is always present, so the state of the bridge can never be lost by dismissing a
-balloon. Clicking it opens a small popup: a title, one short line, a **Learn more** link, and one button.
+The **devrig** widget is present whenever there is something to act on, so the state of the bridge cannot
+be lost by dismissing a balloon. Clicking it opens a small popup: a title, one short line, a **Learn more**
+link, and one button.
+
+It is an onboarding aid, not a fixture: **once the IDE is fully connected the widget removes itself**, so
+the plugin does not permanently hold a slot in the status bar. It returns if the situation regresses —
+devrig deleted, the Claude plugin switched off, a newer release published. The state is re-checked when the
+IDE window regains focus (debounced, no network call), which is what lets it come back within the same
+session rather than only after a restart.
+
+**Removing it for good** is the platform's own gesture, not something the plugin reimplements: right-click
+the status bar and hide the **devrig** widget, or use the status-bar widget list in
+**Settings | Appearance & Behavior | Appearance**. The choice is persisted by the platform, and the
+plugin's own re-checks never override it.
 
 | State | Status bar | Popup line | Button → what it does |
 |---|---|---|---|
 | devrig missing, or the Claude plugin not enabled | `devrig: not connected` | Let Claude Code run, debug and refactor in this IDE. | **Download and connect** → runs the canonical installer, then `devrig connect claude` |
 | installed devrig is behind the published release | `devrig: update available` | Installed 0.100, current 0.101. | **Update devrig** → re-runs the installer (it always fetches the current release) |
-| fully wired | `devrig: connected` | Claude Code can drive this IDE through devrig 0.101. | **Open settings** → Settings \| Tools \| MCP Steroid |
+| fully wired | *(no widget — it removes itself)* | Claude Code can drive this IDE through devrig 0.101. | **Open settings** → Settings \| Tools \| MCP Steroid |
 | no `claude` CLI on this machine | `devrig: no agent` | Install Claude Code — devrig bridges it to this IDE. | **How to get one** → opens the docs |
-| state not computed yet (first seconds) | `devrig: …` | *(falls back to the not-connected copy — the click must never be a no-op)* | **Download and connect** |
+| state not computed yet (first seconds) | *(no widget yet — it appears once the first check finishes, so a connected IDE never flashes one)* | *(falls back to the not-connected copy — the click must never be a no-op)* | **Download and connect** |
 
 The tooltip states the same situation in one line and ends with "click for details".
 
