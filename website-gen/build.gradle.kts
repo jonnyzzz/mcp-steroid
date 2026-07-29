@@ -37,7 +37,7 @@ val websiteGenMain = "com.jonnyzzz.mcpSteroid.websitegen.WebsiteArtifactsKt"
 // into website/static. The task KNOWS ALL PATHS: VERSION + output dir + release-notes are derived from
 // the project layout, so callers (the website Makefile / CI) invoke it with no arguments. It depends ONLY
 // on this module's classes (no project() deps), so it never builds the rest of the project — fast.
-val generateWebsite by tasks.registering(JavaExec::class) {
+val generateWebsite = tasks.register<JavaExec>("generateWebsite") {
     group = "website"
     description = "Generate ALL website static files (version.json + updatePlugins.xml + install.sh + install.ps1 + EULA + LICENSE) into website/build/generated-static."
     mainClass.set(websiteGenMain)

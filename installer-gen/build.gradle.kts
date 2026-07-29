@@ -48,7 +48,7 @@ val installerIntegrationTestSourceSet = sourceSets.create("installerIntegrationT
     runtimeClasspath += output + compileClasspath
 }
 
-val installerIntegrationTest by tasks.registering(Test::class) {
+val installerIntegrationTest = tasks.register<Test>("installerIntegrationTest") {
     group = "verification"
     description = "Docker-backed installer bootstrap test — runs the generated install.sh end-to-end."
     useJUnitPlatform()
@@ -81,7 +81,7 @@ val jdkDownloadCacheDir: java.io.File = gradle.gradleUserHomeDir.resolve("caches
 // Resolve all JDK builds (Amazon Corretto 25 + Azul Zulu 25) into the version-pinned data model JSON.
 // Vendor-natural validation (detached OpenPGP signatures) happens inside the generator; downloads are
 // cached in jdkDownloadCacheDir. No project() deps — compiles only this module.
-val generateJdkModel by tasks.registering(JavaExec::class) {
+val generateJdkModel = tasks.register<JavaExec>("generateJdkModel") {
     group = "installer"
     description = "Resolve all JDK builds (Corretto + Azul) into the JDK data model JSON (PGP-verified, cached)."
     mainClass.set("com.jonnyzzz.mcpSteroid.installer.JdkModelMainKt")
@@ -107,7 +107,7 @@ val generateJdkModel by tasks.registering(JavaExec::class) {
 // PGP-verified) and the devrig coordinates (the v<VERSION> GitHub release by default — tied to --version,
 // not "latest"), then bakes the per-platform table into the scripts. Knows all paths from the project
 // layout — callers invoke it with no args.
-val generateInstaller by tasks.registering(JavaExec::class) {
+val generateInstaller = tasks.register<JavaExec>("generateInstaller") {
     group = "installer"
     description = "Generate install.sh + install.ps1 into website/build/generated-static (JDKs PGP-verified + cached; devrig from the v<VERSION> release)."
     mainClass.set("com.jonnyzzz.mcpSteroid.installer.InstallerGeneratorKt")

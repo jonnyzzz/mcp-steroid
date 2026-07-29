@@ -181,7 +181,9 @@ abstract class VerifyBundledKotlinCompatibilityTask : DefaultTask() {
             listOf(executable.toString(), "-version")
         }
 
-        val output = runCommand(command, project.projectDir.toPath())
+        // cwd is irrelevant for `kotlinc -version`; kotlincRoot keeps Task.project out of the
+        // execution path (deprecated in Gradle 9, config-cache incompatible, error in Gradle 10).
+        val output = runCommand(command, kotlincRoot)
         if (output.exitCode != 0) {
             throw GradleException("Failed to execute bundled kotlinc.\n${output.output}")
         }

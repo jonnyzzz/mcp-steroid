@@ -22,7 +22,7 @@ val ktorVersion = "3.3.2"
 // Resolvable: pulls :ij-plugin's `buildPlugin` archive through the "plugin-zip"
 // Usage attribute (same hook :test-integration uses). The distribution bundles
 // this archive directly as ij-plugin.zip.
-val ijPluginZip by configurations.creating {
+val ijPluginZip = configurations.create("ijPluginZip") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -33,7 +33,7 @@ val ijPluginZip by configurations.creating {
 // Resolvable: pulls :intellij-downloader's extracted 7-Zip binaries
 // tree through the "seven-zip-binaries" Usage attribute. The directory
 // (not a zip) lands here so distZip can copy it verbatim into 7z/.
-val sevenZipBinaries by configurations.creating {
+val sevenZipBinaries = configurations.create("sevenZipBinaries") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -278,7 +278,7 @@ val devrigVersion: String = version.toString()
 // but in devrig's package so runtime version reporting needs no classpath
 // resource fallback.
 val generatedSourcesPath = layout.buildDirectory.dir("generated/kotlin")
-val generateDevrigVersionMetadata by tasks.registering(GenerateMetadataTask::class) {
+val generateDevrigVersionMetadata = tasks.register<GenerateMetadataTask>("generateDevrigVersionMetadata") {
     group = "build"
     description = "Generate encoded devrig version metadata"
 
@@ -304,7 +304,7 @@ tasks.withType<KotlinCompile>().configureEach {
 // `installDist` output as a subprocess and exchange JSON-RPC frames over stdio.
 // They are NOT part of the default `:npx-kt:test` run — invoke explicitly via
 // `./gradlew :npx-kt:integrationTest`.
-val integrationTest: SourceSet by sourceSets.creating {
+val integrationTest: SourceSet = sourceSets.create("integrationTest") {
     compileClasspath += sourceSets["main"].output + sourceSets["test"].output +
             sourceSets["test"].compileClasspath
     runtimeClasspath += output + compileClasspath + sourceSets["test"].runtimeClasspath
@@ -364,7 +364,7 @@ tasks.register<Test>("integrationTest") {
     }
 }
 
-val devrigPackageElements by configurations.creating {
+val devrigPackageElements = configurations.create("devrigPackageElements") {
     isCanBeConsumed = true
     isCanBeResolved = false
     attributes {
@@ -384,7 +384,7 @@ tasks.named("assemble") {
 // transitive-dependency churn (a coroutine update, a Ktor bump, a new internal module)
 // fails the build instead of silently changing what end users `npx`-install. Update
 // `expectedFiles` below when the change is intentional.
-val verifyBundledLibraries by tasks.registering {
+val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
     group = "verification"
     description = "List and verify libraries bundled in the devrig distZip"
     dependsOn(tasks.distZip)
@@ -594,7 +594,7 @@ val verifyBundledLibraries by tasks.registering {
 // recursively at any folder — devrig's own jars AND the bundled ij-plugin.zip (kotlinc included). The
 // 7-Zip binaries aren't .class/.jar/.zip and are ignored. `maxJavaFeature` is the single knob the
 // JDK-target change lowers to 21.
-val verifyClassFileVersions by tasks.registering(VerifyClassFileVersionTask::class) {
+val verifyClassFileVersions = tasks.register<VerifyClassFileVersionTask>("verifyClassFileVersions") {
     group = "verification"
     description = "Verify devrig class files load on the oldest supported JBR (class-file version guard)"
     archives.from(tasks.distZip)

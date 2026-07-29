@@ -13,13 +13,13 @@ repositories {
     mavenCentral()
 }
 
-val promptGeneratorClasspath by configurations.creating {
+val promptGeneratorClasspath = configurations.create("promptGeneratorClasspath") {
     isCanBeConsumed = false
     isCanBeResolved = true
 }
 
 // Consume kotlinc distribution from kotlin-cli subproject
-val kotlincDist by configurations.creating {
+val kotlincDist = configurations.create("kotlincDist") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -28,7 +28,7 @@ val kotlincDist by configurations.creating {
 }
 
 // Configuration to resolve intellij-downloader as a classpath for the download task
-val ideDownloaderClasspath by configurations.creating {
+val ideDownloaderClasspath = configurations.create("ideDownloaderClasspath") {
     isCanBeConsumed = false
     isCanBeResolved = true
 }
@@ -41,7 +41,7 @@ val ideDownloaderClasspath by configurations.creating {
 // doesn't see project-local outputs — passing this configuration's
 // resolved files via the `mcp.steroid.extra.classpath` system property
 // lets the test append them to the kotlinc subprocess classpath.
-val ktblockExtraClasspath by configurations.creating {
+val ktblockExtraClasspath = configurations.create("ktblockExtraClasspath") {
     isCanBeConsumed = false
     isCanBeResolved = true
 }
@@ -64,7 +64,7 @@ dependencies {
 val generatedSources = layout.buildDirectory.dir("generated/kotlin/prompts")
 val generatedTestSources = layout.buildDirectory.dir("generated/kotlin-test/prompts")
 val eulaPromptsDir = layout.buildDirectory.dir("eula-prompts")
-val prepareEulaPrompt by tasks.registering {
+val prepareEulaPrompt = tasks.register("prepareEulaPrompt") {
     val eulaFile = rootProject.layout.projectDirectory.file("EULA")
     val outputFile = eulaPromptsDir.map { it.file("license/EULA.md") }
     inputs.file(eulaFile)
@@ -77,7 +77,7 @@ val prepareEulaPrompt by tasks.registering {
     }
 }
 
-val generatePrompts by tasks.registering(JavaExec::class) {
+val generatePrompts = tasks.register<JavaExec>("generatePrompts") {
     dependsOn(prepareEulaPrompt)
     classpath = promptGeneratorClasspath
     mainClass.set("com.jonnyzzz.mcpSteroid.promptgen.MainKt")

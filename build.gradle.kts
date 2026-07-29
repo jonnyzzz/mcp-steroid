@@ -2,7 +2,7 @@
 
 plugins {
     id("de.undercouch.download") version "5.6.0" apply false
-    id("org.jetbrains.intellij.platform") version "2.13.1" apply false
+    id("org.jetbrains.intellij.platform") version "2.18.1" apply false
     id("com.github.node-gradle.node") version "7.1.0" apply false
     kotlin("jvm") version "2.3.20" apply false
     kotlin("plugin.serialization") version "2.3.20" apply false
@@ -157,7 +157,7 @@ allprojects {
  * Root configuration that resolves the plugin .zip artifact produced by :ij-plugin.
  * Consumed by [buildPluginOnCI] to avoid reaching into `ij-plugin/build/distributions/` directly.
  */
-val pluginZip by configurations.creating {
+val pluginZip = configurations.create("pluginZip") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -176,7 +176,7 @@ dependencies {
  * :ij-plugin's plugin .zip, so resolving both configurations still drives :ij-plugin:buildPlugin
  * exactly once within a single Gradle invocation.
  */
-val devrigZip by configurations.creating {
+val devrigZip = configurations.create("devrigZip") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -200,7 +200,7 @@ dependencies {
  * Intended to be the single entry point for both CI systems:
  *   ./gradlew buildPluginOnCI -Pmcp.build.version=<base>-SNAPSHOT-(GH|JB)-<counter>-<hash>
  */
-val buildPluginOnCI by tasks.registering {
+val buildPluginOnCI = tasks.register("buildPluginOnCI") {
     group = "ci"
     description = "Build the plugin + devrig distributions and publish their binaries via TeamCity service messages."
     inputs.files(pluginZip)
@@ -302,7 +302,7 @@ val pluginCoreSubprojects = setOf(
  * siblings on the CI side; locally, developers run the subproject-specific `:test` tasks
  * directly.
  */
-val ciBuildPluginTests by tasks.registering {
+val ciBuildPluginTests = tasks.register("ciBuildPluginTests") {
     group = "ci"
     description = "Run :test for the plugin modules (excludes ${(nonPluginTestSubprojects + promptsSubprojects).joinToString { ":$it" }})."
 
@@ -350,7 +350,7 @@ val ciBuildPluginTests by tasks.registering {
  * Running this separately from [ciBuildPluginTests] means a prompt-generator regression
  * fails fast in its own TC build config without blocking the per-OS plugin tests.
  */
-val ciBuildPromptsTests by tasks.registering {
+val ciBuildPromptsTests = tasks.register("ciBuildPromptsTests") {
     group = "ci"
     description = "Run :test for the prompts-related subprojects: ${promptsSubprojects.joinToString { ":$it" }}."
 
@@ -402,7 +402,7 @@ val ciIntegrationTestTaskPaths = listOf(
  * `test-integration/build.gradle.kts` to also accept `ciIntegrationTests`, otherwise
  * this aggregator would silently skip the heaviest step.
  */
-val ciIntegrationTests by tasks.registering {
+val ciIntegrationTests = tasks.register("ciIntegrationTests") {
     group = "ci"
     description = "Run the integration-test suite in order: ${ciIntegrationTestTaskPaths.joinToString()}."
     dependsOn(ciIntegrationTestTaskPaths)
@@ -414,7 +414,7 @@ val ciIntegrationTests by tasks.registering {
  * windows/ubuntu matrix. The suite's own `test` task is gated `enabled = isWindows || isLinux`, so on
  * macOS this aggregator resolves to a skipped task. Uses mock probe scripts (no real devrig).
  */
-val ciAgentLaunchTests by tasks.registering {
+val ciAgentLaunchTests = tasks.register("ciAgentLaunchTests") {
     group = "ci"
     description = "Run the cross-OS agent-launch behaviour tests: :test-integration-agent-launch (test + windowsPs1Test)."
     dependsOn(":test-integration-agent-launch:test")
@@ -449,7 +449,7 @@ val ciDevrigTestTaskPaths = listOf(
  * strictly in order. The mirror of [ciIntegrationTests] for the devrig side; TeamCity's
  * dedicated `devrig test` configuration invokes this single entry point.
  */
-val ciDevrigTests by tasks.registering {
+val ciDevrigTests = tasks.register("ciDevrigTests") {
     group = "ci"
     description = "Run the devrig (:npx-kt) suite in order: ${ciDevrigTestTaskPaths.joinToString()}."
     dependsOn(ciDevrigTestTaskPaths)
@@ -471,7 +471,7 @@ val ciDevrigTests by tasks.registering {
  * plugin failing to apply, or a module being renamed out of existence) into a fast, loud failure
  * instead of a green build that compiled nothing.
  */
-val compileAllClasses by tasks.registering {
+val compileAllClasses = tasks.register("compileAllClasses") {
     group = "ci"
     description = "Compile every source set (classes / testClasses / extra source sets) across all modules — no tests, no packaging."
 }
@@ -539,7 +539,7 @@ gradle.projectsEvaluated {
 // rest of ~/.mcp-steroid/ (runtime state — backends, caches, logs, markers,
 // eid_* sessions) untouched. Agent registration (claude/codex/gemini) is a
 // one-time setup handled by the devrig launcher's own CLI, not by this task.
-val deployNpx by tasks.registering(Sync::class) {
+val deployNpx = tasks.register<Sync>("deployNpx") {
     description = "Build :npx-kt:installDist and sync it into ~/.mcp-steroid/devrig/."
     group = "deployment"
     dependsOn(":npx-kt:installDist")

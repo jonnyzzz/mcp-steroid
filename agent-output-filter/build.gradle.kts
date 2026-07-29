@@ -28,7 +28,7 @@ kotlin {
     jvmToolchain(25)
 }
 
-val executableDistribution by configurations.creating {
+val executableDistribution = configurations.create("executableDistribution") {
     isCanBeConsumed = true
     isCanBeResolved = false
 }

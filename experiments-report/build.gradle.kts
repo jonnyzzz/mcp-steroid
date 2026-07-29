@@ -38,7 +38,7 @@ tasks.test {
 //
 //   ./gradlew :experiments-report:generateExperimentsReport \
 //       --args="--input <dir> --out <dir>/index.html [--title '…']"
-val generateExperimentsReport by tasks.registering(JavaExec::class) {
+val generateExperimentsReport = tasks.register<JavaExec>("generateExperimentsReport") {
     group = "report"
     description = "Render the test-experiments with/without-MCP comparison dashboard (index.html) from a collected input dir."
     mainClass.set("com.jonnyzzz.mcpSteroid.report.ReportMainKt")

@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
 import com.jonnyzzz.mcpSteroid.ideDownloader.McpSteroidIdeTargets
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveAndUnpackLocally
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.net.HttpURLConnection
 import java.net.URI
@@ -20,7 +21,7 @@ plugins {
 }
 
 
-val isReleaseBuild: Boolean by rootProject.extra
+val isReleaseBuild = rootProject.extra["isReleaseBuild"] as Boolean
 
 @Suppress("UNCHECKED_CAST")
 val releaseNotesText: Provider<String>? = rootProject.extra["releaseNotesText"] as? Provider<String>
@@ -145,7 +146,7 @@ fun ideRootProviderFor(
     providers.provider { ideRootFor(target, product) }
 
 // Consume kotlinc distribution from kotlin-cli subproject
-val kotlincDist by configurations.creating {
+val kotlincDist = configurations.create("kotlincDist") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -239,7 +240,7 @@ dependencies {
 // and need the full IntelliJ Platform test framework classpath, but they spin up Docker
 // containers and require API keys, so they are NOT part of the default `:ij-plugin:test` run.
 // Invoke explicitly via `./gradlew :ij-plugin:integrationTest`.
-val integrationTest: SourceSet by sourceSets.creating {
+val integrationTest: SourceSet = sourceSets.create("integrationTest") {
     compileClasspath += sourceSets["main"].output + sourceSets["test"].output +
             sourceSets["test"].compileClasspath
     runtimeClasspath += output + compileClasspath + sourceSets["test"].runtimeClasspath
@@ -255,7 +256,7 @@ kotlin {
 val generatedSourcesPath = layout.buildDirectory.dir("generated/kotlin")
 
 // Generate metadata with encoded version
-val generateMetadata by tasks.registering(GenerateMetadataTask::class) {
+val generateMetadata = tasks.register<GenerateMetadataTask>("generateMetadata") {
     group = "build"
     description = "Generate plugin metadata with encoded version"
 
@@ -300,6 +301,17 @@ intellijPlatform {
     }
 
     pluginVerification {
+        // IPGP 2.15+ expanded the default failureLevel with INTERNAL_API_USAGES and
+        // OVERRIDE_ONLY_API_USAGES. IU-262 marks PluginManagerCore.getPlugin/loadedPlugins
+        // @ApiStatus.Internal, and the replacement its KDoc points to (PluginDetailsService)
+        // does not exist in 261 — the two call sites (PluginDescriptorProvider,
+        // ScriptClassLoaderFactory) cannot move off the internal API while 261 stays
+        // supported. Keep OVERRIDE_ONLY as an active guard; internal-API usages stay
+        // visible in the verifier report without failing the build.
+        failureLevel = listOf(
+            FailureLevel.COMPATIBILITY_PROBLEMS,
+            FailureLevel.OVERRIDE_ONLY_API_USAGES,
+        )
         ides {
             // Verifier IDEs go through `intellij-downloader` too. Each entry is
             // downloaded + unpacked into `build/local-ides/<P>-<build>-<os>-<arch>/`
@@ -383,7 +395,7 @@ tasks {
     }
 }
 
-val verifyBundledKotlinCompatibility by tasks.registering(VerifyBundledKotlinCompatibilityTask::class) {
+val verifyBundledKotlinCompatibility = tasks.register<VerifyBundledKotlinCompatibilityTask>("verifyBundledKotlinCompatibility") {
     group = "verification"
     description = "Verify bundled kotlinc is close enough to IntelliJ-bundled kotlin-stdlib"
     dependsOn(kotlincDist)
@@ -427,13 +439,13 @@ val verifyBundledKotlinxRuntimeTasks = McpSteroidIdeTargets.verifierTargets.map 
 
 // Umbrella so other tasks depend on "all verifier targets verified" with a single
 // reference. Required by tasks.check + tasks.verifyPlugin below.
-val verifyBundledKotlinxRuntime by tasks.registering {
+val verifyBundledKotlinxRuntime = tasks.register("verifyBundledKotlinxRuntime") {
     group = "verification"
     description = "Run KotlinxRuntimeProbe against every IDE in McpSteroidIdeTargets.verifierTargets"
     dependsOn(verifyBundledKotlinxRuntimeTasks)
 }
 
-val ocrToolDist by configurations.creating {
+val ocrToolDist = configurations.create("ocrToolDist") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -479,7 +491,7 @@ listOf(tasks.prepareSandbox, tasks.prepareTestSandbox, prepareSandbox_integratio
 }
 
 // Expose plugin .zip for consumption by test-integration module
-val pluginZipElements by configurations.creating {
+val pluginZipElements = configurations.create("pluginZipElements") {
     isCanBeConsumed = true
     isCanBeResolved = false
     attributes {
@@ -520,7 +532,7 @@ artifacts {
 
 // Verify bundled libraries in plugin/lib folder
 val pluginVersion = version.toString()
-val verifyBundledLibraries by tasks.registering {
+val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
     group = "verification"
     description = "List and verify libraries bundled in plugin lib folder"
     dependsOn(tasks.buildPlugin)
@@ -639,7 +651,7 @@ val verifyBundledLibraries by tasks.registering {
 // emits major-69 classes loads in IDEA but NOT in Android Studio. Scans every bundled jar/zip recursively
 // at any folder (including kotlinc / ocr-tesseract). `maxJavaFeature` is the single knob the JDK-target
 // change lowers to 21.
-val verifyClassFileVersions by tasks.registering(VerifyClassFileVersionTask::class) {
+val verifyClassFileVersions = tasks.register<VerifyClassFileVersionTask>("verifyClassFileVersions") {
     group = "verification"
     description = "Verify bundled plugin class files load on the oldest supported JBR (class-file version guard)"
     archives.from(tasks.buildPlugin)
@@ -670,7 +682,7 @@ tasks.verifyPlugin {
 }
 
 // Deploy plugin to running IDEs with hot-reload support
-val deployPlugin by tasks.registering {
+val deployPlugin = tasks.register("deployPlugin") {
     group = "intellij platform"
     description = "Deploy plugin to running IDEs"
     dependsOn(verifyBundledLibraries)
@@ -710,7 +722,7 @@ val deployPlugin by tasks.registering {
 }
 
 
-val deployPluginLocallyTo253 by tasks.registering(Sync::class) {
+val deployPluginLocallyTo253 = tasks.register<Sync>("deployPluginLocallyTo253") {
     dependsOn(tasks.buildPlugin)
     dependsOn(verifyBundledLibraries)
     group = "intellij platform"
@@ -750,7 +762,7 @@ val deployPluginLocallyTo253 by tasks.registering(Sync::class) {
  * the pattern is local-machine-specific by design (hardcoded folder
  * names per user U9 direction).
  */
-val deployPluginLocallyTo261 by tasks.registering(Sync::class) {
+val deployPluginLocallyTo261 = tasks.register<Sync>("deployPluginLocallyTo261") {
     dependsOn(tasks.buildPlugin)
     dependsOn(verifyBundledLibraries)
     group = "intellij platform"
@@ -789,7 +801,7 @@ val deployPluginLocallyTo261 by tasks.registering(Sync::class) {
  * direction). When this sandbox eventually moves elsewhere, edit the
  * `targetDir` literal, not the task structure.
  */
-val deployPluginLocallyToIntelliJMain by tasks.registering(Sync::class) {
+val deployPluginLocallyToIntelliJMain = tasks.register<Sync>("deployPluginLocallyToIntelliJMain") {
     dependsOn(tasks.buildPlugin)
     dependsOn(verifyBundledLibraries)
     group = "intellij platform"

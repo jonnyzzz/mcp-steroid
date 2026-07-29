@@ -662,7 +662,7 @@ home, `.intellijPlatform`) make re-runs fast.
 
 ### IntelliJ Platform Gradle Plugin — snapshot resolution
 
-The plugin (v2.13.1 in project, v2.14.0 latest) resolves IDEs in two modes:
+The plugin (v2.18.1 in project) resolves IDEs in two modes:
 - **Installer** (`useInstaller = true`, default): downloads `.zip` / `.dmg` from
   `download.jetbrains.com`. Releases only.
 - **Maven** (`useInstaller = false`): resolves from Maven repos (`snapshots()`, `nightly()`).

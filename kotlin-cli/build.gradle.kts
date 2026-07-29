@@ -38,7 +38,7 @@ fun Download.configureReliableDownload() {
     tempAndMove(true)
 }
 
-val downloadKotlinc by tasks.registering {
+val downloadKotlinc = tasks.register("downloadKotlinc") {
     group = "kotlinc"
     outputs.dir(kotlincDir)
 
@@ -86,7 +86,7 @@ listOf(kotlincUrl, kotlincSha256Url).forEach { url ->
 }
 
 // Consumable configuration — exposes the unpacked kotlinc directory as artifact
-val kotlincDistElements by configurations.creating {
+val kotlincDistElements = configurations.create("kotlincDistElements") {
     isCanBeConsumed = true
     isCanBeResolved = false
     attributes {

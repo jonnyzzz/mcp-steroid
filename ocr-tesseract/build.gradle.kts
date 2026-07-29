@@ -92,7 +92,7 @@ fun Download.configureReliableDownload() {
 }
 
 // Download tessdata files
-val downloadTessdata by tasks.registering {
+val downloadTessdata = tasks.register("downloadTessdata") {
     outputs.dir(tessdataDownloadDir)
 }
 
@@ -122,7 +122,7 @@ listOf(
 // Having everything in one directory simplifies native library loading — just set
 // jna.library.path to native/ and the Windows DLL loader resolves all dependencies.
 // See: https://learn.microsoft.com/en-us/cpp/windows/determining-which-dlls-to-redistribute
-val extractWindowsNatives by tasks.registering(Copy::class) {
+val extractWindowsNatives = tasks.register<Copy>("extractWindowsNatives") {
     group = "build"
     description = "Extract all Windows native DLLs for distribution"
     val cp = configurations.runtimeClasspath.get().files
@@ -183,7 +183,7 @@ distributions {
 }
 
 // Create a configuration that exposes the installed distribution
-val installDistElements by configurations.creating {
+val installDistElements = configurations.create("installDistElements") {
     isCanBeConsumed = true
     isCanBeResolved = false
     attributes {

@@ -181,7 +181,7 @@ well (JetBrains Marketplace).
 
 ## Technology Stack
 
-Gradle 9.5.1 / Kotlin 2.3.20 / Java 25 toolchain / IntelliJ Platform 2026.1+ / Ktor 3.3.2 (CIO+SSE) / kotlinx.serialization
+Gradle 9.6.1 / Kotlin 2.3.20 / Java 25 toolchain / IntelliJ Platform 2026.1+ / Ktor 3.3.2 (CIO+SSE) / kotlinx.serialization
 
 **Bytecode targets Java 21** (class-file v65) while the toolchain stays JDK 25: Android Studio 2026.1
 bundles JBR 21 (IDEA bundles JBR 25), so the plugin must load on both. Set via the root `subprojects {}`

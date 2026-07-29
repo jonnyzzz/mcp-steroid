@@ -178,7 +178,7 @@ val downloadUnixSevenZzTarball = unixHostBootstrap?.let { platform ->
     }
 }
 
-val extractUnixSevenZz by tasks.registering {
+val extractUnixSevenZz = tasks.register("extractUnixSevenZz") {
     description = "Stage 1U-b — extract `7zz` (NSIS-capable Unix binary) from the host tarball."
     group = "build setup"
     downloadUnixSevenZzTarball?.let { dependsOn(it) }
@@ -243,7 +243,7 @@ val downloadWindowsSevenZipExtra = if (isWindowsHost) tasks.register<Download>("
     onlyIf { !destFile.exists() }
 } else null
 
-val extractWindowsSevenZa by tasks.registering {
+val extractWindowsSevenZa = tasks.register("extractWindowsSevenZa") {
     description = "Stage 1W-c — use 7zr.exe to extract 7za.exe from the extra archive."
     group = "build setup"
     downloadWindowsSevenZr?.let { dependsOn(it) }
@@ -285,7 +285,7 @@ val downloadSevenZipWindowsInstaller = tasks.register<Download>("downloadSevenZi
 }
 
 // === Common stage 3 — use whichever bootstrap is on this host to unpack the NSIS installer ===
-val extractSevenZipResources by tasks.registering {
+val extractSevenZipResources = tasks.register("extractSevenZipResources") {
     description = "Stage 3 — extract the bundled 7-Zip Windows resources for consumers."
     group = "build setup"
     if (isWindowsHost) dependsOn(extractWindowsSevenZa) else dependsOn(extractUnixSevenZz)
@@ -344,7 +344,7 @@ val extractSevenZipResources by tasks.registering {
 // consumers that want to bundle the binaries in their own distribution instead
 // of pulling them off the classpath. See SevenZipLocator's doc for the
 // classpath-resource consumer path that already exists.
-val sevenZipBinariesElements by configurations.creating {
+val sevenZipBinariesElements = configurations.create("sevenZipBinariesElements") {
     isCanBeConsumed = true
     isCanBeResolved = false
     attributes {

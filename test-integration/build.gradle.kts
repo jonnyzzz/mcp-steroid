@@ -7,7 +7,7 @@ repositories {
 }
 
 // Resolvable configuration to get the plugin .zip from :ij-plugin subproject
-val pluginZip by configurations.creating {
+val pluginZip = configurations.create("pluginZip") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -16,13 +16,13 @@ val pluginZip by configurations.creating {
 }
 
 // Resolvable configuration to get the agent-output-filter executable distribution zip
-val agentOutputFilterDist by configurations.creating {
+val agentOutputFilterDist = configurations.create("agentOutputFilterDist") {
     isCanBeConsumed = false
     isCanBeResolved = true
 }
 
 // Resolvable configuration to get the Kotlin devrig CLI distribution zip from :npx-kt.
-val devrigPackageDist by configurations.creating {
+val devrigPackageDist = configurations.create("devrigPackageDist") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -163,7 +163,7 @@ fun tartAvailableOnAppleSilicon(): Boolean {
     }
 }
 
-val testManagedBackendsTart by tasks.registering(Test::class) {
+val testManagedBackendsTart = tasks.register<Test>("testManagedBackendsTart") {
     description = "macOS Tart smoke test for devrig managed backends"
     group = "verification"
     configureIntegrationTest(tartTestSourceSet.name)
@@ -224,7 +224,7 @@ tasks.test {
  * These are forwarded as system properties so tests can select specific builds
  * via IdeDistribution when version-pinned distribution support is implemented.
  */
-val testReleaseSmokeMatrix by tasks.registering(Test::class) {
+val testReleaseSmokeMatrix = tasks.register<Test>("testReleaseSmokeMatrix") {
     description = "Release smoke matrix: [IDEA, PyCharm, GoLand, WebStorm, CLion] × [stable, EAP]"
     group = "verification"
 
