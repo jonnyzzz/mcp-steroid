@@ -35,10 +35,12 @@ class DevrigWidgetVisibilityTest {
     }
 
     @Test
-    fun `hidden while the state is still unknown`() {
-        // Otherwise a fully-connected IDE flashes a widget for the duration of the first refresh and then
-        // takes it away again.
-        assertFalse(shouldShowDevrigWidget(null))
+    fun `shown while the state is still unknown`() {
+        // The status bar decides what to create before the first check has finished and only reconsiders
+        // when told to, so hiding on "unknown" made the platform drop the widget at startup and left it
+        // absent whenever the later update call was missed — including with devrig uninstalled. Showing it
+        // means the widget exists, triggers the first check, and is removed again if the IDE is connected.
+        assertTrue(shouldShowDevrigWidget(null))
     }
 
     @Test

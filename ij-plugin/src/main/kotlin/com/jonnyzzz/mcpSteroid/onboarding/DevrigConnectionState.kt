@@ -83,9 +83,21 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
         }
     }
 
-    /** Recompute the state, cache it, and update the widgets. Returns the fresh state. */
-    suspend fun refresh(): DevrigConnectionState =
-        publish(withContext(Dispatchers.IO) { compute() })
+    /**
+     * Recompute the state, cache it, and update the widgets. Returns the fresh state.
+     *
+     * Published in two steps, local facts first. The version lookup is a network round-trip, and the widget
+     * is visible while the state is unknown, so publishing only at the end would leave a connected IDE
+     * showing a widget for the whole fetch. The local half already decides "connected or not", which is what
+     * the widget's existence hangs on; the fetch only refines it to "connected but outdated".
+     */
+    suspend fun refresh(): DevrigConnectionState {
+        val local = publish(withContext(Dispatchers.IO) { computeLocal(cached?.latestBaseVersion) })
+        // "outdated" is meaningless without an installed devrig, and that case is already an offer.
+        if (!local.devrigInstalled) return local
+        val latest = UpdateChecker.getInstance().fetchLatestBaseVersion()
+        return publish(local.copy(latestBaseVersion = latest))
+    }
 
     /**
      * Re-check only the cheap local facts and publish the result. Runs when the IDE window regains focus
@@ -117,36 +129,31 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
     /**
      * Cache the state and bring every open project's status bar in line with it.
      *
-     * When the widget's availability flips we must go through [StatusBarWidgetsManager], which creates or
-     * disposes the widget: the platform re-reads
-     * [StatusBarWidgetFactory.isAvailable][com.intellij.openapi.wm.StatusBarWidgetFactory.isAvailable]
-     * only when asked, so a plain `updateWidget(id)` repaint would leave a removed widget removed (and a
-     * needed one absent). It also honours a widget the user hid, so this never resurrects one by force.
+     * [StatusBarWidgetsManager.updateWidget] is called unconditionally, and that is deliberate: it is
+     * idempotent (it creates the widget when it should exist, disposes it when it should not, and returns
+     * early when it is already correct), so every publish is self-healing. An earlier version only called
+     * it when the visibility *changed* and was unrecoverable — if the creating call was ever missed, e.g.
+     * because it arrived before the status bar finished initializing and was dropped by the manager's
+     * "not initialized yet" guard, every later re-check saw no change and did nothing but repaint a widget
+     * that did not exist.
+     *
+     * The repaint afterwards is still needed: `updateWidget` returns early for an already-created widget,
+     * so it is `updateWidget(id)` that picks up a changed label on a widget that stays.
+     *
+     * Both calls honour a widget the user hid — the manager checks [StatusBarWidgetSettings] first — so
+     * this never resurrects one by force.
      */
     private suspend fun publish(state: DevrigConnectionState): DevrigConnectionState {
-        val wasShown = shouldShowDevrigWidget(cached)
         cached = state
-        val nowShown = shouldShowDevrigWidget(state)
         withContext(Dispatchers.EDT) {
             for (project in ProjectManager.getInstance().openProjects) {
                 if (project.isDisposed) continue
-                if (wasShown != nowShown) {
-                    project.service<StatusBarWidgetsManager>()
-                        .updateWidget(DevrigStatusBarWidgetFactory::class.java)
-                } else {
-                    WindowManager.getInstance().getStatusBar(project)?.updateWidget(DEVRIG_STATUS_WIDGET_ID)
-                }
+                project.service<StatusBarWidgetsManager>()
+                    .updateWidget(DevrigStatusBarWidgetFactory::class.java)
+                WindowManager.getInstance().getStatusBar(project)?.updateWidget(DEVRIG_STATUS_WIDGET_ID)
             }
         }
         return state
-    }
-
-    private suspend fun compute(): DevrigConnectionState {
-        // Only worth a network round-trip once devrig is actually installed — the not-installed case is
-        // already an offer, and "outdated" is meaningless there.
-        val installed = devrigInstalled(Path.of(System.getProperty("user.home")), SystemInfo.isWindows)
-        val latest = if (installed) UpdateChecker.getInstance().fetchLatestBaseVersion() else null
-        return computeLocal(latest)
     }
 
     /**

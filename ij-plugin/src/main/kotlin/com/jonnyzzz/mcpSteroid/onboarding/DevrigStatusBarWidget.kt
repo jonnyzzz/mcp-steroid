@@ -34,12 +34,17 @@ const val DEVRIG_STATUS_WIDGET_ID: String = "jonnyzzz.mcp.steroid.devrig"
  * migration onto devrig is finished. If the situation regresses — devrig deleted, the Claude plugin
  * disabled, a new release published — it comes back, see [DevrigConnectionStateService.refreshLocalAsync].
  *
- * An unknown state (before the first refresh) reports `false` so a fully-connected IDE never flashes a
- * widget it is about to remove again. The first refresh runs at project open from
- * [DevrigOnboardingService], which materialises the widget if there is anything to offer.
+ * An unknown state (before the first check has finished) reports `true`, i.e. show it. This looks like the
+ * cautious choice reversed, and it is on purpose: the status bar decides what to create very early, while
+ * the state is still unknown, and it only reconsiders when explicitly told to. Reporting `false` there made
+ * the platform drop the widget at startup and left its existence depending entirely on a later
+ * `updateWidget` call arriving at the right moment — when that call was missed the widget never appeared at
+ * all, even with devrig uninstalled. Showing it while the answer is unknown means the widget is created,
+ * its `install` triggers the first check, and the check then removes it if the IDE turns out to be
+ * connected. A brief widget on a connected IDE is a much smaller failure than never showing one.
  */
 fun shouldShowDevrigWidget(state: DevrigConnectionState?): Boolean =
-    state != null && state.decision != OnboardingDecision.ALREADY_CONNECTED
+    state == null || state.decision != OnboardingDecision.ALREADY_CONNECTED
 
 /**
  * The calm counterpart to the startup offer: the notification is one balloon among many at the noisiest
@@ -56,9 +61,16 @@ class DevrigStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getDisplayName(): String = "devrig"
 
     /**
+     * On unless the user turns it off. This is the platform default too, stated explicitly because the
+     * whole migration path depends on it: a user who never opens the status-bar settings must still be
+     * offered the bridge. A choice the user *has* made is stored separately and wins over this.
+     */
+    override fun isEnabledByDefault(): Boolean = true
+
+    /**
      * Availability is re-read only when the platform creates widgets or when
      * [com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager.updateWidget] is called — the
-     * status bar never polls. [DevrigConnectionStateService] makes that call whenever this flips.
+     * status bar never polls. [DevrigConnectionStateService] makes that call on every state publish.
      */
     override fun isAvailable(project: Project): Boolean =
         shouldShowDevrigWidget(DevrigConnectionStateService.getInstance().current())
