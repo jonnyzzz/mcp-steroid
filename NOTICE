@@ -1,0 +1,16 @@
+MCP Steroid (devrig)
+https://github.com/jonnyzzz/mcp-steroid
+
+This software includes code from IntelliJ IDEA
+Copyright (C) JetBrains s.r.o.
+https://www.jetbrains.com/idea/
+
+IntelliJ IDEA Community Edition is licensed under the Apache License,
+Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0). The files
+derived from it retain their original copyright headers and carry
+notices describing the modifications made:
+
+- mcp-core/src/main/kotlin/com/jonnyzzz/mcpSteroid/util/text/VersionComparatorUtil.kt
+  (from platform/util-rt/src/com/intellij/util/text/VersionComparatorUtil.java)
+- mcp-core/src/test/kotlin/com/jonnyzzz/mcpSteroid/util/text/VersionComparatorTest.kt
+  (from platform/util/testSrc/com/intellij/util/text/VersionComparatorTest.java)
