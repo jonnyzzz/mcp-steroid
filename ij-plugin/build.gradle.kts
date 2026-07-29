@@ -487,6 +487,10 @@ listOf(tasks.prepareSandbox, tasks.prepareTestSandbox, prepareSandbox_integratio
         from(rootProject.layout.projectDirectory.file("EULA")) {
             into(intellijPlatform.projectName)
         }
+        // Include NOTICE (Apache 2.0 §4(d) third-party attribution) in plugin root
+        from(rootProject.layout.projectDirectory.file("NOTICE")) {
+            into(intellijPlatform.projectName)
+        }
     }
 }
 
@@ -584,6 +588,8 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
         val expectedFiles = sortedSetOf(
             // EULA file
             "EULA",
+            // Apache 2.0 §4(d) third-party attribution notices
+            "NOTICE",
 
             //our binaires
             "lib/ai-agents-$pluginVersion.jar",

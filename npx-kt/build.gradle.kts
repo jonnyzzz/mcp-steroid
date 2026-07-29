@@ -217,6 +217,10 @@ distributions {
             // its own license text alongside the launcher and bundled plugin.
             from(rootProject.layout.projectDirectory.file("EULA"))
 
+            // Repo-root NOTICE — Apache 2.0 §4(d) attribution for third-party
+            // code (IntelliJ IDEA) compiled into the distribution jars.
+            from(rootProject.layout.projectDirectory.file("NOTICE"))
+
             // Keep the plugin as the original archive. Managed backend install
             // expands it on demand, which avoids re-packing the plugin payload and
             // preserves the mode bits recorded by :ij-plugin.
@@ -249,6 +253,7 @@ distributions {
             }
             into("licenses/mcp-steroid") {
                 from(rootProject.layout.projectDirectory.file("EULA"))
+                from(rootProject.layout.projectDirectory.file("NOTICE"))
             }
 
             // JDK bundling intentionally disabled — devrig expects Java on PATH (see TODO-NPX-BOOTSTRAPPER.md).
@@ -434,6 +439,7 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
             "licenses/README.md",
             "licenses/seven-zip/License.txt",
             "licenses/mcp-steroid/EULA",
+            "licenses/mcp-steroid/NOTICE",
         )
         if (licensesFiles != expectedLicensesFiles) {
             val missing = expectedLicensesFiles - licensesFiles
@@ -478,8 +484,10 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
 
         val expectedFiles = sortedSetOf(
             // EULA — repo-root EULA at the distribution root, mirroring the
-            // copy `:ij-plugin` ships inside its plugin zip.
+            // copy `:ij-plugin` ships inside its plugin zip. NOTICE carries the
+            // Apache 2.0 §4(d) third-party attribution (see repo-root NOTICE).
             "EULA",
+            "NOTICE",
             "ij-plugin.zip",
 
             // Launchers — the `application` plugin marks BOTH executable in the zip

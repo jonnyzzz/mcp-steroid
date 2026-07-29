@@ -32,13 +32,13 @@ object VersionComparatorUtil {
   private val ZERO_PATTERN = Pattern.compile("0+")
   private val DIGITS_PATTERN = Pattern.compile("\\d+")
 
-  val COMPARATOR: Comparator<String> = Comparator { v1, v2 -> compare(v1, v2) }
+  val COMPARATOR: Comparator<String?> = Comparator { v1, v2 -> compare(v1, v2) }
 
   private val DEFAULT_TOKEN_PRIORITIZER = TokenPrioritizer { token -> VersionTokenType.lookup(token).priority }
 
-  fun max(v1: String, v2: String): String = if (compare(v1, v2) > 0) v1 else v2
+  fun max(v1: String?, v2: String?): String? = if (compare(v1, v2) > 0) v1 else v2
 
-  fun min(v1: String, v2: String): String = if (compare(v1, v2) < 0) v1 else v2
+  fun min(v1: String?, v2: String?): String? = if (compare(v1, v2) < 0) v1 else v2
 
   enum class VersionTokenType(val priority: Int) {
     SNAP(10), SNAPSHOT(10),
@@ -60,7 +60,8 @@ object VersionComparatorUtil {
           return _WS
         }
 
-        val trimmed = str.trim()
+        // Java String.trim() semantics (strips chars <= U+0020), not Kotlin's Unicode-aware trim()
+        val trimmed = str.trim { it <= ' ' }
         if (trimmed.isEmpty()) {
           return _WS
         }
@@ -86,7 +87,8 @@ object VersionComparatorUtil {
   }
 
   fun splitVersionString(ver: String): List<String> {
-    val st = StringTokenizer(ver.trim(), "()._-;:/, +~")
+    // Java String.trim() semantics (strips chars <= U+0020), not Kotlin's Unicode-aware trim()
+    val st = StringTokenizer(ver.trim { it <= ' ' }, "()._-;:/, +~")
     val result = ArrayList<String>()
 
     while (st.hasMoreTokens()) {
