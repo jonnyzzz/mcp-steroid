@@ -32,6 +32,32 @@ interface CliToolSpec : McpTool {
 }
 
 /**
+ * The value shape a CLI frontend must parse for a [CliExtraOption]. Holds only the shapes a declared
+ * extra option actually uses: a value-taking shape gets a constant when — and only when — some tool
+ * declares one, so the CLI's parsing branch and the declaration that needs it always arrive together
+ * and no branch is written against a shape nothing declares.
+ */
+enum class CliOptionType {
+    /** A switch: present or absent, no argument. */
+    BOOLEAN,
+}
+
+/**
+ * A CLI option scoped to one tool's subcommand that is **not** one of the tool's inputs: the CLI acts
+ * on it itself — orchestrating around the call, e.g. polling the IDE after the tool has returned — and
+ * never sends it to the tool. It lives on [CliCommandSpec], not on [ToolSchema], precisely because it
+ * is not a parameter: there is no value for the tool to receive.
+ */
+data class CliExtraOption(
+    /** The CLI option, e.g. `--wait`. */
+    val flag: String,
+    /** What the CLI must parse for [flag]. */
+    val type: CliOptionType,
+    /** Short one-line help for [flag]. */
+    val synopsis: String,
+)
+
+/**
  * Describes how a tool appears as a `devrig` subcommand. This metadata carries no behavior and is not
  * part of the MCP wire protocol.
  */
@@ -44,6 +70,8 @@ data class CliCommandSpec(
     val aliases: List<String> = emptyList(),
     /** Exclude from the CLI if ever needed. */
     val hidden: Boolean = false,
+    /** Tool-scoped CLI options the CLI handles itself rather than passing to the tool; see [CliExtraOption]. */
+    val extraOptions: List<CliExtraOption> = emptyList(),
 )
 
 /** Derives the default CLI subcommand name from an MCP tool [toolName] by stripping the `steroid_` prefix. */
@@ -67,12 +95,20 @@ abstract class McpToolBase : CliToolSpec {
     /** When true the tool is not exposed as a CLI subcommand; false by default. */
     protected open val cliHidden: Boolean get() = false
 
+    /**
+     * Tool-scoped CLI options the CLI acts on itself instead of sending to the tool (see
+     * [CliExtraOption]); none by default. Declared here rather than on [schema] because they are not
+     * parameters — the tool never receives their value.
+     */
+    protected open val cliExtraOptions: List<CliExtraOption> get() = emptyList()
+
     override val cli: CliCommandSpec
         get() = CliCommandSpec(
             name = defaultCliName(name),
             synopsis = cliSynopsis,
             aliases = cliAliases,
             hidden = cliHidden,
+            extraOptions = cliExtraOptions,
         )
 }
 

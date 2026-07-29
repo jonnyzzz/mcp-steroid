@@ -1,6 +1,7 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
+import com.jonnyzzz.mcpSteroid.mcp.cliFileSource
 import com.jonnyzzz.mcpSteroid.mcp.cliOptional
 import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
@@ -25,7 +26,7 @@ object CommonToolParams {
                         "folder name). steroid_list_projects returns both `project_name` (the unique key " +
                         "to pass here) and `name` (the raw folder name, informational only); they are not equal."
             )
-            .cliSynopsis("routing key from `devrig list_projects` (NOT the folder name); inferred from the cwd when omitted")
+            .cliSynopsis("routing key from `devrig list_projects`, not the folder name")
             .string()
             .required()
             .cliOptional()
@@ -37,6 +38,7 @@ object CommonToolParams {
                 "Your task identifier — reuse the same value across related tool calls " +
                         "to group them in audit logs."
             )
+            .cliSynopsis("your task id; reuse it across related calls for audit logs")
             .string()
             .required()
 
@@ -48,6 +50,7 @@ object CommonToolParams {
     fun windowId() =
         InputSchemaElement.param("window_id")
             .description("Window id from steroid_list_windows identifying the target IDE window.")
+            .cliSynopsis("window id from `devrig list_windows` to target")
             .string()
 
     /** Required `reason` string with the audit-log convention: `Reason for $action. Required for audit logs.` */
@@ -58,6 +61,15 @@ object CommonToolParams {
                 "This helps us learn and improve. " +
                 "Use steroid_execute_feedback to share improvements, suggestions, and feedback."
             )
+            .cliSynopsis("your intent and expected outcome, for the audit log")
             .string()
             .required()
 }
+
+/**
+ * Declares the `--code-file` alternate source shared by the `code` parameter of `execute_code` and
+ * `execute_feedback`: the CLI reads the script/snippet from a file (or standard input when the path is
+ * `-`) and uses it as `code`. Chain it after `.string()`, alongside `.cliOptional()`.
+ */
+fun <R> InputSchemaElement<R>.cliCodeFileSource() =
+    cliFileSource(flag = "--code-file", synopsis = "path to a script file; pass \"-\" to read from stdin")

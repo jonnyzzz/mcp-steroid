@@ -1,10 +1,13 @@
 package com.jonnyzzz.mcpSteroid.server
 
+import com.jonnyzzz.mcpSteroid.mcp.CliExtraOption
+import com.jonnyzzz.mcpSteroid.mcp.CliOptionType
 import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.boolean
+import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.mcp.get
@@ -44,6 +47,7 @@ class OpenProjectToolSpec(
 
     val projectPath = InputSchemaElement.param("project_path")
         .description("Absolute path to the project directory to open.")
+        .cliSynopsis("absolute path to the project directory to open")
         .string()
         .required()
         .registerToSchema()
@@ -54,6 +58,7 @@ class OpenProjectToolSpec(
 
     val trustProject = InputSchemaElement.param("trust_project")
         .description("If true, trust the project path before opening (skips trust dialog). Default: true")
+        .cliSynopsis("skip the trust-project dialog (default: true)")
         .boolean()
         .registerToSchema()
 
@@ -71,9 +76,21 @@ class OpenProjectToolSpec(
                     "the same repository — open: worktrees share build/index/VCS context, avoiding " +
                     "redundant indexing. See mcp-steroid://open-project/managing-backends."
             )
+            .cliSynopsis("backend id from `devrig backend --json` to target")
             .string()
             .registerToSchema()
     } else null
+
+    // Not a tool input: the tool returns as soon as opening starts, and the CLI itself polls
+    // list_windows afterwards until the project is initialized. Declared unconditionally — unlike
+    // backend_name, this changes nothing on the MCP wire, so it needs no per-surface gate.
+    override val cliExtraOptions = listOf(
+        CliExtraOption(
+            flag = "--wait",
+            type = CliOptionType.BOOLEAN,
+            synopsis = "poll until the project is initialized (no modal, indexing done)",
+        ),
+    )
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val projectPathStr = context[projectPath]

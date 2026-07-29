@@ -98,6 +98,15 @@
   IDE failing its `/windows` fetch errors the whole call (`coroutineScope` + `error(...)`), unlike
   `list_projects` which degrades per-backend. Return partial windows + a per-backend error marker.
 
+- [ ] **devrig CLI must own `--out` and the `--wait` polling loop (#284)**: the schema-driven-command
+  reshape removed the `out` parameter from `VisionScreenshotToolSpec` and turned `--wait` into a
+  declared `CliExtraOption` on `steroid_open_project`, because neither is a tool input. The tool
+  metadata therefore no longer carries either behavior: the CLI frontend must document `--out` as a
+  framework flag beside `--json` (a render-path redirect writing a returned image to a path — note
+  `steroid_execute_code` also returns PNGs via `logImage`, e.g. the modal-dialog failure screenshot,
+  so it is not screenshot-only) and must implement `--wait` as a `list_windows` poll until the project
+  reports initialized. Without those two, both flags silently vanish from the CLI.
+
 - [ ] **red-code reporter false-positives on Kotlin files**: `reportProjectRedCode` (PSI reference scan,
   `mcp-steroid-import.kt`) reports Kotlin stdlib/operator references (`mutableMapOf`, `runCatching`,
   `trim()`, `!!`, `=`) as UNRESOLVED — 95/646 on the stock Gradle test-project's `SsrRunCatchingDemo.kt`

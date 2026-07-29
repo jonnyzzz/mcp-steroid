@@ -5,6 +5,8 @@ import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.cliMissingHint
+import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.get
 import com.jonnyzzz.mcpSteroid.mcp.param
@@ -56,6 +58,8 @@ class FetchResourceToolHandler(
 
     val uri = InputSchemaElement.param("uri")
         .description("The mcp-steroid:// URI to fetch (see the tool description for the canonical entry points, or fetch mcp-steroid://prompt/skill for the index)")
+        .cliSynopsis("mcp-steroid:// resource URI to fetch")
+        .cliMissingHint("missing --uri. Example:\n  devrig fetch_resource --uri=${SkillPromptArticle().uri}")
         .string()
         .required()
         .registerToSchema()

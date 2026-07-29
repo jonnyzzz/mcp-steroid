@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -202,3 +203,20 @@ private fun assertJsonStringEquals(
 /** Convenience for `*ToolSpec` constructor lambdas that must never be invoked. */
 fun unreachableHandler(): Nothing =
     error("handler factory must not be invoked from an inputSchema test")
+
+/**
+ * A [McpSteroidTools] whose [McpSteroidTools.handler] throws — for tests that only need the
+ * [CliToolSpec] metadata (schema, `cli.*`) of the real, canonical tool list and must never actually
+ * resolve or invoke a handler.
+ */
+private class NoHandlerToolsForTest : McpSteroidTools() {
+    override fun <T> handler(type: Class<T>): T =
+        error("handler ${type.name} must not be resolved from a schema-only test")
+}
+
+/**
+ * The exact 8 tool specs `devrig` exposes (see [McpSteroidTools.devrigToolSpecs]), built fresh with
+ * handlers that must never be resolved. Tests that assert "every tool has X" should iterate this list
+ * rather than a hand-picked one, so a ninth tool added to the canonical list is covered automatically.
+ */
+fun devrigToolSpecsForTest(): List<CliToolSpec> = NoHandlerToolsForTest().devrigToolSpecs()

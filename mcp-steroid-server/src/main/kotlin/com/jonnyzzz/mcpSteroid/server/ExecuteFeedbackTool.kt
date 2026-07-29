@@ -4,6 +4,8 @@ import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.cliMissingHint
+import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.mcp.get
@@ -52,11 +54,17 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
 
     val executionId = InputSchemaElement.param("execution_id")
         .description("The execution_id returned from the most recent steroid_execute_code call for this task")
+        .cliSynopsis("execution_id from the most recent execute_code call")
         .string()
         .registerToSchema()
 
     val successRating = InputSchemaElement.param("success_rating")
         .description("Rate the success of the execution from 0.00 (complete failure) to 1.00 (complete success)")
+        .cliSynopsis("success rating from 0.00 (fail) to 1.00 (success)")
+        .cliMissingHint(
+            "missing --success_rating (number 0.00..1.00). Example:\n" +
+                "  devrig execute_feedback --project_name=\"<key>\" --task_id=t1 --success_rating=0.9 --explanation=\"...\""
+        )
         .number()
         .minimum(0.0)
         .maximum(1.0)
@@ -65,13 +73,17 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
 
     val explanation = InputSchemaElement.param("explanation")
         .description("Explain why you gave this rating. Provide improvements, suggestions, and critical thinking to improve this tool")
+        .cliSynopsis("what worked, what didn't, and what you'll try next")
+        .cliMissingHint("missing --explanation. Describe what worked, what didn't, and what you'll try next.")
         .string()
         .required()
         .registerToSchema()
 
     val code = InputSchemaElement.param("code")
         .description("Optional: The code snippet that was executed. Useful for tracking what code produced which results.")
+        .cliSynopsis("code snippet the feedback refers to (optional)")
         .string()
+        .cliCodeFileSource()
         .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
