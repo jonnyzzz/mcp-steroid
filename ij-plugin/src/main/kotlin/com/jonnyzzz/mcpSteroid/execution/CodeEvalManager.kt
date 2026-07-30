@@ -106,7 +106,9 @@ class CodeEvalManager(
                 val compilerError = wrappedCode.lineMapping.remapCompilerOutput(rawCompilerError)
 
                 if (compilerOutput.isNotEmpty()) {
-                    resultBuilder.logProgress("Compiler Output:\n$compilerOutput")
+                    // Real content, not progress (#154): kotlinc stdout is empty on a clean
+                    // compile, so when it IS present the agent must see it in the result.
+                    resultBuilder.logMessage("Compiler Output:\n$compilerOutput")
                 }
 
                 if (compilerError.isNotEmpty()) {

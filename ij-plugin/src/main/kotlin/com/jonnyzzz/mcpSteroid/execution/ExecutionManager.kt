@@ -30,6 +30,11 @@ interface ExecutionResultBuilder {
      */
     val userOutputCount: Int
     fun logMessage(message: String)
+    /**
+     * Report in-flight progress. Progress is diagnostic, not payload (#154): implementations
+     * must NOT add it to the tool result content — deliver via MCP progress notifications,
+     * logs, and/or the execution event storage instead.
+     */
     fun logProgress(message: String)
     fun logImage(mimeType: String, data: String, fileName: String)
     fun logException(message: String, throwable: Throwable)
@@ -183,7 +188,12 @@ class ExecutionManager(
         }
 
         override fun logProgress(message: String) {
-            responseBuilder.addTextContent(message)
+            // #154: progress is diagnostic, NOT payload — it must never enter the tool result
+            // content (a script printing one JSON document must stay machine-parseable after
+            // stripping the execution_id header). Delivery channels: MCP progress notifications
+            // (sent when the client passed a progressToken), the Demo Mode broadcaster, and the
+            // execution storage event log. Every producer also logs the same line to idea.log
+            // at its call site.
             mcpProgress.report(message)
             // Broadcast progress event for Demo Mode
             executionEventBroadcaster.onProgress(executionId, message)

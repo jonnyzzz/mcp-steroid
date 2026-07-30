@@ -1061,13 +1061,14 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
     }
 
     /**
-     * Tests that progress reporting works correctly over the MCP protocol.
-     * When code calls progress(), the messages should be included in the response.
+     * Tests that progress() output stays OUT of the tool result content (#154).
      *
      * Per MCP 2025-11-25 spec:
      * - Client can pass _meta.progressToken in tool call arguments
      * - Server sends notifications/progress with that token
-     * - Progress messages are also accumulated in the final response
+     * - Without a token, progress is delivered to idea.log and the execution event storage only —
+     *   the result content carries just the execution_id header plus the script's own output, so
+     *   programmatic consumers can strip the header and parse the rest.
      */
     fun testProgressReportingInResponse(): Unit = timeoutRunBlocking(60.seconds) {
         val server = SteroidsMcpServer.getInstance()
@@ -1132,10 +1133,13 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             execOutput.contains("DONE: All steps completed")
         )
 
-        // Output should contain progress messages (they may be throttled, so check for at least one)
-        assertTrue(
-            "Output should contain at least one progress indicator, got: $execOutput",
-            execOutput.contains("Step") || execOutput.contains("PROGRESS:")
+        // #154: progress() messages are diagnostic, not payload — they must NOT appear in the
+        // tool result content (delivery is via notifications/progress when a token is present).
+        assertFalse(
+            "progress() messages must not leak into the tool result (#154), got: $execOutput",
+            execOutput.contains("Step 1: Initializing")
+                    || execOutput.contains("Step 2: Processing data")
+                    || execOutput.contains("Step 3: Completing task")
         )
     }
 
@@ -1211,10 +1215,11 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             execOutput.contains("COMPLETED: Task with progress token")
         )
 
-        // Progress messages from progress() calls are added to the tool result via logProgress().
-        // This is the delivery mechanism for HTTP clients (streaming clients get separate notifications).
-        assertTrue(
-            "Output should contain progress messages from script, got: $execOutput",
+        // #154: progress() messages are diagnostic, not payload — they must NOT appear in the
+        // tool result content. With a progressToken, notifications/progress is the delivery
+        // mechanism (asserted below).
+        assertFalse(
+            "progress() messages must not leak into the tool result (#154), got: $execOutput",
             execOutput.contains("Starting with progress token")
                     || execOutput.contains("Middle step")
                     || execOutput.contains("Final step")
@@ -1323,11 +1328,11 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             execOutput.contains("FINISHED: Processed 5 items")
         )
 
-        // Should contain at least some progress messages
-        // Note: progress is throttled to 1 message per second, so not all may appear
-        assertTrue(
-            "Output should contain progress messages, got: $execOutput",
-            execOutput.contains("Processing item") || execOutput.contains("PROGRESS:")
+        // #154: progress() messages are diagnostic, not payload — the long-running loop's
+        // progress must NOT leak into the tool result content.
+        assertFalse(
+            "progress() messages must not leak into the tool result (#154), got: $execOutput",
+            execOutput.contains("Processing item")
         )
     }
 
@@ -1830,8 +1835,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
     /**
      * Tests that compilation errors are included in the tool result content items even
      * when a progress token is provided. The tool result is the delivery mechanism for
-     * HTTP clients — all logMessage/logProgress/reportFailed content is added to it
-     * synchronously before the HTTP response is sent.
+     * HTTP clients — all logMessage/reportFailed content is added to it synchronously
+     * before the HTTP response is sent (logProgress deliberately is not — #154).
      */
     fun testCompilationErrorWithProgressToken(): Unit = timeoutRunBlocking(60.seconds) {
         val server = SteroidsMcpServer.getInstance()

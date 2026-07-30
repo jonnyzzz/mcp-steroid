@@ -338,10 +338,14 @@ cancels it for the rest of the run), `syncDocuments()` (commit+save+VFS; asserts
 (asserts non-modal; **bounded** by `WAIT_FOR_SMART_MODE_TIMEOUT`). All bounded EDT ops use
 `withTimeout → ToolCallErrorException` so a stuck modal fails fast with a thread dump instead of hanging.
 Stage markers (`[PRE]`/`[RUN]`/`[POST]`) go to **idea.log only** — never into the tool result (#154: the
-result is the `execution_id:` header plus the script's own output, so a JSON-printing script stays
-machine-parseable after stripping that header). A pre-flight failure instead names its step + profile in
-the returned error (`pre-flight '<step>' (modal=<profile>): …` via `ScriptExecutor.preFlight`), so a
-stall is still localizable from the error alone or from idea.log.
+result is the `execution_id:` header plus the script's own output, plus explicit WARNING/ERROR/HINT
+lines on anomalies, so a JSON-printing script stays machine-parseable after stripping that header).
+The same separation applies to ALL in-flight progress (`progress(...)`, indexing/compile waits,
+multi-block progress): `ExecutionManager.logProgress` delivers it via MCP progress notifications
+(when the client passed a `progressToken`) + idea.log + the execution event storage — never the
+result content. A pre-flight failure instead names its step + profile in the returned error
+(`pre-flight '<step>' (modal=<profile>): …` via `ScriptExecutor.preFlight`, original exception
+chained as cause), so a stall is still localizable from the error alone or from idea.log.
 
 **Tests:** unit `ModalModeTest` (wire/default/parse) + `ExecutionManagerTest` profile-pipeline cases;
 integration `DialogKillerIntegrationTest` (Docker) — Step-1 opens a modal with `modal=unleashed` (no

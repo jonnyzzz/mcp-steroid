@@ -138,15 +138,21 @@ class ScriptExecutor(
         // Stage progress ([PRE]/[RUN]/[POST]) goes to the IDE log ONLY, never into the tool result
         // (#154): the result carries just the execution_id header plus the script's own output, so a
         // script that prints a single JSON document stays machine-parseable after stripping the
-        // execution_id line. Because the framing no longer localizes a failure in the output, every
-        // stage failure names its step and modality profile in the error itself (see [preFlight]).
+        // execution_id line. The same holds for ALL in-flight progress (indexing waits, compile
+        // waits, multi-block progress): ExecutionManager.logProgress delivers it via MCP progress
+        // notifications + idea.log + event storage, never the result content. Because the framing
+        // no longer localizes a failure in the output, every stage failure names its step and
+        // modality profile in the error itself (see [preFlight]).
         when (exec.modal) {
             ModalMode.SMART_NON_MODAL -> {
                 preFlight(executionId, exec.modal, "close modal dialogs") { context.closeModalDialogs() }
                 log.info("[$executionId] [PRE] require non-modal (modal=${exec.modal.wire})")
                 requireNonModalOrFail(executionId, exec.modal)
                 preFlight(executionId, exec.modal, "sync documents") { context.syncDocuments() }
-                preFlight(executionId, exec.modal, "wait for smart mode") { context.waitForSmartMode() }
+                // Step name deliberately avoids the "smart mode" substring: the hint engine
+                // (ExecutionSuggestionService) matches it and would append a smartReadAction TIP
+                // to the INDEXING IN PROGRESS error, whose own instruction is "just keep polling".
+                preFlight(executionId, exec.modal, "wait for indexing") { context.waitForSmartMode() }
                 preFlight(executionId, exec.modal, "start modal-dialog monitor") { context.monitorAndCloseModalDialogs() }
             }
 
@@ -186,9 +192,11 @@ class ScriptExecutor(
 
     /**
      * Runs one pre-flight step of the `modal` profile. The step's progress is logged to the IDE log
-     * only — never added to the tool result (#154). When the step fails with a [ToolCallErrorException],
-     * it is rethrown with the step name and modality profile prefixed, so the returned error is
-     * self-sufficient now that no `[PRE]` framing in the output localizes the failing step.
+     * only — never added to the tool result (#154). When the step fails, it is rethrown with the
+     * step name and modality profile prefixed, so the returned error is self-sufficient now that no
+     * `[PRE]` framing in the output localizes the failing step. The original exception is chained
+     * as the cause, so the stack trace logged upstream (ExecutionManager) still points at the real
+     * throw site inside the step. Cancellation (CE/PCE) propagates untouched.
      */
     private suspend fun preFlight(
         executionId: ExecutionId,
@@ -201,6 +209,18 @@ class ScriptExecutor(
             action()
         } catch (e: ToolCallErrorException) {
             throw ToolCallErrorException("pre-flight '$step' (modal=${modal.wire}): ${e.message}")
+                .apply { initCause(e) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ProcessCanceledException) {
+            // Explicit defense for any PCE that does not extend CancellationException
+            // (mirrors executeCodeBlocks): control-flow exceptions propagate untouched.
+            throw e
+        } catch (t: Throwable) {
+            // Unexpected failures (e.g. a RuntimeException out of commitAllDocuments) must also
+            // name the failing step + profile — ExecutionManager's generic handler reports the
+            // wrapper's message and stack (with this cause chain) in the result.
+            throw RuntimeException("pre-flight '$step' (modal=${modal.wire}): ${t.message}", t)
         }
     }
 

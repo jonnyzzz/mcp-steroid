@@ -143,8 +143,9 @@ class ScriptExecutorTest : BasePlatformTestCase() {
         // Either SUCCESS (if engine is available) or ERROR (if not).
         // #154: the executor's pre-flight/run/post-flight stage progress goes to the IDE log only —
         // the result must contain the user-script output verbatim, with NO `[PRE]`/`[RUN]`/`[POST]`
-        // framing interleaved. Pin that contract here.
-        builder.messages.forEach { message ->
+        // framing interleaved. Scan the progress channel too: it must never carry framing either
+        // (production delivers logProgress via MCP notifications, never the result content).
+        (builder.messages + builder.progressMessages).forEach { message ->
             assertFalse(
                 "Stage framing must never appear in the tool result (#154), got: $message",
                 message.startsWith("[PRE]") || message.startsWith("[RUN]") || message.startsWith("[POST]")
