@@ -44,6 +44,27 @@ class CodeEvalManagerTest: BasePlatformTestCase()  {
         val result = TestResultBuilder()
         val data = project.codeEvalManager.evalCode(execId, code, result)
         Assert.assertNull("-Werror from the registry must fail a warning-carrying script. Result: $result", data)
+        // Pin the SPECIFIC failure: the warnings-as-errors diagnostic — not an
+        // argument-parse error, daemon failure, or service init crash.
+        val resultText = result.toString()
+        Assert.assertTrue(
+            "Failure must be the warnings-as-errors diagnostic, got: $resultText",
+            resultText.contains("-Werror") || resultText.contains("Unchecked cast", ignoreCase = true),
+        )
+    }
+
+    fun testWarningCarryingScriptCompilesWithoutWerror(): Unit = timeoutRunBlocking(5.minutes) {
+        // Companion to the -Werror canary: the SAME source must compile fine with
+        // the default registry value — proving the canary fails on -Werror alone.
+        val code = """
+            val items: List<Any> = listOf("hello", "world")
+            val strings: List<String> = items as List<String>
+            println(strings.joinToString(","))
+        """.trimIndent()
+        val execId = project.executionStorage.writeNewExecution(testExecParams(code))
+        val result = TestResultBuilder()
+        val data = project.codeEvalManager.evalCode(execId, code, result)
+        Assert.assertNotNull("Warning-carrying script must compile without -Werror. Result: $result", data)
     }
 
     fun testCompileAnnotatedElementsSearch(): Unit = timeoutRunBlocking(5.minutes) {
