@@ -116,7 +116,12 @@ suspend fun DevrigServices.mainImpl2(
                 homePaths = homePaths,
                 mcpSession = command is DevrigCommand.MCP,
                 notify = onNotice,
-                onUpdateTriggered = { promoted -> beacon.capture("self_update", mapOf("target_version" to promoted)) },
+                onUpdateEvent = { phase, promoted, exitCode ->
+                    val properties = LinkedHashMap<String, Any>()
+                    properties["target_version"] = promoted
+                    if (exitCode != null) properties["exit_code"] = exitCode
+                    beacon.capture("self_update_$phase", properties)
+                },
             )
         }
 

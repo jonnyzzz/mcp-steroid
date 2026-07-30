@@ -170,8 +170,12 @@ Each tick:
     artifacts.
 11. **On exit 0:** write `updated-<promoted>` (atomic write; version taken from
     `version.json`), delete own marker + script, emit the **restart notice**.
-    Telemetry: the trigger (step 10 spawn) was already captured as
-    `devrig_self_update` with `target_version` = the raw version.json version.
+    Telemetry: the update lifecycle is captured to the beacon as
+    `devrig_self_update_started` (installer spawning), then exactly one of
+    `devrig_self_update_completed` or `devrig_self_update_failed` (with
+    `exit_code` when the installer returned one) — all carrying
+    `target_version` = the raw version.json version. Quiet aborts before the
+    spawn (yield, download failure) report nothing.
 12. **On non-zero exit / timeout / spawn failure:** delete own marker + script
     (keep the log), print a stderr warning with the log path — and retry on
     the next scheduled tick, forever. Own-marker deletion sits in a `finally` —

@@ -44,8 +44,12 @@ class AutoUpdater(
     },
     val noAutoUpdateEnv: String? = System.getenv(ENV_DEVRIG_NO_AUTO_UPDATE),
     val binRegisterOptOutEnv: String? = System.getenv(ENV_BIN_NO_AUTO_REGISTER),
-    /** Fired once right before the installer spawns; Main wires this to the beacon (`devrig_self_update`). */
-    val onUpdateTriggered: (promotedVersion: String) -> Unit = { },
+    /**
+     * Update lifecycle for telemetry: phase = "started" (installer spawning), then exactly one of
+     * "completed" or "failed" (exitCode set for a real non-zero exit). Main wires this to the beacon
+     * as `devrig_self_update_<phase>`.
+     */
+    val onUpdateEvent: (phase: String, promotedVersion: String, exitCode: Int?) -> Unit = { _, _, _ -> },
 ) {
     private var restartNotified = false
 
@@ -125,23 +129,21 @@ class AutoUpdater(
             return
         }
 
-        // step 10 — the self-update is actually triggered; surface it to telemetry (best-effort)
-        try {
-            onUpdateTriggered(promotedRaw)
-        } catch (e: Exception) {
-            System.err.println("[mcp-steroid] self-update trigger telemetry failed: $e")
-        }
+        // step 10 — the update is actually starting; surface the lifecycle to telemetry (best-effort)
+        updateEvent("started", promotedRaw, exitCode = null)
         val exit = try {
             runInstaller(script, logFile)
         } catch (e: Exception) {
             // spawn failure (missing shell, IO error) follows the same path as a non-zero exit
             System.err.println("[mcp-steroid] could not start the installer for $target: $e; will retry next tick")
+            updateEvent("failed", promotedRaw, exitCode = null)
             return
         }
 
         // steps 11-12
         if (exit == 0) {
             coordination.writeUpdatedMarker(target, info.copy(completedAt = coordination.clock()))
+            updateEvent("completed", promotedRaw, exitCode = 0)
             notifyRestartOnce(target)
         } else {
             System.err.println(
@@ -149,6 +151,15 @@ class AutoUpdater(
                     (if (exit == null) "(timed out; installer killed)" else "(exit $exit)") +
                     "; log: $logFile — will retry next tick",
             )
+            updateEvent("failed", promotedRaw, exitCode = exit)
+        }
+    }
+
+    private fun updateEvent(phase: String, promoted: String, exitCode: Int?) {
+        try {
+            onUpdateEvent(phase, promoted, exitCode)
+        } catch (e: Exception) {
+            System.err.println("[mcp-steroid] self-update telemetry ($phase) failed: $e")
         }
     }
 
@@ -177,9 +188,9 @@ suspend fun runAutoUpdateFlow(
     homePaths: HomePaths,
     mcpSession: Boolean,
     notify: (String) -> Unit,
-    onUpdateTriggered: (promotedVersion: String) -> Unit = { },
+    onUpdateEvent: (phase: String, promotedVersion: String, exitCode: Int?) -> Unit = { _, _, _ -> },
 ) {
-    val updater = AutoUpdater(homePaths = homePaths, notify = notify, onUpdateTriggered = onUpdateTriggered)
+    val updater = AutoUpdater(homePaths = homePaths, notify = notify, onUpdateEvent = onUpdateEvent)
     if (!mcpSession || !updater.isActive()) {
         checkForUpdates(homePaths, notify)
         return

@@ -24,7 +24,7 @@ class AutoUpdaterTest {
         val notices: MutableList<String>,
         val installerRuns: MutableList<Path>,
         val installerLogs: MutableList<Path>,
-        val triggeredVersions: MutableList<String>,
+        val updateEvents: MutableList<String>,
     )
 
     private fun fixture(
@@ -47,7 +47,7 @@ class AutoUpdaterTest {
         val notices = mutableListOf<String>()
         val installerRuns = mutableListOf<Path>()
         val installerLogs = mutableListOf<Path>()
-        val triggeredVersions = mutableListOf<String>()
+        val updateEvents = mutableListOf<String>()
         val updater = AutoUpdater(
             homePaths = home,
             currentVersion = DevrigVersion.parse(current),
@@ -72,9 +72,9 @@ class AutoUpdaterTest {
             },
             noAutoUpdateEnv = null,
             binRegisterOptOutEnv = null,
-            onUpdateTriggered = { triggeredVersions += it },
+            onUpdateEvent = { phase, promoted, exitCode -> updateEvents += "$phase:$promoted" + (exitCode?.let { ":$it" } ?: "") },
         )
-        return Fixture(updater, home, notices, installerRuns, installerLogs, triggeredVersions)
+        return Fixture(updater, home, notices, installerRuns, installerLogs, updateEvents)
     }
 
     @Test
@@ -86,8 +86,8 @@ class AutoUpdaterTest {
         assertEquals(1, f.installerRuns.size)
         // the per-pid log naming keeps concurrent devrig processes clash-free
         assertEquals(listOf(f.home.logsDir.resolve("update-4242-0.102.log")), f.installerLogs)
-        // telemetry fires once per actually-triggered update, with the raw version.json version
-        assertEquals(listOf("0.102"), f.triggeredVersions)
+        // telemetry lifecycle: started when the installer spawns, completed on exit 0
+        assertEquals(listOf("started:0.102", "completed:0.102:0"), f.updateEvents)
         // the SUPERVISOR writes the completion record after exit 0 (nothing else does)
         assertTrue(f.home.updateDir.resolve("updated-0.102").exists())
         assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "the per-pid marker exists only while updating")
@@ -180,7 +180,7 @@ class AutoUpdaterTest {
         assertTrue(rivalAnnounced, "the tick must have passed step 5 and reached its own announce")
         assertEquals(0, higher.installerRuns.size, "the higher pid yields to the lower-pid announcer")
         assertEquals(0, higher.notices.size, "the loser yields silently")
-        assertEquals(0, higher.triggeredVersions.size, "a yielded update must not report a trigger")
+        assertEquals(0, higher.updateEvents.size, "a yielded update must not report any lifecycle event")
         assertFalse(higher.home.updateDir.resolve("update-4242-version-0.102").exists(), "the loser deletes its OWN marker")
         assertTrue(higher.home.updateDir.resolve("update-100-version-0.102").exists(), "the winner's marker is never touched")
 
@@ -213,7 +213,7 @@ class AutoUpdaterTest {
         f.updater.tick()
         assertEquals(0, f.installerRuns.size)
         assertEquals(0, f.notices.size)
-        assertEquals(0, f.triggeredVersions.size, "an aborted update must not report a trigger")
+        assertEquals(0, f.updateEvents.size, "an aborted update must not report any lifecycle event")
         assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "the marker is cleaned in the finally")
     }
 
@@ -226,6 +226,8 @@ class AutoUpdaterTest {
         repeat(5) { f.updater.tick() }
 
         assertEquals(5, f.installerRuns.size, "every scheduled tick retries; there is no cap")
+        assertEquals(List(5) { "started:0.102" to "failed:0.102:7" }.flatMap { it.toList() }, f.updateEvents,
+            "each attempt reports started then failed with the exit code")
         assertEquals(0, f.notices.size, "failures never produce a user-facing notice (stderr + logs only)")
         assertFalse(f.home.updateDir.resolve("update-failed-0.102").exists(), "no failure state is ever written")
     }
