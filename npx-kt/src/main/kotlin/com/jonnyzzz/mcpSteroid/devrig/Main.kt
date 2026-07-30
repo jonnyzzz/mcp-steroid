@@ -109,8 +109,9 @@ suspend fun DevrigServices.mainImpl2(
                     }
                 }
             }
-            // One flow for every command (docs/updates-check/devrig-auto-update.md): MCP sessions
-            // run the active 3–8 h update loop; everything else gets the passive notice once.
+            // One flow for every command (docs/updates-check/devrig-auto-update.md): the first
+            // check runs right after the short startup delay above; MCP sessions then keep
+            // re-checking/retrying every 3–8 h, everything else gets the passive notice once.
             runAutoUpdateFlow(
                 homePaths = homePaths,
                 mcpSession = command is DevrigCommand.MCP,

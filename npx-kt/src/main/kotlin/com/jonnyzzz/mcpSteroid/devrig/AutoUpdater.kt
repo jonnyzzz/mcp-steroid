@@ -170,8 +170,8 @@ class AutoUpdater(
 }
 
 /**
- * One flow for every devrig command: an MCP session with the updater enabled runs the 3–8 h tick
- * loop forever; everything else gets the passive marker-aware notice once.
+ * One flow for every devrig command. An enabled MCP session ticks IMMEDIATELY, then re-checks/
+ * retries every 3–8 h forever; everything else gets the passive marker-aware notice once.
  */
 suspend fun runAutoUpdateFlow(
     homePaths: HomePaths,
