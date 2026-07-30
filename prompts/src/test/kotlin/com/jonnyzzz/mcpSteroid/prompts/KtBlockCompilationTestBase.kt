@@ -16,16 +16,14 @@ import kotlinx.coroutines.runBlocking
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.arguments.CommonToolArguments
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
-import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.BeforeAll
 
 /**
  * Base class for generated KtBlock compilation tests (JUnit 5).
  *
  * Compiles Kotlin code blocks from prompt articles against the full IDE classpath
- * via the Kotlin Build Tools API (in-process, one shared [KotlinBuildsSession] per
- * test class). The IDE home, BTA implementation jars, and ij-plugin source
+ * via the Kotlin Build Tools API (in-process, ONE shared [KotlinBuildsSession] — and
+ * thus one pinned compiler environment — per test JVM). The IDE home, BTA implementation jars, and ij-plugin source
  * directory are resolved from system properties set by the Gradle build.
  *
  * The wrapper code references `McpScriptContext` and `McpScriptBuilder` (matching
@@ -160,21 +158,17 @@ abstract class KtBlockCompilationTestBase {
     }
 
     companion object {
-        private lateinit var buildsSession: KotlinBuildsSession
-
-        @BeforeAll
-        @JvmStatic
-        fun beforeAll() {
-            // BTA implementation jars come as real files from :kotlin-cli's
-            // bta-impl-jars directory (Gradle sets the system property) —
-            // no runtime extraction, stable daemon/classloader paths.
-            buildsSession = KotlinBuildsSession(KotlinBuildsSession.implJarsFromSystemProperty())
-        }
-
-        @AfterAll
-        @JvmStatic
-        fun afterAll() {
-            buildsSession.close()
+        // ONE session (and thus one pinned compiler application environment) for the
+        // whole test JVM — matching production semantics, where CodeEvalManager holds
+        // one long-lived session per project. Per-class @BeforeAll/@AfterAll would
+        // rebuild the environment for every generated test class and throw away the
+        // pinned jar caches ~98 times per fork. Never closed: the Gradle test fork
+        // exits after the suite and takes the session with it.
+        //
+        // BTA implementation jars come as real files from :kotlin-cli's bta-impl-jars
+        // directory (Gradle sets the system property) — no runtime extraction.
+        private val buildsSession: KotlinBuildsSession by lazy {
+            KotlinBuildsSession(KotlinBuildsSession.implJarsFromSystemProperty())
         }
 
         private val classpathCache = mutableMapOf<String, List<Path>>()
