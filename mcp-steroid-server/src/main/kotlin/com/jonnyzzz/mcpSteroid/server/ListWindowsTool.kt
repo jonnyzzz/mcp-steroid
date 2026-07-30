@@ -50,9 +50,12 @@ data class ListedWindow(
      * tools (`steroid_execute_code`, `steroid_take_screenshot`, `steroid_input`, …). The SAME `project_name`
      * `steroid_list_projects` reports; look up the project's `name`/`path` there by this key. Null for
      * windows not tied to a project. Treat it as opaque.
+     *
+     * Serialized as snake_case `project_name`/`project_path` (#381) — one spelling of the routing key
+     * across `steroid_list_projects` and `steroid_list_windows`, matching the sibling `backend_name`.
      */
-    val projectName: String?,
-    val projectPath: String?,
+    @SerialName("project_name") val projectName: String?,
+    @SerialName("project_path") val projectPath: String?,
     val title: String?,
     val isActive: Boolean,
     val isVisible: Boolean,
@@ -105,9 +108,9 @@ data class ListedBackgroundTask(
     /**
      * The routing KEY of the project this task belongs to — the same opaque id `steroid_list_projects`
      * reports as `project_name` (look up the project's `name`/`path` there). Null if the task isn't tied
-     * to a known open project.
+     * to a known open project. Serialized as snake_case `project_name` (#381).
      */
-    val projectName: String?,
+    @SerialName("project_name") val projectName: String?,
     /** Owning backend's backend_name; null only when unknown. */
     @SerialName("backend_name") val backendName: String? = null,
 )

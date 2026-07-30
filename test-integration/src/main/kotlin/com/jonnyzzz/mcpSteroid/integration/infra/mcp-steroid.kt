@@ -311,8 +311,9 @@ class McpSteroidDriver(
                 ?.map {
                     val window = it.jsonObject
                     McpWindowInfo(
-                        projectName = window["projectName"]?.jsonPrimitive?.contentOrNull,
-                        projectPath = window["projectPath"]?.jsonPrimitive?.contentOrNull,
+                        // snake_case keys since #381 — the shared ListedWindow contract (project_name/project_path).
+                        projectName = window["project_name"]?.jsonPrimitive?.contentOrNull,
+                        projectPath = window["project_path"]?.jsonPrimitive?.contentOrNull,
                         modalDialogShowing = window["modalDialogShowing"]?.jsonPrimitive?.booleanOrNull ?: false,
                         indexingInProgress = window["indexingInProgress"]?.jsonPrimitive?.booleanOrNull,
                         projectInitialized = window["projectInitialized"]?.jsonPrimitive?.booleanOrNull,
