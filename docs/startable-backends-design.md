@@ -135,12 +135,19 @@ that back-references its source; `ensureBackendRunning` dispatches on whichever 
 - **Drop `backends[]`** from both `ListProjectsResponse` and `ListWindowsResponse`.
 - Each `ListedProject` / window / background-task item keeps its `backend_name`.
 - This removes `ListedBackendInfo` and the rich `BackendInfo` from these tools.
+- **Superseded by #155 (2026-07):** a deliberately slimmer, identity-only `backends[]` was
+  re-introduced on both response types — `{backend_name, intellij{name, version, build}}`
+  (`BackendRef`/`IntelliJInfo`), NOT the deleted `BackendInfo`. Membership is referenced-only on
+  devrig (derived from the routing snapshot); inventory stays in `devrig backend --json` (#151).
 
 ### 5. in-IDE (HTTP-MCP) plugin surface
 
 - `list_projects` / `list_windows`: items carry the **self** `backend_name`; no `backends[]`.
 - `open_project`: **ignores** `backend_name` (single-IDE surface; there is only this IDE). Matches
   the existing `OpenProjectToolSpec(includeBackendName = false)` registration.
+- **Superseded by #155 (2026-07):** the direct surface now always emits a single-element
+  identity-only `backends[]` self entry (present even with zero open projects — the identity probe);
+  `open_project` still ignores `backend_name`.
 
 ### 6. CLI `devrig backend`
 
@@ -197,7 +204,8 @@ install/launch work behind `ensureBackendRunning` and the CLI `backend download/
 - **ij-plugin integration**:
   - `PidMarker.ideHome` is populated (`PathManager.getHomePath()`).
   - `/projects` bridge unaffected.
-  - list tools no longer emit `backends[]`; in-IDE `open_project` ignores `backend_name`.
+  - list tools no longer emit `backends[]` (later superseded by #155's identity-only re-introduction
+    — see §§4–5); in-IDE `open_project` ignores `backend_name`.
 
 ## Blast radius / docs to reconcile
 

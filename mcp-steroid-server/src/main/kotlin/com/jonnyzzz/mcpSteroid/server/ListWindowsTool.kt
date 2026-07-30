@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  */
 class ListWindowsToolSpec(val handler: () -> ListWindowsToolHandler) : McpToolBase() {
     override val name = "steroid_list_windows"
-    override val description = "List open IDE windows and their background tasks, with per-window readiness (modal/indexing/initialized) and a `window_id` for screenshot/input targeting in multi-window setups. Each window and background-task entry references its project by `project_name` — the single routing key for the project-scoped tools; look up that project's human-readable `name` and `path` via steroid_list_projects by the key (they are not duplicated here). `project_name` is null for windows not tied to a project."
+    override val description = "List open IDE windows and their background tasks, with per-window readiness (modal/indexing/initialized) and a `window_id` for screenshot/input targeting in multi-window setups. Each window and background-task entry references its project by `project_name` — the single routing key for the project-scoped tools; look up that project's human-readable `name` and `path` via steroid_list_projects by the key (they are not duplicated here). `project_name` is null for windows not tied to a project. Resolve an entry's `backend_name` to the owning IDE's identity (`intellij` = `{name, version, build}`) via the `backends` lookup in the same response."
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val response = handler().collectListWindowsResponse()
@@ -30,13 +30,22 @@ interface ListWindowsToolHandler {
 
 /**
  * MCP-only output of `steroid_list_windows` — never crosses the devrig<->IDE wire. There is no
- * top-level `ide`/`plugin`/`pid` header: the responding server's identity lives in the MCP server
- * info, and per-entry attribution happens via `backend_name` on each window/task entry.
+ * top-level `ide`/`plugin`/`pid` header (#89): the responding server's identity lives in the MCP
+ * server info, and per-entry attribution happens via `backend_name` on each window/task entry,
+ * resolvable to the owning IDE's identity through the `backends[]` table of the same response (#155).
  */
 @Serializable
 data class ListWindowsResponse(
     val windows: List<ListedWindow>,
     val backgroundTasks: List<ListedBackgroundTask>,
+    /**
+     * Resolution table for this response (#155): exactly the distinct `backend_name` values referenced
+     * by `windows[]` / `backgroundTasks[]` — no more, no less — sorted by `backend_name`, with one
+     * deliberate exception: on a direct in-IDE connection the single self entry is ALWAYS present, even
+     * with zero open windows (a server always describes itself — the identity probe). Identity-only by
+     * design: growth belongs to `devrig backend --json` (#151), never here.
+     */
+    val backends: List<BackendRef> = emptyList(),
 )
 
 /**

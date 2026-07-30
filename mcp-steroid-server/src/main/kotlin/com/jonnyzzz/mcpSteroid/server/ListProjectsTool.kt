@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  */
 class ListProjectsToolSpec(val handler: () -> ListProjectsToolHandler) : McpToolBase() {
     override val name = "steroid_list_projects"
-    override val description = "List all open projects in the IDE. Each entry has `project_name` (a unique routing key — pass it to steroid_execute_code and the other project-scoped tools) and `name` (the raw folder name, informational only); they are not equal."
+    override val description = "List all open projects in the IDE. Each entry has `project_name` (a unique routing key — pass it to steroid_execute_code and the other project-scoped tools) and `name` (the raw folder name, informational only); they are not equal. Resolve an entry's `backend_name` to the owning IDE's identity (`intellij` = `{name, version, build}`) via the `backends` lookup in the same response."
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val response = handler().collectListProjectsResponse()
@@ -31,18 +31,28 @@ interface ListProjectsToolHandler {
 
 /**
  * MCP-only output of `steroid_list_projects` — never crosses the devrig<->IDE wire. There is no
- * top-level `ide`/`plugin`/`pid` header: the responding server's identity lives in the MCP server
- * info, and per-entry attribution happens via `backend_name` on each project entry.
+ * top-level `ide`/`plugin`/`pid` header (#89): the responding server's identity lives in the MCP
+ * server info, and per-entry attribution happens via `backend_name` on each project entry,
+ * resolvable to the owning IDE's identity through the `backends[]` table of the same response (#155).
  */
 @Serializable
 data class ListProjectsResponse(
     /**
-     * Projects reachable through this connection. Each entry's `project_name` is the within-IDE-unique
-     * routing KEY an agent passes back to the project-scoped tools — opaque (do not parse or rely on its
-     * format); never equal to the raw `name`; `name` is the raw folder name and is informational only. On
-     * a direct in-IDE connection `backend_name` is this IDE's self-id; on devrig the owning discovered IDE.
+     * Projects reachable through this connection, sorted by `project_name`. Each entry's `project_name`
+     * is the within-IDE-unique routing KEY an agent passes back to the project-scoped tools — opaque
+     * (do not parse or rely on its format); never equal to the raw `name`; `name` is the raw folder name
+     * and is informational only. On a direct in-IDE connection `backend_name` is this IDE's self-id; on
+     * devrig the owning discovered IDE.
      */
     val projects: List<ListedProject>,
+    /**
+     * Resolution table for this response (#155): exactly the distinct `backend_name` values referenced
+     * by `projects[]` — no more, no less — sorted by `backend_name`, with one deliberate exception: on
+     * a direct in-IDE connection the single self entry is ALWAYS present, even with zero open projects
+     * (a server always describes itself — the identity probe). Identity-only by design: growth belongs
+     * to `devrig backend --json` (#151), never here.
+     */
+    val backends: List<BackendRef> = emptyList(),
 )
 
 /**

@@ -1,12 +1,14 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid
 
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import com.jonnyzzz.mcpSteroid.mcp.*
+import com.jonnyzzz.mcpSteroid.server.IntelliJInfo
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeService
@@ -206,6 +208,34 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
                 windows.windows.any { it.windowId.isNotBlank() }
             )
         }
+
+        // #155: exactly one backends[] element on the direct surface — this IDE — resolving every
+        // entry's backend_name, with the identity taken straight from ApplicationInfo.
+        val selfBackend = windows.backends.single()
+        val appInfo = ApplicationInfo.getInstance()
+        assertEquals(
+            "backends[].intellij must be the running IDE's ApplicationInfo identity",
+            IntelliJInfo(
+                name = appInfo.fullApplicationName,
+                version = appInfo.fullVersion,
+                build = appInfo.build.asString(),
+            ),
+            selfBackend.intellij,
+        )
+        windows.windows.forEach { window ->
+            assertEquals(
+                "every window's backend_name must resolve to the single backends[] self entry",
+                selfBackend.backendName,
+                window.backendName,
+            )
+        }
+        windows.backgroundTasks.forEach { task ->
+            assertEquals(
+                "every background task's backend_name must resolve to the single backends[] self entry",
+                selfBackend.backendName,
+                task.backendName,
+            )
+        }
     }
 
     // The /products and /server-metadata bridge endpoints were removed (unused by devrig). Auth-rejection
@@ -347,6 +377,34 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             assertTrue(
                 "Direct-IDE project must carry a non-blank backend_name",
                 project.backendName?.isNotBlank() == true
+            )
+        }
+
+        // #155: projects[] is sorted by project_name (single-project fixtures pass trivially; the
+        // multi-project ordering is pinned unit-level in SelfBackendResponseMappingTest).
+        assertEquals(
+            "list_projects entries must be sorted by project_name",
+            response.projects.map { it.projectName }.sorted(),
+            response.projects.map { it.projectName },
+        )
+
+        // #155: exactly one backends[] element — this IDE — and every project resolves to it.
+        val selfBackend = response.backends.single()
+        val appInfo = ApplicationInfo.getInstance()
+        assertEquals(
+            "backends[].intellij must be the running IDE's ApplicationInfo identity",
+            IntelliJInfo(
+                name = appInfo.fullApplicationName,
+                version = appInfo.fullVersion,
+                build = appInfo.build.asString(),
+            ),
+            selfBackend.intellij,
+        )
+        response.projects.forEach { project ->
+            assertEquals(
+                "every project's backend_name must resolve to the single backends[] self entry",
+                selfBackend.backendName,
+                project.backendName,
             )
         }
     }

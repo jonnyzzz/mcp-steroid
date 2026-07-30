@@ -12,6 +12,7 @@ import com.jonnyzzz.mcpSteroid.server.NpxBridgeWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
+import com.jonnyzzz.mcpSteroid.server.toIntelliJInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -67,6 +68,60 @@ class DevrigListToolHandlersTest {
         // projects[] only lists the IDE that actually has a project open, tagged with its own backend_name.
         assertEquals(listOf(name42), response.projects.map { it.backendName })
         assertEquals(listOf("alpha"), response.projects.map { it.name })
+    }
+
+    @Test
+    fun `list_projects backends is the referenced-only identity table sorted by backend_name`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homeZ = Files.createDirectories(tempDir.resolve("zulu"))
+        val homeA = Files.createDirectories(tempDir.resolve("alpha"))
+        val homeM = Files.createDirectories(tempDir.resolve("mike"))
+        // Deliberately unsorted snapshot: the "zulu" project first, backends in scan (not name) order.
+        // Note the fixture markers carry no ideHome (the incompatible/old-plugin marker shape) — such
+        // backends own routes, so they MUST still appear in the table (#155 membership rule).
+        val ideZ = IdeMonitorState(
+            ide = discoveredIde(pid = 99, build = "IU-261.1"),
+            projects = listOf(
+                IdeProjectState("zulu", homeZ.toString()),
+                IdeProjectState("alpha", homeA.toString()),
+            ),
+        )
+        val ideM = IdeMonitorState(
+            ide = discoveredIde(pid = 42, build = "GO-261.2"),
+            projects = listOf(IdeProjectState("mike", homeM.toString())),
+        )
+        // Running with zero open projects: owns no route => absent from backends[] (referenced-only).
+        // Startable and port-only IDEs never enter the routing snapshot at all, so they are absent
+        // structurally — their inventory is `devrig backend --json` (#151).
+        val idle = IdeMonitorState(ide = discoveredIde(pid = 7, build = "IU-253.9"))
+        val routing = DevrigProjectRoutingService { listOf(ideZ, ideM, idle) }
+
+        val response = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
+
+        // (d) projects[] sorted by project_name regardless of the routing-snapshot order.
+        assertEquals(response.projects.map { it.projectName }.sorted(), response.projects.map { it.projectName })
+        assertEquals(3, response.projects.size)
+
+        // (a) every entry's backend_name resolves to exactly one backends[] element.
+        for (project in response.projects) {
+            assertEquals(1, response.backends.count { it.backendName == project.backendName })
+        }
+
+        // (b) every backends[] element is referenced by >=1 entry; (e) the idle backend is absent.
+        val referenced = response.projects.map { it.backendName }.toSet()
+        assertEquals(referenced, response.backends.map { it.backendName }.toSet())
+        assertTrue(response.backends.none { it.backendName == idle.ide.backendName })
+
+        // (c) de-duped (ideZ owns two projects yet appears once) + sorted by backend_name.
+        assertEquals(response.backends.map { it.backendName }.distinct(), response.backends.map { it.backendName })
+        assertEquals(response.backends.map { it.backendName }.sorted(), response.backends.map { it.backendName })
+
+        // (f)+(g) each element's identity is the marker-decoded IdeInfo projected via toIntelliJInfo().
+        val routedByName = listOf(ideZ, ideM).associateBy { it.ide.backendName }
+        for (backend in response.backends) {
+            assertEquals(routedByName.getValue(backend.backendName).ide.ide.toIntelliJInfo(), backend.intellij)
+        }
     }
 
     @Test
@@ -159,6 +214,11 @@ class DevrigListToolHandlersTest {
             val route = routing.routes().single { it.route.pid == pid }
             assertEquals(route.exposedProjectName, window.projectName)
         }
+        // #155: backends[] resolves both referenced backend_names — referenced-only, sorted, with the
+        // marker-decoded identity projected via toIntelliJInfo().
+        assertEquals(listOf(name42, name43).sorted(), response.backends.map { it.backendName })
+        assertEquals(stateA.ide.ide.toIntelliJInfo(), response.backends.single { it.backendName == name42 }.intellij)
+        assertEquals(stateB.ide.ide.toIntelliJInfo(), response.backends.single { it.backendName == name43 }.intellij)
     }
 
     private fun windowsResponseJson(pid: Long): String = McpJson.encodeToString(

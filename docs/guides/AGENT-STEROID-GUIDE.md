@@ -169,8 +169,14 @@ anyway it is logged and ignored.
 
 Every `projects[]`, `windows[]`, and `backgroundTasks[]` entry in the
 response carries a `backend_name` that identifies which IDE owns it.
-There is no separate top-level `backends[]` array. Backend *discovery*
-lives in `steroid_open_project`.
+Each response also carries a `backends[]` lookup table (#155) resolving
+every referenced `backend_name` to the owning IDE's identity —
+`{ "backend_name": …, "intellij": { "name", "version", "build" } }`
+(`intellij` = the IntelliJ-Platform IDE; a GoLand backend still nests
+under `intellij`). The table is identity-only and referenced-only — a
+direct in-IDE connection always lists exactly one element (itself, even
+with zero open projects). Backend *inventory and discovery* still live
+in `steroid_open_project` and `devrig backend --json`.
 
 To pick a `backend_name` for `open_project`:
 

@@ -20,15 +20,12 @@ fun projectNameFor(project: Project): String =
 /**
  * Direct in-IDE `steroid_list_projects`. No top-level `ide`/`plugin`/`pid` header (the responding
  * server's identity lives in the MCP server info). Each [ListedProject] carries a stable base36
- * hash as `project_name` (derived from the real name) and `backend_name` pointing at this IDE's self-id.
+ * hash as `project_name` (derived from the real name) and `backend_name` pointing at this IDE's
+ * self-id, resolvable to the IDE's identity via the single-element `backends[]` table (#155).
  */
 class ListProjectsToolHandlerIJ : ListProjectsToolHandler {
-    override suspend fun collectListProjectsResponse(): ListProjectsResponse {
-        val self = describeSelfBackend()
-        return ListProjectsResponse(
-            projects = self.projects,
-        )
-    }
+    override suspend fun collectListProjectsResponse(): ListProjectsResponse =
+        describeSelfBackend().toListProjectsResponse()
 }
 
 class SelfBackendDescription(
@@ -36,6 +33,24 @@ class SelfBackendDescription(
     val backendName: String,
     /** Open projects, each with a hashed `project_name` ([projectNameFor]) and `backend_name == `[backendName]. */
     val projects: List<ListedProject>,
+    /** This IDE's presentation identity ([IdeInfo.ofApplication] projected) for the `backends[]` self entry. */
+    val intellij: IntelliJInfo,
+) {
+    /**
+     * The `backends[]` self entry. On the direct in-IDE surface it is UNCONDITIONAL — a server always
+     * describes itself, so a fresh IDE with zero open projects/windows stays identifiable (#155).
+     */
+    fun selfBackendRef(): BackendRef = BackendRef(backendName = backendName, intellij = intellij)
+}
+
+/**
+ * Maps the self-description to the MCP `steroid_list_projects` response: `projects[]` sorted by
+ * `project_name` (determinism — `ProjectManager` open-order is meaningless to consumers) and the
+ * unconditional single-element `backends[]` self entry.
+ */
+fun SelfBackendDescription.toListProjectsResponse(): ListProjectsResponse = ListProjectsResponse(
+    projects = projects.sortedBy { it.projectName },
+    backends = listOf(selfBackendRef()),
 )
 
 suspend fun describeSelfBackend(): SelfBackendDescription {
@@ -59,5 +74,6 @@ suspend fun describeSelfBackend(): SelfBackendDescription {
     return SelfBackendDescription(
         backendName = selfBackendName,
         projects = listedProjects,
+        intellij = ide.toIntelliJInfo(),
     )
 }

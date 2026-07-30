@@ -9,9 +9,10 @@ import org.junit.jupiter.api.Test
 
 /**
  * R3.5 — mechanical guard that the devrig<->IDE WIRE stays pristine. The MCP/CLI-surface types
- * [ListedProject] (and their `backend_name` / `project_name` keys) must NEVER serialize
- * into a wire-crossing payload. The only wire DTOs are [NpxStreamEnvelope] (`/projects/stream`, carrying
- * the pristine `{name, path}` [ProjectInfo]) and [NpxBridgeWindowsResponse] (`/windows`).
+ * [ListedProject] and the #155 [BackendRef]/[IntelliJInfo] identity table (their `backend_name` /
+ * `project_name` / `backends` / `intellij` keys) must NEVER serialize into a wire-crossing payload.
+ * The only wire DTOs are [NpxStreamEnvelope] (`/projects/stream`, carrying the pristine
+ * `{name, path}` [ProjectInfo]) and [NpxBridgeWindowsResponse] (`/windows`).
  */
 class WirePristinenessTest {
     @Test
@@ -31,6 +32,9 @@ class WirePristinenessTest {
         assertFalse(json.contains("project_name"), "wire must not carry project_name: $json")
         assertFalse(json.contains("backendName"), "wire must not carry backendName: $json")
         assertFalse(json.contains("projectName"), "wire must not carry projectName: $json")
+        // ...and the #155 MCP-only backends[] identity table never leaks onto the wire either.
+        assertFalse(json.contains("backends"), "wire must not carry backends: $json")
+        assertFalse(json.contains("intellij"), "wire must not carry intellij: $json")
 
         // And it round-trips to the pristine shape.
         val decodedProject = NpxStreamJson.decodeEnvelope(json).projects!!.single()
@@ -75,6 +79,9 @@ class WirePristinenessTest {
         // The backend-id keys (the R3 additions) must never leak onto the wire.
         assertFalse(json.contains("backend_name"), "wire must not carry backend_name: $json")
         assertFalse(json.contains("backendName"), "wire must not carry backendName: $json")
+        // ...and neither may the #155 MCP-only backends[] identity table or its nested intellij key.
+        assertFalse(json.contains("backends"), "wire must not carry backends: $json")
+        assertFalse(json.contains("intellij"), "wire must not carry intellij: $json")
         // Note: `projectName` IS a legitimate WindowInfo wire field — now the IDE's stable project id
         // (base36 hash of the project's base dir + name), the same id `/projects` emits, so devrig can
         // match a window to its project. It is NOT the MCP-only ListedProject.project_name key, so it

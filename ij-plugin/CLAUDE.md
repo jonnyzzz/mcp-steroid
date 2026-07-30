@@ -452,7 +452,8 @@ which never crosses the wire. `ProjectsStreamService` only ever builds `ProjectI
 reversion changed zero emitted bytes.) A **wire-pristineness guard test** (`WirePristinenessTest`,
 `mcp-steroid-server`) asserts `NpxStreamEnvelope` (`/projects/stream`) and `NpxBridgeWindowsResponse`
 (`/windows`) never serialize the devrig-only `backend_name` / `project_name` / `ListedProject`
-keys (`BackendInfo` and `ListedBackendInfo` were deleted in the startable-backends release).
+keys, nor the #155 MCP-only `backends` / `intellij` identity keys (`BackendInfo` and
+`ListedBackendInfo` were deleted in the startable-backends release).
 
 **MCP-surface-only, never wire-crossing:**
 - `OpenProjectParams.backendName: String? = null` is **MCP-surface only** and is **NOT forwarded** to the
@@ -462,9 +463,14 @@ keys (`BackendInfo` and `ListedBackendInfo` were deleted in the startable-backen
 - `ListProjectsResponse` / `ListWindowsResponse` / `ListedProject` are devrig-computed MCP/CLI output types
   (built from devrig's routing snapshot, never fetched from the IDE) — devrig-owned and outside the wire
   contract. Note: `BackendInfo` and `ListedBackendInfo` were **deleted** in the startable-backends release;
-  `backends[]` was **removed** from both response types (they now carry only `projects` / `windows` +
-  `backgroundTasks`). The one-release additive-only waiver that permitted this is recorded in
-  `docs/PHILOSOPHY.md` Tenet 5 and `docs/startable-backends-design.md`.
+  `backends[]` was **removed** from both response types. The one-release additive-only waiver that
+  permitted this is recorded in `docs/PHILOSOPHY.md` Tenet 5 and `docs/startable-backends-design.md`.
+  **#155 re-introduced a deliberately slimmer, identity-only `backends[]`** on both response types:
+  `BackendRef{backend_name, intellij{name, version, build}}` (`IntelliJInfo` is a dedicated presentation
+  type — a projection of the marker `IdeInfo`, drift-gated by `BackendRefSerializationTest`, never
+  wire-crossing). Membership: referenced-only on devrig (derived from the routing snapshot); the direct
+  in-IDE surface always emits its single self entry, even with zero open projects. `projects[]` is sorted
+  by `project_name`, `backends[]` by `backend_name`; windows/tasks keep their produced order.
 
 **`PidMarker` fields added in the startable-backends release (additive, nullable):**
 - `PidMarker.ideHome: String? = null` — the IDE install home (`PathManager.getHomePath()`), written by

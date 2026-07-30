@@ -201,6 +201,12 @@ shape changed from one `backends[]` to three explicit arrays
 (`mcpSteroidBackends[]`, `otherIdes[]`, `startableBackends[]`). This
 waiver is a one-time exception, not a precedent — the principle stays in
 force for all future changes. See `docs/startable-backends-design.md`.
+(#155 later re-introduced a deliberately slimmer, **identity-only**
+`backends[]` on the two list responses — `{backend_name, intellij{name,
+version, build}}` via `BackendRef`/`IntelliJInfo`, not the deleted
+`BackendInfo`. That output is devrig-computed MCP surface — inside the
+"devrig-owned, free to reshape" carve-out below, additive-only in
+practice, and never wire-crossing: `WirePristinenessTest` guards it.)
 
 **The devrig-computed MCP/CLI output is devrig-owned and outside this
 contract — free to reshape.** `steroid_list_projects` results

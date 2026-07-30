@@ -53,6 +53,33 @@ routing KEY you pass to project-scoped tools), the human-readable folder
 `name` (informational only), `path`, and a `backend_name` naming its
 owning backend.
 
+## Resolving a `backend_name` to the IDE's identity
+
+Both list-tool responses carry a `backends` lookup table — the
+resolution step for every `backend_name` referenced by that response's
+entries. Each element is identity-only:
+
+```
+{ "backend_name": "iu-47qi79c1",
+  "intellij": { "name": "IntelliJ IDEA 2026.1.3",
+                "version": "2026.1.3",
+                "build": "IU-261.25134.95" } }
+```
+
+- `intellij` means "the IntelliJ-Platform IDE" — a GoLand or PyCharm
+  backend still nests under `intellij`; the product is identified by
+  `name`/`build` (e.g. `"GO-261.24374.154"`).
+- On a direct in-IDE connection, `backends` always contains exactly one
+  element (the IDE itself), even with zero open projects — so probing a
+  fresh IDE's identity is a single `steroid_list_projects` call.
+- Via devrig, `backends` lists exactly the backends referenced by this
+  response's entries — no more. Backend *inventory* (zero-project,
+  startable, and no-plugin IDEs) lives in `devrig backend --json`.
+- `windows[].projectName` is the opaque routing key, not a display
+  name — enrich the human-readable `name`/`path` via
+  `steroid_list_projects` (which carries the same `backends` table, so
+  one call resolves both the project and its IDE).
+
 If the chosen `backend_name` belongs to a startable managed backend
 (not yet running), `open_project` starts it and blocks until it is
 reachable, then opens the project.
@@ -63,7 +90,8 @@ startable).
 
 **A `backend_name` is not stable across IDE restarts** (it is derived
 from the pid or the install path). Re-read `steroid_list_projects`
-rather than caching a `backend_name`.
+rather than caching a `backend_name` — its `backends` table is the
+resolution step from a fresh key to the owning IDE's identity.
 
 ## The `devrig backend` CLI — for installing and managing IDEs
 
