@@ -13,6 +13,20 @@
     non-modal (`setModal(false)`); tool docs could state coordinates are window-relative including
     decorations, and that `screen:` targets exist.
 
+- [ ] **devrig auto-update — follow-ups** (core shipped per `docs/updates-check/devrig-auto-update.md`,
+  3×-quorum approved 2026-07-30; branch `auto-update-install-scripts`):
+  - [ ] `:test-integration` lane: drive the auto-update path end-to-end against the nginx-served
+    installer fixtures (real `install.sh`, real `devrig install devrig` verify + marker authority).
+  - [ ] Windows process-level coverage on a Windows runner: `superviseInstallerProcess` with
+    `powershell.exe -File`, atomic replacement of a RUNNING `devrig.cmd`, and the
+    sharing-violation → non-zero → capped-retry degradation (quorum nit; needs the per-OS GH matrix).
+  - [ ] Transitional ping-pong hint: when the launcher version keeps regressing tick-over-tick
+    (a pre-launcher agent registration pointing at an old tree), extend the restart notice with a
+    "re-run `devrig install <agent>`" hint.
+  - [ ] Release-side: verify devrig.dev serves `install.sh`/`install.ps1` with the same promoted
+    version as `version.json` atomically enough (the skew guard tolerates propagation, but the
+    weekly URL-liveness action could also assert version.json ↔ script VERSION agreement).
+
 - [ ] **Native MCP tools — implement per `docs/native-mcp-tools-design.md`** (spec landed first;
   research 3×-quorum validated + live-tested on IU-261.25134.95, 2026-07-22):
   - [ ] Scenario B (chosen first step): `IntelliJMcpServerProbe.listNativeTools()` (+ drop the

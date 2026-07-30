@@ -15,6 +15,12 @@ class HomePaths(val home: Path) {
     val executionStorageDir: Path get() = home.resolve("execution-storage")
 
     /**
+     * Auto-update coordination files (`lock`, `update-<pid>-version-<v>`, `updated-<v>`, counters,
+     * downloaded install scripts) — the contract in `docs/updates-check/devrig-auto-update.md`.
+     */
+    val updateDir: Path get() = home.resolve("update")
+
+    /**
      * Directory holding the stable, user-facing devrig launcher (`bin/devrig` on POSIX, `bin/devrig.cmd`
      * on Windows). The devrig binary OWNS this directory: it (re)writes the launcher on every start (see
      * [ensureBinLauncher]) and points agent MCP registrations + the user-PATH symlink at `bin/devrig`,
@@ -34,7 +40,7 @@ class HomePaths(val home: Path) {
     fun pidFile(id: String): Path = stateDir.resolve("$id.pid")
 
     fun mkdirsAll() {
-        listOf(logsDir, backendsDir, cachesDir, downloadsDir, stateDir, binDir).forEach { Files.createDirectories(it) }
+        listOf(logsDir, backendsDir, cachesDir, downloadsDir, stateDir, binDir, updateDir).forEach { Files.createDirectories(it) }
     }
 }
 

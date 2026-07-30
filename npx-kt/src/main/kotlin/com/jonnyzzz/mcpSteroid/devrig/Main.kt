@@ -12,6 +12,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlin.random.Random
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
@@ -101,14 +103,34 @@ suspend fun DevrigServices.mainImpl2(
     if (command.runsTool()) {
         backgroundScope.launch {
             delay(Random.nextInt(200, 1300).milliseconds)
-            checkForUpdates(onNotice = { message ->
+            val onNotice: (String) -> Unit = { message ->
                 if (command is DevrigCommand.MCP) {
                     backgroundScope.launch {
                         val core = mcpServerReady.await()
                         core.broadcastLogMessage("warning", "devrig.updates", JsonPrimitive(message))
                     }
                 }
-            })
+            }
+            val updater = if (command is DevrigCommand.MCP) AutoUpdater(homePaths = homePaths, notify = onNotice) else null
+            if (updater != null && updater.isActive()) {
+                // The ACTIVE auto-updater (docs/updates-check/devrig-auto-update.md): only the
+                // long-lived `devrig mcp` session runs it — it supervises the installer and delivers
+                // the restart notice over MCP. Periodic (30–60 min jittered): a one-shot check would
+                // never tell a session that lost the update race that the install completed.
+                while (true) {
+                    try {
+                        updater.tick()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        System.err.println("[mcp-steroid] auto-update tick failed: $e")
+                    }
+                    delay(Random.nextLong(30, 61).minutes)
+                }
+            } else {
+                // Passive, marker-aware notice: short CLI commands and opted-out/SNAPSHOT sessions.
+                checkForUpdates(homePaths, onNotice)
+            }
         }
 
         backgroundScope.launch {

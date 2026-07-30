@@ -33,6 +33,7 @@ class HomePathsTest {
         assertEquals(tempDir.resolve("downloads"), paths.downloadsDir)
         assertEquals(tempDir.resolve("state"), paths.stateDir)
         assertEquals(tempDir.resolve("execution-storage"), paths.executionStorageDir)
+        assertEquals(tempDir.resolve("update"), paths.updateDir)
         assertEquals(tempDir.resolve("backends/idea-community-2025.3.3"), paths.backendDir("idea-community-2025.3.3"))
         assertEquals(tempDir.resolve("caches/idea-community-2025.3.3"), paths.cacheDir("idea-community-2025.3.3"))
         assertEquals(tempDir.resolve("state/idea-community-2025.3.3.pid"), paths.pidFile("idea-community-2025.3.3"))
@@ -47,7 +48,7 @@ class HomePathsTest {
         paths.mkdirsAll()
         paths.mkdirsAll()
 
-        listOf(paths.logsDir, paths.backendsDir, paths.cachesDir, paths.downloadsDir, paths.stateDir, paths.binDir).forEach { dir ->
+        listOf(paths.logsDir, paths.backendsDir, paths.cachesDir, paths.downloadsDir, paths.stateDir, paths.binDir, paths.updateDir).forEach { dir ->
             assertTrue(dir.isDirectory(), "$dir should be a directory")
         }
         assertTrue(!Files.exists(paths.executionStorageDir), "execution-storage is reserved and not created yet")

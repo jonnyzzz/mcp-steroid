@@ -101,6 +101,9 @@ fun ensureBinLauncher(home: HomePaths, force: Boolean = false, registerWindowsPa
     }
 }
 
+/** The outcome of a launcher-write attempt — callers that must verify (install devrig) branch on it. */
+enum class LauncherWriteOutcome { WRITTEN, UNCHANGED, SKIPPED_NO_DOWNGRADE }
+
 /**
  * Testable core — every input is explicit (no environment lookups), so the OS branch and path logic are
  * unit-testable without touching `os.name` / `user.home` / `java.home` / `PATH`.
@@ -119,9 +122,10 @@ internal fun ensureBinLauncher(
     userHome: Path,
     pathDirs: List<String>,
     registerWindowsPath: Boolean = true,
+    registeringVersion: String = DevrigVersionMetadata.getDevrigVersion(),
 ) {
     val ownBin = ownRoot.resolve("bin").resolve(if (isWin) "devrig.bat" else "devrig").toAbsolutePath().normalize()
-    ensureBinLauncherCore(home, isWin, ownBin, ownJava.toAbsolutePath().normalize(), userHome, pathDirs, registerWindowsPath)
+    ensureBinLauncherCore(home, isWin, ownBin, ownJava.toAbsolutePath().normalize(), userHome, pathDirs, registerWindowsPath, registeringVersion)
 }
 
 /**
@@ -138,21 +142,70 @@ internal fun ensureBinLauncherCore(
     userHome: Path,
     pathDirs: List<String>,
     registerWindowsPath: Boolean = true,
-) {
+    registeringVersion: String = DevrigVersionMetadata.getDevrigVersion(),
+    bypassNoDowngradeGuard: Boolean = false,
+): LauncherWriteOutcome {
+    val target = home.binDir.resolve(if (isWin) "devrig.cmd" else "devrig")
+    // The no-downgrade guard (docs/updates-check/devrig-auto-update.md): an old devrig starting around
+    // an auto-update must not flip the launcher back past a completed update. Two independent signals,
+    // base-version ordering only: the existing launcher's version stamp, and the newest `updated-<v>`
+    // marker. The single bypass is `devrig install devrig` WITHOUT the auto-update env (explicit intent,
+    // including rollback, wins). The residual TOCTOU is self-healed by the update loop's torn-marker check.
+    if (!bypassNoDowngradeGuard) {
+        val candidate = baseVersion(registeringVersion)
+        val existingVersion = readLauncherVersion(target)
+        val newerBy = when {
+            existingVersion != null && baseVersion(existingVersion) > candidate -> "the launcher already points at $existingVersion"
+            else -> newestUpdatedMarkerVersion(home.updateDir)
+                ?.takeIf { it > candidate }
+                ?.let { "a completed update to $it is pending restart" }
+        }
+        if (newerBy != null) {
+            System.err.println("[mcp-steroid] not rewriting $target for $registeringVersion: $newerBy")
+            return LauncherWriteOutcome.SKIPPED_NO_DOWNGRADE
+        }
+    }
+    val outcome: LauncherWriteOutcome
     if (isWin) {
         // CMD-only launcher: a single self-contained devrig.cmd. No PowerShell at launch — PS is only
         // needed by the install SCRIPT, not the launcher.
-        val cmd = home.binDir.resolve("devrig.cmd")
-        writeIfChanged(home.binDir, cmd, renderWindowsCmd(ownBin, jdkHome), executable = false, ownBin = ownBin)
+        outcome = writeIfChanged(home.binDir, target, renderWindowsCmd(ownBin, jdkHome, registeringVersion), executable = false, ownBin = ownBin)
         // PATH registration spawns PowerShell, so skip it on the `devrig mcp` hot path (registerWindowsPath
         // = false) — it would block the first serve until the marker exists. Interactive/install pass true.
         if (registerWindowsPath) ensureWindowsPathEntry(home.binDir)
     } else {
-        val devrig = home.binDir.resolve("devrig")
-        writeIfChanged(home.binDir, devrig, renderPosixLauncher(ownBin, jdkHome), executable = true, ownBin = ownBin)
-        ensurePosixPathSymlink(home.binDir, devrig, userHome, pathDirs)
+        outcome = writeIfChanged(home.binDir, target, renderPosixLauncher(ownBin, jdkHome, registeringVersion), executable = true, ownBin = ownBin)
+        ensurePosixPathSymlink(home.binDir, target, userHome, pathDirs)
     }
+    return outcome
 }
+
+/** The version the launcher currently points at, or null when the file is missing/unreadable/unstamped. */
+fun readLauncherVersion(launcher: Path): String? {
+    if (!launcher.exists()) return null
+    val content = try {
+        launcher.readText()
+    } catch (e: Exception) {
+        System.err.println("[mcp-steroid] could not read the launcher $launcher: $e")
+        return null
+    }
+    return parseLauncherVersion(content)
+}
+
+/**
+ * Extract the devrig version from launcher content: the explicit `# devrig-version:` /
+ * `rem devrig-version:` stamp first; for pre-stamp launchers, fall back to the digit-anchored
+ * `devrig-<version>-` segment of the embedded install-tree path (the anchor keeps
+ * `devrig-macos-arm64-…` from mis-parsing; both the outer `devrig-<os>-<cpu>-<version>-<sha12>` dir
+ * and the inner `devrig-<version>-<hash>` subpath match the anchored form).
+ */
+fun parseLauncherVersion(content: String): String? {
+    launcherStampRegex.find(content)?.let { return it.groupValues[1] }
+    return legacyLauncherVersionRegex.find(content)?.groupValues?.get(1)
+}
+
+private val launcherStampRegex = Regex("""(?m)^(?:#|rem) devrig-version:\s*(\S+)\s*$""")
+private val legacyLauncherVersionRegex = Regex("""devrig-(\d[0-9A-Za-z.]*)-""")
 
 /**
  * Register `~/.mcp-steroid/bin/devrig`(`.cmd`) + PATH for an EXPLICIT install-tree launcher [installScript]
@@ -167,31 +220,35 @@ fun ensureBinLauncherForInstallScript(
     jdkHome: Path,
     force: Boolean = true,
     registerWindowsPath: Boolean = true,
-) {
-    if (!shouldWriteLauncher(System.getenv(ENV_BIN_NO_AUTO_REGISTER), force)) return
-    try {
-        ensureBinLauncherCore(
-            home = home,
-            isWin = isWindows(),
-            ownBin = installScript.toAbsolutePath().normalize(),
-            jdkHome = jdkHome.toAbsolutePath().normalize(),
-            userHome = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
-            pathDirs = (System.getenv("PATH") ?: "").split(File.pathSeparatorChar),
-            registerWindowsPath = registerWindowsPath,
-        )
-    } catch (e: Exception) {
-        System.err.println("[mcp-steroid] could not (re)write the devrig launcher: $e")
-    }
+    bypassNoDowngradeGuard: Boolean = true,
+): LauncherWriteOutcome? {
+    if (!shouldWriteLauncher(System.getenv(ENV_BIN_NO_AUTO_REGISTER), force)) return null
+    // NO best-effort catch here, unlike the passive self-heal: this is the install script's handoff,
+    // and a swallowed write failure (e.g. a Windows sharing violation on devrig.cmd) would let
+    // `devrig install devrig` report success for a launcher that never changed — a torn install
+    // masquerading as complete. The caller turns the exception into a non-zero exit.
+    return ensureBinLauncherCore(
+        home = home,
+        isWin = isWindows(),
+        ownBin = installScript.toAbsolutePath().normalize(),
+        jdkHome = jdkHome.toAbsolutePath().normalize(),
+        userHome = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
+        pathDirs = (System.getenv("PATH") ?: "").split(File.pathSeparatorChar),
+        registerWindowsPath = registerWindowsPath,
+        registeringVersion = DevrigVersionMetadata.getDevrigVersion(),
+        bypassNoDowngradeGuard = bypassNoDowngradeGuard,
+    )
 }
 
 /** The POSIX wrapper: pins the JDK devrig runs under via DEVRIG_JAVA_HOME, then execs the install-tree launcher. */
-internal fun renderPosixLauncher(launcher: Path, jdkHome: Path): String {
+internal fun renderPosixLauncher(launcher: Path, jdkHome: Path, version: String): String {
     val launcherStr = launcher.toString().replace('\\', '/')
     val jdkStr = jdkHome.toString().replace('\\', '/')
     return "#!/bin/sh\n" +
         "# devrig launcher — managed by the devrig binary. Writes nothing to stdout (MCP stdio channel).\n" +
         "# Pins the JDK devrig runs under via DEVRIG_JAVA_HOME (its supported runtime), then hands off to\n" +
         "# the install-tree devrig launcher.\n" +
+        "# devrig-version: $version\n" +
         "DEVRIG_JAVA_HOME=\"$jdkStr\"; export DEVRIG_JAVA_HOME\n" +
         "exec \"$launcherStr\" \"\$@\"\n"
 }
@@ -203,12 +260,13 @@ internal fun renderPosixLauncher(launcher: Path, jdkHome: Path): String {
  * the inner devrig.bat → java does. The agent invokes this via `cmd.exe /d /c` — see
  * [DevrigUserLauncher.invocation].
  */
-internal fun renderWindowsCmd(launcher: Path, jdkHome: Path): String =
+internal fun renderWindowsCmd(launcher: Path, jdkHome: Path, version: String): String =
     "@echo off\r\n" +
+        "rem devrig-version: $version\r\n" +
         "set \"DEVRIG_JAVA_HOME=$jdkHome\"\r\n" +
         "call \"$launcher\" %*\r\n"
 
-private fun writeIfChanged(dir: Path, target: Path, desired: String, executable: Boolean, ownBin: Path) {
+private fun writeIfChanged(dir: Path, target: Path, desired: String, executable: Boolean, ownBin: Path): LauncherWriteOutcome {
     // An unreadable existing launcher (non-UTF-8 bytes, wrong file type, transient IO) counts as
     // "changed" so a corrupt launcher self-heals rather than being left in place.
     val current = if (!target.exists()) null else try {
@@ -224,10 +282,11 @@ private fun writeIfChanged(dir: Path, target: Path, desired: String, executable:
             setExecutable(target)
             System.err.println("[mcp-steroid] restored the executable bit on $target")
         }
-        return
+        return LauncherWriteOutcome.UNCHANGED
     }
     writeAtomically(dir, target, desired, executable)
     System.err.println("[mcp-steroid] (re)wrote $target -> $ownBin")
+    return LauncherWriteOutcome.WRITTEN
 }
 
 /** Tolerant of CRLF↔LF and trailing-newline differences so we rewrite ONLY on a real content change. */

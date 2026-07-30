@@ -63,21 +63,125 @@ class BinLauncherTest {
 
     @Test
     fun `posix launcher pins DEVRIG_JAVA_HOME (absolute) and execs the install-tree launcher`() {
-        val text = renderPosixLauncher(Path.of("/tmp/devrig/bin/devrig"), Path.of("/tmp/jdk-25"))
+        val text = renderPosixLauncher(Path.of("/tmp/devrig/bin/devrig"), Path.of("/tmp/jdk-25"), version = "0.101.5")
         assertTrue(text.startsWith("#!/bin/sh\n"), text)
         assertTrue(text.contains("DEVRIG_JAVA_HOME=\"/tmp/jdk-25\"; export DEVRIG_JAVA_HOME"), text)
         assertTrue(text.contains("exec \"/tmp/devrig/bin/devrig\" \"\$@\""), text)
+        assertTrue(text.contains("# devrig-version: 0.101.5\n"), text)
         assertFalse(text.contains("\r\n"), "POSIX launcher must be LF-only")
         assertFalse(text.contains("\$HOME"), "wrapper records absolute paths, not \$HOME-relative")
     }
 
     @Test
     fun `windows launcher is pure CRLF batch that pins DEVRIG_JAVA_HOME (absolute)`() {
-        val text = renderWindowsCmd(Path.of("C:\\devrig\\bin\\devrig.bat"), Path.of("C:\\devrig\\jdk-25"))
+        val text = renderWindowsCmd(Path.of("C:\\devrig\\bin\\devrig.bat"), Path.of("C:\\devrig\\jdk-25"), version = "0.101.5")
         assertTrue(text.startsWith("@echo off\r\n"), text)
         assertTrue(text.contains("set \"DEVRIG_JAVA_HOME=C:\\devrig\\jdk-25\"\r\n"), text)
         assertTrue(text.contains("call \"C:\\devrig\\bin\\devrig.bat\" %*\r\n"), text)
+        assertTrue(text.contains("rem devrig-version: 0.101.5\r\n"), text)
         assertFalse(text.contains("powershell", ignoreCase = true), "windows launcher must not invoke PowerShell")
+    }
+
+    // ── version stamp parsing ───────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `parseLauncherVersion reads the stamp from both launcher flavors`() {
+        val posix = renderPosixLauncher(Path.of("/x/bin/devrig"), Path.of("/x/jdk"), version = "0.102.3-gh-abc1234")
+        assertEquals("0.102.3-gh-abc1234", parseLauncherVersion(posix))
+        val cmd = renderWindowsCmd(Path.of("C:\\x\\bin\\devrig.bat"), Path.of("C:\\x\\jdk"), version = "0.102.3")
+        assertEquals("0.102.3", parseLauncherVersion(cmd))
+    }
+
+    @Test
+    fun `parseLauncherVersion legacy fallback is digit-anchored on the install-tree path`() {
+        // A pre-stamp launcher: the version appears only inside the content-addressed paths. The outer
+        // dir carries os/cpu (`devrig-macos-arm64-…`) which must NOT mis-parse as a version.
+        val legacy = "#!/bin/sh\n" +
+            "DEVRIG_JAVA_HOME=\"/h/.mcp-steroid/binaries/jdk-macos-arm64-25.0.1-deadbeef1234/jdk\"; export DEVRIG_JAVA_HOME\n" +
+            "exec \"/h/.mcp-steroid/binaries/devrig-macos-arm64-0.101.441-abc123456789/devrig-0.101.441-abc1234/bin/devrig\" \"\$@\"\n"
+        assertEquals("0.101.441", parseLauncherVersion(legacy))
+        assertEquals(null, parseLauncherVersion("#!/bin/sh\nexec \"/opt/tools/run\" \"\$@\"\n"))
+    }
+
+    // ── no-downgrade guard ──────────────────────────────────────────────────────────────────────
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `guard skips a rewrite when the existing launcher stamp is newer`(@TempDir tmp: Path) {
+        val userHome = tmp.resolve("home")
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        val newTree = tmp.resolve("binaries/devrig-0.102.0-new")
+        val oldTree = tmp.resolve("binaries/devrig-0.101.0-old")
+
+        assertEquals(
+            LauncherWriteOutcome.WRITTEN,
+            ensureBinLauncherCore(home, isWin = false, ownBin = newTree.resolve("bin/devrig"), jdkHome = tmp.resolve("jdk"),
+                userHome = userHome, pathDirs = emptyList(), registeringVersion = "0.102.0"),
+        )
+        // an OLD binary's passive self-heal must not flip the launcher back…
+        assertEquals(
+            LauncherWriteOutcome.SKIPPED_NO_DOWNGRADE,
+            ensureBinLauncherCore(home, isWin = false, ownBin = oldTree.resolve("bin/devrig"), jdkHome = tmp.resolve("jdk"),
+                userHome = userHome, pathDirs = emptyList(), registeringVersion = "0.101.0-gh-abc1234"),
+        )
+        assertTrue(home.binDir.resolve("devrig").readText().contains("devrig-0.102.0-new"), "launcher must still point at the new tree")
+        // …but the explicit-intent bypass (manual `devrig install devrig`, incl. rollback) always writes.
+        assertEquals(
+            LauncherWriteOutcome.WRITTEN,
+            ensureBinLauncherCore(home, isWin = false, ownBin = oldTree.resolve("bin/devrig"), jdkHome = tmp.resolve("jdk"),
+                userHome = userHome, pathDirs = emptyList(), registeringVersion = "0.101.0", bypassNoDowngradeGuard = true),
+        )
+        assertTrue(home.binDir.resolve("devrig").readText().contains("devrig-0.101.0-old"))
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `guard skips a rewrite when a newer updated marker exists even if the launcher was flipped back`(@TempDir tmp: Path) {
+        val userHome = tmp.resolve("home")
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        // simulate a launcher already flipped back to the OLD version…
+        ensureBinLauncherCore(home, isWin = false, ownBin = tmp.resolve("old/bin/devrig"), jdkHome = tmp.resolve("jdk"),
+            userHome = userHome, pathDirs = emptyList(), registeringVersion = "0.101.0")
+        // …while a completed update to 0.102.0 is pending restart
+        Files.createDirectories(home.updateDir)
+        Files.writeString(home.updateDir.resolve("updated-0.102.0"), "{}")
+
+        assertEquals(
+            LauncherWriteOutcome.SKIPPED_NO_DOWNGRADE,
+            ensureBinLauncherCore(home, isWin = false, ownBin = tmp.resolve("old2/bin/devrig"), jdkHome = tmp.resolve("jdk"),
+                userHome = userHome, pathDirs = emptyList(), registeringVersion = "0.101.0"),
+        )
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `guard lets a dev SNAPSHOT self-heal through - its base version wins numerically`(@TempDir tmp: Path) {
+        val userHome = tmp.resolve("home")
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        ensureBinLauncherCore(home, isWin = false, ownBin = tmp.resolve("rel/bin/devrig"), jdkHome = tmp.resolve("jdk"),
+            userHome = userHome, pathDirs = emptyList(), registeringVersion = "0.101.5")
+
+        // dev builds use the .19999 patch precisely so their base version outranks promoted releases
+        assertEquals(
+            LauncherWriteOutcome.WRITTEN,
+            ensureBinLauncherCore(home, isWin = false, ownBin = tmp.resolve("dev/bin/devrig"), jdkHome = tmp.resolve("jdk"),
+                userHome = userHome, pathDirs = emptyList(), registeringVersion = "0.101.19999-SNAPSHOT-abc"),
+        )
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `guard writes when the existing launcher is unstamped and unparsable (self-heal preserved)`(@TempDir tmp: Path) {
+        val userHome = tmp.resolve("home")
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        Files.createDirectories(home.binDir)
+        Files.writeString(home.binDir.resolve("devrig"), "#!/bin/sh\nexec \"/opt/tools/run\" \"\$@\"\n")
+
+        assertEquals(
+            LauncherWriteOutcome.WRITTEN,
+            ensureBinLauncherCore(home, isWin = false, ownBin = tmp.resolve("new/bin/devrig"), jdkHome = tmp.resolve("jdk"),
+                userHome = userHome, pathDirs = emptyList(), registeringVersion = "0.101.0"),
+        )
     }
 
     @Test
@@ -101,7 +205,7 @@ class BinLauncherTest {
         assertTrue(Files.isRegularFile(launcher), "launcher should be written")
         assertTrue(Files.isExecutable(launcher), "launcher should be executable")
         assertEquals(
-            renderPosixLauncher(ownRoot.resolve("bin/devrig"), ownJava),
+            renderPosixLauncher(ownRoot.resolve("bin/devrig"), ownJava, DevrigVersionMetadata.getDevrigVersion()),
             launcher.readText(),
         )
     }
@@ -120,7 +224,7 @@ class BinLauncherTest {
         val launcher = home.binDir.resolve("devrig")
         assertTrue(Files.isExecutable(launcher), "launcher should be written + executable")
         // The wrapper pins the PASSED jdk + execs the PASSED install-script (the eugene-x220 path bug fix).
-        assertEquals(renderPosixLauncher(installScript, jdkHome), launcher.readText())
+        assertEquals(renderPosixLauncher(installScript, jdkHome, DevrigVersionMetadata.getDevrigVersion()), launcher.readText())
     }
 
     @DisabledOnOs(OS.WINDOWS)
