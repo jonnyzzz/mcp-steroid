@@ -43,7 +43,7 @@ literal anchors keep failing): the IDE's tolerance-matching patch engine — fet
 | Task shape | One-line IDE call |
 |---|---|
 | **Two or more literal-text edits, same or different files** | one `steroid_execute_code` script: read + `replace` each file, pre-check every match, then save all inside a single `writeAction { }` (see "Multi-site edits" above) |
-| **One literal-text edit, single file** | `val vf = findProjectFile(p) ?: error("not found: $p"); writeAction { VfsUtil.saveText(vf, String(vf.contentsToByteArray(), vf.charset).replace(OLD, NEW)) }` |
+| **One literal-text edit, single file** | `val vf = findProjectFile(p) ?: error("not found: $p"); writeAction { VfsUtil.saveText(vf, String(vf.contentsToByteArray(), vf.charset).replace(OLD, NEW)) }; println("saved: $p")` |
 | **Find files by extension** | `readAction { FilenameIndex.getAllFilesByExt(project, "java", projectScope()) }` — not `Bash find … -name "*.java"` |
 | **Find files by exact name** | `readAction { FilenameIndex.getVirtualFilesByName("UserService.java", projectScope()) }` |
 | **Find all references to a symbol** | `readAction { ReferencesSearch.search(psiElement, projectScope()).findAll() }` — type-aware; Grep over source text is a fallback |
@@ -65,11 +65,11 @@ If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` cal
 - Any IDE task → `mcp-steroid://prompt/skill`
 
 **Quick Start:**
-- Your code becomes the body of a `suspend McpScriptContext.() -> Unit` function (never use runBlocking)
 - **Apart from the `execution_id:` header, the response contains ONLY what your script explicitly
-  prints.** The last expression's value is IGNORED by the runtime — this is a function body, not a
-  REPL, and there is no implicit return value. Print everything the caller needs (`println` /
-  `printJson` / `printCsv` / `printToon`) before the script ends. Full rules in "Output rules" below.
+  prints.** Your code becomes the body of a `suspend McpScriptContext.() -> Unit` function (never
+  use runBlocking) — not a REPL: the last expression's value is IGNORED, and there is no implicit
+  return value. Print everything the caller needs (`println` / `printJson` / `printCsv` /
+  `printToon`) before the script ends. Full rules in "Output rules" below.
 - With the default `modal=smart_non_modal`, leftover modal dialogs are closed, the IDE is required
   non-modal, documents are committed/saved + VFS refreshed, and `waitForSmartMode()` runs — all before
   your script; then a monitor watches the run and **closes any modal that appears mid-script and FAILS the
@@ -122,16 +122,22 @@ Kotlin, so inspect the captured diagnostics first.
 **Surface is fixed.** `McpScriptContext` won't grow new helpers — call IntelliJ APIs directly. See `mcp-steroid://skill/design-philosophy` Tenet 3.
 
 **Output rules — the #1 reason agents think a call "returned empty":**
-- **Everything you need back must be explicitly printed.** The last expression's value is IGNORED
-  by the runtime — never auto-printed, never returned (the code compiles as a suspend function
-  body, not a REPL). `return` only exits early; `return <value>` does not even compile (the
-  generated function returns `Unit`), so nothing can be carried back to the caller.
-- To surface anything to the caller, use a print helper: `println(value)` for plain text,
+
+```
+results            // ✗ as the last line: value discarded — response shows only execution_id: …
+printJson(results) // ✓ as the last line: this is what the caller receives
+```
+
+- **Everything you need back must be explicitly printed** — `println(value)` for plain text,
   `printJson(value)` for structured data, `printCsv(...)` / `printToon(...)` for tabular records.
+  Always end with an explicit print of what you need to see.
+- The last expression's value is IGNORED by the runtime — never auto-printed, never returned (the
+  code compiles as a suspend function body, not a REPL). `return` only exits early; `return <value>`
+  does not even compile (the generated function returns `Unit`), so nothing can be carried back to
+  the caller.
 - `progress(...)` is NOT output — it goes to MCP progress notifications and the IDE log, never
   into the result. The print-only rule describes successful runs; a failed run additionally
   carries the error text and diagnostic file paths (screenshot / thread dump).
-- A script that ends with `myList` (or any bare expression) prints nothing — you will see only `execution_id: …` in the response, identical to a script that returned no value at all. Always end with an explicit `println(...)` or `printJson(...)` of what the agent needs to see.
 - **For inspection / report tasks, print compact machine-readable lines on the first run.** Stable shapes like `KEY: value` per line or `printJson` parse cheaply on your end and let you build the user-facing summary without a second exec_code pass to reshape verbose IDE output. Recipes in `mcp-steroid://ide/find-duplicates`, `…/inspect-and-fix`, `…/inspection-summary` already follow this convention.
 - **For `runInspectionsDirectly`, do not `printJson(result)` directly.** It is Map-compatible and contains live `ProblemDescriptor` PSI/VFS references. Snapshot descriptor fields inside `readAction { }`, print a DTO, and always include `result.failedTools`; a non-empty `failedTools` means the check is not clean even when the findings map is empty.
 
@@ -214,6 +220,7 @@ cfg.runnerParameters.workingDirPath = project.basePath!!
 cfg.runnerParameters.goals = listOf("test", "-Dtest=PetRestControllerTests", "-Dspotless.check.skip=true")
 val settings = RunManager.getInstance(project).createConfiguration(cfg, cfg.factory!!)
 ProgramRunnerUtil.executeConfiguration(settings, DefaultRunExecutor.getRunExecutorInstance())
+println("started: ${cfg.name}")   // always end with a print
 ```
 
 For deeper patterns (SMTRunner listeners that block until tests finish + emit structured JSON results) fetch `mcp-steroid://skill/coding-with-intellij-spring`. Bash `./mvnw test` is only OK as a last-resort when the IDE runner has genuinely failed for the scenario.
@@ -235,6 +242,7 @@ val content = String(vf.contentsToByteArray(), vf.charset)  // read
 val updated = content.replace("OLD_STRING", "NEW_STRING")
 check(updated != content) { "no match for OLD_STRING — verify with Grep first" }
 writeAction { VfsUtil.saveText(vf, updated) }               // write + VFS refresh
+println("saved: $path")                                     // always end with a print
 ```
 
 For exactly-one-occurrence replace: `.replace(OLD, NEW).also { check(… == 1 occurrence) }`. For regex: `Regex(pattern).replace(content, replacement)`. Do NOT pre-Read the file via the native tool before using this recipe — the `vf.contentsToByteArray()` read already covers that.
