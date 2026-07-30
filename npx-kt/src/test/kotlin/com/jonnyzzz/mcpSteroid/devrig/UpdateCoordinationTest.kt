@@ -85,9 +85,11 @@ class UpdateCoordinationTest {
         val c = coordination(dir, pid = 200L)
         assertTrue(c.anyLiveInProgressMarker())
         assertTrue(c.isUpdateInFlight())
+        assertEquals(listOf(100L), c.liveInProgressPids(), "live filename pids, any version — the step-8 recheck input")
 
         livePids -= 100L
         assertFalse(c.anyLiveInProgressMarker(), "a dead-pid marker must not read as live")
+        assertEquals(emptyList<Long>(), c.liveInProgressPids())
     }
 
     @Test
@@ -95,6 +97,7 @@ class UpdateCoordinationTest {
         val other = coordination(dir, pid = 100L)
         livePids += 100L
         other.writeInProgressMarker("0.102", stateInfo(pid = 100L))
+        Files.setLastModifiedTime(other.inProgressMarker("0.102"), java.nio.file.attribute.FileTime.fromMillis(now))
 
         val c = coordination(dir, pid = 200L)
         assertTrue(c.anyLiveInProgressMarker())
@@ -103,16 +106,22 @@ class UpdateCoordinationTest {
     }
 
     @Test
-    fun `unparsable marker content falls back to mtime age`(@TempDir dir: Path) {
+    fun `marker contents are never read - an unparsable file behaves exactly like a valid one`(@TempDir dir: Path) {
+        // Liveness is decided ONLY by the pid in the FILENAME plus the file mtime; the JSON body is
+        // write-only debugging information, so garbage content changes nothing.
         Files.createDirectories(dir)
         val raw = dir.resolve("update-999-version-0.102")
         Files.writeString(raw, "not json")
         Files.setLastModifiedTime(raw, java.nio.file.attribute.FileTime.fromMillis(now))
+        livePids += 999L
 
         val c = coordination(dir, pid = 200L)
-        assertTrue(c.anyLiveInProgressMarker(), "young unparsable marker is treated as live")
+        assertTrue(c.anyLiveInProgressMarker(), "live filename pid + young mtime → live, content notwithstanding")
         now += UPDATE_STALE_AGE_MILLIS + 1
-        assertFalse(c.anyLiveInProgressMarker())
+        assertFalse(c.anyLiveInProgressMarker(), "the mtime age bound retires it")
+        now -= UPDATE_STALE_AGE_MILLIS + 1
+        livePids -= 999L
+        assertFalse(c.anyLiveInProgressMarker(), "a dead filename pid retires it even when young")
     }
 
     // ── completion record ────────────────────────────────────────────────────────────────────────

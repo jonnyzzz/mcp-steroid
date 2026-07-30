@@ -5,7 +5,6 @@ import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
-import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import kotlin.io.path.exists
@@ -45,10 +44,17 @@ class UpdateCoordination(
         }
     }
 
-    /** Any `update-<pid>-version-<v>` marker whose owner is live per the [isFileStale] rule. */
-    fun anyLiveInProgressMarker(): Boolean = listMarkerFiles().any { file ->
-        parseInProgressMarkerName(file.name) != null && !isFileStale(file)
+    /**
+     * Filename pids of every live `update-<pid>-version-<v>` marker (any version, own included) —
+     * the staleness rule only, contents never read. The tick's post-announce recheck (step 8,
+     * lowest pid wins) compares these against [ownPid].
+     */
+    fun liveInProgressPids(): List<Long> = listMarkerFiles().mapNotNull { file ->
+        parseInProgressMarkerName(file.name)?.first?.takeIf { pid -> !isPidStale(pid, file) }
     }
+
+    /** Any `update-<pid>-version-<v>` marker whose owner is live per the [isPidStale] rule. */
+    fun anyLiveInProgressMarker(): Boolean = liveInProgressPids().isNotEmpty()
 
     /** The passive-notice "install in flight" probe. */
     fun isUpdateInFlight(): Boolean = anyLiveInProgressMarker()
@@ -85,11 +91,15 @@ class UpdateCoordination(
         for (file in listMarkerFiles()) {
             val name = file.name
             val scriptPid = parseScriptFilePid(name)
+            val markerPid = parseInProgressMarkerName(name)?.first
             val obsolete = when {
                 name.startsWith("update-failed-") -> true // legacy: failure tracking no longer exists
                 name.startsWith("updated-") -> baseVersion(name.removePrefix("updated-")) < bound
-                parseInProgressMarkerName(name) != null -> isFileStale(file)
+                markerPid != null -> isPidStale(markerPid, file)
                 scriptPid != null -> scriptPid != ownPid && isPidStale(scriptPid, file)
+                // atomic-write staging orphaned by a hard kill between write and move (`.tmp.<pid>.<name>`)
+                name.startsWith(".tmp.") ->
+                    parseStagingFilePid(name)?.let { it != ownPid && isPidStale(it, file) } == true
                 else -> false
             }
             if (obsolete) {
@@ -124,27 +134,20 @@ class UpdateCoordination(
     // ── the staleness rule (the only liveness machinery) ─────────────────────────────────────────
 
     /**
-     * Uniform for every per-pid file: stale = the pid is dead in the LOCAL pid table, OR the file is
-     * older than 24 h. The age bound applies even to live-looking pids — it backstops PID reuse and
-     * shared-NFS homes alike (a foreign host's pid probe is meaningless locally).
+     * Uniform for every per-pid file (in-progress markers and install scripts alike): stale = the
+     * pid — always parsed from the FILENAME, never from file contents — is dead in the LOCAL pid
+     * table, OR the file mtime is older than 24 h. The age bound applies even to live-looking pids —
+     * it backstops PID reuse and shared-NFS homes alike (a foreign host's pid probe is meaningless
+     * locally). File CONTENTS are write-only debugging information and are deliberately never
+     * parsed: reading them back would couple liveness to a JSON format free to change across
+     * versions.
      */
-    private fun isFileStale(file: Path): Boolean {
-        val info = readJson(file, UpdateStateInfo.serializer())
-        if (info != null && !isPidAlive(info.pid)) return true
-        val startedAt = info?.startedAt ?: try {
-            Files.getLastModifiedTime(file).toMillis()
-        } catch (e: Exception) {
-            return false // cannot stat — leave it for a later sweep
-        }
-        return clock() - startedAt > UPDATE_STALE_AGE_MILLIS
-    }
-
     private fun isPidStale(pid: Long, file: Path): Boolean {
         if (!isPidAlive(pid)) return true
         val mtime = try {
             Files.getLastModifiedTime(file).toMillis()
         } catch (e: Exception) {
-            return false
+            return false // cannot stat — leave it for a later sweep
         }
         return clock() - mtime > UPDATE_STALE_AGE_MILLIS
     }
@@ -158,23 +161,6 @@ class UpdateCoordination(
         } catch (e: Exception) {
             System.err.println("[mcp-steroid] could not list $updateDir: $e")
             emptyList()
-        }
-    }
-
-    private fun <T> readJson(file: Path, serializer: kotlinx.serialization.KSerializer<T>): T? {
-        val text = try {
-            Files.readString(file)
-        } catch (e: NoSuchFileException) {
-            return null
-        } catch (e: Exception) {
-            System.err.println("[mcp-steroid] could not read $file: $e")
-            return null
-        }
-        return try {
-            updateJson.decodeFromString(serializer, text)
-        } catch (e: Exception) {
-            System.err.println("[mcp-steroid] could not parse $file: $e")
-            null
         }
     }
 
@@ -203,7 +189,9 @@ class UpdateCoordination(
 
 /**
  * JSON payload of the per-pid in-progress marker and the `updated-<v>` completion record — the
- * user-facing state ("the PID, the version, all the relevant state").
+ * user-facing state ("the PID, the version, all the relevant state"). WRITE-ONLY: devrig never
+ * reads these contents back (coordination uses only filenames, local pid liveness, and file mtime),
+ * so this format can change freely between versions without any compatibility concern.
  */
 @Serializable
 data class UpdateStateInfo(
@@ -229,9 +217,8 @@ fun parseUpdateEnvFlag(value: String?): Boolean = when (value?.trim()?.lowercase
     else -> false
 }
 
-/** Human-readable marker content: the files ARE the user-facing state. */
+/** Human-readable marker content: the files ARE the user-facing state. Encode-only — never used to decode. */
 val updateJson: Json = Json {
-    ignoreUnknownKeys = true
     prettyPrint = true
     encodeDefaults = true
 }
@@ -246,6 +233,10 @@ fun parseInProgressMarkerName(name: String): Pair<Long, String>? {
 /** `install-<pid>.sh|.ps1` → pid. */
 fun parseScriptFilePid(name: String): Long? =
     Regex("""^install-(\d+)\.(sh|ps1)$""").find(name)?.groupValues?.get(1)?.toLongOrNull()
+
+/** `.tmp.<pid>.<target-name>` (atomic-write staging) → pid. */
+fun parseStagingFilePid(name: String): Long? =
+    Regex("""^\.tmp\.(\d+)\.""").find(name)?.groupValues?.get(1)?.toLongOrNull()
 
 /**
  * The canonical base form used in every marker filename: strip build metadata, then strip trailing

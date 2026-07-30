@@ -24,9 +24,6 @@ $SteroidPrevProgressPreference = $ProgressPreference
 $ProgressPreference = 'SilentlyContinue'
 try {
 
-# DO NOT REFORMAT the $Version line: devrig's auto-updater parses it with the whitespace-
-# tolerant anchored pattern ^\s*$Version\s*=\s*'...' (docs/updates-check/devrig-auto-update.md);
-# a reformat would make every deployed devrig treat the script as drifted.
 $Version      = '@@VERSION@@'
 $DevrigUrl    = '@@DEVRIG_URL@@'
 $DevrigSha256 = '@@DEVRIG_SHA256@@'

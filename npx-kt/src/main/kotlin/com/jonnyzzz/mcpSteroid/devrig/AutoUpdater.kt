@@ -13,9 +13,10 @@ import io.ktor.http.isSuccess
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.time.Instant
 import kotlin.io.path.exists
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
@@ -38,9 +39,9 @@ class AutoUpdater(
     val notify: (String) -> Unit = { },
     val fetchPromoted: suspend () -> DevrigVersion? = { fetchVersionInfo()?.let { DevrigVersion.parse(it.versionBase) } },
     val downloadScript: suspend (url: String, target: Path) -> Boolean = ::downloadInstallScript,
-    /** Spawn + supervise the installer; exit code, or null when the 30 min timeout killed the tree. */
+    /** Spawn + supervise the installer; exit code, or null when the 1 h timeout killed it. */
     val runInstaller: suspend (script: Path, logFile: Path) -> Int? = { script, logFile ->
-        superviseInstallerProcess(script, logFile, isWindows())
+        superviseInstallerProcess(script, logFile, isWin)
     },
     val noAutoUpdateEnv: String? = System.getenv(ENV_DEVRIG_NO_AUTO_UPDATE),
     val binRegisterOptOutEnv: String? = System.getenv(ENV_BIN_NO_AUTO_REGISTER),
@@ -104,6 +105,14 @@ class AutoUpdater(
         coordination.writeInProgressMarker(target, info)
         val script = coordination.scriptFile(isWin)
         try {
+            // step 8 — recheck after announcing: lowest PID wins. Another process can pass the
+            // step-5 scan in the same window and announce concurrently; if any OTHER live marker
+            // (any version) carries a lower pid, that process wins — yield silently (our own marker
+            // is deleted in the finally below; the next tick re-evaluates). Equal pids are
+            // impossible on one host; a higher-pid rival that scans after us sees our lower pid
+            // and yields the same way. Only the announce↔recheck race remains (Tradeoff 1).
+            if (coordination.liveInProgressPids().any { it < coordination.ownPid }) return
+
             runAnnouncedUpdate(script, scriptUrl, logFile, target, info, promotedRaw = promoted.value)
         } finally {
             // a crashed tick leaves only a dead-pid marker, which any process cleans (step 3)
@@ -124,34 +133,17 @@ class AutoUpdater(
         info: UpdateStateInfo,
         promotedRaw: String,
     ) {
-        // step 8 — download + version sanity check. Every aberration here (failed download, unreadable
-        // file, unparsable or skewed baked version) resolves the same way: a stderr line and a quiet
-        // retry on the next scheduled tick.
+        // step 9 — download. A failed download resolves as a stderr line and a quiet retry on the
+        // next scheduled tick. The downloaded script is deliberately NOT inspected (no baked-version
+        // parsing, no sanity check): devrig has no dependency on the script's internal format, and
+        // anything wrong with the file surfaces when the installer runs it — the same retry path.
+        // A mid-propagation stale script is an accepted tradeoff (design doc, Tradeoff 6).
         if (!downloadScript(scriptUrl, script)) {
             System.err.println("[mcp-steroid] could not download $scriptUrl; will retry next tick")
             return
         }
-        val scriptContent = try {
-            Files.readString(script)
-        } catch (e: Exception) {
-            System.err.println("[mcp-steroid] could not read the downloaded install script $script: $e; will retry next tick")
-            return
-        }
-        val baked = parseInstallScriptVersion(scriptContent, isWin)
-        when {
-            baked == null -> {
-                System.err.println("[mcp-steroid] could not find the baked VERSION in $scriptUrl — unexpected script format; will retry next tick")
-                return
-            }
-            baseVersion(baked).compareTo(baseVersion(target)) != 0 -> {
-                // CDN mid-release propagation: without this check a stale script would install the
-                // OLD version while updated-<promoted> records the new one — a false record
-                System.err.println("[mcp-steroid] $scriptUrl still serves $baked, expected $target; will retry next tick")
-                return
-            }
-        }
 
-        // step 9 — the self-update is actually triggered; surface it to telemetry (best-effort)
+        // step 10 — the self-update is actually triggered; surface it to telemetry (best-effort)
         try {
             onUpdateTriggered(promotedRaw)
         } catch (e: Exception) {
@@ -165,14 +157,14 @@ class AutoUpdater(
             return
         }
 
-        // steps 10-11
+        // steps 11-12
         if (exit == 0) {
             coordination.writeUpdatedMarker(target, info.copy(completedAt = coordination.clock()))
             notifyRestartOnce(target)
         } else {
             System.err.println(
                 "[mcp-steroid] devrig auto-update to $target failed " +
-                    (if (exit == null) "(timed out after $INSTALLER_TIMEOUT_MINUTES min; installer tree killed)" else "(exit $exit)") +
+                    (if (exit == null) "(timed out after $INSTALLER_TIMEOUT; installer killed)" else "(exit $exit)") +
                     "; log: $logFile — will retry next tick",
             )
         }
@@ -194,21 +186,10 @@ class AutoUpdater(
 
 }
 
-const val INSTALLER_TIMEOUT_MINUTES = 30L
+val INSTALLER_TIMEOUT: Duration = 1.hours
 
-/**
- * The baked devrig version of a downloaded install script. Anchored, whitespace-tolerant patterns
- * matched against the real templates: `VERSION='…'` at column 0 (install.sh) and the padding-aligned
- * `$Version      = '…'` (install.ps1) — an exact-literal `$Version = ` match would never fire. The
- * templates carry DO-NOT-REFORMAT guards on these lines.
- */
-fun parseInstallScriptVersion(content: String, isWin: Boolean): String? {
-    val regex = if (isWin) ps1BakedVersionRegex else shBakedVersionRegex
-    return regex.find(content)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
-}
-
-private val shBakedVersionRegex = Regex("""(?m)^VERSION='([^']*)'""")
-private val ps1BakedVersionRegex = Regex("""(?m)^\s*\${'$'}Version\s*=\s*'([^']*)'""")
+/** Opens every installer attempt in the per-pid log file; the timestamp follows. */
+const val INSTALLER_ATTEMPT_SEPARATOR_PREFIX = "===== [mcp-steroid] installer attempt at "
 
 /**
  * Windows installer-host candidates, most reliable first: the absolute System32 Windows PowerShell
@@ -228,18 +209,34 @@ fun windowsInstallerHostCandidates(systemRoot: String? = System.getenv("SystemRo
 
 /**
  * Start the install script as a dedicated detached process — stdin closed (immediate EOF), stdout +
- * stderr appended to [logFile] whose first line records the resolved host binary — then supervise:
- * exit code, or null when the timeout fired and the WHOLE process tree was killed before returning
- * (a supervised installer must never finish hours later against a newer state; note the kill can
- * land mid-`devrig install devrig`, so the launcher replacement must be crash-safe — PR #385). The
- * child survives devrig's own death by design: an unsupervised orphan completes, but no `updated-`
- * record is written without a supervisor — the next session re-runs from cached artifacts.
+ * stderr appended to [logFile]. The log is per-pid (`update-<pid>-<version>.log`), so concurrent
+ * devrig processes never clash; when the SAME process retries the same version on a later tick it
+ * appends to the same file — each attempt opens with a timestamped separator line, then a record of
+ * the resolved host binary, keeping the accumulated log readable. Then supervise:
+ * exit code, or null when the 1 h timeout fired and the started process (the shell/PowerShell host,
+ * and ONLY it) was force-killed before returning. Children of the killed shell may survive —
+ * grandchildren are deliberately NOT killed (tree-walking is too much process-management detail for
+ * this path; a surviving `curl`/`Invoke-WebRequest` finishes or dies on its own, and the next tick
+ * retries anyway). Note the kill can land mid-`devrig install devrig`, so the launcher replacement
+ * must be crash-safe — PR #385. The child survives devrig's own death by design: an unsupervised
+ * orphan completes, but no `updated-` record is written without a supervisor — the next session
+ * re-runs from cached artifacts.
+ *
+ * Detachment decision (documentation over code): the child stays a plain member of devrig's own
+ * session/process group. Re-parenting it into its own session would shield it from an agent CLI
+ * that signals devrig's WHOLE group on session close, but every real shield is a platform branch —
+ * `setsid(1)` exists on Linux, macOS ships no such binary, and Windows would need CreateProcess
+ * flags ProcessBuilder cannot set — while full daemonization (double-fork) would break the
+ * `waitFor` → `updated-` contract outright. And a shielded survivor is exactly the unsupervised
+ * orphan above: its success unrecorded, the work redone next session anyway. So a group-wide
+ * SIGKILL takes installer and supervisor down together — a rare, accepted edge case; the next
+ * session's tick re-runs from cached artifacts.
  */
 suspend fun superviseInstallerProcess(
     script: Path,
     logFile: Path,
     isWin: Boolean,
-    timeout: Duration = INSTALLER_TIMEOUT_MINUTES.minutes,
+    timeout: Duration = INSTALLER_TIMEOUT,
 ): Int? {
     val hostCandidates = if (isWin) {
         windowsInstallerHostCandidates().map {
@@ -250,6 +247,13 @@ suspend fun superviseInstallerProcess(
     }
 
     Files.createDirectories(logFile.parent)
+    // Attempt separator: retries of the same version by the same process land in the same per-pid
+    // log file across 3-8 h ticks; the timestamp tells the attempts apart.
+    Files.writeString(
+        logFile,
+        "\n$INSTALLER_ATTEMPT_SEPARATOR_PREFIX${Instant.now()} =====\n",
+        StandardOpenOption.CREATE, StandardOpenOption.APPEND,
+    )
     var process: Process? = null
     var spawnError: Exception? = null
     for (command in hostCandidates) {
@@ -286,25 +290,17 @@ suspend fun superviseInstallerProcess(
     }
     if (exit != null) return exit
 
-    killProcessTree(started.toHandle())
-    return null
-}
-
-/** Descendants first, then the root, then confirm the root is gone (bounded grace). */
-suspend fun killProcessTree(root: ProcessHandle) {
-    try {
-        root.descendants().forEach { it.destroyForcibly() }
-    } catch (e: Exception) {
-        System.err.println("[mcp-steroid] could not enumerate installer descendants: $e")
-    }
-    root.destroyForcibly()
+    // Timeout: kill ONLY the process we started (no tree walk — see the KDoc), then a short bounded
+    // wait so we do not return while the kill is still in flight.
+    started.destroyForcibly()
     val gone = withTimeoutOrNull(30.seconds) {
-        runInterruptible(Dispatchers.IO) { root.onExit().get() }
+        runInterruptible(Dispatchers.IO) { started.waitFor() }
         true
     }
     if (gone == null) {
-        System.err.println("[mcp-steroid] installer process ${root.pid()} did not terminate within the grace period")
+        System.err.println("[mcp-steroid] installer process ${started.pid()} did not terminate within the grace period")
     }
+    return null
 }
 
 /** Download an install script over TLS to [target]; false on any failure (the caller retries quietly). */

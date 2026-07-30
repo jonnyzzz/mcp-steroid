@@ -19,7 +19,8 @@
     installer fixtures (real `install.sh`, real `devrig install devrig` verify + marker authority).
   - [ ] Windows process-level coverage on a Windows runner: `superviseInstallerProcess` with
     `powershell.exe -File`, atomic replacement of a RUNNING `devrig.cmd`, and the
-    sharing-violation → non-zero → capped-retry degradation (quorum nit; needs the per-OS GH matrix).
+    sharing-violation → non-zero → quiet-retry degradation (retries are uncapped by design; quorum
+    nit; needs the per-OS GH matrix).
   - [ ] Transitional ping-pong hint: when the launcher version keeps regressing tick-over-tick
     (a pre-launcher agent registration pointing at an old tree), extend the restart notice with a
     "re-run `devrig install <agent>`" hint.

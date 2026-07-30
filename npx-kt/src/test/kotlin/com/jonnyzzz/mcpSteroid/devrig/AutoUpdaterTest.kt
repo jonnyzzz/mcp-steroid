@@ -7,7 +7,6 @@ import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -24,6 +23,7 @@ class AutoUpdaterTest {
         val home: HomePaths,
         val notices: MutableList<String>,
         val installerRuns: MutableList<Path>,
+        val installerLogs: MutableList<Path>,
         val triggeredVersions: MutableList<String>,
     )
 
@@ -31,20 +31,22 @@ class AutoUpdaterTest {
         tmp: Path,
         current: String = "0.101",
         promoted: String? = "0.102",
-        scriptBody: (String) -> String = { "VERSION='$it'\n" },
         downloadSucceeds: Boolean = true,
         installerExit: Int? = 0,
+        pid: Long = 4242L,
+        clock: () -> Long = { now },
     ): Fixture {
         val home = HomePaths(tmp.resolve("home/.mcp-steroid"))
         home.mkdirsAll()
         val coordination = UpdateCoordination(
             updateDir = home.updateDir,
-            ownPid = 4242L,
-            clock = { now },
+            ownPid = pid,
+            clock = clock,
             isPidAlive = { it in livePids },
         )
         val notices = mutableListOf<String>()
         val installerRuns = mutableListOf<Path>()
+        val installerLogs = mutableListOf<Path>()
         val triggeredVersions = mutableListOf<String>()
         val updater = AutoUpdater(
             homePaths = home,
@@ -56,12 +58,14 @@ class AutoUpdaterTest {
             downloadScript = { _, target ->
                 if (downloadSucceeds) {
                     Files.createDirectories(target.parent)
-                    Files.writeString(target, scriptBody(promoted ?: ""))
+                    // the content is opaque to the updater — it is never parsed, only executed
+                    Files.writeString(target, "#!/bin/sh\necho fake install script\n")
                 }
                 downloadSucceeds
             },
             runInstaller = { script, logFile ->
                 installerRuns.add(script) // .add, not `+=`: Path is Iterable<Path>, which makes plusAssign ambiguous
+                installerLogs.add(logFile)
                 Files.createDirectories(logFile.parent)
                 Files.writeString(logFile, "fake installer ran\n")
                 installerExit
@@ -70,7 +74,7 @@ class AutoUpdaterTest {
             binRegisterOptOutEnv = null,
             onUpdateTriggered = { triggeredVersions += it },
         )
-        return Fixture(updater, home, notices, installerRuns, triggeredVersions)
+        return Fixture(updater, home, notices, installerRuns, installerLogs, triggeredVersions)
     }
 
     @Test
@@ -80,6 +84,8 @@ class AutoUpdaterTest {
         f.updater.tick()
 
         assertEquals(1, f.installerRuns.size)
+        // the per-pid log naming keeps concurrent devrig processes clash-free
+        assertEquals(listOf(f.home.logsDir.resolve("update-4242-0.102.log")), f.installerLogs)
         // telemetry fires once per actually-triggered update, with the raw version.json version
         assertEquals(listOf("0.102"), f.triggeredVersions)
         // the SUPERVISOR writes the completion record after exit 0 (nothing else does)
@@ -100,8 +106,11 @@ class AutoUpdaterTest {
     fun `gate - SNAPSHOT builds and env opt-outs never tick`(@TempDir tmp: Path) = runTest {
         val snapshot = fixture(tmp, current = "0.101.19999-SNAPSHOT-abc")
         assertFalse(snapshot.updater.isActive())
+        // a record far below any GC bound: a gated tick must not GC either (the WHOLE tick is off)
+        Files.writeString(snapshot.home.updateDir.resolve("updated-0.001"), "{}")
         snapshot.updater.tick()
         assertEquals(0, snapshot.installerRuns.size)
+        assertTrue(snapshot.home.updateDir.resolve("updated-0.001").exists(), "a SNAPSHOT build never GCs")
 
         val release = fixture(tmp.resolve("b"), current = "0.101")
         assertTrue(release.updater.isActive())
@@ -146,32 +155,66 @@ class AutoUpdaterTest {
     }
 
     @Test
+    fun `announce race - both announce in the same window, the lowest pid wins`(@TempDir tmp: Path) = runTest {
+        livePids += 100L
+
+        // Higher pid (4242) loses. The rival (pid 100) announces inside the step-5 → step-8
+        // window — simulated at the tick's FIRST clock read, which is step 7's `startedAt`: after
+        // the step-5 scan, before our own marker hits the disk. logsDir is removed so the step-3
+        // log sweep does not read the clock earlier (that would announce the rival BEFORE step 5
+        // and exercise the step-5 yield instead of the step-8 recheck).
+        val home = HomePaths(tmp.resolve("home/.mcp-steroid"))
+        val rival = UpdateCoordination(home.updateDir, ownPid = 100L, clock = { now }, isPidAlive = { it in livePids })
+        var rivalAnnounced = false
+        val higher = fixture(tmp, clock = {
+            if (!rivalAnnounced) {
+                rivalAnnounced = true
+                rival.writeInProgressMarker("0.102", UpdateStateInfo(pid = 100L, currentVersion = "0.101", targetVersion = "0.102", startedAt = now))
+            }
+            now
+        })
+        Files.delete(higher.home.logsDir)
+
+        higher.updater.tick()
+
+        assertTrue(rivalAnnounced, "the tick must have passed step 5 and reached its own announce")
+        assertEquals(0, higher.installerRuns.size, "the higher pid yields to the lower-pid announcer")
+        assertEquals(0, higher.notices.size, "the loser yields silently")
+        assertEquals(0, higher.triggeredVersions.size, "a yielded update must not report a trigger")
+        assertFalse(higher.home.updateDir.resolve("update-4242-version-0.102").exists(), "the loser deletes its OWN marker")
+        assertTrue(higher.home.updateDir.resolve("update-100-version-0.102").exists(), "the winner's marker is never touched")
+
+        // Lower pid (100) wins: the higher-pid rival (4242) announces in the same window; the
+        // recheck sees no LOWER live pid and proceeds with the install.
+        val homeB = HomePaths(tmp.resolve("b/home/.mcp-steroid"))
+        val rivalB = UpdateCoordination(homeB.updateDir, ownPid = 4242L, clock = { now }, isPidAlive = { it in livePids })
+        var rivalBAnnounced = false
+        val lower = fixture(tmp.resolve("b"), pid = 100L, clock = {
+            if (!rivalBAnnounced) {
+                rivalBAnnounced = true
+                rivalB.writeInProgressMarker("0.102", UpdateStateInfo(pid = 4242L, currentVersion = "0.101", targetVersion = "0.102", startedAt = now))
+            }
+            now
+        })
+        Files.delete(lower.home.logsDir)
+
+        lower.updater.tick()
+
+        assertTrue(rivalBAnnounced)
+        assertEquals(1, lower.installerRuns.size, "the lowest announced pid proceeds")
+        assertTrue(lower.home.updateDir.resolve("updated-0.102").exists())
+        assertEquals(1, lower.notices.size)
+    }
+
+    @Test
     fun `download failure - quiet retry, no state left behind`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp, downloadSucceeds = false)
         f.updater.tick()
         f.updater.tick()
         assertEquals(0, f.installerRuns.size)
         assertEquals(0, f.notices.size)
-        assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "the marker is cleaned in the finally")
-    }
-
-    @Test
-    fun `skew - script serves a different version - quiet retry`(@TempDir tmp: Path) = runTest {
-        val f = fixture(tmp, scriptBody = { "VERSION='0.101.9'\n" }) // CDN still serves the previous release
-        f.updater.tick()
-        f.updater.tick()
-        assertEquals(0, f.installerRuns.size)
-        assertEquals(0, f.notices.size, "skew retries are quiet; surfacing belongs to the release process")
         assertEquals(0, f.triggeredVersions.size, "an aborted update must not report a trigger")
-    }
-
-    @Test
-    fun `unparsable script - quiet retry, the installer never runs on an unverified script`(@TempDir tmp: Path) = runTest {
-        val f = fixture(tmp, scriptBody = { "#!/bin/sh\necho no version line here\n" })
-        f.updater.tick()
-        f.updater.tick()
-        assertEquals(0, f.installerRuns.size)
-        assertEquals(0, f.notices.size)
+        assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "the marker is cleaned in the finally")
     }
 
     @Test
@@ -207,44 +250,6 @@ class AutoUpdaterTest {
         f.updater.tick()
         assertFalse(f.home.updateDir.resolve("updated-0.101").exists())
         assertTrue(f.home.updateDir.resolve("updated-0.102").exists(), "updated-<current> is kept one release")
-    }
-}
-
-/** The skew-guard extraction contract, checked against the REAL installer-gen templates. */
-class InstallScriptVersionParseTest {
-
-    private fun templatesDir(): Path {
-        // npx-kt tests run with user.dir = the module dir; the templates are a sibling module's
-        // SOURCES (not build outputs), so this is a source-contract check, not a cross-build reach.
-        var dir: Path? = Path.of(System.getProperty("user.dir")).toAbsolutePath()
-        while (dir != null) {
-            val candidate = dir.resolve("installer-gen/src/main/resources/templates")
-            if (Files.isDirectory(candidate)) return candidate
-            dir = dir.parent
-        }
-        throw IllegalStateException("installer-gen templates not found above ${System.getProperty("user.dir")}")
-    }
-
-    @Test
-    fun `sh pattern matches the real template line shape`() {
-        val template = Files.readString(templatesDir().resolve("install.sh.tmpl"))
-        assertEquals("@@VERSION@@", parseInstallScriptVersion(template, isWin = false), "the anchored VERSION=' line must match the template")
-        assertEquals("0.102", parseInstallScriptVersion(template.replace("@@VERSION@@", "0.102"), isWin = false))
-    }
-
-    @Test
-    fun `ps1 pattern matches the real PADDED template line shape`() {
-        val template = Files.readString(templatesDir().resolve("install.ps1.tmpl"))
-        // the template pads with spaces before `=` — an exact-literal match would never fire
-        assertEquals("@@VERSION@@", parseInstallScriptVersion(template, isWin = true))
-        assertEquals("0.102", parseInstallScriptVersion(template.replace("@@VERSION@@", "0.102"), isWin = true))
-    }
-
-    @Test
-    fun `blank or absent version lines do not parse`() {
-        assertNull(parseInstallScriptVersion("#!/bin/sh\necho hi\n", isWin = false))
-        assertNull(parseInstallScriptVersion("VERSION=''\n", isWin = false))
-        assertNull(parseInstallScriptVersion("Write-Host hi\n", isWin = true))
     }
 }
 
