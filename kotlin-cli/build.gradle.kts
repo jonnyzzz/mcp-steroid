@@ -12,9 +12,11 @@ repositories {
     mavenCentral()
 }
 
-val btaImplDecl = configurations.resolvable("kotlinBuildToolsImpl")
+// Declarable bucket for the BTA implementation jars (dependencyScope — a
+// resolvable configuration cannot have dependencies declared against it).
+val btaImplDecl = configurations.dependencyScope("kotlinBuildToolsImpl")
 val btaImplClasspath = configurations.resolvable("kotlinBuildToolsImplClasspath") {
-    extendsFrom(btaImplDecl)
+    extendsFrom(btaImplDecl.get())
 
     attributes {
         attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.JAVA_RUNTIME))
@@ -22,11 +24,16 @@ val btaImplClasspath = configurations.resolvable("kotlinBuildToolsImplClasspath"
 }
 
 dependencies {
-    api(libs.kotlin.buildTools.api)
-    api(libs.kotlinx.coroutines.core)
+    // Single version for -api/-compat/-impl: see the mcp.kotlinc.version comment
+    // in gradle.properties (-impl IS the snippet compiler).
+    val kotlincVersion = providers.gradleProperty("mcp.kotlinc.version").get()
+    val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
 
-    btaImplDecl.name(libs.kotlin.buildTools.impl)
-    btaImplDecl.name(libs.kotlin.buildTools.compat)
+    api("org.jetbrains.kotlin:kotlin-build-tools-api:$kotlincVersion")
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
+
+    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:$kotlincVersion")
+    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-compat:$kotlincVersion")
 
     testImplementation("junit:junit:4.13.2")
 }

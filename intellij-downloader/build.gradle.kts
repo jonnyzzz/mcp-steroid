@@ -61,8 +61,9 @@ dependencies {
     // otherwise a paired bump there could leave the probe shipping stale
     // bytecode and miss the very drift it's meant to catch.
     val kotlinxSerialization = providers.gradleProperty("mcp.kotlinx.serialization.version").get()
+    val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerialization")
-    implementation(libs.kotlinx.coroutines.core)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
     implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.slf4j:slf4j-api:2.0.17")
     // Runtime xz support for IdeUnpacker fallback paths that might handle .tar.xz directly.
