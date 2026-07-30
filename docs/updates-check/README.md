@@ -2,6 +2,12 @@
 
 The MCP Steroid plugin includes an automatic update checker that notifies users when a new version is available.
 
+> **devrig-side auto-update** — the devrig CLI does more than notify: it downloads and runs the
+> official install scripts itself, coordinated across concurrent devrig processes through
+> `~/.mcp-steroid/update/` marker files. That flow (lock protocol, `updated-<version>` completion
+> markers, launcher no-downgrade guard, notification rules) is specified in
+> [devrig-auto-update.md](devrig-auto-update.md). This README covers the IDE-plugin checker only.
+
 ## Overview
 
 The update checker:
