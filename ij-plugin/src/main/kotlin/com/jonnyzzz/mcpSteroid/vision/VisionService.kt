@@ -17,6 +17,7 @@ import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -143,14 +144,13 @@ class VisionService(
             dir
         }
 
-        // Capture component info on EDT (use ModalityState.any() so this works even when modal dialogs are showing)
-        val capture = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-            captureOnEdt(windowId)
-        }
-
-        // Create context for metadata providers (image is provided by ScreenshotImageProvider)
-        val component = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-            resolveComponent(windowId)
+        // Capture component info on EDT (use ModalityState.any() so this works even when modal dialogs
+        // are showing). Resolve the component ONCE and reuse it for the metadata providers below —
+        // resolving again in a second hop could describe a different component than the captured image
+        // (e.g. a modal dialog closing in between).
+        val (capture, component) = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+            val component = resolveComponent(windowId)
+            captureOnEdt(component) to component
         }
 
         val initialContext = ScreenCaptureContext(
@@ -380,9 +380,7 @@ class VisionService(
         val projectPath: String?,
     )
 
-    private fun captureOnEdt(windowId: String?): CaptureInfo {
-        val component = resolveComponent(windowId)
-
+    private fun captureOnEdt(component: Component): CaptureInfo {
         val size = component.size
         val preferred = component.preferredSize
         val width = size.width.takeIf { it > 0 } ?: preferred.width.takeIf { it > 0 } ?: 1024
@@ -397,10 +395,17 @@ class VisionService(
         }
 
         val location = runCatching { component.locationOnScreen }.getOrNull()
-        val window = SwingUtilities.getWindowAncestor(component)
+        // A captured dialog IS a Window: getWindowAncestor walks from getParent(), which for a Window
+        // is its OWNER — the response would echo the owner frame's windowId/bounds/title instead of
+        // the dialog's (issue #309, problem 3). Same pattern as ensureFocus.
+        val window = component as? Window ?: SwingUtilities.getWindowAncestor(component)
         val windowIdValue = WindowIdUtil.compute(window, component)
         val windowBounds = window?.bounds?.let { Rect(it.x, it.y, it.width, it.height) }
-        val windowTitle = (window as? java.awt.Frame)?.title
+        val windowTitle = when (window) {
+            is java.awt.Frame -> window.title
+            is java.awt.Dialog -> window.title
+            else -> null
+        }
 
         return CaptureInfo(
             image = image,
@@ -462,25 +467,37 @@ class VisionService(
         private val stuckKeys = LinkedHashSet<Int>()
 
         suspend fun execute(steps: List<InputStep>) {
-            val rootComponent = withContext(Dispatchers.EDT) {
+            // ModalityState.any(): bare Dispatchers.EDT dispatches with NON_MODAL modality, which the
+            // platform withholds while any modal dialog is open — the first hop would park forever and
+            // the whole tool call hangs (issue #309, problem 1). Input must reach dialogs too; this is
+            // the same fix capture() received in e4ebf791.
+            val edtAny = Dispatchers.EDT + ModalityState.any().asContextElement()
+            val rootComponent = withContext(edtAny) {
                 resolveComponentForInput()
             }
 
             try {
-                withContext(Dispatchers.EDT) {
-                    ensureFocus(rootComponent)
+                withContext(edtAny) {
+                    // Activate the target window ONLY — do not requestFocus() on the root component.
+                    // ensureFocus(root) would call IdeFocusManager.requestFocus(window, true), which
+                    // displaces the focus owner a prior click established, so a following press:/type:
+                    // step (which must reach the focused component) loses its target (issue #309,
+                    // problem 2 — the press:SPACE case).
+                    activateWindow(rootComponent)
                 }
                 for (step in steps) {
                     when (step) {
                         is InputStep.Delay -> delay(step.ms)
-                        is InputStep.StickKey -> withContext(Dispatchers.EDT) { stickKey(rootComponent, step) }
-                        is InputStep.PressKey -> withContext(Dispatchers.EDT) { pressKey(rootComponent, step) }
-                        is InputStep.TypeText -> withContext(Dispatchers.EDT) { typeText(rootComponent, step) }
-                        is InputStep.Click -> withContext(Dispatchers.EDT) { click(rootComponent, step) }
+                        is InputStep.StickKey -> withContext(edtAny) { stickKey(rootComponent, step) }
+                        is InputStep.PressKey -> withContext(edtAny) { pressKey(rootComponent, step) }
+                        is InputStep.TypeText -> withContext(edtAny) { typeText(rootComponent, step) }
+                        is InputStep.Click -> withContext(edtAny) { click(rootComponent, step) }
                     }
                 }
             } finally {
-                withContext(Dispatchers.EDT) {
+                // NonCancellable: on cancellation a plain withContext throws before running the block,
+                // leaking stuck modifier keys into the IDE.
+                withContext(NonCancellable + edtAny) {
                     releaseAll(rootComponent)
                 }
             }
@@ -492,22 +509,31 @@ class VisionService(
         }
 
         private fun stickKey(component: Component, step: InputStep.StickKey) {
-            ensureFocus(component)
+            // Read the focus owner BEFORE ensuring focus: ensureFocus(focus) re-asserts focus on the
+            // current owner, but ensureFocus(root) would displace it (issue #309, problem 2).
+            val focus = focusOwner(component)
+            ensureFocus(focus)
             if (stuckKeys.add(step.keyCode)) {
-                dispatchKey(component, KeyEvent.KEY_PRESSED, step.keyCode, '\u0000', currentModifiers())
+                dispatchKey(focus, KeyEvent.KEY_PRESSED, step.keyCode, '\u0000', currentModifiers())
             }
         }
 
         private fun pressKey(component: Component, step: InputStep.PressKey) {
-            ensureFocus(component)
+            // Directly-dispatched KeyEvents are never retargeted to the focus owner (the
+            // KeyboardFocusManager only retargets POSTED events), so a key sent to the root window
+            // cannot reach the focused component's WHEN_FOCUSED bindings (issue #309, problem 2) —
+            // dispatch to the focus owner, as typeText already does. Read the owner FIRST, then
+            // ensureFocus(focus) re-asserts it; ensureFocus(root) would displace it before dispatch.
+            val focus = focusOwner(component)
+            ensureFocus(focus)
             val tempModifiers = step.modifiers.mapNotNull { modifierKeyCode(it) }
                 .filterNot { stuckKeys.contains(it) }
-            tempModifiers.forEach { dispatchKey(component, KeyEvent.KEY_PRESSED, it, '\u0000', currentModifiers()) }
+            tempModifiers.forEach { dispatchKey(focus, KeyEvent.KEY_PRESSED, it, '\u0000', currentModifiers()) }
 
-            dispatchKey(component, KeyEvent.KEY_PRESSED, step.keyCode, '\u0000', currentModifiers(step.modifiers))
-            dispatchKey(component, KeyEvent.KEY_RELEASED, step.keyCode, '\u0000', currentModifiers(step.modifiers))
+            dispatchKey(focus, KeyEvent.KEY_PRESSED, step.keyCode, '\u0000', currentModifiers(step.modifiers))
+            dispatchKey(focus, KeyEvent.KEY_RELEASED, step.keyCode, '\u0000', currentModifiers(step.modifiers))
 
-            tempModifiers.reversed().forEach { dispatchKey(component, KeyEvent.KEY_RELEASED, it, '\u0000', currentModifiers()) }
+            tempModifiers.reversed().forEach { dispatchKey(focus, KeyEvent.KEY_RELEASED, it, '\u0000', currentModifiers()) }
         }
 
         private fun typeText(component: Component, step: InputStep.TypeText) {
@@ -551,9 +577,14 @@ class VisionService(
                 MouseButton.MIDDLE -> MouseEvent.BUTTON2
             }
 
-            dispatchMouse(targetComponent, MouseEvent.MOUSE_PRESSED, point, button, modifiers)
-            dispatchMouse(targetComponent, MouseEvent.MOUSE_RELEASED, point, button, modifiers)
-            dispatchMouse(targetComponent, MouseEvent.MOUSE_CLICKED, point, button, modifiers)
+            // The MouseEvent's x/y must be in the TARGET's local space: Swing button listeners gate on
+            // component.contains(e.x, e.y), so window-space coordinates never arm the model — focus
+            // moves, state does not change (issue #309, problem 2).
+            val localPoint = SwingUtilities.convertPoint(component, point, targetComponent)
+
+            dispatchMouse(targetComponent, MouseEvent.MOUSE_PRESSED, localPoint, button, modifiers)
+            dispatchMouse(targetComponent, MouseEvent.MOUSE_RELEASED, localPoint, button, modifiers)
+            dispatchMouse(targetComponent, MouseEvent.MOUSE_CLICKED, localPoint, button, modifiers)
         }
 
         private fun mapScreenshotPoint(component: Component, x: Int, y: Int): Point {
@@ -572,20 +603,28 @@ class VisionService(
         }
 
         private fun ensureFocus(component: Component) {
-            val window = component as? Window ?: SwingUtilities.getWindowAncestor(component)
-            if (window != null) {
-                if (!window.isActive) {
-                    window.toFront()
-                    window.requestFocus()
-                }
-            }
-
+            activateWindow(component)
             IdeFocusManager.findInstanceByComponent(component).requestFocus(component, true)
         }
 
+        /**
+         * Bring the component's window to the front and make it active — WITHOUT the
+         * `IdeFocusManager.requestFocus(component, true)` step that [ensureFocus] performs. Requesting
+         * focus on the root window displaces whatever component currently owns focus, which breaks a
+         * key step that must reach a previously-focused component (issue #309, problem 2).
+         */
+        private fun activateWindow(component: Component) {
+            val window = component as? Window ?: SwingUtilities.getWindowAncestor(component)
+            if (window != null && !window.isActive) {
+                window.toFront()
+                window.requestFocus()
+            }
+        }
+
         private fun releaseAll(component: Component) {
+            val focus = focusOwner(component)
             stuckKeys.reversed().forEach { code ->
-                dispatchKey(component, KeyEvent.KEY_RELEASED, code, '\u0000', currentModifiers())
+                dispatchKey(focus, KeyEvent.KEY_RELEASED, code, '\u0000', currentModifiers())
             }
             stuckKeys.clear()
         }

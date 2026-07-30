@@ -1,5 +1,18 @@
 # TODO
 
+- [ ] **steroid_input / take_screenshot #309 follow-ups** (the three core defects — modal-EDT hang,
+  window-relative click coordinates, wrong window_id echo — are fixed and guarded by
+  `SteroidInputDialogIntegrationTest`; remaining hardening surfaced by the 2026-07-30 review):
+  - [ ] Ghost-input hazard: an input step already parked on the EDT when its MCP request dies
+    (client disconnect / handler timeout) still fires later against whatever UI is current.
+    Consider a cancellation check inside each EDT step before dispatching.
+  - [ ] `steroid_take_screenshot` has no handler-level timeout either (P1's `withTimeout` was added
+    to `steroid_input` only); capture() uses `ModalityState.any()` so it does not hang under modals,
+    but a wedged EDT would still stall it — consider the same safety net.
+  - [ ] Update issue #309: causal theory (window_id → P1/P2) disproven; Breakpoints dialog is
+    non-modal (`setModal(false)`); tool docs could state coordinates are window-relative including
+    decorations, and that `screen:` targets exist.
+
 - [ ] **Native MCP tools — implement per `docs/native-mcp-tools-design.md`** (spec landed first;
   research 3×-quorum validated + live-tested on IU-261.25134.95, 2026-07-22):
   - [ ] Scenario B (chosen first step): `IntelliJMcpServerProbe.listNativeTools()` (+ drop the

@@ -139,7 +139,13 @@ class IdeWindowsCollector {
                         WindowInfo(
                             projectName = null,
                             projectPath = null,
-                            title = (window as? Frame)?.title,
+                            // Dialogs are the common case in this fallback branch — a Frame-only cast
+                            // left every dialog with title=null, making them untargetable (issue #309).
+                            title = when (window) {
+                                is Frame -> window.title
+                                is java.awt.Dialog -> window.title
+                                else -> null
+                            },
                             isActive = window.isActive,
                             isVisible = window.isVisible,
                             bounds = WindowBounds(bounds.x, bounds.y, bounds.width, bounds.height),

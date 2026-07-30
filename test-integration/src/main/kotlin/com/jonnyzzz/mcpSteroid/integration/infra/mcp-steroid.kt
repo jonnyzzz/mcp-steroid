@@ -53,6 +53,9 @@ data class McpWindowInfo(
     val modalDialogShowing: Boolean,
     val indexingInProgress: Boolean?,
     val projectInitialized: Boolean?,
+    val windowId: String? = null,
+    val title: String? = null,
+    val isVisible: Boolean? = null,
 )
 
 internal fun ProcessResult.resolveJavaHomeLookup(jdkVersion: String): String {
@@ -317,6 +320,9 @@ class McpSteroidDriver(
                         modalDialogShowing = window["modalDialogShowing"]?.jsonPrimitive?.booleanOrNull ?: false,
                         indexingInProgress = window["indexingInProgress"]?.jsonPrimitive?.booleanOrNull,
                         projectInitialized = window["projectInitialized"]?.jsonPrimitive?.booleanOrNull,
+                        windowId = window["windowId"]?.jsonPrimitive?.contentOrNull,
+                        title = window["title"]?.jsonPrimitive?.contentOrNull,
+                        isVisible = window["isVisible"]?.jsonPrimitive?.booleanOrNull,
                     )
                 }
                 ?: throw McpRequestFailedError("steroid_list_windows returned no windows payload: $payload")
@@ -600,6 +606,87 @@ try {
         }.toString()
 
         val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeout.toLong() + 30)
+        return ProcessResultValue(
+            exitCode = if (parseMcpToolResultIsError(run)) 1 else 0,
+            stdout = parseMcpToolResultBody(run),
+            stderr = "",
+        )
+    }
+
+    /**
+     * Send an input sequence to an IDE window via the `steroid_input` tool.
+     *
+     * Direct MCP call (no AI agent). [timeoutSeconds] bounds the curl request; a server-side hang
+     * (issue #309: EDT dispatch withheld under a modal dialog) surfaces as the transport's
+     * [TransientMcpRequestException] ("curl killed, exit -1") — callers reproducing the hang catch
+     * exactly that type.
+     */
+    fun mcpInput(
+        windowId: String,
+        sequence: String,
+        taskId: String = "integration-test-input",
+        reason: String = "Integration test input",
+        projectName: String = resolveProjectName(),
+        timeoutSeconds: Long = 60,
+    ): ProcessResult {
+        val sessionId = mcpInitialize()
+
+        val toolCallRequest = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", 2)
+            putJsonObject("params") {
+                put("name", "steroid_input")
+                putJsonObject("arguments") {
+                    put("project_name", projectName)
+                    put("task_id", taskId)
+                    put("reason", reason)
+                    put("window_id", windowId)
+                    put("sequence", sequence)
+                }
+            }
+            put("method", "tools/call")
+        }.toString()
+
+        val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeoutSeconds)
+        return ProcessResultValue(
+            exitCode = if (parseMcpToolResultIsError(run)) 1 else 0,
+            stdout = parseMcpToolResultBody(run),
+            stderr = "",
+        )
+    }
+
+    /**
+     * Capture a screenshot via the `steroid_take_screenshot` tool and return its TEXT content
+     * (the `window_id: …` / artifact-path lines); the image content item carries no `text` key and
+     * is skipped by [parseMcpToolResultBody].
+     */
+    fun mcpTakeScreenshot(
+        windowId: String? = null,
+        taskId: String = "integration-test-screenshot",
+        reason: String = "Integration test screenshot",
+        projectName: String = resolveProjectName(),
+        timeoutSeconds: Long = 120,
+    ): ProcessResult {
+        val sessionId = mcpInitialize()
+
+        val toolCallRequest = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", 2)
+            putJsonObject("params") {
+                put("name", "steroid_take_screenshot")
+                putJsonObject("arguments") {
+                    put("project_name", projectName)
+                    put("task_id", taskId)
+                    put("reason", reason)
+                    if (windowId != null) {
+                        put("window_id", windowId)
+                    }
+                }
+            }
+            put("method", "tools/call")
+        }.toString()
+
+        val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeoutSeconds)
         return ProcessResultValue(
             exitCode = if (parseMcpToolResultIsError(run)) 1 else 0,
             stdout = parseMcpToolResultBody(run),
