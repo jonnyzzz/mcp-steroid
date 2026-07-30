@@ -15,6 +15,10 @@ import kotlinx.coroutines.yield
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -102,9 +106,9 @@ class KotlinBuildsSessionTest {
     fun daemonCompilesWithClasspathLongerThanWindowsCommandLineLimit() {
         // Windows CreateProcess caps a child's command line at 32767 chars. Pre-BTA
         // this needed the @argfile; under BTA compile arguments reach the daemon as
-        // Array<String> over RMI (no OS command line carries the classpath). This is
-        // the production execution policy (CodeEvalManager compiles via DAEMON) —
-        // pin it per-OS on the TC matrix.
+        // Array<String> over RMI (no OS command line carries the classpath).
+        // Production compiles IN_PROCESS since the environment pin landed; the DAEMON
+        // policy stays supported and this pins its long-classpath path per-OS on TC.
         val src = tempFolder.newFolder("src").toPath() / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val outputJar = tempFolder.newFolder("out").toPath() / "out.jar"
@@ -126,6 +130,11 @@ class KotlinBuildsSessionTest {
                 })
             }
             assertTrue(outputJar.exists())
+            // The environment pin is IN_PROCESS-only: a daemon-only session must never
+            // create the client-side compiler application environment (memory + doSetup
+            // globals it has no use for).
+            assertNull("daemon-only session must not pin a client-side application environment",
+                applicationEnvironmentOf(session))
         }
     }
 
@@ -186,6 +195,10 @@ class KotlinBuildsSessionTest {
             }
             session.close()
             assertEquals(CompilationResult.COMPILATION_SUCCESS, compile.await())
+            // The deferred close (last lease release) must ALSO release the environment
+            // pin — otherwise the close-during-compile path leaks the pinned caches.
+            assertNull("deferred close must dispose the pinned application environment",
+                applicationEnvironmentOf(session))
         }
 
         // Compiling again after close() starts a fresh session.
@@ -199,6 +212,66 @@ class KotlinBuildsSessionTest {
             })
         }
         session.close()
+    }
+
+    @Test
+    fun pinnedEnvironmentIsReusedAcrossCompilesAndDisposedOnClose() {
+        // Leak/lifecycle contract of CompilerEnvironmentPin:
+        // (1) one application environment instance serves all compiles of a session
+        //     (this is what keeps the jar caches warm),
+        // (2) close() releases it — the compiler disposes the environment, so nothing
+        //     is retained past the session (no leak),
+        // (3) a session used again after close() gets a fresh environment.
+        val srcDir = tempFolder.newFolder("pin-src").toPath()
+        val src = srcDir / "source.kt"
+        src.writeText("fun main() { println(\"Hello\") }\n")
+
+        val session = newSession()
+        fun compileOnce(tag: String) = runBlocking {
+            assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
+                sources = listOf(src),
+                destinationDir = tempFolder.newFolder("pin-out-$tag").toPath() / "out.jar",
+                executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
+            ) {
+                set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
+            })
+        }
+
+        compileOnce("a")
+        val envAfterFirst = applicationEnvironmentOf(session)
+        assertNotNull("pinned application environment must exist after a compile", envAfterFirst)
+        compileOnce("b")
+        val envAfterSecond = applicationEnvironmentOf(session)
+        assertSame("the SAME application environment must serve all compiles of a session " +
+            "(otherwise the jar caches are rebuilt per compile)", envAfterFirst, envAfterSecond)
+
+        session.close()
+        assertNull("close() must release the pin so the compiler disposes the application " +
+            "environment — anything else leaks the jar caches", applicationEnvironmentOf(session))
+
+        compileOnce("c")
+        val envAfterReopen = applicationEnvironmentOf(session)
+        assertNotNull(envAfterReopen)
+        assertNotSame("a session reused after close() must build a fresh environment",
+            envAfterFirst, envAfterReopen)
+        session.close()
+        assertNull(applicationEnvironmentOf(session))
+    }
+
+    /**
+     * Reads `KotlinCoreEnvironment.Companion.applicationEnvironment` inside the session's
+     * isolated BTA impl classloader — the static the pin keeps alive; null once disposed.
+     */
+    private fun applicationEnvironmentOf(session: KotlinBuildsSession): Any? {
+        val loaderField = KotlinBuildsSession::class.java.getDeclaredField("implClassLoader")
+            .apply { isAccessible = true }
+        val cl = loaderField.get(session) as ClassLoader
+        val companion = cl.loadClass("org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment")
+            .getField("Companion").get(null)
+        val getter = companion.javaClass.methods.single {
+            it.name == "getApplicationEnvironment" && it.parameterCount == 0
+        }
+        return getter.invoke(companion)
     }
 
     @Test

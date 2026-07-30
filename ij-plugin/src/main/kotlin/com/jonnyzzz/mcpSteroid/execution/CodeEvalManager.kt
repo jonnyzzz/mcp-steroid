@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.execution
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -51,12 +52,23 @@ class CodeEvalManager(
     // extracted at runtime, and the compiler impl classes never reach the IDE
     // plugin classloader: KotlinBuildsSession loads these jars into its own
     // isolated classloader, and the Kotlin daemon builds its -cp from them.
-    private val kotlinBuildsSession = KotlinBuildsSession(
-        implClasspath = KotlinBuildsSession.implJarsFrom(
-            PluginDescriptorProvider.getInstance().descriptor.pluginPath.resolve("kotlinc")
-        ),
-        kotlinLogger = KotlinLoggerWrapper(log),
-    )
+    private val kotlinBuildsSession = run {
+        // The relocated IdeaStandaloneExecutionSetup.doSetup() — which BTA runs before
+        // EVERY in-process compile — writes `idea.config.path=some/non/existent/path`
+        // when the property is unset (property names are JVM-global, not relocated;
+        // every other property it writes equals the IDE bundle default). Pre-seed it
+        // with the host IDE's real config path so third-party readers never observe
+        // the garbage value.
+        if (System.getProperty("idea.config.path") == null) {
+            System.setProperty("idea.config.path", PathManager.getConfigPath())
+        }
+        KotlinBuildsSession(
+            implClasspath = KotlinBuildsSession.implJarsFrom(
+                PluginDescriptorProvider.getInstance().descriptor.pluginPath.resolve("kotlinc")
+            ),
+            kotlinLogger = KotlinLoggerWrapper(log),
+        )
+    }
 
     suspend fun evalCode(executionId: ExecutionId, code: String, resultBuilder: ExecutionResultBuilder): EvalResult? {
         if (compilationMutex.isLocked) {
@@ -106,6 +118,13 @@ class CodeEvalManager(
                 kotlinBuildsSession.compileKotlin(
                     sources = listOf(inputKt),
                     destinationDir = outputJar,
+                    // IN_PROCESS on purpose: the session's CompilerEnvironmentPin keeps the
+                    // compiler's jar/classpath caches warm across compiles (~218ms vs ~367ms
+                    // per snippet), and BTA 2.4.10 clears the daemon-side caches around every
+                    // operation, so the DAEMON policy cannot be made this fast from our side.
+                    // Revisit when mcp.kotlinc.version reaches the 2.5 line (upstream BTA
+                    // pins the environment itself, incl. improvements on the daemon path).
+                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
                     compilerMessageRenderer = compilerMessageRenderer,
                 ) {
                     if (extraParams.isNotEmpty()) {
@@ -216,26 +235,6 @@ class CodeEvalManager(
             throw e
         } catch (e: Throwable) {
             val message = "Error executing script $executionId: ${e.message}"
-
-            if (e.toString().contains("Service is dying", ignoreCase = true)) {
-                log.warn("Kotlin daemon is dying detected: ${e.message}", e)
-                // Recovery is deliberately session-close-only (the old KotlinDaemonManager
-                // also deleted the daemon's run files). A fresh session may reconnect to
-                // the same daemon — the stable jar paths key the daemon digest — so if the
-                // dying daemon lingers, the retry can hit it again; acceptable trade-off
-                // for dropping the custom daemon management, revisit if reports recur.
-                kotlinBuildsSession.close()
-                resultBuilder.logMessage("WARN: Script compilation/evaluation failed: Kotlin Daemon is dying. TRY AGAIN otherwise let user know")
-                project.executionStorage.writeCodeExecutionData(
-                    executionId,
-                    "dying-kotlin-debug.txt",
-                    buildString {
-                        appendLine("Error: ${e.message}")
-                        appendLine(e)
-                        appendLine(e.stackTraceToString())
-                    }
-                )
-            }
 
             if (e.toString().contains("Incomplete code", ignoreCase = true)
                 || e.toString().contains("Code is incomplete", ignoreCase = true)
