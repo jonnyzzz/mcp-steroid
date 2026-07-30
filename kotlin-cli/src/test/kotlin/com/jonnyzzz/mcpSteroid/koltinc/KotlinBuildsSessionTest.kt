@@ -52,9 +52,7 @@ class KotlinBuildsSessionTest {
             runBlocking {
                 it.compileKotlin(
                     sources = listOf(source),
-                    destinationDir = outputJar,
-                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
-                ) {
+                    destinationDir = outputJar,                ) {
                     set(JvmCompilerArguments.CLASSPATH, listOf(it.defaultStdlibJar))
                 }
             }
@@ -83,17 +81,13 @@ class KotlinBuildsSessionTest {
             runBlocking {
                 assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                     sources = listOf(libSrc),
-                    destinationDir = libClasses,
-                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
-                ) {
+                    destinationDir = libClasses,                ) {
                     set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
                 })
 
                 assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                     sources = listOf(script),
-                    destinationDir = outputJar,
-                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
-                ) {
+                    destinationDir = outputJar,                ) {
                     set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar, libClasses))
                 })
             }
@@ -109,12 +103,12 @@ class KotlinBuildsSessionTest {
     }
 
     @Test
-    fun daemonCompilesWithClasspathLongerThanWindowsCommandLineLimit() {
-        // Windows CreateProcess caps a child's command line at 32767 chars. Pre-BTA
-        // this needed the @argfile; under BTA compile arguments reach the daemon as
-        // Array<String> over RMI (no OS command line carries the classpath).
-        // Production compiles IN_PROCESS since the environment pin landed; the DAEMON
-        // policy stays supported and this pins its long-classpath path per-OS on TC.
+    fun compilesWithClasspathLongerThanWindowsCommandLineLimit() {
+        // Historical concern: Windows CreateProcess caps a child's command line at 32767
+        // chars, which pre-BTA forced an @argfile. In-process there is no OS command line
+        // at all — arguments stay an in-memory Array<String> into K2JVMCompiler.exec. This
+        // pins that the BTA List<Path> -> -classpath mapping carries a >40K-char classpath
+        // untruncated, per-OS on TC.
         val src = tempFolder.newFolder("src").toPath() / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val outputJar = tempFolder.newFolder("out").toPath() / "out.jar"
@@ -130,17 +124,11 @@ class KotlinBuildsSessionTest {
                 assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                     sources = listOf(src),
                     destinationDir = outputJar,
-                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.DAEMON,
                 ) {
                     set(JvmCompilerArguments.CLASSPATH, classpath)
                 })
             }
             assertTrue(outputJar.exists())
-            // The environment pin is IN_PROCESS-only: a daemon-only session must never
-            // create the client-side compiler application environment (memory + doSetup
-            // globals it has no use for).
-            assertNull("daemon-only session must not pin a client-side application environment",
-                applicationEnvironmentOf(session))
         }
     }
 
@@ -160,9 +148,7 @@ class KotlinBuildsSessionTest {
                 runBlocking {
                     session.compileKotlin(
                         sources = listOf(src),
-                        destinationDir = outputJar,
-                        executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
-                        compilationTimeout = 1.milliseconds,
+                        destinationDir = outputJar,                        compilationTimeout = 1.milliseconds,
                     ) {
                         set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
                     }
@@ -190,9 +176,7 @@ class KotlinBuildsSessionTest {
             val compile = async(Dispatchers.IO) {
                 session.compileKotlin(
                     sources = listOf(src),
-                    destinationDir = out1,
-                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
-                ) {
+                    destinationDir = out1,                ) {
                     set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
                 }
             }
@@ -211,9 +195,7 @@ class KotlinBuildsSessionTest {
         runBlocking {
             assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                 sources = listOf(src),
-                destinationDir = out2,
-                executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
-            ) {
+                destinationDir = out2,            ) {
                 set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
             })
         }
@@ -236,9 +218,7 @@ class KotlinBuildsSessionTest {
         fun compileOnce(tag: String) = runBlocking {
             assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                 sources = listOf(src),
-                destinationDir = tempFolder.newFolder("pin-out-$tag").toPath() / "out.jar",
-                executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
-            ) {
+                destinationDir = tempFolder.newFolder("pin-out-$tag").toPath() / "out.jar",            ) {
                 set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
             })
         }
@@ -262,22 +242,6 @@ class KotlinBuildsSessionTest {
             envAfterFirst, envAfterReopen)
         session.close()
         assertNull(applicationEnvironmentOf(session))
-    }
-
-    /**
-     * Reads `KotlinCoreEnvironment.Companion.applicationEnvironment` inside the session's
-     * isolated BTA impl classloader — the static the pin keeps alive; null once disposed.
-     */
-    private fun applicationEnvironmentOf(session: KotlinBuildsSession): Any? {
-        val loaderField = KotlinBuildsSession::class.java.getDeclaredField("implClassLoader")
-            .apply { isAccessible = true }
-        val cl = loaderField.get(session) as ClassLoader
-        val companion = cl.loadClass("org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment")
-            .getField("Companion").get(null)
-        val getter = companion.javaClass.methods.single {
-            it.name == "getApplicationEnvironment" && it.parameterCount == 0
-        }
-        return getter.invoke(companion)
     }
 
     @Test

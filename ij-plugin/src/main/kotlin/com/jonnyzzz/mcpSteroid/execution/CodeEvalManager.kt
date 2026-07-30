@@ -51,7 +51,7 @@ class CodeEvalManager(
     // `kotlinc/` folder (the successor of the old kotlinc dist) — nothing is
     // extracted at runtime, and the compiler impl classes never reach the IDE
     // plugin classloader: KotlinBuildsSession loads these jars into its own
-    // isolated classloader, and the Kotlin daemon builds its -cp from them.
+    // isolated classloader.
     private val kotlinBuildsSession = run {
         // The relocated IdeaStandaloneExecutionSetup.doSetup() — which BTA runs before
         // EVERY in-process compile — writes `idea.config.path=some/non/existent/path`
@@ -118,13 +118,6 @@ class CodeEvalManager(
                 kotlinBuildsSession.compileKotlin(
                     sources = listOf(inputKt),
                     destinationDir = outputJar,
-                    // IN_PROCESS on purpose: the session's CompilerEnvironmentPin keeps the
-                    // compiler's jar/classpath caches warm across compiles (~218ms vs ~367ms
-                    // per snippet), and BTA 2.4.10 clears the daemon-side caches around every
-                    // operation, so the DAEMON policy cannot be made this fast from our side.
-                    // Revisit when mcp.kotlinc.version reaches the 2.5 line (upstream BTA
-                    // pins the environment itself, incl. improvements on the daemon path).
-                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
                     compilerMessageRenderer = compilerMessageRenderer,
                 ) {
                     if (extraParams.isNotEmpty()) {

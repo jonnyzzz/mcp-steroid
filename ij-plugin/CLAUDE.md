@@ -114,8 +114,8 @@ Snippets compile through the Kotlin Build Tools API
 `executeOperation` runs in a child `async(Dispatchers.IO)`, and on timeout
 (120 s default) or caller cancellation the session calls
 `jvmOperation.cancel()` — BTA's **cooperative** cancellation (supported by
-compiler ≥ 2.3.20; in-process it flips the compiler's canceled status,
-daemon-mode it forwards to the daemon). BTA reports a cancelled operation
+compiler ≥ 2.3.20; in-process it flips the compiler's canceled
+status). BTA reports a cancelled operation
 with its own `OperationCancelledException` (a plain `RuntimeException`);
 `KotlinBuildsSession` translates it back into `CancellationException`, so
 the CE-rethrow rules above hold unchanged and a timeout still surfaces as
@@ -410,8 +410,7 @@ Historical failure mode (pre-BTA): with a project under `\\wsl$\…` / `\\wsl.lo
 kotlinc working dir was the per-execution `compiled/` folder under `{project}/.idea/mcp-steroid/`
 (on the WSL filesystem), so the eel/ijent layer derived the WSL environment and routed
 `cmd.exe /c kotlinc.bat …` into the distro, where `cmd.exe` doesn't exist (`os error 2`).
-The BTA migration (PR #361) removed that spawn entirely — compilation runs in-JVM or via the
-Kotlin daemon started with a plain `ProcessBuilder` from the plugin's own `kotlinc/` jars — but
+The BTA migration (PR #361) removed that spawn entirely — compilation runs in-JVM — but
 the compilation **outputs** still live under `executionStorage` (default `.idea/mcp-steroid`,
 i.e. a `\\wsl$` UNC path for WSL projects), and that combination is unverified on WSL.
 **Workaround (still available):** set `mcp.steroid.storage.path` (the storage override, empty =

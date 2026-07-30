@@ -6,7 +6,6 @@ import java.nio.file.Path
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
-import kotlin.io.path.name
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
@@ -27,26 +26,26 @@ import org.jetbrains.kotlin.buildtools.api.arguments.enums.JvmTarget
 import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jvm
 
 /**
- * Represents a build session for compiling Kotlin code with various compilation execution policies:
- * - in process (default) - compilation runs inside the current process; the session pins the
- * compiler application environment ([CompilerEnvironmentPin]) so jar/classpath caches survive
- * across compilations (measured 367 -> 218 ms warm snippet compiles on an IDE-sized classpath)
- * - in Kotlin daemon - compilation runs in a separate Kotlin daemon process; note that BTA 2.4.10
- * clears the daemon-side jar caches around every operation, so the pin cannot help there
+ * A build session compiling Kotlin code in-process via the Kotlin Build Tools API.
+ * The session pins the compiler application environment ([CompilerEnvironmentPin]) so
+ * jar/classpath caches survive across compilations (measured 367 -> 218 ms warm snippet
+ * compiles on an IDE-sized classpath). There is deliberately no daemon flow: BTA 2.4.10
+ * clears the daemon-side jar caches around every operation, so the daemon could never be
+ * made this fast from our side, and the plugin ships only the in-process jars.
  *
  * This class keeps Kotlin caches between different compilations. To drop them - call `close()` method.
  * It is fine to call again compilation after calling `close()`.
  *
  * @param implClasspath The Kotlin Build Tools implementation jars (the plugin's `kotlinc/` folder,
  * or the `:kotlin-cli` `bta-impl-jars` directory in tests). The jars must be plain files on disk —
- * BTA loads them into an isolated URLClassLoader, and the Kotlin daemon builds the `-cp` of its own
- * JVM from these very paths.
+ * BTA loads them into an isolated URLClassLoader, and the compiler's FastJarFileSystem reads
+ * these exact on-disk jars.
  * @param kotlinLogger Optional logger used for capturing Kotlin compilation logs.
  */
 @OptIn(ExperimentalBuildToolsApi::class)
 class KotlinBuildsSession(
     implClasspath: List<Path>,
-    val kotlinLogger: KotlinLogger? = null,
+    private val kotlinLogger: KotlinLogger? = null,
 ) : AutoCloseable {
 
     val implClasspath: List<Path> = implClasspath.also { jars ->
@@ -65,16 +64,14 @@ class KotlinBuildsSession(
     )
     private val buildToolsApi = KotlinToolchains.loadImplementation(implClassLoader)
     private val inProcessExecutionStrategy = buildToolsApi.createInProcessExecutionPolicy()
-    private val daemonExecutionPolicy = buildToolsApi.daemonExecutionPolicyBuilder().build()
 
     // Session lifecycle: every compile holds a lease on the current session; close()
     // detaches the session immediately (subsequent compiles start a fresh one) but the
     // actual BuildSession.close() is deferred until the last leased operation releases —
-    // closing mid-operation would shut down the in-process executor / tear down the
-    // daemon session state underneath a running compile. The environment pin shares the
-    // lease lifecycle: acquired lazily before the first IN_PROCESS compile (daemon-only
-    // sessions never pay for it), released after the session closes — the compiler's jar
-    // caches live exactly as long as the session (no leak past close).
+    // closing mid-operation would shut down the in-process executor underneath a running
+    // compile. The environment pin shares the lease lifecycle: acquired lazily before
+    // the first compile, released after the session closes — the compiler's jar caches
+    // live exactly as long as the session (no leak past close).
     private class SessionLease(
         val session: KotlinToolchains.BuildSession,
     ) {
@@ -89,10 +86,10 @@ class KotlinBuildsSession(
     val activeOperations: Int
         get() = synchronized(this) { currentLease?.activeOperations ?: 0 }
 
-    private fun acquireSession(policy: CompilationExecutionPolicy): SessionLease = synchronized(this) {
+    private fun acquireSession(): SessionLease = synchronized(this) {
         val lease = currentLease
             ?: SessionLease(buildToolsApi.createBuildSession()).also { currentLease = it }
-        if (policy == CompilationExecutionPolicy.IN_PROCESS && lease.environmentPin == null) {
+        if (lease.environmentPin == null) {
             // Lazy + transactional: on pin failure the lease stays valid (and unpinned
             // usage would still work), but we fail the compile loudly rather than run
             // with silently degraded per-compile cache teardown.
@@ -132,7 +129,6 @@ class KotlinBuildsSession(
      *
      * @param sources A list of paths pointing to the Kotlin source files to be compiled.
      * @param destinationDir The path to the directory where the compiled outputs will be stored. Either could be a directory or jar file.
-     * @param executionPolicy Specifies the execution policy for the compilation process. Defaults to [CompilationExecutionPolicy.IN_PROCESS].
      * @param compilationTimeout maximum time compilation is allowed to run. The default is 120 seconds.
      * @param compilerMessageRenderer optional [CompilerMessageRenderer] to collect and transform compiler messages.
      * @param argumentsConf A lambda that allows configuration of additional JVM compiler arguments.
@@ -149,12 +145,11 @@ class KotlinBuildsSession(
     suspend fun compileKotlin(
         sources: List<Path>,
         destinationDir: Path,
-        executionPolicy: CompilationExecutionPolicy = CompilationExecutionPolicy.IN_PROCESS,
         compilationTimeout: Duration = 120.seconds,
         compilerMessageRenderer: CompilerMessageRenderer? = null,
         argumentsConf: JvmCompilerArguments.Builder.() -> Unit = {}
     ): CompilationResult {
-        val lease = acquireSession(executionPolicy)
+        val lease = acquireSession()
         try {
             val jvmCompilationBuilder = lease.session.kotlinToolchains
                 .jvm
@@ -183,10 +178,7 @@ class KotlinBuildsSession(
                     try {
                         lease.session.executeOperation(
                             operation = jvmOperation,
-                            executionPolicy = when (executionPolicy) {
-                                CompilationExecutionPolicy.IN_PROCESS -> inProcessExecutionStrategy
-                                CompilationExecutionPolicy.DAEMON -> daemonExecutionPolicy
-                            },
+                            executionPolicy = inProcessExecutionStrategy,
                             logger = kotlinLogger,
                         )
                     } catch (e: OperationCancelledException) {
@@ -238,21 +230,11 @@ class KotlinBuildsSession(
         toClose?.closeNow()
     }
 
-    /**
-     * The `Path` of the Kotlin standard library JAR file from the build tools API implementation jars.
-     */
-    val defaultStdlibJar: Path
-        get() = implClasspath.single { it.name.startsWith("kotlin-stdlib-") }
-
-    enum class CompilationExecutionPolicy {
-        IN_PROCESS, DAEMON;
-    }
-
     companion object {
         /**
          * Lists the BTA implementation jars of [dir] — the plugin distribution's `kotlinc/`
          * folder, or the `:kotlin-cli` `bta-impl-jars` build directory in tests. Sorted for a
-         * deterministic classloader/daemon classpath. Fails fast when the directory is missing
+         * deterministic classloader classpath. Fails fast when the directory is missing
          * or empty: there is exactly one way to compile, and it needs these jars.
          */
         fun implJarsFrom(dir: Path): List<Path> {

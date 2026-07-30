@@ -35,7 +35,21 @@ dependencies {
     api("org.jetbrains.kotlin:kotlin-build-tools-api:$kotlincVersion")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
 
-    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:$kotlincVersion")
+    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:$kotlincVersion") {
+        // The daemon execution flow is gone — in-process is the only path. These two jars
+        // exist solely for the daemon *client* connection and are dead weight:
+        //  - kotlin-compiler-runner: KotlinCompilerRunnerUtils.newDaemonConnection + CompilerOutputParser
+        //    (its one in-process-path symbol, toArgumentStrings, ships inside kotlin-compiler-embeddable)
+        //  - kotlin-daemon-client: the RMI client (BasicCompilerServicesWithResultsFacadeServer et al.),
+        //    reached only via kotlin-compiler-runner
+        // kotlin-daemon-embeddable MUST stay: BTA 2.4.10 links daemon-common eagerly even in-process
+        // (JvmCompilationOperationImpl's constructor initializes
+        // targetPlatform = CompileService.TargetPlatform.JVM), and kotlin-compiler-embeddable
+        // declares kotlin-daemon-embeddable as a runtime dependency. Verified against the
+        // v2.4.10 sources/bytecode and a standalone in-process compile probe.
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-compiler-runner")
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-daemon-client")
+    }
 
     testImplementation("junit:junit:4.13.2")
 }
@@ -44,9 +58,9 @@ dependencies {
 //
 // The jars are laid out as a directory and shipped as-is (plugin dist `kotlinc/`
 // folder — the successor of the old kotlinc dist; test JVMs get the directory
-// via a system property). BTA loads them with a URLClassLoader and the Kotlin
-// daemon builds its -cp from these very paths, so the jars MUST exist as plain
-// files on disk — and nothing ever needs to be unpacked at runtime.
+// via a system property). BTA loads them with a URLClassLoader and
+// the compiler's FastJarFileSystem reads these very paths, so the jars MUST exist
+// as plain files on disk — and nothing ever needs to be unpacked at runtime.
 val btaImplJarsDir = layout.buildDirectory.dir("bta-impl-jars")
 
 val syncBtaImplJars = tasks.register<Sync>("syncBtaImplJars") {
