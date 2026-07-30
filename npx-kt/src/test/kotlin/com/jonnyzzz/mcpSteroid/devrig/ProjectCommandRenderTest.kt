@@ -186,6 +186,8 @@ class ProjectCommandRenderTest {
             "expected no-plugin footer; got:\n$text")
         assertTrue(text.contains("IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342): MCP Steroid: not installed"),
             "expected port IDE identity; got:\n$text")
+        assertTrue(text.contains("Install MCP Steroid into the IDE(s) above (each shows a confirmation dialog): devrig install plugin"),
+            "skipped footer must promote the one-shot REST installer; got:\n$text")
     }
 
     @Test

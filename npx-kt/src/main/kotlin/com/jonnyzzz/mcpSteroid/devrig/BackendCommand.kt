@@ -392,6 +392,11 @@ fun renderBackendOutput3(
             out.println("        MCP Steroid: not installed")
             if (s1Incompatible.size + index < group2Count - 1) out.println()
         }
+        // Promote the one-shot REST installer for every IDE above that lacks a compatible plugin.
+        // The IDE shows its own native confirmation dialog, so this is safe to surface unconditionally.
+        out.println()
+        out.println("  Install / update MCP Steroid in the IDE(s) above:  $INSTALL_PLUGIN_COMMAND")
+        out.println("        (each IDE shows a native \"Choose Plugins to Install or Enable\" dialog — nothing installs silently)")
     }
     out.println()
 
@@ -474,6 +479,7 @@ fun renderBackendJson3(
                     put("build", ide.ide.build)
                     put("pid", ide.pid)
                     put("compatible", false)
+                    put("installCommand", INSTALL_PLUGIN_COMMAND)
                 })
             }
             for (ide in s2Deduped.sortedBy { it.port }) {
@@ -483,6 +489,7 @@ fun renderBackendJson3(
                     ide.buildNumber?.let { put("build", it) }
                     put("port", ide.port)
                     put("compatible", false)
+                    put("installCommand", INSTALL_PLUGIN_COMMAND)
                 })
             }
         }

@@ -187,6 +187,20 @@ class BackendCommandJsonRenderTest {
     }
 
     @Test
+    fun `otherIdes entries promote the install command so scripts can act on plugin-less IDEs`() {
+        // Both an incompatible marker (old plugin) and a port-discovered IDE (no plugin) must expose the
+        // one-shot REST installer — that is the actionable next step for every non-compatible IDE.
+        val incompatible = markerIde(pid = 1L, build = "IU-261.1", ideHome = null)
+        val port = portIde(port = 63342, buildNumber = "GO-261.999")
+        val others = render(s1 = listOf(incompatible), s2 = setOf(port))["otherIdes"]!!.jsonArray
+        assertEquals(2, others.size)
+        for (entry in others) {
+            assertEquals("devrig install plugin", entry.jsonObject["installCommand"]?.jsonPrimitive?.contentOrNull,
+                "every otherIdes entry must promote the install command; entry=$entry")
+        }
+    }
+
+    @Test
     fun `otherIdes entry omits build when buildNumber is null`() {
         val ide = portIde(buildNumber = null)
         val root = render(s2 = setOf(ide))

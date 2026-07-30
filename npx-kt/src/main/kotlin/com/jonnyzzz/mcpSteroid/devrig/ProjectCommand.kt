@@ -97,6 +97,8 @@ private fun renderPortSkippedFooter(
     for (ide in portIdes.sortedBy { it.port }) {
         out.println("  - ${portBackendDisplayName(ide)} (${portBackendLocatorLabel(ide)}): MCP Steroid: not installed")
     }
+    out.println()
+    out.println("Install MCP Steroid into the IDE(s) above (each shows a confirmation dialog): $INSTALL_PLUGIN_COMMAND")
 }
 
 /**

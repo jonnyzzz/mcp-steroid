@@ -27,6 +27,13 @@ import org.slf4j.LoggerFactory
 const val MCP_STEROID_PLUGIN_ID = "com.jonnyzzz.mcp-steroid"
 
 /**
+ * The one-shot command that installs (or updates) MCP Steroid into every running JetBrains IDE over
+ * REST — each IDE then shows its own native "Choose Plugins to Install or Enable" dialog. Promoted from
+ * every CLI listing that surfaces an IDE without a compatible plugin (`devrig backend`, `devrig project`).
+ */
+const val INSTALL_PLUGIN_COMMAND = "devrig install plugin"
+
+/**
  * Origin sent on every `/api/installPlugin` request. The built-in server trusts any request whose
  * Origin host is localhost (`RestService.isLocalhost`), so this bypasses the *host-trust* dialog while
  * leaving the plugin-install confirmation modal (`installAndEnable(..., showDialog=true)`) intact — that

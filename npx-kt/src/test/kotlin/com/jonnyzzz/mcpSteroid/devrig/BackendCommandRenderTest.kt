@@ -178,6 +178,30 @@ class BackendCommandRenderTest {
     }
 
     @Test
+    fun `group 2 promotes the install command for a plugin-less port IDE`() {
+        val text = render(s2 = setOf(portIde(port = 63342)))
+        assertTrue(text.contains("Install / update MCP Steroid in the IDE(s) above:  devrig install plugin"),
+            "expected the install-command promotion under group 2; got:\n$text")
+        assertTrue(text.contains("Choose Plugins to Install or Enable"),
+            "promotion must set the user's expectation of a native confirmation dialog; got:\n$text")
+    }
+
+    @Test
+    fun `group 2 promotes the install command for an incompatible (old plugin) marker`() {
+        val incompatible = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1L, ideHome = null)
+        val text = render(s1 = listOf(incompatible))
+        assertTrue(text.contains("Install / update MCP Steroid in the IDE(s) above:  devrig install plugin"),
+            "an incompatible marker must also be offered the install/update command; got:\n$text")
+    }
+
+    @Test
+    fun `no install-command promotion when group 2 is empty`() {
+        val text = render(s1 = listOf(markerIde("IntelliJ IDEA", "2026.1", 1L)))
+        assertFalse(text.contains("devrig install plugin"),
+            "the promotion must not appear when every IDE already has a compatible plugin; got:\n$text")
+    }
+
+    @Test
     fun `S2 port IDEs are sorted by port`() {
         val text = render(s2 = setOf(portIde(port = 63350), portIde(port = 63342)))
         val idx342 = text.indexOf("port 63342")
