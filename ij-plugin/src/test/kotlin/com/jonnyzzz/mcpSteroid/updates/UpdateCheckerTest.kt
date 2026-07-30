@@ -1,8 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.updates
 
-import com.intellij.openapi.util.text.StringUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.jonnyzzz.mcpSteroid.getBuildVersion
+import com.jonnyzzz.mcpSteroid.getPluginVersion
+import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 
 /**
  * Tests for UpdateChecker version comparison logic.
@@ -27,35 +29,42 @@ class UpdateCheckerTest : BasePlatformTestCase() {
     }
 
     /**
-     * Test version comparison logic using StringUtil.compareVersionNumbers.
+     * The notification gate: shown iff the promoted version is strictly newer than the
+     * current build. Exercises the production gate [UpdateChecker.checkForUpdates] calls.
      */
-    fun testVersionComparison() {
-        // Remote newer
-        assertTrue(StringUtil.compareVersionNumbers("0.87.0", "0.86.0") > 0)
-        assertTrue(StringUtil.compareVersionNumbers("1.0.0", "0.99.99") > 0)
-        assertTrue(StringUtil.compareVersionNumbers("0.86.1", "0.86.0") > 0)
+    fun testUpdateNotificationGate() {
+        fun updateAvailable(promotedBase: String, current: String) = DevrigVersion.isUpdateAvailable(
+            current = DevrigVersion.parse(current),
+            promoted = DevrigVersion.parse(promotedBase),
+        )
 
-        // Same version
-        assertEquals(0, StringUtil.compareVersionNumbers("0.86.0", "0.86.0"))
+        // release build <base>-<hash>
+        assertTrue(updateAvailable("0.87.0", "0.86.0-a1b2c3d"))
+        assertFalse(updateAvailable("0.86.0", "0.86.0-a1b2c3d"))
+        assertFalse(updateAvailable("0.85.0", "0.86.0-a1b2c3d"))
 
-        // Remote older
-        assertTrue(StringUtil.compareVersionNumbers("0.85.0", "0.86.0") < 0)
-        assertTrue(StringUtil.compareVersionNumbers("0.86.0", "0.87.0") < 0)
+        // CI build <base>.<counter>-(gh|jb)-<hash>
+        assertTrue(updateAvailable("0.87.0", "0.86.0.441-jb-a1b2c3d"))
+        assertFalse(updateAvailable("0.86.0", "0.86.0.441-jb-a1b2c3d"))
     }
 
     /**
-     * Test comparing extracted base versions.
+     * A snapshot (local dev) build compares newer than anything promoted — never nagged.
      */
-    fun testExtractedVersionComparison() {
-        // Current has SNAPSHOT suffix, remote is plain - should detect update when remote is higher
-        val current = extractBaseVersion("0.86.0-SNAPSHOT-20260212-193000-a1b2c3d")
-        val remoteNewer = "0.87.0"
-        val remoteSame = "0.86.0"
-        val remoteOlder = "0.85.0"
+    fun testSnapshotBuildIsNeverNotified() {
+        val current = DevrigVersion.parse("0.86.0.19999-SNAPSHOT-a1b2c3d")
+        assertTrue(current.isSnapshotBuild)
+        assertFalse(DevrigVersion.isUpdateAvailable(current = current, promoted = DevrigVersion.parse("0.87.0")))
+        assertFalse(DevrigVersion.isUpdateAvailable(current = current, promoted = DevrigVersion.parse("999.0")))
+    }
 
-        assertTrue(StringUtil.compareVersionNumbers(remoteNewer, current) > 0)
-        assertEquals(0, StringUtil.compareVersionNumbers(remoteSame, current))
-        assertTrue(StringUtil.compareVersionNumbers(remoteOlder, current) < 0)
+    /**
+     * The generated metadata exposes the typed build version with the snapshot flag baked in.
+     */
+    fun testGeneratedBuildVersionMetadata() {
+        val build = getBuildVersion()
+        assertEquals(getPluginVersion(), build.value)
+        assertEquals(build.value.contains("SNAPSHOT"), build.isSnapshotBuild)
     }
 
     /**

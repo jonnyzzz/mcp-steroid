@@ -52,6 +52,9 @@ dependencies {
     implementation(project(":closeable-stack"))
     implementation(project(":ai-agents"))
 
+    // DevrigVersion (used by the generated version metadata and the update checker)
+    implementation(project(":mcp-core"))
+
     // MCP transport: framed/NDJSON parser + McpStdioServer (replaces the old
     // StdioServer in this module — kept compiled but no longer wired into main()).
     implementation(project(":mcp-stdio"))

@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.logger
+import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -54,8 +55,9 @@ suspend fun fetchVersionInfo(): DevrigVersionInfo? {
  */
 suspend fun checkForUpdates(onNotice: (String) -> Unit = {}) {
     val remoteVersion = fetchVersionInfo() ?: return
-    val currentVersion = DevrigVersionMetadata.getDevrigVersion()
-    if (currentVersion.startsWith(remoteVersion.versionBase)) return
+    val currentVersion = DevrigVersionMetadata.getBuildVersion()
+    val promotedVersion = DevrigVersion.parse(remoteVersion.versionBase)
+    if (!DevrigVersion.isUpdateAvailable(current = currentVersion, promoted = promotedVersion)) return
 
     val newVersion = remoteVersion.versionBase
     val message = buildString {
