@@ -560,22 +560,36 @@ val deployDevrig = tasks.register<Exec>("deployDevrig") {
     val isWin = System.getProperty("os.name").lowercase().contains("windows")
     val userHome = File(System.getProperty("user.home"))
     val installScript = File(userHome, ".mcp-steroid/devrig/bin/" + (if (isWin) "devrig.bat" else "devrig"))
-    val jdkHome = System.getProperty("java.home")
 
-    val installArgs = listOf("install", "devrig", "--install-script=${installScript.absolutePath}", "--jdk-home=$jdkHome")
-    if (isWin) {
-        // A .bat is not a process image — it needs the cmd interpreter (same shape as
-        // DevrigUserLauncher.invocation: `cmd.exe /d /c <script> …`).
-        executable = "cmd.exe"
-        args(listOf("/d", "/c", installScript.absolutePath) + installArgs)
-    } else {
-        executable = installScript.absolutePath
-        args(installArgs)
+    // The launcher pins the SAME JDK devrig itself is built with in this project — :npx-kt's
+    // Java toolchain (jvmToolchain in npx-kt/build.gradle.kts) — NOT the Gradle daemon's JVM.
+    // Resolved lazily (provider + doFirst): :npx-kt is not configured yet when the root
+    // project's tasks are registered.
+    val jdkHomeProvider = providers.provider {
+        val npx = project(":npx-kt")
+        val spec = npx.extensions.getByType<JavaPluginExtension>().toolchain
+        npx.extensions.getByType<JavaToolchainService>()
+            .launcherFor(spec).get()
+            .metadata.installationPath.asFile.absolutePath
     }
-    // DEVRIG_JAVA_HOME beats any JAVA_HOME the caller's shell exported, so the freshly staged
-    // dist always launches on the daemon's JDK 25 (devrig is class-file v69).
-    environment("DEVRIG_JAVA_HOME", jdkHome)
-    environment("JAVA_HOME", jdkHome)
+
+    doFirst {
+        val jdkHome = jdkHomeProvider.get()
+        val installArgs = listOf("install", "devrig", "--install-script=${installScript.absolutePath}", "--jdk-home=$jdkHome")
+        if (isWin) {
+            // A .bat is not a process image — it needs the cmd interpreter (same shape as
+            // DevrigUserLauncher.invocation: `cmd.exe /d /c <script> …`).
+            executable = "cmd.exe"
+            args(listOf("/d", "/c", installScript.absolutePath) + installArgs)
+        } else {
+            executable = installScript.absolutePath
+            args(installArgs)
+        }
+        // DEVRIG_JAVA_HOME beats any JAVA_HOME the caller's shell exported, so the freshly staged
+        // dist always launches on the toolchain JDK (devrig requires it as its runtime).
+        environment("DEVRIG_JAVA_HOME", jdkHome)
+        environment("JAVA_HOME", jdkHome)
+    }
     // `devrig install devrig` is contractually non-interactive (see runInstallDevrigCommand):
     // hand it an already-EOF stdin, mirroring install.sh's `< /dev/null` and install.ps1's `$null |`.
     standardInput = java.io.InputStream.nullInputStream()
