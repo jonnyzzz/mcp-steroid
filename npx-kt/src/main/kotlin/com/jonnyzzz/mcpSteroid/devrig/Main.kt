@@ -12,8 +12,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlin.random.Random
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
@@ -111,38 +109,14 @@ suspend fun DevrigServices.mainImpl2(
                     }
                 }
             }
-            val updater = if (command is DevrigCommand.MCP) {
-                AutoUpdater(
-                    homePaths = homePaths,
-                    notify = onNotice,
-                    // Telemetry: every actually-triggered self-update is captured with the promoted
-                    // version from version.json (capture() itself adds the running devrig_version).
-                    onUpdateTriggered = { promoted ->
-                        beacon.capture("self_update", mapOf("target_version" to promoted))
-                    },
-                )
-            } else null
-            if (updater != null && updater.isActive()) {
-                // The ACTIVE auto-updater (docs/updates-check/devrig-auto-update.md): only the
-                // long-lived `devrig mcp` session runs it — it supervises the installer and delivers
-                // the restart notice over MCP. Scheduled every 3–8 h (jittered) and NEVER stops:
-                // there is no failure tracking — too many transient root causes exist, and the goal
-                // is to keep users up to date. A one-shot check would also never tell a session that
-                // lost the update race that the install completed.
-                while (true) {
-                    try {
-                        updater.tick()
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        System.err.println("[mcp-steroid] auto-update tick failed: $e")
-                    }
-                    delay(Random.nextLong(180, 481).minutes)
-                }
-            } else {
-                // Passive, marker-aware notice: short CLI commands and opted-out/SNAPSHOT sessions.
-                checkForUpdates(homePaths, onNotice)
-            }
+            // One flow for every command (docs/updates-check/devrig-auto-update.md): MCP sessions
+            // run the active 3–8 h update loop; everything else gets the passive notice once.
+            runAutoUpdateFlow(
+                homePaths = homePaths,
+                mcpSession = command is DevrigCommand.MCP,
+                notify = onNotice,
+                onUpdateTriggered = { promoted -> beacon.capture("self_update", mapOf("target_version" to promoted)) },
+            )
         }
 
         backgroundScope.launch {

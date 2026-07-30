@@ -100,6 +100,6 @@ fun passiveUpdateNotice(
     coordination: UpdateCoordination,
 ): PassiveUpdateNotice = when {
     coordination.isUpdateInFlight() -> PassiveUpdateNotice.NONE
-    coordination.hasUpdatedMarker(baseVersionString(promoted.value)) -> PassiveUpdateNotice.RESTART
+    coordination.hasUpdatedMarker(promoted.value) -> PassiveUpdateNotice.RESTART
     else -> PassiveUpdateNotice.DOWNLOAD_BANNER
 }

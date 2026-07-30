@@ -118,7 +118,7 @@ class AutoUpdaterStdoutPurityTest {
         f.updater.tick()
 
         assertStdoutEmpty()
-        assertTrue(stderr().contains("timed out after"), stderr())
+        assertTrue(stderr().contains("timed out"), stderr())
         assertTrue(stderr().contains(f.updater.logFileFor("0.102").toString()), "the warning must point at the log file: ${stderr()}")
         assertEquals(0, f.notices.size)
     }
@@ -131,7 +131,7 @@ class AutoUpdaterStdoutPurityTest {
 
         assertStdoutEmpty()
         assertTrue(stderr().contains("could not download"), stderr())
-        assertTrue(stderr().contains(DEVRIG_INSTALL_SH_URL), stderr())
+        assertTrue(stderr().contains("https://devrig.dev/install.sh"), stderr())
         assertEquals(0, f.notices.size)
     }
 

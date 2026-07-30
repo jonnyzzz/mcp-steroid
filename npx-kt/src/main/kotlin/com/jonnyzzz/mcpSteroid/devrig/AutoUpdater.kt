@@ -15,21 +15,20 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.time.Instant
 import kotlin.io.path.exists
+import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 
-const val DEVRIG_INSTALL_SH_URL = "https://devrig.dev/install.sh"
-const val DEVRIG_INSTALL_PS1_URL = "https://devrig.dev/install.ps1"
-
 /**
- * The active auto-updater — one `tick()` per docs/updates-check/devrig-auto-update.md's
- * "The update tick". Runs ONLY inside `devrig mcp` sessions (a long-lived parent that can supervise
- * the installer and deliver the restart notice over MCP); every collaborator is injected so the
- * whole decision tree is unit-testable without HTTP, processes, or a real `~/.mcp-steroid`.
+ * The active auto-updater — one `tick()` per docs/updates-check/devrig-auto-update.md. Collaborators
+ * are injected so the decision tree is unit-testable without HTTP, processes, or a real home dir.
  */
 class AutoUpdater(
     val homePaths: HomePaths,
@@ -39,27 +38,18 @@ class AutoUpdater(
     val notify: (String) -> Unit = { },
     val fetchPromoted: suspend () -> DevrigVersion? = { fetchVersionInfo()?.let { DevrigVersion.parse(it.versionBase) } },
     val downloadScript: suspend (url: String, target: Path) -> Boolean = ::downloadInstallScript,
-    /** Spawn + supervise the installer; exit code, or null when the 1 h timeout killed it. */
+    /** Spawn + supervise the installer; exit code, or null when the timeout killed it. */
     val runInstaller: suspend (script: Path, logFile: Path) -> Int? = { script, logFile ->
         superviseInstallerProcess(script, logFile, isWin)
     },
     val noAutoUpdateEnv: String? = System.getenv(ENV_DEVRIG_NO_AUTO_UPDATE),
     val binRegisterOptOutEnv: String? = System.getenv(ENV_BIN_NO_AUTO_REGISTER),
-    /**
-     * Fired exactly once per actually-triggered update — right before the installer spawns — with
-     * the raw promoted version from version.json. Main wires this to the beacon
-     * (`devrig_self_update` with `target_version`).
-     */
+    /** Fired once right before the installer spawns; Main wires this to the beacon (`devrig_self_update`). */
     val onUpdateTriggered: (promotedVersion: String) -> Unit = { },
 ) {
     private var restartNotified = false
 
-    /**
-     * The step-1 gate. A SNAPSHOT build must skip the WHOLE tick including GC (a dev build must not
-     * GC or write records for real installs; a SNAPSHOT `current` would also poison the GC bound).
-     * The launcher-write opt-out also disables the updater: with launcher writes disabled, an
-     * install could never take effect.
-     */
+    /** Step-1 gate: SNAPSHOT builds skip everything (incl. GC); the launcher-write opt-out too. */
     fun isActive(): Boolean = !currentVersion.isSnapshotBuild &&
         !parseUpdateEnvFlag(noAutoUpdateEnv) &&
         !parseUpdateEnvFlag(binRegisterOptOutEnv)
@@ -75,7 +65,7 @@ class AutoUpdater(
 
         // step 4 — never downgrade; nothing to do when up to date
         if (!DevrigVersion.isUpdateAvailable(current = currentVersion, promoted = promoted)) return
-        val target = baseVersionString(promoted.value)
+        val target = promoted.value
 
         // step 5 — someone else updating (after the step-3 dead-file cleanup) → yield silently:
         // no notification before an install script completes
@@ -92,7 +82,7 @@ class AutoUpdater(
         // scheduled tick (3–8 h), forever. Diagnosis lives in stderr + the per-attempt log files.
 
         // step 7 — announce ourselves (the "I am updating" record others yield to; not a lock)
-        val scriptUrl = if (isWin) DEVRIG_INSTALL_PS1_URL else DEVRIG_INSTALL_SH_URL
+        val scriptUrl = if (isWin) "https://devrig.dev/install.ps1" else "https://devrig.dev/install.sh"
         val logFile = logFileFor(target)
         val info = UpdateStateInfo(
             pid = coordination.ownPid,
@@ -105,12 +95,8 @@ class AutoUpdater(
         coordination.writeInProgressMarker(target, info)
         val script = coordination.scriptFile(isWin)
         try {
-            // step 8 — recheck after announcing: lowest PID wins. Another process can pass the
-            // step-5 scan in the same window and announce concurrently; if any OTHER live marker
-            // (any version) carries a lower pid, that process wins — yield silently (our own marker
-            // is deleted in the finally below; the next tick re-evaluates). Equal pids are
-            // impossible on one host; a higher-pid rival that scans after us sees our lower pid
-            // and yields the same way. Only the announce↔recheck race remains (Tradeoff 1).
+            // step 8 — recheck after announcing: the lowest pid wins; losers yield silently
+            // (own marker deleted in the finally; only the announce↔recheck race remains — Tradeoff 1)
             if (coordination.liveInProgressPids().any { it < coordination.ownPid }) return
 
             runAnnouncedUpdate(script, scriptUrl, logFile, target, info, promotedRaw = promoted.value)
@@ -133,11 +119,7 @@ class AutoUpdater(
         info: UpdateStateInfo,
         promotedRaw: String,
     ) {
-        // step 9 — download. A failed download resolves as a stderr line and a quiet retry on the
-        // next scheduled tick. The downloaded script is deliberately NOT inspected (no baked-version
-        // parsing, no sanity check): devrig has no dependency on the script's internal format, and
-        // anything wrong with the file surfaces when the installer runs it — the same retry path.
-        // A mid-propagation stale script is an accepted tradeoff (design doc, Tradeoff 6).
+        // step 9 — download; the script is opaque (never inspected — Tradeoff 6); failures retry next tick
         if (!downloadScript(scriptUrl, script)) {
             System.err.println("[mcp-steroid] could not download $scriptUrl; will retry next tick")
             return
@@ -164,20 +146,21 @@ class AutoUpdater(
         } else {
             System.err.println(
                 "[mcp-steroid] devrig auto-update to $target failed " +
-                    (if (exit == null) "(timed out after $INSTALLER_TIMEOUT; installer killed)" else "(exit $exit)") +
+                    (if (exit == null) "(timed out; installer killed)" else "(exit $exit)") +
                     "; log: $logFile — will retry next tick",
             )
         }
     }
 
-    fun logFileFor(target: String): Path = homePaths.logsDir.resolve("update-${coordination.ownPid}-$target.log")
+    fun logFileFor(target: String): Path =
+        homePaths.logsDir.resolve("update-${coordination.ownPid}-${target.substringBefore('-').substringBefore('/')}.log")
 
     private fun notifyRestartOnce(version: String) {
         if (restartNotified) return
         restartNotified = true
         val message = buildString {
             appendLine()
-            appendLine("devrig ${baseVersionString(version)} is installed — restart your agent session to use it (current: $currentVersion).")
+            appendLine("devrig $version is installed — restart your agent session to use it (current: $currentVersion).")
             appendLine()
         }
         System.err.println(message)
@@ -186,17 +169,37 @@ class AutoUpdater(
 
 }
 
-val INSTALLER_TIMEOUT: Duration = 1.hours
+/**
+ * One flow for every devrig command: an MCP session with the updater enabled runs the 3–8 h tick
+ * loop forever; everything else gets the passive marker-aware notice once.
+ */
+suspend fun runAutoUpdateFlow(
+    homePaths: HomePaths,
+    mcpSession: Boolean,
+    notify: (String) -> Unit,
+    onUpdateTriggered: (promotedVersion: String) -> Unit = { },
+) {
+    val updater = AutoUpdater(homePaths = homePaths, notify = notify, onUpdateTriggered = onUpdateTriggered)
+    if (!mcpSession || !updater.isActive()) {
+        checkForUpdates(homePaths, notify)
+        return
+    }
+    while (true) {
+        try {
+            updater.tick()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println("[mcp-steroid] auto-update tick failed: $e")
+        }
+        delay(Random.nextLong(180, 481).minutes)
+    }
+}
 
 /** Opens every installer attempt in the per-pid log file; the timestamp follows. */
 const val INSTALLER_ATTEMPT_SEPARATOR_PREFIX = "===== [mcp-steroid] installer attempt at "
 
-/**
- * Windows installer-host candidates, most reliable first: the absolute System32 Windows PowerShell
- * (GUI-launched agents commonly carry stripped PATHs, and a spawn failure would waste a whole
- * 3–8 h retry cycle on a non-install problem), then PATH `powershell`, then `pwsh` (not in-box on
- * any Windows).
- */
+/** Most reliable first: absolute System32 PowerShell (agents often carry stripped PATHs), then PATH lookups. */
 fun windowsInstallerHostCandidates(systemRoot: String? = System.getenv("SystemRoot")): List<String> {
     val root = systemRoot?.takeIf { it.isNotBlank() } ?: "C:\\Windows"
     val system32 = Path.of(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
@@ -208,35 +211,16 @@ fun windowsInstallerHostCandidates(systemRoot: String? = System.getenv("SystemRo
 }
 
 /**
- * Start the install script as a dedicated detached process — stdin closed (immediate EOF), stdout +
- * stderr appended to [logFile]. The log is per-pid (`update-<pid>-<version>.log`), so concurrent
- * devrig processes never clash; when the SAME process retries the same version on a later tick it
- * appends to the same file — each attempt opens with a timestamped separator line, then a record of
- * the resolved host binary, keeping the accumulated log readable. Then supervise:
- * exit code, or null when the 1 h timeout fired and the started process (the shell/PowerShell host,
- * and ONLY it) was force-killed before returning. Children of the killed shell may survive —
- * grandchildren are deliberately NOT killed (tree-walking is too much process-management detail for
- * this path; a surviving `curl`/`Invoke-WebRequest` finishes or dies on its own, and the next tick
- * retries anyway). Note the kill can land mid-`devrig install devrig`, so the launcher replacement
- * must be crash-safe — PR #385. The child survives devrig's own death by design: an unsupervised
- * orphan completes, but no `updated-` record is written without a supervisor — the next session
- * re-runs from cached artifacts.
- *
- * Detachment decision (documentation over code): the child stays a plain member of devrig's own
- * session/process group. Re-parenting it into its own session would shield it from an agent CLI
- * that signals devrig's WHOLE group on session close, but every real shield is a platform branch —
- * `setsid(1)` exists on Linux, macOS ships no such binary, and Windows would need CreateProcess
- * flags ProcessBuilder cannot set — while full daemonization (double-fork) would break the
- * `waitFor` → `updated-` contract outright. And a shielded survivor is exactly the unsupervised
- * orphan above: its success unrecorded, the work redone next session anyway. So a group-wide
- * SIGKILL takes installer and supervisor down together — a rare, accepted edge case; the next
- * session's tick re-runs from cached artifacts.
+ * Run the install script detached (own stdio, survives devrig's death; stays in devrig's process
+ * group — shielding it is platform-branch territory, see the design doc) and supervise it: exit
+ * code, or null after the timeout force-kills the started process ONLY (no tree walk). Output is
+ * appended to the per-pid [logFile], each attempt behind a timestamped separator.
  */
 suspend fun superviseInstallerProcess(
     script: Path,
     logFile: Path,
     isWin: Boolean,
-    timeout: Duration = INSTALLER_TIMEOUT,
+    timeout: Duration = 1.hours,
 ): Int? {
     val hostCandidates = if (isWin) {
         windowsInstallerHostCandidates().map {
@@ -247,8 +231,6 @@ suspend fun superviseInstallerProcess(
     }
 
     Files.createDirectories(logFile.parent)
-    // Attempt separator: retries of the same version by the same process land in the same per-pid
-    // log file across 3-8 h ticks; the timestamp tells the attempts apart.
     Files.writeString(
         logFile,
         "\n$INSTALLER_ATTEMPT_SEPARATOR_PREFIX${Instant.now()} =====\n",
@@ -275,10 +257,8 @@ suspend fun superviseInstallerProcess(
     }
     val started = process ?: throw IllegalStateException("no installer host could be started", spawnError)
 
-    // Close ALL our ends of the child's stdio: the stdin pipe (the child reads EOF immediately —
-    // the scripts are contractually non-interactive, mirroring install.sh's `< /dev/null`); stdout/
-    // stderr are redirected to the log file, so the JVM-side streams are closed too — devrig keeps
-    // no handle to the child's stdio.
+    // Close all our ends of the child's stdio: stdin pipe → immediate EOF; the redirected
+    // stdout/stderr streams too — devrig keeps no handle to the child's stdio.
     for ((name, stream) in listOf("stdin" to started.outputStream, "stdout" to started.inputStream, "stderr" to started.errorStream)) {
         try {
             stream.close()

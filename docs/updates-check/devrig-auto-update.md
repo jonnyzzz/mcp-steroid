@@ -40,9 +40,9 @@ bookkeeping, and devrig never reads back the contents of its own marker files.
     └── update-<pid>-<version>.log         ← installer stdout+stderr (30-day retention)
 ```
 
-`<version>` in filenames is the canonical base form: strip build metadata, then
-trailing `.0` components (`0.102.0-r-abc1234` → `0.102`, matching
-`version.json`'s `0.102` — one release, one filename). Marker file contents are
+`<version>` in filenames is `version.json`'s string used as-is (defensively
+truncated at the first `-` or `/`) — every filename is derived from the same
+source, so one release is one filename. Marker file contents are
 human-readable, pretty-printed JSON (`pid`, `currentVersion`, `targetVersion`,
 `startedAt`, `logFile`, `scriptUrl`) — but they are **write-only debugging
 information**: devrig never parses them back. Everything coordination needs is
@@ -86,8 +86,7 @@ Each tick:
    (the post-rollback state) never deletes the `updated-<promoted>` record
    that older sessions rely on (they would reinstall every tick otherwise);
    `updated-<current>` still naturally ages out one release later. Delete
-   `logs/update-*.log` older than 30 days and any legacy `update-failed-*`
-   files (an earlier design's failure counter — see Design decisions).
+   `logs/update-*.log` older than 30 days.
 4. **Update available?** If
    `!DevrigVersion.isUpdateAvailable(current, promoted)` → done. (A promoted
    version moving backward is never auto-applied; rollback = pull the release
@@ -243,7 +242,7 @@ machinery:
 - **No failure tracking.** No `update-failed-*` files, no attempt cap, no
   "update manually" nag: too many possible root causes exist, and the product
   goal is to keep users up to date — retries run on the 3–8 h schedule forever
-  (→ Tradeoff 9). Legacy `update-failed-*` files from earlier builds are GC'd.
+  (→ Tradeoff 9).
 - **The downloaded install script is opaque.** No baked-version extraction, no
   skew check — devrig depends on nothing inside the script's text, and the
   templates carry no auto-update coupling (→ Tradeoff 6).
@@ -375,8 +374,7 @@ release-process approach).
 
 ## Test plan
 
-- Unit: marker name parse/format + canonical version (incl. `.0-r-` release
-  lane); the uniform staleness rule (filename pid dead; > 24 h mtime age; the
+- Unit: marker name parse/format; the uniform staleness rule (filename pid dead; > 24 h mtime age; the
   age bound overriding a live-looking pid; contents never read — an
   unparsable marker behaves exactly like a valid one); tick decision tree with
   fakes (yield to live marker; the step-8 announce race — both announce in the
@@ -387,8 +385,8 @@ release-process approach).
   cap, no state, and no user-facing notice; gate matrix); passive-notice truth
   table; GC invariants (SNAPSHOT never GCs; `v < min(current, promoted)`
   including the post-rollback keep-case — a session newer than `promoted` must
-  NOT delete `updated-<promoted>`; legacy `update-failed-*` and orphaned
-  `.tmp.<pid>.*` staging swept; log sweep); stdout purity
+  NOT delete `updated-<promoted>`; orphaned `.tmp.<pid>.*` staging swept; log
+  sweep); stdout purity
   (`AutoUpdaterStdoutPurityTest`: streams swapped for capture buffers around
   full ticks — happy path, failing installer, installer timeout, download
   failure, yield to a live marker — stdout is the MCP JSON-RPC channel and
