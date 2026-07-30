@@ -4,15 +4,11 @@ package com.jonnyzzz.mcpSteroid.gradle
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
-import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.OutputFile
-import org.gradle.api.tasks.PathSensitive
-import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import java.nio.file.Files
 import java.nio.file.Path
@@ -169,23 +165,4 @@ abstract class VerifyBundledKotlinCompatibilityTask : DefaultTask() {
         return s.contains("/plugins/Kotlin/kotlinc/") || s.contains("/plugins/Kotlin/lib/")
     }
 
-    private fun runCommand(command: List<String>, workDir: Path): CommandOutput {
-        val process = ProcessBuilder(command)
-            .directory(workDir.toFile())
-            .redirectErrorStream(true)
-            .start()
-
-        val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
-        val exitCode = process.waitFor()
-        return CommandOutput(exitCode, output)
-    }
-
-    private fun isWindows(): Boolean {
-        return System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
-    }
-
-    private data class CommandOutput(
-        val exitCode: Int,
-        val output: String,
-    )
 }

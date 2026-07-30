@@ -25,7 +25,7 @@ src/main/kotlin/com/jonnyzzz/mcpSteroid/
 ├── vision/      # Screenshot, input dispatch
 ├── demo/        # Demo mode overlay
 ├── ocr/         # External OCR process
-├── koltinc/     # External kotlinc process
+├── koltinc/     # Kotlin Build Tools API (BTA) snippet compilation
 └── updates/     # Update checker
 ```
 
@@ -107,19 +107,22 @@ Get services: `project.service<MyService>()` or `service<AppService>()`. Use `ch
   needs to surface to the agent, not a control-flow signal to propagate.
 - Use `Logger.getInstance(MyClass::class.java)` for logging.
 
-### Cancellation and the `kotlinc` subprocess
+### Cancellation and the BTA compile
 
-`KotlincProcessClient.kotlinc(args, workingDir)` is a regular (non-`suspend`)
-`fun` that calls `ExecUtil.execAndGetOutput(commandLine, 120_000)`. The
-blocking JVM call does NOT check `kotlinx.coroutines` cancellation, so a
-cancelled caller coroutine will NOT terminate the in-flight kotlinc
-subprocess — kotlinc runs to completion (or its 120 s upper bound). This
-is **intentional**: killing kotlinc mid-compile is flaky on macOS+JDK21
-and the saved cycles are small. Nothing in `ij-plugin/src/main` calls
-`process.destroyForcibly()` on the kotlinc process, and adding such a
-call would defeat the contract. After `kotlinc(...)` returns, the
-CE-rethrow wrappers above ensure the cancellation propagates upstream
-cleanly. (Cluster A's A3, verified-by-inspection 2026-05-19.)
+Snippets compile through the Kotlin Build Tools API
+(`KotlinBuildsSession.compileKotlin`, `kotlin-cli/`): the blocking
+`executeOperation` runs in a child `async(Dispatchers.IO)`, and on timeout
+(120 s default) or caller cancellation the session calls
+`jvmOperation.cancel()` — BTA's **cooperative** cancellation (supported by
+compiler ≥ 2.3.20; in-process it flips the compiler's canceled status,
+daemon-mode it forwards to the daemon). BTA reports a cancelled operation
+with its own `OperationCancelledException` (a plain `RuntimeException`);
+`KotlinBuildsSession` translates it back into `CancellationException`, so
+the CE-rethrow rules above hold unchanged and a timeout still surfaces as
+`TimeoutCancellationException` → the "compilation stopped on timeout"
+failure in `CodeEvalManager`. This replaces the old non-cancellable
+`KotlincProcessClient` subprocess contract (removed with the BTA
+migration, PR #361).
 
 ## Build
 
@@ -399,23 +402,27 @@ script.
 ## Configuration
 
 Registry keys: `mcp.steroid.server.port`, `.host`, `.execution.timeout`, `.dialog.killer.enabled`,
-`.demo.enabled`, `.storage.path`, `.kotlinc.parameters`, `.kotlinc.home`.
+`.demo.enabled`, `.storage.path`, `.kotlinc.parameters`.
 
 ### WSL-hosted project on a Windows IDE — `mcp.steroid.storage.path` workaround ([#78](https://github.com/jonnyzzz/mcp-steroid/issues/78))
 
-When a Windows-side IDE opens a project under `\\wsl$\…` / `\\wsl.localhost\…`, every
-`steroid_execute_code` fails: the kotlinc working dir is the per-execution `compiled/` folder under
-`{project}/.idea/mcp-steroid/` (on the WSL filesystem), so the eel/ijent layer derives the WSL
-environment and routes `cmd.exe /c kotlinc.bat …` into the distro, where `cmd.exe` doesn't exist
-(`os error 2`). **Workaround:** set `mcp.steroid.storage.path` (the storage override, empty =
-`.idea/mcp-steroid`) to a native Windows path so the working dir leaves the `\\wsl$` volume and the
-spawn targets Windows. Proper fix (pass an `EelDescriptor`/spawn request targeting the local Windows
-env regardless of the working dir's filesystem) is still open.
+Historical failure mode (pre-BTA): with a project under `\\wsl$\…` / `\\wsl.localhost\…`, the
+kotlinc working dir was the per-execution `compiled/` folder under `{project}/.idea/mcp-steroid/`
+(on the WSL filesystem), so the eel/ijent layer derived the WSL environment and routed
+`cmd.exe /c kotlinc.bat …` into the distro, where `cmd.exe` doesn't exist (`os error 2`).
+The BTA migration (PR #361) removed that spawn entirely — compilation runs in-JVM or via the
+Kotlin daemon started with a plain `ProcessBuilder` from the plugin's own `kotlinc/` jars — but
+the compilation **outputs** still live under `executionStorage` (default `.idea/mcp-steroid`,
+i.e. a `\\wsl$` UNC path for WSL projects), and that combination is unverified on WSL.
+**Workaround (still available):** set `mcp.steroid.storage.path` (the storage override, empty =
+`.idea/mcp-steroid`) to a native Windows path so all compiler I/O leaves the `\\wsl$` volume.
 
-### Kotlinc version-mismatch workaround
+### Kotlin compiler version
 
-When the IDE bundles newer Kotlin than the plugin's compiler: set `mcp.steroid.kotlinc.home` to
-`<IDE>/plugins/Kotlin/kotlinc` via Registry.
+The snippet compiler is the Kotlin Build Tools implementation pinned by `mcp.kotlinc.version`
+in the root `gradle.properties` (bundled as the plugin's `kotlinc/` jar folder). When an IDE
+bundles a newer Kotlin than the plugin's compiler can read (metadata is readable at most one
+minor ahead), bump `mcp.kotlinc.version` — there is no runtime override.
 
 ### Script preprocessing (CodeButcher)
 

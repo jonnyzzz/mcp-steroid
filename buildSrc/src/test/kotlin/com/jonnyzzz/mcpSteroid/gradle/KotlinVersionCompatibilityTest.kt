@@ -16,29 +16,10 @@ class KotlinVersionCompatibilityTest {
     }
 
     @Test
-    fun parseKotlincVersionOutputParsesKotlincJvmFormat() {
-        val output = "info: kotlinc-jvm 2.3.10 (JRE 21.0.6+9)"
-        assertEquals(
-            KotlinVersion(2, 3, 10),
-            KotlinVersionCompatibility.parseKotlincVersionOutput(output)
-        )
-    }
-
-    @Test
-    fun parseKotlincVersionOutputParsesKotlinCompilerFormat() {
-        val output = "Kotlin compiler version 2.2.21"
-        assertEquals(
-            KotlinVersion(2, 2, 21),
-            KotlinVersionCompatibility.parseKotlincVersionOutput(output)
-        )
-    }
-
-    @Test
-    fun parseKotlincVersionOutputFallsBackToEmbeddedVersion() {
-        val output = "random text 2.2.0 more random text"
+    fun parseVersionFromTextFindsEmbeddedVersion() {
         assertEquals(
             KotlinVersion(2, 2, 0),
-            KotlinVersionCompatibility.parseKotlincVersionOutput(output)
+            KotlinVersionCompatibility.parseVersionFromText("random text 2.2.0 more random text")
         )
     }
 

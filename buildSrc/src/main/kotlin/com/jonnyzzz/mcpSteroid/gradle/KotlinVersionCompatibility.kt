@@ -6,8 +6,6 @@ import kotlin.math.abs
 internal object KotlinVersionCompatibility {
     private val strictVersionRegex = Regex("""^\s*(\d+)\.(\d+)(?:\.(\d+))?\s*$""")
     private val embeddedVersionRegex = Regex("""(\d+)\.(\d+)(?:\.(\d+))?""")
-    private val kotlincJvmRegex = Regex("""(?i)kotlinc(?:-jvm)?\s+(\d+\.\d+(?:\.\d+)?)""")
-    private val kotlinCompilerVersionRegex = Regex("""(?i)kotlin(?:\s+compiler)?\s+version\s+(\d+\.\d+(?:\.\d+)?)""")
 
     fun parseStrictVersion(text: String): KotlinVersion? {
         val match = strictVersionRegex.matchEntire(text) ?: return null
@@ -17,15 +15,6 @@ internal object KotlinVersionCompatibility {
     fun parseVersionFromText(text: String): KotlinVersion? {
         val match = embeddedVersionRegex.find(text) ?: return null
         return parseCapturedVersion(match)
-    }
-
-    fun parseKotlincVersionOutput(output: String): KotlinVersion? {
-        listOf(kotlincJvmRegex, kotlinCompilerVersionRegex).forEach { pattern ->
-            pattern.find(output)?.let { match ->
-                return parseStrictVersion(match.groupValues[1])
-            }
-        }
-        return parseVersionFromText(output)
     }
 
     fun isCompatible(ideKotlin: KotlinVersion, bundledKotlin: KotlinVersion): Boolean {

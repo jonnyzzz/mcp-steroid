@@ -15,6 +15,14 @@ class LineMapping(private val wrappedToOriginal: Map<Int, Int>) {
      * Matches patterns like `input.kt:LINE:COL:` and replaces LINE with the user-relative number.
      * Lines not in the mapping (wrapper boilerplate) are left as-is.
      */
+    /**
+     * Remap a single wrapped-file line number to the user-code line, or null when
+     * the line belongs to wrapper boilerplate rather than user code. Used for
+     * structured compiler message locations (BTA [org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer.SourceLocation])
+     * where no textual `file:line:col:` pattern exists to run [remapCompilerOutput] on.
+     */
+    fun remapLine(wrappedLine: Int): Int? = wrappedToOriginal[wrappedLine]
+
     fun remapCompilerOutput(output: String, fileName: String = "input.kt"): String {
         val pattern = Regex("""${Regex.escape(fileName)}:(\d+):(\d+):""")
         return output.replace(pattern) { match ->

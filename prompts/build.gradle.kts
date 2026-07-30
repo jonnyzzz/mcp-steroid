@@ -25,14 +25,24 @@ val ideDownloaderClasspath = configurations.create("ideDownloaderClasspath") {
     isCanBeResolved = true
 }
 
-// Extra classpath entries for the per-block kotlinc subprocess in
+// The BTA implementation jar directory from :kotlin-cli — KtBlockCompilationTestBase
+// builds its KotlinBuildsSession from these on-disk jars (no runtime extraction).
+val kotlincDist = configurations.create("kotlincDist") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "kotlinc-dist"))
+    }
+}
+
+// Extra classpath entries for the per-block snippet compilation in
 // KtBlockCompilationTestBase, for inlined ij-plugin sources that reference
 // sibling-module classes. (Historically `ApplyPatchHunk` via the
 // since-removed `ApplyPatch.kt`, #206; kept as plumbing.) The
 // IDE-home jar walk that builds the rest of the classpath obviously
 // doesn't see project-local outputs — passing this configuration's
 // resolved files via the `mcp.steroid.extra.classpath` system property
-// lets the test append them to the kotlinc subprocess classpath.
+// lets the test append them to the snippet compile classpath.
 val ktblockExtraClasspath = configurations.create("ktblockExtraClasspath") {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -50,6 +60,7 @@ dependencies {
     testImplementation(project(":prompt-generator"))
 
     ideDownloaderClasspath(project(":intellij-downloader"))
+    kotlincDist(project(":kotlin-cli"))
 }
 
 val generatedSources = layout.buildDirectory.dir("generated/kotlin/prompts")
@@ -175,14 +186,14 @@ tasks.register("listIdeDownloadSpecs") {
 tasks.test {
     useJUnitPlatform()
     // On TeamCity, run single-threaded to avoid overwhelming the agent with
-    // parallel IDE downloads + kotlinc compilations. Locally, use 8 cores.
+    // parallel IDE downloads + snippet compilations. Locally, use 8 cores.
     maxParallelForks = if (System.getenv("TEAMCITY_VERSION") != null) 1 else 8
 
     // Match the IDE-bundled JBR major version. The KtBlock compilation tests
-    // invoke kotlinc with `-jvm-target = java.specification.version` (see
-    // `KotlincCommandLineBuilder.DEFAULT_JVM_TARGET`), so the test JVM must
+    // compile with `-jvm-target = java.specification.version` (see
+    // `KotlinBuildsSession.DEFAULT_JVM_TARGET`), so the test JVM must
     // line up with the JBR shipped inside each downloaded IDE — otherwise
-    // kotlinc rejects the IDE's inline bytecode (`cannot inline bytecode
+    // the compiler rejects the IDE's inline bytecode (`cannot inline bytecode
     // built with JVM target N into bytecode that is being built with JVM
     // target M`). All currently-tracked IDEs (stable + EAP, all products)
     // bundle JBR 25.x; if a future IDE bumps to 26 the
@@ -204,6 +215,7 @@ tasks.test {
         dependsOn(task)
     }
     dependsOn(ktblockExtraClasspath)
+    dependsOn(kotlincDist)
 
     val kotlinVersion = providers.gradleProperty("mcp.kotlinc.version")
 
@@ -222,7 +234,10 @@ tasks.test {
         systemProperty("mcp.steroid.ij.sources", ijSources)
         systemProperty("mcp.steroid.kotlin.version", kotlinVersion.get())
 
-        // Extra binary classpath entries the per-block kotlinc subprocess
+        // BTA implementation jar directory (KotlinBuildsSession classpath)
+        systemProperty("mcp.steroid.bta.impl.dir", kotlincDist.singleFile.absolutePath)
+
+        // Extra binary classpath entries the per-block snippet compilation
         // needs because the inlined ij-plugin sources reference classes that
         // live in sibling modules (none today; see ktblockExtraClasspath comment).
         // File.pathSeparator-joined absolute paths — same shape kotlinc itself

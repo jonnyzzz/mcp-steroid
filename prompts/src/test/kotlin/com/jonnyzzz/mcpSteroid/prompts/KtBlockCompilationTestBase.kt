@@ -19,13 +19,13 @@ import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeAll
-import org.junit.jupiter.api.io.TempDir
 
 /**
  * Base class for generated KtBlock compilation tests (JUnit 5).
  *
  * Compiles Kotlin code blocks from prompt articles against the full IDE classpath
- * using an external kotlinc process. The IDE home, kotlinc home, and ij-plugin source
+ * via the Kotlin Build Tools API (in-process, one shared [KotlinBuildsSession] per
+ * test class). The IDE home, BTA implementation jars, and ij-plugin source
  * directory are resolved from system properties set by the Gradle build.
  *
  * The wrapper code references `McpScriptContext` and `McpScriptBuilder` (matching
@@ -34,7 +34,8 @@ import org.junit.jupiter.api.io.TempDir
  *
  * System properties:
  * - `mcp.steroid.ide.home` — path to the unpacked IDE distribution
- * - `mcp.steroid.kotlin.version` — Kotlin version used to compile Kotlin code
+ * - `mcp.steroid.bta.impl.dir` — directory with the BTA implementation jars
+ * - `mcp.steroid.kotlin.version` — Kotlin compiler version (cache key input)
  * - `mcp.steroid.ij.sources` — path to ij-plugin/src/main/kotlin (for McpScriptContext/McpScriptBuilder sources)
  * - `mcp.steroid.ktblock.cache.dir` — path to compilation cache directory (optional but recommended)
  */
@@ -119,6 +120,10 @@ abstract class KtBlockCompilationTestBase {
         val cacheDir = cacheDir()
         val cacheCompilerOptions = buildList {
             if (werror) add("-werror")
+            // The effective -jvm-target is derived from the running JVM
+            // (KotlinBuildsSession.DEFAULT_JVM_TARGET); a test-JVM major switch
+            // (21 <-> 25) must invalidate cached verdicts, not reuse them.
+            add("-jvm-target=" + KotlinBuildsSession.DEFAULT_JVM_TARGET.stringValue)
         }
         val cacheKey = computeCacheKey(wrapped, relativeClasspath, cacheCompilerOptions, productInfoContent, extraSourcesContent, kotlincVersion)
 
@@ -159,8 +164,11 @@ abstract class KtBlockCompilationTestBase {
 
         @BeforeAll
         @JvmStatic
-        fun beforeAll(@TempDir workingDir: Path) {
-            buildsSession = KotlinBuildsSession(workingDir)
+        fun beforeAll() {
+            // BTA implementation jars come as real files from :kotlin-cli's
+            // bta-impl-jars directory (Gradle sets the system property) —
+            // no runtime extraction, stable daemon/classloader paths.
+            buildsSession = KotlinBuildsSession(KotlinBuildsSession.implJarsFromSystemProperty())
         }
 
         @AfterAll
@@ -173,7 +181,7 @@ abstract class KtBlockCompilationTestBase {
 
         /**
          * Verifies the JRE running this test has the same major version as the
-         * JBR bundled inside [home]. The kotlinc subprocess derives `-jvm-target`
+         * JBR bundled inside [home]. Snippet compilation derives `-jvm-target`
          * from `java.specification.version` ([KotlinBuildsSession.DEFAULT_JVM_TARGET]),
          * so that target must equal the IDE's bundled JBR major — otherwise the
          * IDE's inline bytecode (compiled against its bundled JBR) will be
@@ -233,7 +241,7 @@ abstract class KtBlockCompilationTestBase {
         }
 
         /**
-         * Extra binary classpath entries the per-block kotlinc subprocess needs
+         * Extra binary classpath entries each per-block compilation needs
          * because the inlined ij-plugin sources may reference classes that live
          * in sibling project modules — not in any IDE-bundled jar. (Historically
          * `ApplyPatchHunk` via the since-removed `ApplyPatch.kt`, #206; kept as
@@ -270,7 +278,7 @@ abstract class KtBlockCompilationTestBase {
 
         private val kotlincVersionCache: String by lazy {
             System.getProperty("mcp.steroid.kotlin.version")
-                ?: error("Missing system property 'mcp.steroid.kotlinc.home'")
+                ?: error("Missing system property 'mcp.steroid.kotlin.version'")
         }
 
         private fun readKotlincVersion(): String = kotlincVersionCache

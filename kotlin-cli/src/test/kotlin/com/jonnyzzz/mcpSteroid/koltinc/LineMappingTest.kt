@@ -39,6 +39,16 @@ class LineMappingTest {
     }
 
     @Test
+    fun `remapLine maps user lines and returns null for wrapper boilerplate`() {
+        // The structured-location path (BTA CompilerMessageRenderer.SourceLocation)
+        // remaps line numbers directly — there is no `file:line:col:` text to match.
+        val mapping = LineMapping(mapOf(23 to 1, 24 to 2))
+        assertEquals(1, mapping.remapLine(23))
+        assertEquals(2, mapping.remapLine(24))
+        assertEquals(null, mapping.remapLine(10))
+    }
+
+    @Test
     fun `column numbers are preserved`() {
         val mapping = LineMapping(mapOf(23 to 1))
         val input = "input.kt:23:42: error: something wrong"
