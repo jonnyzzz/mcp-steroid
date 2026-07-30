@@ -227,7 +227,7 @@ abstract class CliIntegrationTestBase : BasePlatformTestCase() {
             println("WARNING_TEST_VALUE: " + strings.joinToString(","))
 
             The code will compile and run. The tool response will contain BOTH:
-            - A "Compiler Errors/Warnings:" section with "warning: unchecked cast" text
+            - A "Compiler warning:" line about the unchecked cast
             - The println output "WARNING_TEST_VALUE: hello,world"
 
             After execution, print exactly these two lines:

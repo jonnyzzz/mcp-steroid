@@ -1,19 +1,17 @@
+/* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.koltinc
 
-import java.nio.file.FileSystems
 import java.nio.file.Path
-import java.nio.file.Paths
-import kotlin.io.path.copyTo
-import kotlin.io.path.createDirectory
+import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
-import kotlin.io.path.notExists
-import kotlin.io.path.walk
 import kotlin.time.Duration
-import kotlin.time.DurationUnit
-import kotlin.time.toDuration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import org.jetbrains.kotlin.buildtools.api.BaseCompilationOperation
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
@@ -21,6 +19,7 @@ import org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer
 import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
 import org.jetbrains.kotlin.buildtools.api.KotlinToolchains
+import org.jetbrains.kotlin.buildtools.api.OperationCancelledException
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.jetbrains.kotlin.buildtools.api.arguments.enums.JvmTarget
 import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jvm
@@ -34,19 +33,29 @@ import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jv
  * This class keeps Kotlin caches between different compilations. To drop them - call `close()` method.
  * It is fine to call again compilation after calling `close()`.
  *
+ * @param implClasspath The Kotlin Build Tools implementation jars (the plugin's `kotlinc/` folder,
+ * or the `:kotlin-cli` `bta-impl-jars` directory in tests). The jars must be plain files on disk —
+ * BTA loads them into an isolated URLClassLoader, and the Kotlin daemon builds the `-cp` of its own
+ * JVM from these very paths.
  * @param kotlinLogger Optional logger used for capturing Kotlin compilation logs.
  */
 @OptIn(ExperimentalBuildToolsApi::class)
 class KotlinBuildsSession(
-    val workingDir: Path,
+    implClasspath: List<Path>,
     val kotlinLogger: KotlinLogger? = null,
 ) : AutoCloseable {
 
-    private val buildToolsApi = KotlinToolchains.loadImplementation(getBtaImplJars())
+    val implClasspath: List<Path> = implClasspath.also { jars ->
+        require(jars.isNotEmpty()) { "BTA implementation classpath must not be empty" }
+        for (jar in jars) {
+            require(jar.isRegularFile()) { "BTA implementation classpath entry is not a file: $jar" }
+        }
+    }
+
+    private val buildToolsApi = KotlinToolchains.loadImplementation(this.implClasspath)
     private val inProcessExecutionStrategy = buildToolsApi.createInProcessExecutionPolicy()
     private val daemonExecutionPolicy = buildToolsApi.daemonExecutionPolicyBuilder().build()
     private var buildSession: KotlinToolchains.BuildSession? = null
-
 
     /**
      * Compiles a set of Kotlin source files into the specified destination directory.
@@ -56,18 +65,21 @@ class KotlinBuildsSession(
      * @param sources A list of paths pointing to the Kotlin source files to be compiled.
      * @param destinationDir The path to the directory where the compiled outputs will be stored. Either could be a directory or jar file.
      * @param executionPolicy Specifies the execution policy for the compilation process. Defaults to [CompilationExecutionPolicy.DAEMON].
-     * @param compilationTimeout maximum time compilation is allowed to run. The default is 120_000ms.
+     * @param compilationTimeout maximum time compilation is allowed to run. The default is 120 seconds.
      * @param compilerMessageRenderer optional [CompilerMessageRenderer] to collect and transform compiler messages.
      * @param argumentsConf A lambda that allows configuration of additional JVM compiler arguments. '-no-stdlib' and '-no-reflect' arguments are always added.
      * @return A [CompilationResult] encapsulating the result of the compilation process.
      *
-     * @throws kotlinx.coroutines.TimeoutCancellationException on reaching configured timeout during compilation
+     * @throws kotlinx.coroutines.TimeoutCancellationException on reaching [compilationTimeout]; the
+     * in-flight compilation is cancelled cooperatively via [org.jetbrains.kotlin.buildtools.api.BuildOperation.cancel].
+     * @throws CancellationException when the calling coroutine is cancelled; BTA's own
+     * [OperationCancelledException] is translated and never escapes.
      */
     suspend fun compileKotlin(
         sources: List<Path>,
         destinationDir: Path,
         executionPolicy: CompilationExecutionPolicy = CompilationExecutionPolicy.DAEMON,
-        compilationTimeout: Duration = 120_000L.toDuration(DurationUnit.MILLISECONDS),
+        compilationTimeout: Duration = 120.seconds,
         compilerMessageRenderer: CompilerMessageRenderer? = null,
         argumentsConf: JvmCompilerArguments.Builder.() -> Unit = {}
     ): CompilationResult {
@@ -96,19 +108,39 @@ class KotlinBuildsSession(
 
         val jvmOperation = jvmCompilationBuilder.build()
         return try {
-            withTimeout(compilationTimeout) {
-                buildSession.executeOperation(
-                    operation = jvmOperation,
-                    executionPolicy = when (executionPolicy) {
-                        CompilationExecutionPolicy.IN_PROCESS -> inProcessExecutionStrategy
-                        CompilationExecutionPolicy.DAEMON -> daemonExecutionPolicy
-                    },
-                    logger = kotlinLogger,
-                )
+            coroutineScope {
+                // executeOperation is a plain blocking call. Run it in a child coroutine so the
+                // caller's timeout/cancellation can act while the compile is in flight — awaiting
+                // it inline would let the compiler run to completion and only then observe the
+                // cancellation, making the timeout (and jvmOperation.cancel()) decorative.
+                val compilation = async(Dispatchers.IO) {
+                    buildSession.executeOperation(
+                        operation = jvmOperation,
+                        executionPolicy = when (executionPolicy) {
+                            CompilationExecutionPolicy.IN_PROCESS -> inProcessExecutionStrategy
+                            CompilationExecutionPolicy.DAEMON -> daemonExecutionPolicy
+                        },
+                        logger = kotlinLogger,
+                    )
+                }
+                try {
+                    withTimeout(compilationTimeout) { compilation.await() }
+                } catch (e: CancellationException) {
+                    // Timeout or caller cancellation: request cooperative cancellation so the
+                    // compiler aborts promptly — executeOperation then completes with
+                    // OperationCancelledException and coroutineScope can exit instead of
+                    // waiting for the full compilation to run to the end.
+                    jvmOperation.cancel()
+                    throw e
+                }
             }
-        } catch (e: CancellationException) {
-            jvmOperation.cancel()
-            throw e
+        } catch (e: OperationCancelledException) {
+            // BTA reports a cancelled operation with its own RuntimeException subtype, not a
+            // CancellationException. The only cancel() caller is the catch above, i.e. an
+            // escaping OperationCancelledException always originates from this coroutine's
+            // cancellation — translate it back so callers' CancellationException discipline
+            // (rethrow, timeout mapping) applies.
+            throw CancellationException("Kotlin compilation was cancelled", e)
         }
     }
 
@@ -127,35 +159,11 @@ class KotlinBuildsSession(
         }
     }
 
-    private fun getBtaImplJars(): List<Path> {
-        val btaImplUrl = this::class.java.getResource("/BTA-IMPL")?.toURI()
-            ?: throw IllegalStateException("Could not find 'BTA-IMPL' in jar resources!")
-        if (btaImplUrl.scheme == "file") {
-            return Paths.get(btaImplUrl).listDirectoryEntries()
-        }
-
-        require(btaImplUrl.scheme == "jar") {
-            "Unsupported BTA-IMPL resource protocol: $btaImplUrl"
-        }
-
-        val btaImplDir = workingDir.resolve("bta-impl")
-        if (btaImplDir.notExists()) btaImplDir.createDirectory()
-        FileSystems.newFileSystem(btaImplUrl, emptyMap<String, Any>()).use { jarFs ->
-            jarFs.getPath("/BTA-IMPL").walk().forEach { file ->
-                if (file.isRegularFile()) {
-                    file.copyTo(btaImplDir.resolve(file.fileName.toString()))
-                }
-            }
-        }
-
-        return btaImplDir.listDirectoryEntries()
-    }
-
     /**
-     * Retrieves the `Path` of the Kotlin standard library JAR file from the build tools API implementation jars.
+     * The `Path` of the Kotlin standard library JAR file from the build tools API implementation jars.
      */
     val defaultStdlibJar: Path
-        get() = getBtaImplJars().single { it.name.contains("kotlin-stdlib") }
+        get() = implClasspath.single { it.name.startsWith("kotlin-stdlib-") }
 
     enum class CompilationExecutionPolicy {
         IN_PROCESS, DAEMON;
@@ -163,27 +171,59 @@ class KotlinBuildsSession(
 
     companion object {
         /**
-         * Default `-jvm-target` for the kotlinc subprocess, derived from the
-         * JVM that owns this process — `java.specification.version` is `"21"`
-         * on JDK 21, `"25"` on JDK 25, etc. The kotlinc inline-bytecode
+         * Lists the BTA implementation jars of [dir] — the plugin distribution's `kotlinc/`
+         * folder, or the `:kotlin-cli` `bta-impl-jars` build directory in tests. Sorted for a
+         * deterministic classloader/daemon classpath. Fails fast when the directory is missing
+         * or empty: there is exactly one way to compile, and it needs these jars.
+         */
+        fun implJarsFrom(dir: Path): List<Path> {
+            require(dir.isDirectory()) { "BTA implementation jar directory not found: $dir" }
+            val jars = dir.listDirectoryEntries("*.jar").sorted()
+            require(jars.isNotEmpty()) { "No BTA implementation jars found in: $dir" }
+            return jars
+        }
+
+        /**
+         * [implJarsFrom] with the directory taken from the `mcp.steroid.bta.impl.dir` system
+         * property — the contract Gradle test tasks use (see `:kotlin-cli` / `:prompts`
+         * build scripts).
+         */
+        fun implJarsFromSystemProperty(property: String = "mcp.steroid.bta.impl.dir"): List<Path> {
+            val dir = System.getProperty(property)
+                ?: error("Missing system property '$property' — BTA implementation jar directory not provided")
+            return implJarsFrom(Path.of(dir))
+        }
+
+        /**
+         * Default `-jvm-target` for snippet compilation, derived from the JVM
+         * that owns this process — `java.specification.version` is `"21"`
+         * on JDK 21, `"25"` on JDK 25, etc. The Kotlin inline-bytecode
          * compatibility rule requires the script's target to be ≥ the target
          * of any inline function it calls; the IntelliJ Platform 261.* (EAP
          * for 2026.1.x) ships inline functions compiled at target 25, so a
          * fixed target of "21" rejects them with `cannot inline bytecode
          * built with JVM target 25 into bytecode that is being built with
          * JVM target 21`. Deriving from the live JVM keeps the script's
-         * target in lock-step with whatever JDK Gradle / the test runner
-         * happens to run on — bumping the Gradle daemon JVM is then the
-         * single lever that controls the kotlinc target.
+         * target in lock-step with whatever JDK the IDE / the test runner
+         * happens to run on.
          *
-         * Defaults to `"21"` only as a last-resort fallback when the property
-         * is unset (e.g. an unusual embedding).
+         * Fails fast when the running JVM's version has no matching [JvmTarget]
+         * entry in the bundled BTA — silently downgrading (e.g. to 21) would
+         * resurrect the inline-bytecode failure above in a far less
+         * diagnosable form. The fix is to bump `mcp.kotlinc.version`.
          */
         val DEFAULT_JVM_TARGET: JvmTarget = getDefaultJvmTarget()
 
         private fun getDefaultJvmTarget(): JvmTarget {
-            val jvmTargetStr = System.getProperty("java.specification.version") ?: "21"
-            return JvmTarget.entries.find { it.stringValue == jvmTargetStr } ?: JvmTarget.JVM_21
+            val jvmTargetStr = System.getProperty("java.specification.version")
+                ?: error("System property 'java.specification.version' is not set on this JVM")
+            return JvmTarget.entries.find { it.stringValue == jvmTargetStr }
+                ?: error(
+                    "The running JVM ('java.specification.version'=$jvmTargetStr) has no matching " +
+                        "JvmTarget in the bundled Kotlin Build Tools API. Bump mcp.kotlinc.version " +
+                        "or run on a JDK the bundled compiler supports " +
+                        "(known targets: ${JvmTarget.entries.joinToString { it.stringValue }})."
+                )
         }
     }
 }

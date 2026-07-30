@@ -124,7 +124,7 @@ class ExecutionStorageTaskTest : BasePlatformTestCase() {
         assertTrue("output.jsonl should contain FAILED message", outputContent.contains("FAILED"))
         assertTrue(
             "output.jsonl should contain compilation error info:\n$outputContent",
-            outputContent.contains("Script compilation/evaluation failed") || outputContent.contains("Compiler Errors/Warnings"))
+            outputContent.contains("Compiler error") || outputContent.contains("Kotlin compilation has failed"))
     }
 
     fun testCompilationErrorIncludesExecuteWrapperMigrationHintForExecuteSteroidCode(): Unit = timeoutRunBlocking(30.seconds) {

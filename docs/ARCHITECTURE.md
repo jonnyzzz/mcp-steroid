@@ -10,7 +10,7 @@ This document is a concise architecture map. For authoritative details, see `AGE
 - Prompt articles: served via the dedicated `steroid_fetch_resource` MCP tool (NOT via `resources/list` / `prompts/list` — the tool requires `project_name` for IDE-conditional rendering).
 - Vision tools: screenshot/input tooling with artifact storage.
 - OCR helper: external `ocr-tesseract` app invoked via process client.
-- Kotlinc helper: bundled Kotlin compiler invoked via process client.
+- Kotlin compilation: bundled Kotlin Build Tools implementation jars (`kotlinc/` in the plugin dist), driven in-process via the Build Tools API in an isolated classloader.
 - Storage: execution logs/artifacts (append-only, under `~/.mcp-steroid/runs/` by default).
 - **devrig CLI** (`npx-kt/`): stateless stdio MCP server + `backend` /
   `project` CLI that discovers IntelliJ instances on the host and
@@ -44,7 +44,7 @@ This document is a concise architecture map. For authoritative details, see `AGE
 - Execution: `src/main/kotlin/com/jonnyzzz/intellij/mcp/execution/*`
 - Vision: `src/main/kotlin/com/jonnyzzz/intellij/mcp/server/Vision*`
 - OCR: `src/main/kotlin/com/jonnyzzz/intellij/mcp/ocr/*` and `ocr-tesseract/`
-- Kotlinc: `src/main/kotlin/com/jonnyzzz/intellij/mcp/koltinc/*` and bundled `kotlinc/`
+- Kotlin compilation: `src/main/kotlin/com/jonnyzzz/intellij/mcp/koltinc/*` and the bundled BTA jars in `kotlinc/`
 
 ## Related Docs
 - `README.md`: usage, HTTP flow, tool contracts

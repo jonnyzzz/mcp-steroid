@@ -9,7 +9,7 @@ import java.nio.file.Path
 /**
  * Writes a minimal bundled-plugin zip with entries:
  *  - `mcp-steroid/lib/plugin.txt` = [version]
- *  - `mcp-steroid/kotlinc/bin/kotlinc` (executable)
+ *  - `mcp-steroid/ocr-tesseract/bin/ocr-tesseract` (executable)
  *
  * Returns [zip] for chaining.
  */
@@ -17,7 +17,7 @@ internal fun bundledPluginZipFixture(zip: Path, version: String): Path {
     Files.createDirectories(zip.parent)
     ZipArchiveOutputStream(Files.newOutputStream(zip)).use { out ->
         out.addZipFile("mcp-steroid/lib/plugin.txt", version)
-        out.addZipFile("mcp-steroid/kotlinc/bin/kotlinc", "#!/usr/bin/env sh\n", mode = 0b111_101_101)
+        out.addZipFile("mcp-steroid/ocr-tesseract/bin/ocr-tesseract", "#!/usr/bin/env sh\n", mode = 0b111_101_101)
     }
     return zip
 }

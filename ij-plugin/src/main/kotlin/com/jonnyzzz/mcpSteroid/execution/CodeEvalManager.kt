@@ -7,26 +7,20 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.getProjectCachePath
 import com.intellij.openapi.util.registry.Registry
-import com.intellij.project.stateStore
+import com.intellij.util.execution.ParametersListUtil
+import com.jonnyzzz.mcpSteroid.PluginDescriptorProvider
 import com.jonnyzzz.mcpSteroid.koltinc.KotlinBuildsSession
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.koltinc.scriptClassLoaderFactory
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
-import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.io.path.ExperimentalPathApi
-import kotlin.io.path.createDirectories
-import kotlin.io.path.createDirectory
-import kotlin.io.path.deleteRecursively
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.io.path.div
-import kotlin.io.path.notExists
 import kotlin.io.path.writeText
 import kotlinx.coroutines.TimeoutCancellationException
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
@@ -47,21 +41,20 @@ class CodeEvalManager(
 ) : Disposable {
     override fun dispose() {
         kotlinBuildsSession.close()
-        @OptIn(ExperimentalPathApi::class)
-        try {
-            btaWorkingDir.deleteRecursively()
-        } catch (e: Exception) {
-            log.warn("Failed to delete Kotlin Build Tools API working directory", e)
-        }
     }
 
     private val log = thisLogger()
     private val compilationMutex = Mutex()
-    private val btaWorkingDir = project.getProjectCachePath("kotlin-bta").also {
-        if (it.notExists()) it.createDirectories()
-    }
+
+    // The BTA implementation jars ship as plain files in the plugin distribution's
+    // `kotlinc/` folder (the successor of the old kotlinc dist) — nothing is
+    // extracted at runtime, and the compiler impl classes never reach the IDE
+    // plugin classloader: KotlinBuildsSession loads these jars into its own
+    // isolated classloader, and the Kotlin daemon builds its -cp from them.
     private val kotlinBuildsSession = KotlinBuildsSession(
-        workingDir = btaWorkingDir,
+        implClasspath = KotlinBuildsSession.implJarsFrom(
+            PluginDescriptorProvider.getInstance().descriptor.pluginPath.resolve("kotlinc")
+        ),
         kotlinLogger = KotlinLoggerWrapper(log),
     )
 
@@ -103,10 +96,10 @@ class CodeEvalManager(
             val inputKt = compilerDir / "input.kt"
             inputKt.writeText(wrappedCode.code)
 
-            val extraParams = Registry.stringValue("mcp.steroid.kotlinc.parameters")
-                .split(",")
-                .map { it.trim() }
-                .filter { it.isBlank() }
+            // Space-separated argv tokens (quoting-aware), e.g. the default
+            // "-language-version 2.2 -api-version 2.2" becomes 4 tokens —
+            // applyArgumentStrings rejects entries with embedded spaces.
+            val extraParams = ParametersListUtil.parse(Registry.stringValue("mcp.steroid.kotlinc.parameters"))
 
             val compilerMessageRenderer = RecordingCompilerMessageRenderer()
             val compileResult = try {
@@ -116,49 +109,73 @@ class CodeEvalManager(
                     compilerMessageRenderer = compilerMessageRenderer,
                 ) {
                     if (extraParams.isNotEmpty()) {
-                        try {
-                            // Currently, it may wipe previously configured arguments, so it should be applied first
-                            applyArgumentStrings(extraParams)
-                        } catch (e: Exception) {
-                            resultBuilder.logException("Failed to apply extra arguments ${extraParams.joinToString()}", e)
-                        }
+                        // Must be applied FIRST: applyArgumentStrings re-applies every
+                        // argument key and would reset options configured before it back
+                        // to compiler defaults. Invalid registry parameters throw — the
+                        // generic handler below surfaces them as an execution error
+                        // instead of silently compiling without the requested flags.
+                        applyArgumentStrings(extraParams)
                     }
                     set(JvmCompilerArguments.CLASSPATH, compileClasspath)
                 }
             } catch (_: TimeoutCancellationException) {
-                resultBuilder.reportFailed("kotlinc stopped on timeout")
+                resultBuilder.reportFailed("Kotlin compilation stopped on timeout")
                 return null
             }
 
             val compilerMessages = compilerMessageRenderer.getRecordedMessages()
+            val renderedErrors = mutableListOf<String>()
             compilerMessages.forEach {
+                // User-code coordinates (remapped from the wrapped input.kt); no
+                // suffix at all for messages without a source location.
+                val where = it.location?.let { loc -> " at ${loc.remappedLocation(wrappedCode.lineMapping)}" }.orEmpty()
+                // The offending source line, as old kotlinc console output printed it.
+                // K2 diagnostics can be name-less ("Unresolved label.") — the line
+                // shows the agent WHAT failed, and downstream hint matching
+                // (ExecutionSuggestionService) relies on seeing the actual code.
+                val sourceLine = it.location?.lineContent
+                    ?.takeIf { line -> line.isNotBlank() }
+                    ?.let { line -> "\n    $line" }
+                    .orEmpty()
                 when(it.severity) {
                     CompilerMessageRenderer.Severity.DEBUG,
                     CompilerMessageRenderer.Severity.INFO -> resultBuilder
-                        .logProgress("Compiler output: ${it.message} at ${it.location?.remappedLocation(wrappedCode.lineMapping)}")
+                        .logProgress("Compiler output: ${it.message}$where")
                     CompilerMessageRenderer.Severity.WARNING -> resultBuilder
-                        .logMessage("Compiler warning: ${it.message} at ${it.location?.remappedLocation(wrappedCode.lineMapping)}")
-                    CompilerMessageRenderer.Severity.ERROR -> resultBuilder
-                        .logMessage("Compiler error: ${it.message} at ${it.location?.remappedLocation(wrappedCode.lineMapping)}")
+                        .logMessage("Compiler warning: ${it.message}$where$sourceLine")
+                    CompilerMessageRenderer.Severity.ERROR ->
+                        renderedErrors.add("Compiler error: ${it.message}$where$sourceLine")
                 }
             }
 
-            if (compilerMessages.isNotEmpty()) {
+            if (compilerMessages.isNotEmpty() || compileResult != CompilationResult.COMPILATION_SUCCESS) {
+                // Raw (non-remapped) locations on purpose — this file is for debugging
+                // the wrapped input.kt, unlike the agent-visible remapped messages above.
                 project.executionStorage.writeCodeExecutionData(
                     executionId,
                     "kotlin.txt",
-                    """
-                    $compileResult
-                    ---
-                    ${compilerMessages.joinToString { "${it.severity}: ${it.message} at ${it.location?.locationString}" }}
-                    """.trimIndent()
+                    buildString {
+                        appendLine(compileResult.toString())
+                        appendLine("---")
+                        for (message in compilerMessages) {
+                            appendLine("${message.severity}: ${message.message} at ${message.location?.locationString}")
+                        }
+                    }
                 )
             }
 
             when (compileResult) {
                 CompilationResult.COMPILATION_SUCCESS -> Unit
                 CompilationResult.COMPILATION_ERROR -> {
-                    resultBuilder.reportFailed("Kotlin compilation has failed")
+                    // Compiler errors ride in the FAILED message (not separate
+                    // logMessage lines): reportFailed feeds the error-hint engine
+                    // (ExecutionSuggestionService matches on errorMessages), and
+                    // the agent sees one coherent failure block — same shape the
+                    // old kotlinc-exit-code path had.
+                    resultBuilder.reportFailed(buildString {
+                        appendLine("Kotlin compilation has failed")
+                        renderedErrors.forEach { appendLine(it) }
+                    }.trimEnd())
                     return null
                 }
                 CompilationResult.COMPILATION_OOM_ERROR -> {
@@ -251,7 +268,12 @@ class CodeEvalManager(
         }
 
         override fun error(msg: String, throwable: Throwable?) {
-            logger.error(msg, throwable)
+            // Deliberately warn, not error: BTA routes every compiler ERROR message
+            // (i.e. a plain compilation failure of an agent script — normal operation
+            // here) through KotlinLogger.error, and IntelliJ's Logger.error files an
+            // IDE fatal-error report (and throws in tests). Actual failures surface
+            // via CompilationResult and the recorded compiler messages.
+            logger.warn(msg, throwable)
         }
 
         override fun info(msg: String) {
@@ -286,8 +308,23 @@ class CodeEvalManager(
             append(' ')
         }
 
-    private fun CompilerMessageRenderer.SourceLocation.remappedLocation(lineMapping: LineMapping): String =
-        lineMapping.remapCompilerOutput(locationString)
+    /**
+     * Agent-visible location: `input.kt:LINE:COL` with LINE remapped from
+     * wrapped-file to user-code coordinates. BTA hands us a structured
+     * [CompilerMessageRenderer.SourceLocation], so the line is remapped
+     * directly — the textual `LineMapping.remapCompilerOutput` regex expects
+     * kotlinc's `file:line:col:` output shape and would not match here.
+     * Wrapper-boilerplate lines (no mapping) keep their raw coordinates,
+     * matching the old kotlinc-output behavior.
+     */
+    private fun CompilerMessageRenderer.SourceLocation.remappedLocation(lineMapping: LineMapping): String {
+        val fileName = Paths.get(path).fileName.toString()
+        val position = when {
+            line > 0 && column > 0 -> ":${lineMapping.remapLine(line) ?: line}:$column"
+            else -> ""
+        }
+        return "$fileName$position"
+    }
 
     private class RecordingCompilerMessageRenderer : CompilerMessageRenderer {
         private val bufferedDiagnostics = ConcurrentLinkedQueue<CompilerMessage>()

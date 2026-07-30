@@ -25,7 +25,7 @@ src/main/kotlin/com/jonnyzzz/mcpSteroid/
 ├── vision/      # Screenshot, input dispatch
 ├── demo/        # Demo mode overlay
 ├── ocr/         # External OCR process
-├── koltinc/     # External kotlinc process
+├── koltinc/     # Kotlin Build Tools API (BTA) snippet compilation
 └── updates/     # Update checker
 ```
 
@@ -107,19 +107,22 @@ Get services: `project.service<MyService>()` or `service<AppService>()`. Use `ch
   needs to surface to the agent, not a control-flow signal to propagate.
 - Use `Logger.getInstance(MyClass::class.java)` for logging.
 
-### Cancellation and the `kotlinc` subprocess
+### Cancellation and the BTA compile
 
-`KotlincProcessClient.kotlinc(args, workingDir)` is a regular (non-`suspend`)
-`fun` that calls `ExecUtil.execAndGetOutput(commandLine, 120_000)`. The
-blocking JVM call does NOT check `kotlinx.coroutines` cancellation, so a
-cancelled caller coroutine will NOT terminate the in-flight kotlinc
-subprocess — kotlinc runs to completion (or its 120 s upper bound). This
-is **intentional**: killing kotlinc mid-compile is flaky on macOS+JDK21
-and the saved cycles are small. Nothing in `ij-plugin/src/main` calls
-`process.destroyForcibly()` on the kotlinc process, and adding such a
-call would defeat the contract. After `kotlinc(...)` returns, the
-CE-rethrow wrappers above ensure the cancellation propagates upstream
-cleanly. (Cluster A's A3, verified-by-inspection 2026-05-19.)
+Snippets compile through the Kotlin Build Tools API
+(`KotlinBuildsSession.compileKotlin`, `kotlin-cli/`): the blocking
+`executeOperation` runs in a child `async(Dispatchers.IO)`, and on timeout
+(120 s default) or caller cancellation the session calls
+`jvmOperation.cancel()` — BTA's **cooperative** cancellation (supported by
+compiler ≥ 2.3.20; in-process it flips the compiler's canceled
+status). BTA reports a cancelled operation
+with its own `OperationCancelledException` (a plain `RuntimeException`);
+`KotlinBuildsSession` translates it back into `CancellationException`, so
+the CE-rethrow rules above hold unchanged and a timeout still surfaces as
+`TimeoutCancellationException` → the "compilation stopped on timeout"
+failure in `CodeEvalManager`. This replaces the old non-cancellable
+`KotlincProcessClient` subprocess contract (removed with the BTA
+migration, PR #361).
 
 ## Build
 
@@ -399,20 +402,28 @@ script.
 ## Configuration
 
 Registry keys: `mcp.steroid.server.port`, `.host`, `.execution.timeout`, `.dialog.killer.enabled`,
-`.demo.enabled`, `.storage.path`, `.kotlinc.parameters`, `.kotlinc.home`.
+`.demo.enabled`, `.storage.path`, `.kotlinc.parameters`.
 
 ### WSL-hosted projects and `mcp.steroid.storage.path` ([#78](https://github.com/jonnyzzz/mcp-steroid/issues/78))
 
 Execution storage defaults to the IDE user's native `~/.mcp-steroid/runs/` directory, not the project.
-That keeps kotlinc's per-execution `compiled/` working directory off `\\wsl$\…` /
+That keeps BTA's per-execution compiler outputs off `\\wsl$\…` /
 `\\wsl.localhost\…` when a Windows IDE opens a WSL-hosted project. If
 `mcp.steroid.storage.path` is customized in this setup, keep the override on a native Windows volume;
-pointing it back into WSL recreates the eel/ijent environment-routing failure from #78.
+pointing it back into WSL makes compiler I/O use the UNC path again. The BTA migration removed the old
+`cmd.exe /c kotlinc.bat` environment-routing failure from #78, but direct BTA output on WSL storage
+remains unverified.
 
-### Kotlinc version-mismatch workaround
+### Kotlin compiler version
 
-When the IDE bundles newer Kotlin than the plugin's compiler: set `mcp.steroid.kotlinc.home` to
-`<IDE>/plugins/Kotlin/kotlinc` via Registry.
+The snippet compiler is the Kotlin Build Tools implementation pinned directly in
+`kotlin-cli/build.gradle.kts` (bundled as the plugin's `kotlinc/` jar folder). Its version is
+intentionally independent from the Kotlin Gradle plugin used to build the rest of the repo.
+`prompts` consumes `kotlin-cli`'s `kotlincDist` artifact and reads the compiler version from the
+loaded BTA; it must not resolve or version the RC Kotlin modules independently. Keep the direct
+literals in `kotlin-cli` and this module's compatibility/distribution checks aligned. When an IDE
+bundles a newer Kotlin than the snippet compiler can read (metadata is readable at most one minor
+ahead), bump those BTA literals — there is no runtime override.
 
 ### Script preprocessing (CodeButcher)
 

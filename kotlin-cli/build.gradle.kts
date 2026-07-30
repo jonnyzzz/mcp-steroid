@@ -24,8 +24,11 @@ val btaImplClasspath = configurations.resolvable("kotlinBuildToolsImplClasspath"
 }
 
 dependencies {
-    // Single version for -api/-compat/-impl: see the mcp.kotlinc.version comment
-    // in gradle.properties (-impl IS the snippet compiler).
+    // Single version for the BTA api and impl: see the mcp.kotlinc.version comment
+    // in gradle.properties (-impl IS the snippet compiler). kotlin-build-tools-compat
+    // is deliberately NOT bundled — it only adapts pre-2.3.0 impls to the
+    // KotlinToolchains API; for impl >= 2.3.0 the ServiceLoader finds the
+    // implementation directly and compat is dead weight.
     val kotlincVersion = providers.gradleProperty("mcp.kotlinc.version").get()
     val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
 
@@ -33,24 +36,44 @@ dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
 
     btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:$kotlincVersion")
-    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-compat:$kotlincVersion")
 
     testImplementation("junit:junit:4.13.2")
 }
 
+// --- kotlinc distribution: the BTA implementation jars as real files ---
+//
+// The jars are laid out as a directory and shipped as-is (plugin dist `kotlinc/`
+// folder — the successor of the old kotlinc dist; test JVMs get the directory
+// via a system property). BTA loads them with a URLClassLoader and the Kotlin
+// daemon builds its -cp from these very paths, so the jars MUST exist as plain
+// files on disk — and nothing ever needs to be unpacked at runtime.
+val btaImplJarsDir = layout.buildDirectory.dir("bta-impl-jars")
+
+val syncBtaImplJars = tasks.register<Sync>("syncBtaImplJars") {
+    from(btaImplClasspath)
+    into(btaImplJarsDir)
+}
+
+// Consumable configuration — exposes the BTA impl jar directory as an artifact
+val kotlincDistElements = configurations.create("kotlincDistElements") {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "kotlinc-dist"))
+    }
+}
+
+artifacts {
+    add(kotlincDistElements.name, btaImplJarsDir) {
+        builtBy(syncBtaImplJars)
+    }
+}
+
 tasks.test {
     useJUnit()
-}
-
-val copyForResourcesTask = tasks.register<Copy>("copyBtaImpForResources") {
-    val btaImplLocation = layout.buildDirectory.dir("bta-impl-jars/BTA-IMPL")
-
-    from(btaImplClasspath)
-    into(btaImplLocation)
-}
-
-sourceSets.main.configure {
-    resources.srcDir(
-        copyForResourcesTask.map { it.destinationDir.parentFile }
+    dependsOn(syncBtaImplJars)
+    systemProperty(
+        "mcp.steroid.bta.impl.dir",
+        btaImplJarsDir.get().asFile.absolutePath,
     )
 }
