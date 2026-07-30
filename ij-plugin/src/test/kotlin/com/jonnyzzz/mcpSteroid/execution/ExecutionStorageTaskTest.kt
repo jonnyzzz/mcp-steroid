@@ -125,6 +125,13 @@ class ExecutionStorageTaskTest : BasePlatformTestCase() {
         assertTrue(
             "output.jsonl should contain compilation error info:\n$outputContent",
             outputContent.contains("Compiler error") || outputContent.contains("Kotlin compilation has failed"))
+
+        // Raw compiler messages + verdict are persisted for debugging.
+        val kotlinTxt = execDir.resolve("kotlin.txt")
+        assertTrue("kotlin.txt with raw compiler messages should exist", kotlinTxt.exists())
+        assertTrue(
+            "kotlin.txt should carry the compilation verdict",
+            kotlinTxt.readText().contains("COMPILATION_ERROR"))
     }
 
     fun testCompilationErrorIncludesExecuteWrapperMigrationHintForExecuteSteroidCode(): Unit = timeoutRunBlocking(30.seconds) {

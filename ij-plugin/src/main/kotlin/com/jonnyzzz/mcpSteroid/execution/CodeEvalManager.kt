@@ -119,6 +119,9 @@ class CodeEvalManager(
                     set(JvmCompilerArguments.CLASSPATH, compileClasspath)
                 }
             } catch (_: TimeoutCancellationException) {
+                // Messages recorded before the timeout still land in kotlin.txt
+                // (the old subprocess path persisted partial output on timeout too).
+                persistCompilerMessages(executionId, compileResult = null, compilerMessageRenderer.getRecordedMessages())
                 resultBuilder.reportFailed("Kotlin compilation stopped on timeout")
                 return null
             }
@@ -127,7 +130,10 @@ class CodeEvalManager(
             val renderedErrors = mutableListOf<String>()
             compilerMessages.forEach {
                 // User-code coordinates (remapped from the wrapped input.kt); no
-                // suffix at all for messages without a source location.
+                // suffix at all for messages without a source location. The message
+                // text itself is remapped too — kotlinc occasionally embeds
+                // `input.kt:N:C:` references inside message bodies (#221 semantics).
+                val message = wrappedCode.lineMapping.remapCompilerOutput(it.message)
                 val where = it.location?.let { loc -> " at ${loc.remappedLocation(wrappedCode.lineMapping)}" }.orEmpty()
                 // The offending source line, as old kotlinc console output printed it.
                 // K2 diagnostics can be name-less ("Unresolved label.") — the line
@@ -140,29 +146,15 @@ class CodeEvalManager(
                 when(it.severity) {
                     CompilerMessageRenderer.Severity.DEBUG,
                     CompilerMessageRenderer.Severity.INFO -> resultBuilder
-                        .logProgress("Compiler output: ${it.message}$where")
+                        .logProgress("Compiler output: $message$where")
                     CompilerMessageRenderer.Severity.WARNING -> resultBuilder
-                        .logMessage("Compiler warning: ${it.message}$where$sourceLine")
+                        .logMessage("Compiler warning: $message$where$sourceLine")
                     CompilerMessageRenderer.Severity.ERROR ->
-                        renderedErrors.add("Compiler error: ${it.message}$where$sourceLine")
+                        renderedErrors.add("Compiler error: $message$where$sourceLine")
                 }
             }
 
-            if (compilerMessages.isNotEmpty() || compileResult != CompilationResult.COMPILATION_SUCCESS) {
-                // Raw (non-remapped) locations on purpose — this file is for debugging
-                // the wrapped input.kt, unlike the agent-visible remapped messages above.
-                project.executionStorage.writeCodeExecutionData(
-                    executionId,
-                    "kotlin.txt",
-                    buildString {
-                        appendLine(compileResult.toString())
-                        appendLine("---")
-                        for (message in compilerMessages) {
-                            appendLine("${message.severity}: ${message.message} at ${message.location?.locationString}")
-                        }
-                    }
-                )
-            }
+            persistCompilerMessages(executionId, compileResult, compilerMessages)
 
             when (compileResult) {
                 CompilationResult.COMPILATION_SUCCESS -> Unit
@@ -179,11 +171,17 @@ class CodeEvalManager(
                     return null
                 }
                 CompilationResult.COMPILATION_OOM_ERROR -> {
-                    resultBuilder.reportFailed("Kotlin compilation has failed with OutOfMemoryException")
+                    resultBuilder.reportFailed(buildString {
+                        appendLine("Kotlin compilation has failed with OutOfMemoryException")
+                        renderedErrors.forEach { appendLine(it) }
+                    }.trimEnd())
                     return null
                 }
                 CompilationResult.COMPILER_INTERNAL_ERROR -> {
-                    resultBuilder.reportFailed("Kotlin compiler has crashed")
+                    resultBuilder.reportFailed(buildString {
+                        appendLine("Kotlin compiler has crashed")
+                        renderedErrors.forEach { appendLine(it) }
+                    }.trimEnd())
                     return null
                 }
             }
@@ -264,6 +262,32 @@ class CodeEvalManager(
         }
     }
 
+
+    /**
+     * Persists the compiler verdict + all recorded messages as `kotlin.txt` under
+     * the exec folder. Raw (non-remapped) locations on purpose — this file is for
+     * debugging the wrapped input.kt, unlike the agent-visible remapped messages.
+     * [compileResult] is null when the compilation did not complete (timeout).
+     */
+    private suspend fun persistCompilerMessages(
+        executionId: ExecutionId,
+        compileResult: CompilationResult?,
+        compilerMessages: List<CompilerMessage>,
+    ) {
+        if (compilerMessages.isEmpty() && compileResult == CompilationResult.COMPILATION_SUCCESS) return
+        project.executionStorage.writeCodeExecutionData(
+            executionId,
+            "kotlin.txt",
+            buildString {
+                appendLine(compileResult?.toString() ?: "TIMEOUT")
+                appendLine("---")
+                for (message in compilerMessages) {
+                    val where = message.location?.let { " at ${it.locationString}" }.orEmpty()
+                    appendLine("${message.severity}: ${message.message}$where")
+                }
+            }
+        )
+    }
 
     private class KotlinLoggerWrapper(
         private val logger: Logger,
