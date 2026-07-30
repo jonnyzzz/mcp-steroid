@@ -47,15 +47,31 @@ enum class CliOptionType {
  * on it itself — orchestrating around the call, e.g. polling the IDE after the tool has returned — and
  * never sends it to the tool. It lives on [CliCommandSpec], not on [ToolSchema], precisely because it
  * is not a parameter: there is no value for the tool to receive.
+ *
+ * [name] is this option's identity — stable even if [flag] is later respelled — mirroring how
+ * [InputSchemaParamSpec.name] is identity and [InputSchemaParamSpec.cliFlag] is presentation.
  */
 data class CliExtraOption(
-    /** The CLI option, e.g. `--wait`. */
-    val flag: String,
+    /** Identity of this option, independent of its CLI spelling; e.g. `wait`. */
+    val name: String,
     /** What the CLI must parse for [flag]. */
     val type: CliOptionType,
     /** Short one-line help for [flag]. */
     val synopsis: String,
-)
+    /**
+     * The CLI option, e.g. `--wait`; defaults to `--$name` so a declaration needing no custom spelling
+     * states the name once.
+     */
+    val flag: String = "--$name",
+) {
+    init {
+        require(name.isNotBlank()) { "CliExtraOption needs a non-blank name" }
+        require(flag.startsWith("--")) {
+            "CliExtraOption '$name' flag must be a long option starting with '--', was '$flag'"
+        }
+        require(synopsis.isNotBlank()) { "CliExtraOption '$name' needs a one-line synopsis" }
+    }
+}
 
 /**
  * Describes how a tool appears as a `devrig` subcommand. This metadata carries no behavior and is not

@@ -53,7 +53,7 @@ class ToolSchemaCliMetadataTest {
         override val description = "Tool with a tool-level extra CLI option"
         override val cliSynopsis = "do a thing and optionally wait"
         override val cliExtraOptions = listOf(
-            CliExtraOption("--wait", CliOptionType.BOOLEAN, "poll until the thing is done"),
+            CliExtraOption(name = "wait", type = CliOptionType.BOOLEAN, synopsis = "poll until the thing is done"),
         )
 
         // One ordinary parameter, so "the extra option is not among the parameters" has something to
@@ -89,9 +89,55 @@ class ToolSchemaCliMetadataTest {
     fun `a declared tool-level extra CLI option surfaces on the command spec`() {
         val waiting = WaitingTool()
         assertEquals(
-            listOf(CliExtraOption("--wait", CliOptionType.BOOLEAN, "poll until the thing is done")),
+            listOf(
+                CliExtraOption(name = "wait", type = CliOptionType.BOOLEAN, synopsis = "poll until the thing is done"),
+            ),
             waiting.cli.extraOptions,
         )
+    }
+
+    @Test
+    fun `CliExtraOption name is identity and flag defaults to dash-dash-name`() {
+        val option = CliExtraOption(name = "wait", type = CliOptionType.BOOLEAN, synopsis = "poll until done")
+        assertEquals("wait", option.name)
+        assertEquals("--wait", option.flag)
+    }
+
+    @Test
+    fun `CliExtraOption flag can be overridden independently of name`() {
+        val option = CliExtraOption(
+            name = "wait",
+            type = CliOptionType.BOOLEAN,
+            synopsis = "poll until done",
+            flag = "--block-until-ready",
+        )
+        assertEquals("wait", option.name)
+        assertEquals("--block-until-ready", option.flag)
+    }
+
+    @Test
+    fun `CliExtraOption rejects a blank name`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            CliExtraOption(name = "", type = CliOptionType.BOOLEAN, synopsis = "poll until done")
+        }
+        assertTrue(error.message!!.contains("name"), "error should mention the missing name: ${error.message}")
+    }
+
+    @Test
+    fun `CliExtraOption rejects a blank synopsis`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            CliExtraOption(name = "wait", type = CliOptionType.BOOLEAN, synopsis = "")
+        }
+        assertTrue(error.message!!.contains("wait"), "error should name the declaration: ${error.message}")
+    }
+
+    @Test
+    fun `CliExtraOption rejects a flag that does not start with dash-dash`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            CliExtraOption(name = "wait", type = CliOptionType.BOOLEAN, synopsis = "poll until done", flag = "-wait")
+        }
+        assertTrue(error.message!!.contains("wait"), "error should name the declaration: ${error.message}")
+        assertTrue(error.message!!.contains("-wait"), "error should name the offending flag: ${error.message}")
     }
 
     @Test

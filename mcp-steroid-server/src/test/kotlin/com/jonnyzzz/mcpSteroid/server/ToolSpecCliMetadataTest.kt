@@ -203,6 +203,8 @@ class ToolSpecCliMetadataTest {
 
     @Test
     fun `each devrig tool declares exactly its expected tool-level extra CLI options`() {
+        // Asserts both the option's name (its identity) and its flag (its CLI spelling) so a future
+        // flag rename shows up here as a flag-only diff rather than silently passing on the name alone.
         val expectedExtrasByTool = mapOf(
             "steroid_list_projects" to emptyList(),
             "steroid_list_windows" to emptyList(),
@@ -211,7 +213,7 @@ class ToolSpecCliMetadataTest {
             "steroid_take_screenshot" to emptyList(),
             "steroid_input" to emptyList(),
             "steroid_fetch_resource" to emptyList(),
-            "steroid_open_project" to listOf("--wait"),
+            "steroid_open_project" to listOf("wait" to "--wait"),
         )
 
         val tools = devrigToolSpecsForTest()
@@ -223,12 +225,13 @@ class ToolSpecCliMetadataTest {
         for (tool in tools) {
             assertEquals(
                 expectedExtrasByTool.getValue(tool.name),
-                tool.cli.extraOptions.map { it.flag },
-                "${tool.name}: declared tool-level extra CLI options",
+                tool.cli.extraOptions.map { it.name to it.flag },
+                "${tool.name}: declared tool-level extra CLI options (name to flag)",
             )
         }
 
         val wait = tools.single { it.name == "steroid_open_project" }.cli.extraOptions.single()
+        assertEquals("wait", wait.name, "the extra option's identity is its name, not its flag")
         assertEquals(CliOptionType.BOOLEAN, wait.type, "--wait is a boolean switch")
         assertFalse(wait.synopsis.isBlank(), "--wait needs help text")
         // An extra option is not a tool input: it must not appear among the parameters.

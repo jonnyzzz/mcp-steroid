@@ -86,7 +86,7 @@ class OpenProjectToolSpec(
     // backend_name, this changes nothing on the MCP wire, so it needs no per-surface gate.
     override val cliExtraOptions = listOf(
         CliExtraOption(
-            flag = "--wait",
+            name = "wait",
             type = CliOptionType.BOOLEAN,
             synopsis = "poll until the project is initialized (no modal, indexing done)",
         ),
