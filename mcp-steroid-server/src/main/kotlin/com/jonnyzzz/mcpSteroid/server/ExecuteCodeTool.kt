@@ -14,6 +14,7 @@ import com.jonnyzzz.mcpSteroid.mcp.string
 import com.jonnyzzz.mcpSteroid.mcp.withDefaultValue
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJContextApiPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeToolDescriptionPromptArticle
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -83,10 +84,15 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
 
     val code = InputSchemaElement.param("code")
         .description(
-            "Kotlin suspend method body. The response carries an execution_id header plus ONLY " +
-                "what the script explicitly prints (println/printJson/printCsv/printToon) — the " +
-                "last expression's value is ignored by the runtime (function body, not a REPL), " +
-                "so print everything you need to see before the script ends."
+            "Kotlin code that becomes the body of a `suspend McpScriptContext.() -> Unit` " +
+                "function. The return value is ignored (not a REPL: the last expression's value " +
+                "is discarded, `return <value>` does not compile) — the response carries an " +
+                "execution_id header plus ONLY what the script explicitly prints " +
+                "(println/printJson/printCsv/printToon), so print everything you need to see " +
+                "before the script ends. Read about the McpScriptContext receiver (built-in " +
+                "helpers, print methods, file access, read/write actions) in " +
+                "${CodingWithIntelliJContextApiPromptArticle().uri} — fetch it with " +
+                "steroid_fetch_resource."
         )
         .string()
         .required()

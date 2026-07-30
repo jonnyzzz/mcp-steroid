@@ -65,7 +65,7 @@ If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` cal
 - Any IDE task → `mcp-steroid://prompt/skill`
 
 **Quick Start:**
-- Code is a suspend function body (never use runBlocking)
+- Your code becomes the body of a `suspend McpScriptContext.() -> Unit` function (never use runBlocking)
 - **Apart from the `execution_id:` header, the response contains ONLY what your script explicitly
   prints.** The last expression's value is IGNORED by the runtime — this is a function body, not a
   REPL, and there is no implicit return value. Print everything the caller needs (`println` /
