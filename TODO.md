@@ -1,5 +1,16 @@
 # TODO
 
+- [ ] **KtBlock matrix ignores the production kotlinc language/api pin (drift).**
+  `CodeEvalManager` compiles every `steroid_execute_code` script with the
+  `mcp.steroid.kotlinc.parameters` registry extras (`-language-version 2.3 -api-version 2.3` since
+  2026-07-31; was 2.2), but `KtBlockCompilationTestBase.compileAgainst` passes only
+  `-Werror`/`-jvm-target`/`-no-stdlib` — despite its "must match what KotlincCommandLineBuilder
+  produces" comment. A prompt fence using a language feature/stdlib API newer than the pin passes the
+  matrix yet fails at runtime. Fix: add the same LV/api flags to both the kotlinc invocation and the
+  `compilerOptions` cache-key list in `KtBlockCompilationTestBase`. NOTE: this invalidates the whole
+  KtBlock compile cache (60–120 min recompile) — land it right after a `kotlincVersion` bump (which
+  invalidates the cache anyway), never casually.
+
 - [ ] **steroid_input / take_screenshot #309 follow-ups** (the three core defects — modal-EDT hang,
   window-relative click coordinates, wrong window_id echo — are fixed and guarded by
   `SteroidInputDialogIntegrationTest`; remaining hardening surfaced by the 2026-07-30 review):

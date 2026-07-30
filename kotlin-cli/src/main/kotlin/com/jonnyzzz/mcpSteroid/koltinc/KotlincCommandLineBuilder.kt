@@ -103,14 +103,15 @@ class KotlincCommandLineBuilder(
          * JVM that owns this process — `java.specification.version` is `"21"`
          * on JDK 21, `"25"` on JDK 25, etc. The kotlinc inline-bytecode
          * compatibility rule requires the script's target to be ≥ the target
-         * of any inline function it calls; the IntelliJ Platform 261.* (EAP
-         * for 2026.1.x) ships inline functions compiled at target 25, so a
-         * fixed target of "21" rejects them with `cannot inline bytecode
-         * built with JVM target 25 into bytecode that is being built with
-         * JVM target 21`. Deriving from the live JVM keeps the script's
-         * target in lock-step with whatever JDK Gradle / the test runner
-         * happens to run on — bumping the Gradle daemon JVM is then the
-         * single lever that controls the kotlinc target.
+         * of any inline function it calls. Platform class-file versions as of
+         * 2026-07-30: 261.* is v65 (Java 21), 262.* and 263.* are v69
+         * (Java 25) — so a fixed target of "21" would reject 262+ platform
+         * inline functions with `cannot inline bytecode built with JVM
+         * target 25 into bytecode that is being built with JVM target 21`.
+         * Deriving from the live JVM keeps the script's target in lock-step
+         * with the JVM the IDE / Gradle / the test runner actually runs on
+         * (an IDE never runs on a JBR older than its own bytecode), so the
+         * host JVM is the single lever that controls the kotlinc target.
          *
          * Defaults to `"21"` only as a last-resort fallback when the property
          * is unset (e.g. an unusual embedding).
