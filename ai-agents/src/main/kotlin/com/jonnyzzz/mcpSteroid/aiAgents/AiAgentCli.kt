@@ -64,9 +64,8 @@ fun interface AiAgentCliRunner {
  * after start so a CLI that reads stdin sees EOF instead of blocking on a
  * pipe nobody writes to.
  *
- * On timeout the child process tree is killed (descendants captured before
- * the root dies — they reparent afterwards) and [IllegalStateException] is
- * thrown: a loud, bounded failure instead of today's unbounded hang.
+ * On timeout the child is killed and [IllegalStateException] is thrown:
+ * a loud, bounded failure instead of an unbounded hang.
  */
 class ProcessAiAgentCliRunner(
     private val timeout: Duration = 120.seconds,
@@ -78,11 +77,9 @@ class ProcessAiAgentCliRunner(
                 .redirectErrorStream(true)
                 .redirectOutput(outputFile.toFile())
                 .start()
-            process.outputStream.close() // stdin: immediate EOF
+            runCatching { process.outputStream.close() } // stdin: immediate EOF
             if (!process.waitFor(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)) {
-                val descendants = process.descendants().toList()
                 process.destroyForcibly()
-                descendants.forEach { it.destroyForcibly() }
                 throw IllegalStateException(
                     "'${invocation.binary} ${invocation.args.joinToString(" ")}' " +
                         "timed out after $timeout and was killed",

@@ -313,13 +313,11 @@ internal fun ensureWindowsPathEntry(binDir: Path) {
             .redirectOutput(ProcessBuilder.Redirect.DISCARD) // keep the MCP JSON-RPC channel clean
             .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start()
-        process.outputStream.close() // stdin: immediate EOF — never an open pipe the child could block on
+        runCatching { process.outputStream.close() } // stdin: immediate EOF — never an open pipe the child could block on
         // This runs on the devrig start-up path: an unbounded waitFor() would let a stuck
         // powershell block every `devrig mcp` start forever. Bounded + killed instead.
         if (!process.waitFor(60, TimeUnit.SECONDS)) {
-            val descendants = process.descendants().toList() // capture BEFORE the root dies — they reparent after
             process.destroyForcibly()
-            descendants.forEach { it.destroyForcibly() }
             System.err.println("[mcp-steroid] PowerShell PATH registration timed out after 60s and was killed; will retry next start")
         } else if (process.exitValue() == 0) {
             try {
