@@ -31,7 +31,7 @@ class CodeEvalManagerTest: BasePlatformTestCase()  {
         // become argv tokens for applyArgumentStrings) and the wiring itself —
         // with the extras silently dropped, this compile would wrongly succeed.
         Registry.get("mcp.steroid.kotlinc.parameters")
-            .setValue("-language-version 2.2 -api-version 2.2 -Werror", testRootDisposable)
+            .setValue("-language-version 2.3 -api-version 2.3 -Werror", testRootDisposable)
         // Unchecked cast — a warning this pipeline provably surfaces (see
         // McpServerIntegrationTest's compiler-warning scenario); -Werror must
         // turn it into a compilation failure.

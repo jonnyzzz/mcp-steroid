@@ -117,7 +117,7 @@ class CodeEvalManager(
             inputKt.writeText(wrappedCode.code)
 
             // Space-separated argv tokens (quoting-aware), e.g. the default
-            // "-language-version 2.2 -api-version 2.2" becomes 4 tokens —
+            // "-language-version 2.3 -api-version 2.3" becomes 4 tokens —
             // applyArgumentStrings rejects entries with embedded spaces.
             val extraParams = ParametersListUtil.parse(Registry.stringValue("mcp.steroid.kotlinc.parameters"))
 
