@@ -168,7 +168,10 @@ abstract class KtBlockCompilationTestBase {
         // BTA implementation jars come as real files from :kotlin-cli's bta-impl-jars
         // directory (Gradle sets the system property) — no runtime extraction.
         private val buildsSession: KotlinBuildsSession by lazy {
-            KotlinBuildsSession(KotlinBuildsSession.implJarsFromSystemProperty())
+            KotlinBuildsSession(KotlinBuildsSession.implJarsFrom(
+                Path.of(System.getProperty("mcp.steroid.bta.impl.dir")
+                    ?: error("Gradle sets mcp.steroid.bta.impl.dir (see prompts/build.gradle.kts)"))
+            ))
         }
 
         private val classpathCache = mutableMapOf<String, List<Path>>()
