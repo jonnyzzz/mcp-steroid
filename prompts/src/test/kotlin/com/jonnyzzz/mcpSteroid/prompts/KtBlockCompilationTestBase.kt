@@ -141,7 +141,7 @@ abstract class KtBlockCompilationTestBase {
                 buildsSession.compileKotlin(
                     sources = listOf(sourceFile) + ijPluginSourceFiles(),
                     destinationDir = outputJar,
-                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
+                    compilerMessageRenderer = renderer,
                 ) {
                     if (werror) set(CommonToolArguments.WERROR, true)
                     set(JvmCompilerArguments.CLASSPATH, classpath)

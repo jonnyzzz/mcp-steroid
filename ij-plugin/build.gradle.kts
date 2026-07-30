@@ -467,7 +467,7 @@ val ocrToolDist = configurations.create("ocrToolDist") {
 // Shipped as the plugin's top-level `kotlinc/` folder — deliberately NOT under
 // lib/, so the IDE plugin classloader never sees the compiler impl classes;
 // KotlinBuildsSession loads them into its own isolated URLClassLoader from
-// these on-disk paths (the Kotlin daemon also builds its -cp from them).
+// these on-disk paths.
 val kotlincDist = configurations.create("kotlincDist") {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -607,8 +607,9 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
             "kotlinc/kotlin-build-tools-cri-impl-$bundledKotlincVersion.jar",
             "kotlinc/kotlin-build-tools-impl-$bundledKotlincVersion.jar",
             "kotlinc/kotlin-compiler-embeddable-$bundledKotlincVersion.jar",
-            "kotlinc/kotlin-compiler-runner-$bundledKotlincVersion.jar",
-            "kotlinc/kotlin-daemon-client-$bundledKotlincVersion.jar",
+            // kotlin-daemon-embeddable stays even though the daemon flow is gone: BTA 2.4.10
+            // eagerly links daemon-common (CompileService.TargetPlatform) on every compile,
+            // and it is a declared runtime dep of kotlin-compiler-embeddable. See :kotlin-cli.
             "kotlinc/kotlin-daemon-embeddable-$bundledKotlincVersion.jar",
             "kotlinc/kotlin-reflect-1.6.10.jar",
             "kotlinc/kotlin-script-runtime-$bundledKotlincVersion.jar",
@@ -625,7 +626,8 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
                 appendLine("Update expectedKotlincFiles in build.gradle.kts if this change is intentional.")
             })
         }
-        // KotlinBuildsSession.defaultStdlibJar picks the single kotlin-stdlib jar —
+        // Exactly one kotlin-stdlib in kotlinc/ is a distribution invariant (snippet
+        // classpaths and the tests' stdlib lookup rely on it) —
         // guard that runtime invariant at build time.
         check(kotlincFiles.count { it.substringAfterLast('/').startsWith("kotlin-stdlib") } == 1) {
             "kotlinc/ must contain exactly one kotlin-stdlib jar: $kotlincFiles"
