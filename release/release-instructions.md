@@ -19,6 +19,24 @@ advance `website` to publish.** This is done as a release step, AFTER the GitHub
 (see "Stage 7c: Advance the `website` branch"), because the generated `install.sh` / `updatePlugins.xml`
 resolve the just-published release.
 
+**Advancing `website` is the rollout trigger, not just a docs update.** The deploy regenerates and
+publishes `version.json` + `install.sh` + `install.ps1` atomically (one `generateWebsite` task, one
+Pages artifact), and devrig **auto-updates** off `version.json`: every `devrig mcp` session that sees
+the promoted version downloads and runs the install script (see
+`docs/updates-check/devrig-auto-update.md`). Two rules follow:
+
+1. **`version.json` may only ever change as part of Stage 7c** — after the GitHub release with the
+   plugin ZIP, the devrig ZIP, and the EULA is published and verified
+   (`release/scripts/verify-release-ready.sh`). There is no other legitimate path that changes the
+   promoted version.
+2. **Never advance `website` inside a release window** — from the moment `VERSION` is bumped on
+   `main` (Stage 3) until the GitHub release is published (Stage 7b), do not merge `main → website`
+   for *any* reason, including unrelated website tweaks: the merge would carry the new `VERSION`,
+   and a deploy would try to promote a version whose release does not exist yet. (The build fails
+   hard in that case — `:website-gen`/`:installer-gen` cannot resolve the missing release, so the
+   old site stays live — but that is the backstop, not the workflow. Hold website tweaks until
+   Stage 7c, or land them before Stage 3.)
+
 The `website` branch is **origin-only** — `jb` runs TeamCity only and carries no GitHub Actions, so
 `website` is never synced to `jb`.
 
@@ -41,14 +59,16 @@ Correct order:
 4. Create tags on both remotes
 5. Create the GitHub release (attaches to existing tag) — plugin zip + devrig zip + EULA
 6. Upload to JetBrains Marketplace
-7. **Advance the `website` branch** (merge `main → website`, push `origin website`) — this is what
-   deploys the website; then verify it's live
+7. **Verify release readiness** (`release/scripts/verify-release-ready.sh`), then **advance the
+   `website` branch** (merge `main → website`, push `origin website`) — this is what deploys the
+   website AND promotes `version.json`, starting the devrig auto-update rollout; then verify it's live
 
 **Critical:** Steps 1-2 must complete before step 3. **The push to `main` in step 2 does NOT trigger a
 website deploy** — the Pages workflow only fires on the `website` branch. The website is published in
 step 7 by advancing `website` to `main`, which must happen AFTER the GitHub release exists (step 5) so
 the build can resolve the released ZIP URL + the released devrig binary that the new `install.sh`
-expects.
+expects — and because a live `version.json` immediately starts fleet-wide devrig auto-updates against
+those artifacts.
 
 ## Release Stages
 
@@ -342,14 +362,20 @@ filename as the asset name — it appears as `EULA` on the release page.
 **Immutable**: Once created, releases cannot have assets added. If a fix is needed,
 delete and recreate the release.
 
-**7c. Advance the `website` branch (this publishes the website):**
+**7c. Advance the `website` branch (this publishes the website AND starts the auto-update rollout):**
 
 The live site deploys from the `website` branch, and the generated `install.sh` / `install.ps1` /
 `updatePlugins.xml` resolve the **just-published** release (Stage 7b) — its plugin ZIP URL and the
-devrig binary whose CLI contract the new install scripts expect. So advance `website` to `main`
-**only now**, after the release exists:
+devrig binary whose CLI contract the new install scripts expect. Once deployed, the new
+`version.json` is the **point of no return**: devrig sessions everywhere start auto-updating to it
+(`docs/updates-check/devrig-auto-update.md`). So advance `website` **only now**, after the release
+exists — and gate the push on the readiness check:
 
 ```bash
+# MANDATORY gate: release exists, is published (not draft/prerelease), and carries
+# mcp-steroid-<version>-*.zip + devrig-<version>-*.zip + EULA. Fails loudly otherwise.
+release/scripts/verify-release-ready.sh
+
 git fetch origin
 git checkout website
 git merge main --ff-only        # website normally trails main by exactly the held commits
@@ -418,6 +444,24 @@ curl -sH "Cache-Control: no-cache" \
 
 # Release page should return HTTP 200
 curl -sI "https://devrig.dev/releases/<version>/?_=$(date +%s)" | head -3
+```
+
+**Verify version.json ↔ install-script agreement (auto-update contract):** devrig's auto-updater
+downloads `install.sh`/`install.ps1` and checks the baked version against `version.json`'s
+`version-base`; while they disagree (CDN propagation), fleets quietly retry (the skew guard), and a
+*persistent* disagreement decays every devrig into a "update manually" notice. Confirm agreement:
+
+```bash
+V_JSON=$(curl -s "https://devrig.dev/version.json?_=$(date +%s)" \
+  | sed -n 's/.*"version-base"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+V_SH=$(curl -s "https://devrig.dev/install.sh?_=$(date +%s)" \
+  | sed -n "s/^VERSION='\(.*\)'/\1/p")
+echo "version.json=$V_JSON install.sh=$V_SH"
+[ "$V_JSON" = "$V_SH" ] && echo AGREE || echo "DISAGREE — recheck after CDN TTL; persistent disagreement breaks auto-update"
+
+# the devrig artifact the served install.sh points at must be downloadable
+curl -s "https://devrig.dev/install.sh?_=$(date +%s)" \
+  | sed -n "s/^DEVRIG_URL='\(.*\)'/\1/p" | xargs curl -sIL -o /dev/null -w 'devrig zip: HTTP %{http_code}\n'
 ```
 
 **Cloudflare caching:** The website is behind Cloudflare. Query-string cache-busting

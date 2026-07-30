@@ -68,12 +68,18 @@ design therefore centers on cross-process coordination through files under
 ```
 
 `<pid>` is the devrig process driving the update. `<version>` in every filename
-is the **canonical base form** (`DevrigVersion.comparableVersion` — `0.101.441`,
-never `0.101.441-gh-abc1234`): `devrig install devrig` writes markers from its
-full build string while the supervisor works from `version.json`'s base string,
-and without canonicalization one release would produce two textually different
-marker files. Filenames parse unambiguously: `update-`, then digits, then
-`-version-`, then the version.
+is the **canonical base form**: strip build metadata
+(`DevrigVersion.comparableVersion`), then strip trailing `.0` components —
+`0.101.441-gh-abc1234` → `0.101.441`, and `0.102.0-r-abc1234` (the #360
+release-lane build version) → `0.102`, the same text as `version.json`'s
+`version-base`. `devrig install devrig` writes markers from its full build
+string while the supervisor works from `version.json`'s base string, and
+without canonicalization one release would produce two textually different
+marker files (trailing zeros compare equal in `VersionComparatorUtil`, so the
+canonical name treats them as equal too). Marker lookups and deletions are
+additionally **ordering-based**, not name-based, so a marker written under a
+non-canonical alias still resolves. Filenames parse unambiguously: `update-`,
+then digits, then `-version-`, then the version.
 
 Every file's **content** is JSON (kotlinx.serialization), carrying the full state
 for humans and tooling — `pid`, `hostname`, `currentVersion` (of the writing
@@ -226,6 +232,11 @@ CONFIRMED). Each tick, in order:
      dies mid-update the installer completes unsupervised, and the
      `devrig install devrig` handoff — not the dead supervisor — writes the
      completion marker.
+   - **Telemetry:** each actually-triggered update (lock held, skew guard
+     passed, installer spawning) is captured to the beacon as
+     `devrig_self_update` with `target_version` = the raw `version.json`
+     version; the beacon adds the running `devrig_version` itself. Aborted
+     ticks (caps, skew, lost lock) capture nothing.
 9. **Supervise:** `waitFor` with a 30 min timeout. On timeout, kill the **whole
    installer tree before releasing anything** — `ProcessHandle.descendants()`
    `destroyForcibly()` then the root, confirmed via `onExit()` with a short
@@ -382,7 +393,13 @@ running one release behind.
   `bin/devrig` can only target one platform, a pre-existing limitation of the
   install layout.
 - **version.json vs install-script skew during a release:** bounded quiet
-  retries via `update-skew-<v>`, then a diagnosable manual notice.
+  retries via `update-skew-<v>`, then a diagnosable manual notice. The release
+  process is the first line of defense: `version.json` + both install scripts
+  deploy atomically from the `website` branch, which is only advanced after the
+  GitHub release is verified complete
+  (`release/scripts/verify-release-ready.sh`; see
+  `release/release-instructions.md`, Stage 7c) — the skew window is CDN
+  propagation only.
 - **Flip-back after install:** self-healing via the step-3 torn-marker check;
   see the no-downgrade guard section.
 

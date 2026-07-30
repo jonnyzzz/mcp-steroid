@@ -232,7 +232,11 @@ long-lived **`website`** branch (`github-pages.yml`). `website` tracks `main` (a
 `git merge main → website`, normally often) but can deliberately lag it so website changes that depend
 on an **unreleased** devrig binary — e.g. a new `install.sh`/`install.ps1` CLI contract — stay off the
 live site until a matching GitHub release exists. The release process advances `website` AFTER
-publishing the release (`release/release-instructions.md` → "Stage 7c"). `website` is **origin-only**
+publishing the release (`release/release-instructions.md` → "Stage 7c"). **Advancing `website` is the
+devrig auto-update rollout trigger**: the deploy regenerates `version.json` + the install scripts
+atomically, and devrig sessions auto-install off `version.json` (`docs/updates-check/devrig-auto-update.md`).
+Never advance `website` while `VERSION` on `main` has no matching *published* GitHub release — gate the
+push with `release/scripts/verify-release-ready.sh`. `website` is **origin-only**
 (never synced to `jb`, which runs TeamCity only). A push to `main` no longer deploys the website.
 
 ## Git Remotes: `origin` vs `jb`

@@ -20,8 +20,16 @@ on:
   # website changes that depend on an UNRELEASED devrig binary — e.g. a new install.sh /
   # install.ps1 contract — stay off the live site until a matching GitHub release exists.
   # The release process advances `website` after publishing the release (see
-  # release/release-instructions.md, "Advance the website branch"). A push to `main` no
-  # longer deploys; promoting to `website` does.
+  # release/release-instructions.md, "Advance the website branch", gated by
+  # release/scripts/verify-release-ready.sh). A push to `main` no longer deploys;
+  # promoting to `website` does.
+  #
+  # DEPLOYING IS THE devrig AUTO-UPDATE ROLLOUT TRIGGER: this build regenerates
+  # version.json + install.sh + install.ps1 atomically, and devrig sessions auto-install
+  # off version.json (docs/updates-check/devrig-auto-update.md). The build fails hard when
+  # the GitHub release for VERSION (or one of its assets) is missing — :website-gen /
+  # :installer-gen resolve the real artifacts — so a premature `website` push cannot
+  # promote a version whose release is not ready; the old site stays live.
   push:
     branches: [website]
     paths:

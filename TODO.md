@@ -23,9 +23,10 @@
   - [ ] Transitional ping-pong hint: when the launcher version keeps regressing tick-over-tick
     (a pre-launcher agent registration pointing at an old tree), extend the restart notice with a
     "re-run `devrig install <agent>`" hint.
-  - [ ] Release-side: verify devrig.dev serves `install.sh`/`install.ps1` with the same promoted
-    version as `version.json` atomically enough (the skew guard tolerates propagation, but the
-    weekly URL-liveness action could also assert version.json ↔ script VERSION agreement).
+  - [ ] Weekly URL-liveness GH Action: also assert live version.json ↔ install-script VERSION
+    agreement (the release process now gates the website advance via
+    `release/scripts/verify-release-ready.sh` + Stage 9 agreement checks, but a scheduled
+    assertion would catch late CDN/publish drift too).
 
 - [ ] **Native MCP tools — implement per `docs/native-mcp-tools-design.md`** (spec landed first;
   research 3×-quorum validated + live-tested on IU-261.25134.95, 2026-07-22):
