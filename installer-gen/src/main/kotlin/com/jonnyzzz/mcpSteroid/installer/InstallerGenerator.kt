@@ -17,7 +17,8 @@ import kotlin.io.path.writeText
  * artifact), a pinned `--devrig-version`, or — by default — the devrig zip on the `v<VERSION>` GitHub
  * release (NOT "latest": "latest" can drift ahead/behind the `--version` the generator runs with, baking
  * a mismatched devrig into the install scripts). Whatever the source, the resolved zip's top dir is
- * ASSERTED to be `devrig-<version>-…` so a mismatch fails generation instead of shipping silently.
+ * ASSERTED to start with `devrig-<version>-` or `devrig-<version>.` (the 0.102+ `.0-r-` release lane,
+ * #360) so a mismatch fails generation instead of shipping silently.
  */
 
 /** The five supported platforms, keyed `<os>-<cpu>`. The script split is by OS. */
@@ -204,7 +205,8 @@ private fun resolveDevrigZipUrlForRelease(version: String, http: HttpFetcher): S
  * Resolve devrig coordinates and ASSERT the binary version matches [version]. Local override (a pre-built
  * / fixture zip): `--devrig-zip <file>` + `--devrig-url <public url>`. Otherwise download a published
  * release — pinned `--devrig-version <v>` or, by default, the `v<version>` release (NOT "latest") — and
- * compute sha from the bytes. Whatever the source, the zip's top dir must be `devrig-<version>-…`.
+ * compute sha from the bytes. Whatever the source, the zip's top dir must start with
+ * `devrig-<version>-` or `devrig-<version>.` (0.102+ release lane, #360).
  */
 internal fun resolveDevrig(flags: Map<String, List<String>>, http: HttpFetcher, version: String): DevrigEntry {
     val (url, bytes) = flags["devrig-zip"]?.firstOrNull()?.let { zip ->
@@ -229,11 +231,12 @@ internal fun resolveDevrig(flags: Map<String, List<String>>, http: HttpFetcher, 
         u to http.getBytes(u)
     }
     val (posix, win) = devrigLaunchers(bytes)
-    // The launcher subpath is `<topDir>/bin/devrig`; the top dir is `devrig-<version>-<hash>`. Assert it
-    // matches --version regardless of how devrig was resolved (release / pinned / local zip) — a mismatch
-    // means the install scripts would ship a devrig whose version disagrees with the repo VERSION.
+    // The launcher subpath is `<topDir>/bin/devrig`; the top dir is `devrig-<version>-<hash>` (pre-0.102
+    // releases) or `devrig-<version>.<counter>-<lane>-<hash>` (0.102+, e.g. the `.0-r-` release lane, #360).
+    // Assert it matches --version regardless of how devrig was resolved (release / pinned / local zip) — a
+    // mismatch means the install scripts would ship a devrig whose version disagrees with the repo VERSION.
     val topDir = posix.substringBefore('/')
-    require(topDir.startsWith("devrig-$version-")) {
+    require(topDir.startsWith("devrig-$version-") || topDir.startsWith("devrig-$version.")) {
         "devrig binary version in '$topDir' does not match repo VERSION '$version' — install scripts would ship a mismatched devrig"
     }
     return DevrigEntry(url = url, sha256 = sha256Hex(bytes), launcherPosix = posix, launcherWindows = win)

@@ -72,12 +72,15 @@ if (providedBuildVersion != null) {
     // The CI-computed version keeps the VERSION file content (all components) intact
     // and appends the CI counter plus the -<ci>-<hash> suffix.
     // e.g. VERSION=0.92.0 + counter=441 + hash=abcdef1 → 0.92.0.441-jb-abcdef1
+    // Counter 0 is rejected: `<base>.0` is reserved for the release lane (`<base>.0-r-<hash>`,
+    // see #360) — a zero CI counter would tie with the release and leave the ordering to the
+    // lane word and hash tokens.
     val expected = Regex(
-        "^" + Regex.escape(baseVersion) + "\\.\\d+-(gh|jb)-" + Regex.escape(gitHash) + "$"
+        "^" + Regex.escape(baseVersion) + "\\.[1-9]\\d*-(gh|jb)-" + Regex.escape(gitHash) + "$"
     )
     require(expected.matches(providedBuildVersion)) {
         "mcp.build.version='$providedBuildVersion' does not match expected format " +
-            "'${baseVersion}.<counter>-(gh|jb)-${gitHash}'. " +
+            "'${baseVersion}.<counter>-(gh|jb)-${gitHash}' (counter >= 1; 0 is reserved for the release lane). " +
             "The build number must be composed upstream (GitHub Actions run_number or " +
             "TeamCity buildNumber service message) and passed in unchanged — this build " +
             "does not rewrite it."
@@ -92,8 +95,14 @@ if (providedBuildVersion != null) {
 // compileKotlin is only re-run when sources actually change.
 // The git hash is the only freshness signal.
 val localBuildCounter = "19999-SNAPSHOT"
+// Release lane `<base>.0-r-<hash>` (#360): all lanes share the `<base>.<counter>-<lane>-<hash>`
+// token layout, so IntelliJ's VersionComparatorUtil (the raw comparator behind Marketplace and
+// custom-repository update checks) never reaches the git hash. Counter `0` is an all-zero digit
+// run, ranking below every non-zero CI counter — any gh/jb build of the same base is an update
+// over the release. The `r` lane word is the comparator's own RELEASE keyword, shielding a hash
+// that would otherwise tokenize as the ALPHA/BETA/MILESTONE marker (a/b/m…) or as a number.
 version = when {
-    isReleaseBuild -> "$baseVersion-$gitHash"
+    isReleaseBuild -> "$baseVersion.0-r-$gitHash"
     providedBuildVersion != null -> providedBuildVersion
     else -> "$baseVersion.$localBuildCounter-$gitHash"
 }

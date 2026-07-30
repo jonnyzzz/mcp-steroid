@@ -114,4 +114,34 @@ class VersionComparatorUtilTest {
     // the bare SNAPSHOT marker (no counter) still sorts before its release, as in Maven
     assertTrue(VersionComparatorUtil.compare("0.101-SNAPSHOT", "0.101") < 0)
   }
+
+  @Test
+  fun releaseLaneOrdersHashFreeAcrossLanes() {
+    // 0.102+ release shape from the root build script: <VERSION>.0-r-<hash> (#360). The IDE's
+    // plugin manager compares the raw strings with this comparator, so the ordering must hold
+    // for every hash spelling: a hash starting with a/b/m would otherwise read as the
+    // ALPHA/BETA/MILESTONE keyword, and a leading digit as a number.
+    val hashes = listOf("40690055", "a1b2c3d", "b1c2d3e", "m1n2o3p", "f9e8d7c", "0abc123", "9999999")
+    for (releaseHash in hashes) {
+      val release = "0.102.0-r-$releaseHash"
+      for (ciHash in hashes) {
+        // any CI build of the base is an update over the release: the release counter 0 is an
+        // all-zero digit run (_WS) and loses to every non-zero CI counter before the
+        // comparison can reach the lane word or the hash
+        assertTrue(VersionComparatorUtil.compare(release, "0.102.1-jb-$ciHash") < 0)
+        assertTrue(VersionComparatorUtil.compare(release, "0.102.566-jb-$ciHash") < 0)
+        assertTrue(VersionComparatorUtil.compare(release, "0.102.566-gh-$ciHash") < 0)
+        // the local snapshot band stays the newest of the base
+        assertTrue(VersionComparatorUtil.compare("0.102.19999-SNAPSHOT-$ciHash", release) > 0)
+      }
+      // already-shipped 0.101 strings (old release + CI shapes) order below every 0.102 artifact
+      assertTrue(VersionComparatorUtil.compare("0.101-40690055", release) < 0)
+      assertTrue(VersionComparatorUtil.compare("0.101.566-jb-90ac87b", release) < 0)
+      // the `r` lane word ranks as the RELEASE keyword, so the release never sinks below its
+      // own promoted base, whatever the hash spelling
+      assertTrue(VersionComparatorUtil.compare(release, "0.102") > 0)
+    }
+    // a release of the NEXT base outranks every artifact of the previous base
+    assertTrue(VersionComparatorUtil.compare("0.103.0-r-a1b2c3d", "0.102.999-jb-40690055") > 0)
+  }
 }

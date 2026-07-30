@@ -30,6 +30,7 @@ class BackendVersionSkewTest {
     fun `versionBase extracts the leading major-minor prefix`() {
         assertEquals("0.100", BackendVersionSkew.versionBase("0.100-409f23a2"))
         assertEquals("0.100", BackendVersionSkew.versionBase("0.100.19999-SNAPSHOT-9b6783a6"))
+        assertEquals("0.102", BackendVersionSkew.versionBase("0.102.0-r-40690055")) // 0.102+ release lane (#360)
         assertEquals("0.101", BackendVersionSkew.versionBase("0.101"))
         assertEquals("1.2", BackendVersionSkew.versionBase(" 1.2.3 "))
         assertNull(BackendVersionSkew.versionBase(""))
@@ -42,6 +43,7 @@ class BackendVersionSkewTest {
         // The exact strings that made the old exact-match scheme warn spuriously.
         assertFalse(BackendVersionSkew.isSkewed("0.100.19999-SNAPSHOT-9b6783a6", "0.100-409f23a2"))
         assertFalse(BackendVersionSkew.isSkewed("0.101", "0.101"))
+        assertFalse(BackendVersionSkew.isSkewed("0.102.0-r-40690055", "0.102.566-jb-90ac87b"))
     }
 
     @Test

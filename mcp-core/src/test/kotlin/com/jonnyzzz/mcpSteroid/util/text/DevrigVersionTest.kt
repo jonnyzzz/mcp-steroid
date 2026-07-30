@@ -68,4 +68,21 @@ class DevrigVersionTest {
     assertFalse(updateAvailable("0.102", "0.101.19999-SNAPSHOT-5d18a187"))
     assertFalse(updateAvailable("999.0", "0.101.19999-SNAPSHOT-5d18a187"))
   }
+
+  @Test
+  fun releaseLaneWithCounterAndLaneMarker() {
+    // 0.102+ release lane <base>.0-r-<hash> (#360): the uniform <base>.<counter>-<lane>-<hash>
+    // layout; everything after the first `-` is still build metadata
+    val release = DevrigVersion.parse("0.102.0-r-40690055")
+    assertFalse(release.isSnapshotBuild)
+    assertEquals("0.102.0", release.comparableVersion)
+
+    // no self-nag: the promoted base is not an update over its own release build
+    assertFalse(DevrigVersion.isUpdateAvailable(current = release, promoted = DevrigVersion.parse("0.102")))
+    assertTrue(DevrigVersion.isUpdateAvailable(current = release, promoted = DevrigVersion.parse("0.103")))
+
+    // a CI build of the same base is newer than the release; hash spelling carries no precedence
+    assertTrue(DevrigVersion.parse("0.102.441-jb-abcdef1") > release)
+    assertEquals(0, DevrigVersion.parse("0.102.0-r-a1b2c3d").compareTo(DevrigVersion.parse("0.102.0-r-f9e8d7c")))
+  }
 }

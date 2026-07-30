@@ -376,6 +376,27 @@ class InstallerGeneratorTest {
     }
 
     @Test
+    fun `resolveDevrig accepts the 0-102-plus release top-dir shape`(@TempDir dir: Path) {
+        val zip = dir.resolve("devrig.zip")
+        // 0.102+ release zips use the uniform lane layout: devrig-<version>.0-r-<hash> (#360)
+        ZipOutputStream(Files.newOutputStream(zip)).use { z ->
+            z.putNextEntry(ZipEntry("devrig-0.102.0-r-abc1234/bin/devrig")); z.write("#!/bin/sh".encodeToByteArray()); z.closeEntry()
+            z.putNextEntry(ZipEntry("devrig-0.102.0-r-abc1234/bin/devrig.bat")); z.write("@echo off".encodeToByteArray()); z.closeEntry()
+        }
+        val flags = mapOf("devrig-zip" to listOf(zip.toString()), "devrig-url" to listOf("https://example.com/devrig-0.102.0-r-abc1234.zip"))
+        val http = object : HttpFetcher {
+            override fun head(url: String) = error("no network")
+            override fun getBytes(url: String) = error("no network")
+        }
+        val devrig = resolveDevrig(flags, http, version = "0.102")
+        assertEquals("devrig-0.102.0-r-abc1234/bin/devrig", devrig.launcherPosix)
+
+        // a differing base still fails fast — and "0.10" must not prefix-match "0.102"
+        val ex = assertFailsWith<IllegalArgumentException> { resolveDevrig(flags, http, version = "0.10") }
+        assertTrue(ex.message!!.contains("does not match repo VERSION '0.10'"), ex.message!!)
+    }
+
+    @Test
     fun `validateDevrig rejects a placeholder url`() {
         assertFailsWith<IllegalArgumentException> {
             validateDevrig(DevrigEntry(

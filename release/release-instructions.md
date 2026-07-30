@@ -279,14 +279,17 @@ flag needed). Every artifact in the release ZIPs is compiled from source by this
 very invocation; nothing is assembled from cache entries. Expect the build to
 take correspondingly longer than a regular dev build.
 
-The resulting plugin ZIP is in `ij-plugin/build/distributions/mcp-steroid-<version>-<gitHash>.zip`.
-The devrig CLI ZIP is in `npx-kt/build/distributions/devrig-<version>-<gitHash>.zip`.
+The resulting plugin ZIP is in `ij-plugin/build/distributions/mcp-steroid-<version>.0-r-<gitHash>.zip`.
+The devrig CLI ZIP is in `npx-kt/build/distributions/devrig-<version>.0-r-<gitHash>.zip`.
 The `<gitHash>` must match the current HEAD (the version bump commit) for both — building
 them in one Gradle invocation guarantees the same hash.
 
 **devrig zip naming.** `:npx-kt:distZip` sets only `archiveBaseName = "devrig"`, so the
-release archive is Gradle's default `devrig-<version>-<gitHash>.zip`, matching the plugin
-zip's `mcp-steroid-<version>-<gitHash>.zip` convention. Local/dev builds (without
+release archive is Gradle's default `devrig-<version>.0-r-<gitHash>.zip`, matching the plugin
+zip's `mcp-steroid-<version>.0-r-<gitHash>.zip` convention. The `.0-r-` infix is the release
+lane of the uniform `<base>.<counter>-<lane>-<hash>` version layout (#360): counter `0` ranks
+below every CI counter and the `r` lane word keeps the git hash out of IntelliJ's version
+comparison. Local/dev builds (without
 `-Pmcp.release.build=true`) carry the SNAPSHOT counter:
 `devrig-<version>.19999-SNAPSHOT-<gitHash>.zip`. Only the non-SNAPSHOT name is a release
 artifact; ignore SNAPSHOT zips left over from dev builds.
@@ -318,8 +321,8 @@ the tag already exists on the remote — drop `--target` from the `gh` command.
 
 ```bash
 gh release create "v<version>" \
-  "ij-plugin/build/distributions/mcp-steroid-<version>-<gitHash>.zip" \
-  "npx-kt/build/distributions/devrig-<version>-<gitHash>.zip" \
+  "ij-plugin/build/distributions/mcp-steroid-<version>.0-r-<gitHash>.zip" \
+  "npx-kt/build/distributions/devrig-<version>.0-r-<gitHash>.zip" \
   EULA \
   --repo jonnyzzz/mcp-steroid \
   --notes-file "release/notes/<version>.md" \
@@ -330,7 +333,7 @@ gh release create "v<version>" \
 it with HTTP 422. The release attaches to the existing tag automatically.
 
 **Assets**: The `gh` CLI uses each source filename as the asset name, so the release page
-carries `mcp-steroid-<version>-<gitHash>.zip` (plugin), `devrig-<version>-<gitHash>.zip`
+carries `mcp-steroid-<version>.0-r-<gitHash>.zip` (plugin), `devrig-<version>.0-r-<gitHash>.zip`
 (devrig CLI), and `EULA`.
 
 **EULA**: The root `EULA` file is uploaded directly. The `gh` CLI uses the source
@@ -363,7 +366,7 @@ the Pages workflow; the deploy + verification happen in Stage 9.
 ### Stage 8: Upload to JetBrains Marketplace
 
 ```bash
-release/scripts/publish-marketplace.sh "ij-plugin/build/distributions/mcp-steroid-<version>-<gitHash>.zip"
+release/scripts/publish-marketplace.sh "ij-plugin/build/distributions/mcp-steroid-<version>.0-r-<gitHash>.zip"
 ```
 
 Requires `~/.marketplace` (one-line JetBrains permanent token).
@@ -454,7 +457,7 @@ The website template automatically renders an obsolete banner on older release p
 | `CONTRIBUTORS.md` | Contributor acknowledgements (update each release) |
 | `VERSION` | Current plugin version (`X.Y.Z`) |
 | `EULA` | End User License Agreement (uploaded to GitHub releases) |
-| `npx-kt/build/distributions/devrig-<version>-<gitHash>.zip` | devrig CLI archive (`:npx-kt:distZip`); uploaded to GitHub releases |
+| `npx-kt/build/distributions/devrig-<version>.0-r-<gitHash>.zip` | devrig CLI archive (`:npx-kt:distZip`); uploaded to GitHub releases |
 | `release/notes/<version>.md` | Release notes (used as GitHub release body) |
 | `release/scripts/bump-version.sh` | Version bump with rerun guard |
 | `release/scripts/publish-marketplace.sh` | JetBrains Marketplace upload (Stable channel) |
