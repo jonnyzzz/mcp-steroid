@@ -14,18 +14,21 @@ class IndexingInProgressDetectionTest {
 
     @Test
     fun `detects the still-indexing message the server emits while indexing`() {
+        // #154: the result carries no [PRE]/[RUN]/[POST] framing; a pre-flight failure is a single
+        // FAILED line that names the step and modality profile, with the marker inside it.
         val text = """
             execution_id: eid_x-integration-test
-            [PRE] wait for smart mode
-            ERROR: $INDEXING_IN_PROGRESS_MARKER: the IDE is still indexing this project, so it is not ready
-            yet. This is normal and expected … just keep polling: call this tool again to continue waiting.
+            FAILED: pre-flight 'wait for smart mode' (modal=smart_non_modal): $INDEXING_IN_PROGRESS_MARKER: the IDE is
+            still indexing this project, so it is not ready yet. This is normal and expected … just keep
+            polling: call this tool again to continue waiting.
         """.trimIndent()
         assertTrue(isIndexingInProgress(text))
     }
 
     @Test
     fun `a normal successful result is not still-indexing`() {
-        assertFalse(isIndexingInProgress("execution_id: eid_x\n[RUN] script\nJDKs registered\ndone"))
+        // #154: a successful result is just the execution_id header plus the script's own output.
+        assertFalse(isIndexingInProgress("execution_id: eid_x\nJDKs registered\ndone"))
     }
 
     @Test

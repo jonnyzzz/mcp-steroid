@@ -14,6 +14,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -53,6 +57,40 @@ class ExecutionManagerTest : BasePlatformTestCase() {
         )
         assertFalse("non_modal should pass the non-modal gate headless: ${getTextContent(result)}", result.isError)
         assertTrue("Should have output", getTextContent(result).contains("hi non_modal"))
+    }
+
+    /**
+     * #154: the tool result must be machine-parseable. A script that prints a single JSON document
+     * yields exactly the `execution_id:` header plus the script's own stdout — no `[PRE]`/`[RUN]`/
+     * `[POST]` modal-mode framing interleaved (that progress goes to the IDE log only). A consumer
+     * that strips the execution_id line and JSON-parses the rest must succeed.
+     */
+    fun testJsonScriptOutputIsParseableAfterStrippingExecutionId(): Unit = timeoutRunBlocking(60.seconds) {
+        val manager = project.service<ExecutionManager>()
+        val result = manager.executeWithProgress(
+            testExecParams(
+                """printJson(mapOf("leaf" to "Show line numbers", "matches" to listOf(1, 2, 3)))""",
+                modal = ModalMode.SMART_NON_MODAL,
+            ),
+            NoOpProgressReporter,
+        )
+        val text = getTextContent(result)
+        assertFalse("Script must succeed: $text", result.isError)
+
+        val lines = text.lines()
+        assertTrue("First line must be the execution_id header, got: $text", lines.first().startsWith("execution_id: "))
+        lines.forEach { line ->
+            assertFalse(
+                "Stage framing must never appear in the tool result (#154), got: $line",
+                line.startsWith("[PRE]") || line.startsWith("[RUN]") || line.startsWith("[POST]")
+            )
+        }
+
+        // The contract from the issue: strip the execution_id line, parse the rest as JSON.
+        val payload = lines.drop(1).joinToString("\n")
+        val json = Json.parseToJsonElement(payload).jsonObject
+        assertEquals("Show line numbers", json.getValue("leaf").jsonPrimitive.content)
+        assertEquals(3, json.getValue("matches").jsonArray.size)
     }
 
     fun testParentCoroutineCancellationUnwindsExecution(): Unit = timeoutRunBlocking(60.seconds) {

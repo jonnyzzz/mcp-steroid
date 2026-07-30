@@ -935,8 +935,9 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
      * The synthetic script blocks via `kotlinx.coroutines.delay` (cancellation-
      * cooperative) for far longer than the requested timeout, so `withTimeout`
      * inside `ScriptExecutor` fires its `TimeoutCancellationException` path
-     * and `resultBuilder.reportFailed("Execution timed out after $timeout seconds")`
-     * is the user-visible signal.
+     * and `resultBuilder.reportFailed("Execution timed out after $timeout seconds
+     * while running the script body (modal=…; pre-flight completed)")` is the
+     * user-visible signal.
      */
     fun testExecuteCodeTimeoutReturnsCleanErrorNotHttp500(): Unit = timeoutRunBlocking(60.seconds) {
         val server = SteroidsMcpServer.getInstance()

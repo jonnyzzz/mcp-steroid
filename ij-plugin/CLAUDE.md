@@ -99,9 +99,10 @@ Get services: `project.service<MyService>()` or `service<AppService>()`. Use `ch
   was driven by this rule being violated; A0's boundary catch-all
   (`McpHttpTransport.handlePost`, commit `3a4e7c13`) plus the A2b
   rethrows form the complete fix.
-- One exception: `ScriptExecutor.kt:150` deliberately catches
+- One exception: `ScriptExecutor.executeCodeBlocks` deliberately catches
   `TimeoutCancellationException` BEFORE the generic `CancellationException`
-  catch and calls `reportFailed("Execution timed out after $timeout seconds")`.
+  catch and calls `reportFailed("Execution timed out after $timeout seconds
+  while running the script body (modal=…; pre-flight completed)")`.
   TCE is a CE subclass; the script-timeout case is a domain error that
   needs to surface to the agent, not a control-flow signal to propagate.
 - Use `Logger.getInstance(MyClass::class.java)` for logging.
@@ -336,7 +337,11 @@ thread-dump+screenshot side effects, **skipped on an empty sweep**; does not fai
 cancels it for the rest of the run), `syncDocuments()` (commit+save+VFS; asserts non-modal), `waitForSmartMode()`
 (asserts non-modal; **bounded** by `WAIT_FOR_SMART_MODE_TIMEOUT`). All bounded EDT ops use
 `withTimeout → ToolCallErrorException` so a stuck modal fails fast with a thread dump instead of hanging.
-Stage markers (`[PRE]`/`[RUN]`/`[POST]`) localize a stall.
+Stage markers (`[PRE]`/`[RUN]`/`[POST]`) go to **idea.log only** — never into the tool result (#154: the
+result is the `execution_id:` header plus the script's own output, so a JSON-printing script stays
+machine-parseable after stripping that header). A pre-flight failure instead names its step + profile in
+the returned error (`pre-flight '<step>' (modal=<profile>): …` via `ScriptExecutor.preFlight`), so a
+stall is still localizable from the error alone or from idea.log.
 
 **Tests:** unit `ModalModeTest` (wire/default/parse) + `ExecutionManagerTest` profile-pipeline cases;
 integration `DialogKillerIntegrationTest` (Docker) — Step-1 opens a modal with `modal=unleashed` (no

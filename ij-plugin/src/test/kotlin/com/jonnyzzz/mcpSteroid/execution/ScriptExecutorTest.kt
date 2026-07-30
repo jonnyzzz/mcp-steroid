@@ -140,19 +140,21 @@ class ScriptExecutorTest : BasePlatformTestCase() {
         val builder = TestResultBuilder()
         executor.executeWithProgress(nextExecutionId(), testExecParams(multiCode), builder)
 
-        // Either SUCCESS (if engine is available) or ERROR (if not)
-        // If successful, verify FIFO order in output. Drop the pre-flight/run/
-        // post-flight stage markers (`[PRE] …`, `[RUN] …`, `[POST] …`) the
-        // executor emits around the script body so we assert only on the
-        // user-script println output.
-        val scriptOutput = builder.messages.filterNot {
-            it.startsWith("[PRE]") || it.startsWith("[RUN]") || it.startsWith("[POST]")
+        // Either SUCCESS (if engine is available) or ERROR (if not).
+        // #154: the executor's pre-flight/run/post-flight stage progress goes to the IDE log only —
+        // the result must contain the user-script output verbatim, with NO `[PRE]`/`[RUN]`/`[POST]`
+        // framing interleaved. Pin that contract here.
+        builder.messages.forEach { message ->
+            assertFalse(
+                "Stage framing must never appear in the tool result (#154), got: $message",
+                message.startsWith("[PRE]") || message.startsWith("[RUN]") || message.startsWith("[POST]")
+            )
         }
-        if (!builder.isFailed && scriptOutput.isNotEmpty()) {
-            assertTrue("Should have 3 messages", scriptOutput.size >= 3)
-            assertEquals("First message", "First", scriptOutput[0])
-            assertEquals("Second message", "Second", scriptOutput[1])
-            assertEquals("Third message", "Third", scriptOutput[2])
+        if (!builder.isFailed && builder.messages.isNotEmpty()) {
+            assertTrue("Should have 3 messages", builder.messages.size >= 3)
+            assertEquals("First message", "First", builder.messages[0])
+            assertEquals("Second message", "Second", builder.messages[1])
+            assertEquals("Third message", "Third", builder.messages[2])
         }
     }
 
