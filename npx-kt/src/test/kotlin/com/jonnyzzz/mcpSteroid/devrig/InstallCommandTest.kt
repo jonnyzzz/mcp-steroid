@@ -425,6 +425,30 @@ class InstallCommandTest {
     }
 
     @Test
+    fun `install list start failure falls back to the known devrig names and still succeeds`() {
+        val recording = RecordingRunner()
+        val (exitCode, stdout, _) = runInstallWith(
+            AiAgentCli.CLAUDE,
+            FailingRunner(recording, failOnArg = "list", failure = startFailure("claude")),
+        )
+        assertEquals(0, exitCode)
+        assertContains(stdout, "could not read the server list; reconciling the known devrig names.")
+        assertTrue(recording.invocations.any { it.args.contains("add") }, "the add step must still run")
+    }
+
+    @Test
+    fun `install removal start failure is diagnosed and the remaining steps still run`() {
+        val recording = RecordingRunner()
+        val (exitCode, _, stderr) = runInstallWith(
+            AiAgentCli.CLAUDE,
+            FailingRunner(recording, failOnArg = "remove", failure = startFailure("claude")),
+        )
+        assertEquals(0, exitCode, "removals are best-effort:\n$stderr")
+        assertContains(stderr, "did not complete")
+        assertTrue(recording.invocations.any { it.args.contains("add") }, "the add step must still run")
+    }
+
+    @Test
     fun `install removal timeout is diagnosed and the remaining steps still run`() {
         val recording = RecordingRunner()
         val (exitCode, _, stderr) = runInstallWith(

@@ -313,7 +313,7 @@ fun runInstallCheckCommand(
 
     out.println(
         "Checking the '$DEVRIG_MCP_SERVER_NAME' MCP registration for ${agent.displayName} " +
-            "(read-only — nothing is changed).",
+            "(read-only — no agent configuration is changed).",
     )
     out.println()
 

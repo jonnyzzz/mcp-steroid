@@ -26,7 +26,6 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.time.Instant
-import java.util.concurrent.TimeUnit
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.jvm.optionals.getOrNull
@@ -938,17 +937,22 @@ private fun spawnDetachedOnWindows(
                 "stderr: ${result.logs.readStderr().trim()}; logs: ${result.logs.commandLog}",
         )
     }
-    // STRICT pid contract: the script prints exactly one line — the pid. Anything else (PowerShell
-    // chatter, profiles, encoding banners) must NOT be turned into a fake pid; keep the logs and fail.
-    val stdoutLines = result.logs.readStdout().lines().filter { it.isNotBlank() }
-    val pid = stdoutLines.singleOrNull()?.trim()?.toLongOrNull()
+    val pid = parseWmiSpawnPid(result.logs.readStdout())
         ?: error(
-            "Could not parse pid from WMI spawn helper output (${stdoutLines.size} non-blank line(s)); " +
-                "logs kept: ${result.logs.commandLog}",
+            "Could not parse pid from WMI spawn helper output; logs kept: ${result.logs.commandLog}",
         )
     result.logs.delete() // clean success — the log files are noise (matches the old temp-file lifecycle)
     return pid
 }
+
+/**
+ * STRICT pid contract for [spawnDetachedOnWindows]: the script prints exactly ONE non-blank stdout
+ * line — the pid. Anything else (PowerShell chatter, profiles, encoding banners, a truncation marker)
+ * must NOT be turned into a fake pid — null keeps the log files and fails the spawn. Factored and
+ * public (top-level) for platform-neutral unit tests.
+ */
+fun parseWmiSpawnPid(stdout: String): Long? =
+    stdout.lines().filter { it.isNotBlank() }.singleOrNull()?.trim()?.toLongOrNull()
 
 /**
  * The PowerShell `-Command` script for [spawnDetachedOnWindows]. Factored and public (top-level) so the

@@ -171,14 +171,19 @@ class ProcessRunTest {
             }
         }
         runner.start()
-        // The stdout log file is written live; wait until the child reported its grandchild.
-        awaitTrue("fixture to start and report") {
-            logsDir.listDirectoryEntries("process-*-stdout.log").any { it.readText().contains("grandchild-pid:") }
+        val pidRecord = Regex("grandchild-pid:(\\d+)\r?\n") // newline-terminated ⇒ the record is complete
+        try {
+            // The stdout log file is written live; wait until the child reported its grandchild fully.
+            awaitTrue("fixture to start and report") {
+                logsDir.listDirectoryEntries("process-*-stdout.log").any { pidRecord.containsMatchIn(it.readText()) }
+            }
+        } finally {
+            // Whatever happened above, never leave the runner thread (and its child JVM) behind.
+            runner.interrupt()
         }
         val stdout = logsDir.listDirectoryEntries("process-*-stdout.log").single().readText()
-        val grandchildPid = Regex("grandchild-pid:(\\d+)").find(stdout)!!.groupValues[1].toLong()
+        val grandchildPid = pidRecord.find(stdout)!!.groupValues[1].toLong()
 
-        runner.interrupt()
         runner.join(30_000)
         assertFalse(runner.isAlive, "runner thread must finish")
         assertTrue(thrown is InterruptedException) { "expected InterruptedException, got $thrown" }

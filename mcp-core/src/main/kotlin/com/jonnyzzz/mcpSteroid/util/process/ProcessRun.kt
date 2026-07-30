@@ -12,7 +12,7 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
-import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -31,10 +31,13 @@ private val log = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.util.process.
 private val runSequence = AtomicInteger()
 private val cleanupTriggered = AtomicBoolean()
 
-private val FILE_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS", Locale.ROOT)
+/** UTC on purpose: local-zone names are ambiguous during DST fall-back, which could make a
+ *  just-created run parse up to 1 h old — exactly the size of the count-pass age floor. */
+private val FILE_TIMESTAMP_FORMAT =
+    DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS", Locale.ROOT).withZone(ZoneOffset.UTC)
 
 /** The complete filename grammar of this runner's files — cleanup deletes NOTHING else. */
-private val RUNNER_FILE_GRAMMAR = Regex("^process-.+-(\\d{8}-\\d{6}-\\d{3})-\\d+-\\d+-(command|stdout|stderr)\\.log$")
+private val RUNNER_FILE_GRAMMAR = Regex("^process-.+-(\\d{8}-\\d{6}-\\d{3})-(\\d+)-(\\d+)-(command|stdout|stderr)\\.log$")
 
 private const val CLEANUP_MARKER_FILE = ".process-cleanup-stamp"
 private val CLEANUP_THROTTLE = 4.hours
@@ -83,11 +86,14 @@ fun runProcess(spec: ProcessRunSpec): ProcessRunResult {
         builder.redirectError(ProcessBuilder.Redirect.to(checkNotNull(logs.stderrLog).toFile()))
     }
 
+    val attemptNanos = System.nanoTime()
     val process = try {
         builder.start()
     } catch (e: IOException) {
-        appendCommandLog(logs, "exit:     START-FAILED: ${e.message}")
+        appendCommandLog(logs, "exit:     START-FAILED: ${e.message}\nduration: ${(System.nanoTime() - attemptNanos).nanoseconds}")
         log.warn("process {} failed to start ({}); command log kept: {}", name, e.toString(), logs.commandLog)
+        // e.message carries the program name + OS error (e.g. "Cannot run program "claude": error=2");
+        // it never contains argv values, and callers (devrig install) surface it as the failure reason.
         throw ProcessStartException("process '$name' failed to start: ${e.message}", name, logs, e)
     }
     val pid = process.pid()
@@ -153,7 +159,7 @@ fun cleanupProcessLogs(
 ): Int {
     require(trimTo in 0..maxFiles) { "trimTo ($trimTo) must be within 0..maxFiles ($maxFiles)" }
 
-    class RunnerFile(val path: Path, val timestampMillis: Long, val runKey: String)
+    class RunnerFile(val path: Path, val timestampMillis: Long, val pid: Long, val seq: Long, val runKey: String)
 
     val files = try {
         Files.list(logsDir).use { stream ->
@@ -166,18 +172,24 @@ fun cleanupProcessLogs(
         val fileName = path.fileName.toString()
         val match = RUNNER_FILE_GRAMMAR.matchEntire(fileName) ?: return@mapNotNull null
         val timestamp = parseFileTimestamp(match.groupValues[1]) ?: return@mapNotNull null
-        RunnerFile(path, timestamp, fileName.removeSuffix("-${match.groupValues[2]}.log"))
+        val pid = match.groupValues[2].toLongOrNull() ?: return@mapNotNull null
+        val seq = match.groupValues[3].toLongOrNull() ?: return@mapNotNull null
+        RunnerFile(path, timestamp, pid, seq, fileName.removeSuffix("-${match.groupValues[4]}.log"))
     }
 
     var deleted = 0
-    fun deleteCounted(path: Path) {
-        try {
-            if (Files.deleteIfExists(path)) deleted++
-        } catch (e: NoSuchFileException) {
-            // a concurrent cleanup got there first — success
-        } catch (e: Exception) {
-            log.warn("process-log cleanup could not delete {}: {}", path, e.toString())
-        }
+    // Returns true when the file is GONE (deleted by us, or already removed by a concurrent cleanup —
+    // both count as progress toward the trim target).
+    fun deleteCounted(path: Path): Boolean = try {
+        val removed = Files.deleteIfExists(path)
+        if (removed) deleted++ else log.debug("process-log cleanup: {} already gone (concurrent cleanup)", path)
+        true
+    } catch (e: NoSuchFileException) {
+        log.debug("process-log cleanup: {} already gone (concurrent cleanup)", path)
+        true
+    } catch (e: Exception) {
+        log.warn("process-log cleanup could not delete {}: {}", path, e.toString())
+        false
     }
 
     val ageCutoff = nowMillis - maxAge.inWholeMilliseconds
@@ -186,13 +198,15 @@ fun cleanupProcessLogs(
 
     if (remaining.size > maxFiles) {
         val ageFloorCutoff = nowMillis - COUNT_PASS_AGE_FLOOR.inWholeMilliseconds
-        val groupsOldestFirst = remaining.groupBy { it.runKey }.values.sortedBy { group -> group.minOf { it.timestampMillis } }
+        // Deterministic oldest-first order even for equal-millisecond runs: timestamp, then pid, then seq.
+        val groupsOldestFirst = remaining.groupBy { it.runKey }.values.sortedWith(
+            compareBy({ group -> group.minOf { it.timestampMillis } }, { it.first().pid }, { it.first().seq }),
+        )
         var count = remaining.size
         for (group in groupsOldestFirst) {
             if (count <= trimTo) break
             if (group.any { it.timestampMillis > ageFloorCutoff }) continue
-            group.forEach { deleteCounted(it.path) }
-            count -= group.size
+            count -= group.count { deleteCounted(it.path) }
         }
     }
 
@@ -201,26 +215,42 @@ fun cleanupProcessLogs(
 }
 
 private fun parseFileTimestamp(text: String): Long? = try {
-    LocalDateTime.parse(text, FILE_TIMESTAMP_FORMAT).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    LocalDateTime.parse(text, FILE_TIMESTAMP_FORMAT).toInstant(ZoneOffset.UTC).toEpochMilli()
 } catch (e: Exception) {
     log.warn("process-log cleanup could not parse timestamp '{}': {}", text, e.toString())
     null
 }
 
+/**
+ * The marker-file throttle for [cleanupProcessLogs]: a scan is due when `.process-cleanup-stamp` in
+ * [logsDir] is missing or older than 4 hours. Public (with [touchProcessLogCleanupMarker]) so the
+ * throttle is unit-testable; [runProcess] additionally gates on a once-per-JVM CAS.
+ */
+fun shouldRunProcessLogCleanup(logsDir: Path, nowMillis: Long = System.currentTimeMillis()): Boolean {
+    val markerAgeMillis = try {
+        nowMillis - Files.getLastModifiedTime(logsDir.resolve(CLEANUP_MARKER_FILE)).toMillis()
+    } catch (e: IOException) {
+        log.debug("process-log cleanup marker missing/unreadable in {} — a scan is due ({})", logsDir, e.toString())
+        return true
+    }
+    return markerAgeMillis >= CLEANUP_THROTTLE.inWholeMilliseconds
+}
+
+/** Records that a cleanup scan ran now — refreshes the `.process-cleanup-stamp` marker. */
+fun touchProcessLogCleanupMarker(logsDir: Path, nowMillis: Long = System.currentTimeMillis()) {
+    Files.createDirectories(logsDir)
+    Files.writeString(logsDir.resolve(CLEANUP_MARKER_FILE), nowMillis.toString())
+}
+
 private fun maybeCleanupOncePerJvm(logsDir: Path) {
     if (!cleanupTriggered.compareAndSet(false, true)) return
     try {
-        val marker = logsDir.resolve(CLEANUP_MARKER_FILE)
-        val now = System.currentTimeMillis()
-        val markerAgeMillis = try {
-            now - Files.getLastModifiedTime(marker).toMillis()
-        } catch (e: IOException) {
-            Long.MAX_VALUE // no marker yet (or unreadable) — run the scan
-        }
-        if (markerAgeMillis < CLEANUP_THROTTLE.inWholeMilliseconds) return
-        cleanupProcessLogs(logsDir, nowMillis = now)
+        // Create the dir first so a fresh home does not WARN about an unlistable folder.
         Files.createDirectories(logsDir)
-        Files.writeString(marker, now.toString())
+        val now = System.currentTimeMillis()
+        if (!shouldRunProcessLogCleanup(logsDir, now)) return
+        cleanupProcessLogs(logsDir, nowMillis = now)
+        touchProcessLogCleanupMarker(logsDir, now)
     } catch (e: Exception) {
         log.warn("process-log cleanup skipped: {}", e.toString())
     }
@@ -231,8 +261,8 @@ private fun sanitizeProcessName(raw: String): String {
     val cleaned = raw.map { if (it.isLetterOrDigit() && it.code < 128 || it in "._-") it else '-' }
         .joinToString("")
         .replace(Regex("-{2,}"), "-")
-        .trim('-', '.')
         .take(40)
+        .trim('-', '.')
     return cleaned.ifBlank { "process" }
 }
 
@@ -240,22 +270,44 @@ private fun allocateLogFiles(spec: ProcessRunSpec, name: String): ProcessRunLogs
     Files.createDirectories(spec.logsDir)
     val jvmPid = ProcessHandle.current().pid()
     repeat(100) {
-        val timestamp = FILE_TIMESTAMP_FORMAT.withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(System.currentTimeMillis()))
+        val timestamp = FILE_TIMESTAMP_FORMAT.format(Instant.ofEpochMilli(System.currentTimeMillis()))
         val base = "process-$name-$timestamp-$jvmPid-${runSequence.incrementAndGet()}"
         val commandLog = spec.logsDir.resolve("$base-command.log")
         try {
             createOwnerOnlyFile(commandLog) // CREATE_NEW: the atomic uniqueness reservation
         } catch (e: FileAlreadyExistsException) {
+            log.debug("process log name collision on {}; retrying with the next sequence", commandLog)
             return@repeat // collision (another JVM, same millisecond) — bump seq and retry
         }
-        Files.writeString(commandLog, commandLogHeader(spec), StandardOpenOption.WRITE)
         val stdoutLog = spec.logsDir.resolve("$base-stdout.log")
         val stderrLog = if (spec.mergeStderrIntoStdout) null else spec.logsDir.resolve("$base-stderr.log")
-        precreateOwnerOnly(stdoutLog)
-        stderrLog?.let { precreateOwnerOnly(it) }
+        try {
+            Files.writeString(commandLog, commandLogHeader(spec), StandardOpenOption.WRITE)
+            // A pre-existing sibling means OUR reservation raced a stale/foreign file whose permissions
+            // we do not control — treat it as a collision: roll back and retry with a fresh base name.
+            createOwnerOnlyFile(stdoutLog)
+            stderrLog?.let { createOwnerOnlyFile(it) }
+        } catch (e: FileAlreadyExistsException) {
+            log.debug("stale sibling for {} ({}); rolling back and retrying", base, e.toString())
+            rollbackAllocation(commandLog, stdoutLog, stderrLog)
+            return@repeat
+        } catch (e: Exception) {
+            rollbackAllocation(commandLog, stdoutLog, stderrLog)
+            throw e
+        }
         return ProcessRunLogs(commandLog, stdoutLog, stderrLog)
     }
     throw IOException("could not allocate unique process log file names in ${spec.logsDir}")
+}
+
+private fun rollbackAllocation(vararg files: Path?) {
+    for (file in files.filterNotNull()) {
+        try {
+            Files.deleteIfExists(file)
+        } catch (e: Exception) {
+            log.warn("could not roll back partially allocated process log {}: {}", file, e.toString())
+        }
+    }
 }
 
 private fun commandLogHeader(spec: ProcessRunSpec): String = buildString {
@@ -284,30 +336,29 @@ private fun createOwnerOnlyFile(path: Path) {
     }
 }
 
-private fun precreateOwnerOnly(path: Path) {
-    try {
-        createOwnerOnlyFile(path)
-    } catch (e: FileAlreadyExistsException) {
-        // stale leftover with the same reserved base name; Redirect.to truncates it anyway
-    }
-}
-
-/** Last lines of the run's output for [ProcessRunException.outputTail]: bounded 8 KiB per file, 100 lines total. */
+/** Last lines of the run's output for [ProcessRunException.outputTail]: bounded 8 KiB TOTAL, 100 lines. */
 private fun readOutputTail(logs: ProcessRunLogs): List<ProcessLine> = try {
+    val fileBudget = if (logs.stderrLog == null) 8192 else 4096 // one total budget, split across the files
+
     fun tailOf(file: Path, stream: ProcessStream): List<ProcessLine> {
         val size = try {
             Files.size(file)
         } catch (e: NoSuchFileException) {
+            log.debug("no output tail — {} is gone", file)
             return emptyList()
         }
-        val skip = maxOf(0L, size - 8192)
+        // Read one extra byte BEFORE the window: if it is a line terminator, the window's first line is
+        // complete and must be kept; only a genuinely partial first line is dropped.
+        val windowStart = maxOf(0L, size - fileBudget)
+        val probeStart = maxOf(0L, windowStart - 1)
         val bytes = Files.newInputStream(file).use { input ->
-            input.skipNBytes(skip)
-            input.readNBytes(8192)
+            input.skipNBytes(probeStart)
+            input.readNBytes(fileBudget + (windowStart - probeStart).toInt())
         }
-        val lines = String(bytes, Charsets.UTF_8).lines()
-        // The first line is likely a partial one when we started mid-file.
-        return (if (skip > 0 && lines.size > 1) lines.drop(1) else lines)
+        val precededByTerminator = windowStart == probeStart || bytes.firstOrNull()?.toInt()?.toChar() in listOf('\n', '\r')
+        val windowText = String(bytes, (windowStart - probeStart).toInt(), bytes.size - (windowStart - probeStart).toInt(), Charsets.UTF_8)
+        val lines = windowText.lines()
+        return (if (!precededByTerminator && lines.size > 1) lines.drop(1) else lines)
             .filter { it.isNotEmpty() }
             .map { ProcessLine(stream, it) }
     }
@@ -371,6 +422,7 @@ private fun killProcessTree(process: Process, name: String) {
         try {
             Thread.sleep(20)
         } catch (e: InterruptedException) {
+            log.debug("kill sweep for {} interrupted; proceeding with what is dead so far", name)
             Thread.currentThread().interrupt()
             break
         }
@@ -384,6 +436,7 @@ private fun killProcessTree(process: Process, name: String) {
 private fun quietWaitFor(process: Process, millis: Long): Boolean = try {
     process.waitFor(millis, TimeUnit.MILLISECONDS)
 } catch (e: InterruptedException) {
+    log.debug("kill-escalation wait for pid {} interrupted; continuing without the grace", process.pid())
     Thread.currentThread().interrupt()
     !process.isAlive
 }

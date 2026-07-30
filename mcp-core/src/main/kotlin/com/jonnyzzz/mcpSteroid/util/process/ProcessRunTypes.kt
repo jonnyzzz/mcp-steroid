@@ -101,8 +101,10 @@ class ProcessRunLogs(
     fun readStdout(maxChars: Int = DEFAULT_PROCESS_READ_LIMIT): String = readBounded(stdoutLog, maxChars)
 
     /** Same contract as [readStdout]; "" when merged (no stderr file) or missing. */
-    fun readStderr(maxChars: Int = DEFAULT_PROCESS_READ_LIMIT): String =
-        stderrLog?.let { readBounded(it, maxChars) } ?: ""
+    fun readStderr(maxChars: Int = DEFAULT_PROCESS_READ_LIMIT): String {
+        require(maxChars > 0) { "maxChars must be positive: $maxChars" }
+        return stderrLog?.let { readBounded(it, maxChars) } ?: ""
+    }
 
     /**
      * Deletes this run's files — for callers that know the run is fine and
@@ -121,18 +123,20 @@ class ProcessRunLogs(
 
     private fun readBounded(file: Path, maxChars: Int): String {
         require(maxChars > 0) { "maxChars must be positive: $maxChars" }
+        // Read one byte beyond the cap from the SAME stream: truncation is detected without a second
+        // Files.size() stat, which could race with a concurrent delete()/cleanup and leak
+        // NoSuchFileException after a successful read.
+        val probeLength = if (maxChars < Int.MAX_VALUE) maxChars + 1 else maxChars
         val bytes = try {
-            Files.newInputStream(file).use { it.readNBytes(maxChars) }
+            Files.newInputStream(file).use { it.readNBytes(probeLength) }
         } catch (e: NoSuchFileException) {
             logger.debug("process log {} is gone (deleted or cleaned up); returning empty", file)
             return ""
         }
         // String(bytes, UTF_8) replaces malformed sequences with U+FFFD, never throws.
-        val text = String(bytes, Charsets.UTF_8)
-        val truncated = bytes.size >= maxChars && Files.size(file) > maxChars
-        if (!truncated) return text
+        if (bytes.size <= maxChars) return String(bytes, Charsets.UTF_8)
         logger.warn("process log {} exceeds the {}-char read limit; returning a truncated head", file, maxChars)
-        return text + PROCESS_READ_TRUNCATION_MARKER
+        return String(bytes, 0, maxChars, Charsets.UTF_8) + PROCESS_READ_TRUNCATION_MARKER
     }
 }
 

@@ -3,7 +3,9 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import java.nio.file.Path
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -60,5 +62,20 @@ class WmiSpawnScriptTest {
     fun `single quotes in paths are doubled for powershell literals`() {
         val script = buildWmiSpawnScript(Path.of("C:\\it's here\\idea64.exe"), workDir, emptyMap())
         assertContains(script, "it''s here")
+    }
+
+    @Test
+    fun `pid parse accepts exactly one non-blank numeric line`() {
+        assertEquals(4242L, parseWmiSpawnPid("4242"))
+        assertEquals(4242L, parseWmiSpawnPid("\n  4242  \r\n\n"))
+    }
+
+    @Test
+    fun `pid parse rejects chatter, multiple lines, and non-numeric output`() {
+        assertNull(parseWmiSpawnPid(""), "empty output")
+        assertNull(parseWmiSpawnPid("Loading personal profile...\n4242"), "chatter before the pid")
+        assertNull(parseWmiSpawnPid("4242\n4243"), "two numeric lines are ambiguous")
+        assertNull(parseWmiSpawnPid("PID: 4242"), "prefixed line is not a bare pid")
+        assertNull(parseWmiSpawnPid("4242 …[truncated by ProcessRunner]"), "a truncated line must not parse")
     }
 }

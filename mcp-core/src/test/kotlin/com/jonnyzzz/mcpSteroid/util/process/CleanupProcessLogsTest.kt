@@ -5,7 +5,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.time.Instant
-import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.io.path.exists
@@ -21,7 +21,9 @@ class CleanupProcessLogsTest {
     lateinit var logsDir: Path
 
     private val nowMillis = System.currentTimeMillis()
-    private val nameFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS", Locale.ROOT).withZone(ZoneId.systemDefault())
+
+    // UTC — matches the production filename-timestamp contract (local zones are DST-ambiguous).
+    private val nameFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS", Locale.ROOT).withZone(ZoneOffset.UTC)
 
     /** Creates one run's files following the runner's filename grammar, aged [ageMillis] back from now. */
     private fun mkRun(tag: String, ageMillis: Long, seq: Int, vararg suffixes: String = arrayOf("command", "stdout")): List<Path> {
@@ -90,6 +92,33 @@ class CleanupProcessLogsTest {
 
         oldByName.forEach { assertFalse(it.exists(), "oldest BY NAME must be deleted despite fresh mtime") }
         newByName.forEach { assertTrue(it.exists(), "newest BY NAME must survive despite old mtime") }
+    }
+
+    @Test
+    fun `equal-timestamp runs trim deterministically by pid then seq`() {
+        // Same timestamp for all: ordering must fall back to pid, then seq — never Files.list order.
+        val ts = nameFormat.format(Instant.ofEpochMilli(nowMillis - hours(20)))
+        fun mkExact(pid: Long, seq: Int): Path =
+            Files.writeString(logsDir.resolve("process-tie-$ts-$pid-$seq-command.log"), "x")
+        val oldestPid = mkExact(pid = 100, seq = 9)
+        val midSeq = mkExact(pid = 200, seq = 1)
+        val newestSeq = mkExact(pid = 200, seq = 2)
+
+        cleanupProcessLogs(logsDir, maxFiles = 2, trimTo = 2, maxAge = 30.days, nowMillis = nowMillis)
+
+        assertFalse(oldestPid.exists(), "lowest pid trims first on a timestamp tie")
+        assertTrue(midSeq.exists())
+        assertTrue(newestSeq.exists())
+    }
+
+    @Test
+    fun `marker throttle - scan is due without a marker, not due right after touching it`() {
+        assertTrue(shouldRunProcessLogCleanup(logsDir, nowMillis), "no marker → a scan is due")
+        touchProcessLogCleanupMarker(logsDir, nowMillis)
+        assertFalse(shouldRunProcessLogCleanup(logsDir, nowMillis), "fresh marker → throttled")
+        // Backdate the marker beyond the 4h throttle window.
+        Files.setLastModifiedTime(logsDir.resolve(".process-cleanup-stamp"), FileTime.fromMillis(nowMillis - hours(5)))
+        assertTrue(shouldRunProcessLogCleanup(logsDir, nowMillis), "stale marker → a scan is due again")
     }
 
     @Test
