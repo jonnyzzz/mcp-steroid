@@ -67,9 +67,14 @@ fun interface PortDiscovery {
  *
  * Scope of the scan: by default 63342..63361 (the IntelliJ Platform's
  * Netty built-in server picks the first free port starting at 63342
- * with up to 19 fallback ports) and 64342..64361 (the bundled MCP
+ * with up to 19 fallback ports), 64342..64361 (the bundled MCP
  * Server plugin uses the same 20-port fallback scheme on top of
- * `DEFAULT_MCP_PORT = 64342`).
+ * `DEFAULT_MCP_PORT = 64342`), and 64463..64482 — the built-in server's
+ * default when the IDE runs in unit-test / sandbox mode, where
+ * `BuiltInServerManagerImpl.getDefaultPort()` returns `64463` (again with
+ * the 20-port `PORTS_COUNT` window). That covers Gradle `runIde` sandboxes
+ * and Docker `:test-integration` IDEs, which otherwise fall outside the
+ * two production ranges.
  *
  * **Parallelism is bounded** via `Dispatchers.IO.limitedParallelism([parallelism])`. Probes run on
  * IO's daemon worker threads, and each probe is independently capped by [probeTimeout]
@@ -160,14 +165,24 @@ class IntelliJPortDiscovery(
 
     companion object {
         /**
-         * Default scan ranges. Tracks both built-in HTTP server's
-         * fallback range and the bundled MCP Server plugin's fallback
-         * range — both pick the first free port in a 20-port window
-         * above their default.
+         * Default scan ranges. Tracks the built-in HTTP server's
+         * production fallback range, the bundled MCP Server plugin's
+         * fallback range, and the built-in server's unit-test / sandbox
+         * default range — each is a 20-port window above the respective
+         * default port (`PORTS_COUNT = 20` in `BuiltInServerManagerImpl`).
+         *
+         * Port scanning is best-effort by design: the built-in server
+         * ultimately binds *any* free port once its window is exhausted
+         * (`tryAnyPort = true`), so marker discovery
+         * ([IdePidDiscoveryService]) — not this scan — is authoritative
+         * for `mcp-steroid`-aware IDEs. These ranges just maximize the
+         * odds of finding an IDE that has *no* marker yet (a fresh
+         * install target).
          */
         val DEFAULT_PORT_RANGES: List<IntRange> = listOf(
             63342..63361,
             64342..64361,
+            64463..64482,
         )
     }
 }

@@ -137,6 +137,19 @@ class IntelliJPortDiscoveryTest {
     }
 
     @Test
+    fun `default scan ranges cover the built-in, MCP, and unit-test-mode sandbox ports`() {
+        val covered = IntelliJPortDiscovery.DEFAULT_PORT_RANGES.flatMap { it.toList() }.toSet()
+        // Production built-in HTTP server default + MCP Server plugin default.
+        assertTrue(63342 in covered, "built-in server default port must be scanned")
+        assertTrue(64342 in covered, "MCP Server plugin default port must be scanned")
+        // The unit-test / sandbox built-in-server default (BuiltInServerManagerImpl.getDefaultPort()
+        // returns 64463 when isUnitTestMode) — this is the IU-261 sandbox seen at port 64463, which
+        // the previous two-range scan missed. Cover its whole 20-port window.
+        assertTrue(64463 in covered, "unit-test/sandbox built-in-server default port (64463) must be scanned")
+        assertTrue(64482 in covered, "top of the unit-test/sandbox 20-port window must be scanned")
+    }
+
+    @Test
     fun `a port that hangs past the probe timeout does not discard results from fast ports`() = runBlocking {
         // A port whose /api/about never answers within probeTimeout must not
         // cancel the whole scan: the IDE detected on a fast port must still surface.

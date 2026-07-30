@@ -55,6 +55,11 @@ fun DevrigServices.runInstallDevrigCommand(command: DevrigCommand.DevrigCommandI
         return 64
     }
     System.err.println("[mcp-steroid] devrig is on PATH via $launcher")
+
+    // Also offer the MCP Steroid plugin to any IDE already running: fire each IDE's native install
+    // dialog over REST. Best-effort and fully non-interactive (the IDE — not devrig — shows the dialog),
+    // so it is safe inside the `curl | sh` bootstrap: it never reads stdin and never fails the install.
+    tryInstallPluginIntoRunningIdesQuietly()
     return 0
 }
 

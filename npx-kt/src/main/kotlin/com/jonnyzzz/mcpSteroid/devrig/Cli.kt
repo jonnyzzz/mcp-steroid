@@ -80,6 +80,18 @@ sealed interface DevrigCommand {
         override val json: Boolean = false,
     ) : DevrigCommand
 
+    /**
+     * `devrig install plugin` — install the MCP Steroid plugin into locally-running JetBrains IDEs via
+     * each IDE's built-in REST endpoint (which shows the IDE's own native install dialog). [check] is a
+     * read-only dry-run: report which IDEs would be asked, show no dialog. Also invoked, best-effort, from
+     * `devrig install devrig`.
+     */
+    data class DevrigCommandInstallPlugin(
+        val check: Boolean = false,
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
     data class DevrigCommandHelp(
         override val debug: Boolean = false,
         override val json: Boolean = false,
@@ -237,14 +249,21 @@ private class InstallCommand(
     override fun run() {
         val options = options()
         if (agent == "devrig") {
-            if (checkFlag) throw UsageError("--check is only valid for an agent install (claude / codex / gemini)")
+            if (checkFlag) throw UsageError("--check is only valid for an agent install (claude / codex / gemini) or 'devrig install plugin'")
             select(DevrigCommand.DevrigCommandInstallDevrig(
                 installScript = installScript, jdkHome = jdkHome, debug = options.debug, json = options.json,
             ))
             return
         }
+        if (agent == "plugin") {
+            if (installScript != null || jdkHome != null) {
+                throw UsageError("--install-script / --jdk-home are only valid with 'devrig install devrig'")
+            }
+            select(DevrigCommand.DevrigCommandInstallPlugin(check = checkFlag, debug = options.debug, json = options.json))
+            return
+        }
         val target = AiAgentCli.parse(agent)
-            ?: throw UsageError("agent must be one of: claude, codex, gemini, devrig")
+            ?: throw UsageError("agent must be one of: claude, codex, gemini, devrig, plugin")
         if (installScript != null || jdkHome != null) {
             throw UsageError("--install-script / --jdk-home are only valid with 'devrig install devrig'")
         }
@@ -360,6 +379,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
             is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
             is DevrigCommand.DevrigCommandInstallDevrig -> runInstallDevrigCommand(command)
+            is DevrigCommand.DevrigCommandInstallPlugin -> runInstallPluginCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)
