@@ -46,9 +46,9 @@ class InstallDevrigCoreTest {
 
         assertEquals(0, exit)
         assertTrue(home.binDir.resolve("devrig").readText().contains(script.toString()), "launcher must exec the install script")
-        val marker = home.updateDir.resolve("updated-0.101.0")
+        val marker = home.updateDir.resolve("updated-0.101")
         assertTrue(marker.exists(), "the completion marker is attested by install devrig itself")
-        assertTrue(marker.readText().contains("\"targetVersion\": \"0.101.0\""), marker.readText())
+        assertTrue(marker.readText().contains("\"targetVersion\": \"0.101\""), marker.readText())
     }
 
     @Test
@@ -70,7 +70,7 @@ class InstallDevrigCoreTest {
         assertFalse(home.updateDir.resolve("updated-0.102.0").exists(), "explicit rollback clears the newer completion marker")
         assertFalse(home.updateDir.resolve("update-failed-0.102.0").exists())
         assertFalse(home.updateDir.resolve("update-skew-0.102.0").exists())
-        assertTrue(home.updateDir.resolve("updated-0.101.0").exists(), "the rollback attests its own version")
+        assertTrue(home.updateDir.resolve("updated-0.101").exists(), "the rollback attests its own version")
         assertTrue(home.binDir.resolve("devrig").readText().contains("devrig-version: 0.101.0"))
     }
 
@@ -107,7 +107,7 @@ class InstallDevrigCoreTest {
         )
 
         assertEquals(64, exit)
-        assertFalse(home.updateDir.resolve("updated-0.101.0").exists(), "no marker may be attested for a failed rewrite")
+        assertFalse(home.updateDir.resolve("updated-0.101").exists(), "no marker may be attested for a failed rewrite")
     }
 
     @Test
@@ -119,7 +119,7 @@ class InstallDevrigCoreTest {
             writeLauncher = { throw java.nio.file.AccessDeniedException("devrig.cmd is locked by another process") },
         )
         assertEquals(64, exit)
-        assertFalse(home.updateDir.resolve("updated-0.101.0").exists())
+        assertFalse(home.updateDir.resolve("updated-0.101").exists())
     }
 
     @Test
@@ -153,7 +153,7 @@ class InstallDevrigCoreTest {
 
         assertEquals(0, exit)
         assertTrue(home.binDir.resolve("devrig").readText().contains("/user/managed/devrig"), "opt-out leaves the launcher alone")
-        assertFalse(home.updateDir.resolve("updated-0.101.0").exists())
+        assertFalse(home.updateDir.resolve("updated-0.101").exists())
     }
 
     @Test

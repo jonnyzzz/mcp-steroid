@@ -111,7 +111,17 @@ suspend fun DevrigServices.mainImpl2(
                     }
                 }
             }
-            val updater = if (command is DevrigCommand.MCP) AutoUpdater(homePaths = homePaths, notify = onNotice) else null
+            val updater = if (command is DevrigCommand.MCP) {
+                AutoUpdater(
+                    homePaths = homePaths,
+                    notify = onNotice,
+                    // Telemetry: every actually-triggered self-update is captured with the promoted
+                    // version from version.json (capture() itself adds the running devrig_version).
+                    onUpdateTriggered = { promoted ->
+                        beacon.capture("self_update", mapOf("target_version" to promoted))
+                    },
+                )
+            } else null
             if (updater != null && updater.isActive()) {
                 // The ACTIVE auto-updater (docs/updates-check/devrig-auto-update.md): only the
                 // long-lived `devrig mcp` session runs it — it supervises the installer and delivers

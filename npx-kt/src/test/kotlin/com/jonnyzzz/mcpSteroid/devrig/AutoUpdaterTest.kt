@@ -25,6 +25,7 @@ class AutoUpdaterTest {
         val home: HomePaths,
         val notices: MutableList<String>,
         val installerRuns: MutableList<Path>,
+        val triggeredVersions: MutableList<String>,
     )
 
     private fun fixture(
@@ -48,6 +49,7 @@ class AutoUpdaterTest {
         )
         val notices = mutableListOf<String>()
         val installerRuns = mutableListOf<Path>()
+        val triggeredVersions = mutableListOf<String>()
         var launcherVersion = launcher
         val updater = AutoUpdater(
             homePaths = home,
@@ -80,8 +82,9 @@ class AutoUpdaterTest {
             },
             noAutoUpdateEnv = null,
             binRegisterOptOutEnv = null,
+            onUpdateTriggered = { triggeredVersions += it },
         )
-        return Fixture(updater, home, notices, installerRuns)
+        return Fixture(updater, home, notices, installerRuns, triggeredVersions)
     }
 
     @Test
@@ -91,13 +94,15 @@ class AutoUpdaterTest {
         f.updater.tick()
 
         assertEquals(1, f.installerRuns.size)
-        assertTrue(f.home.updateDir.resolve("updated-0.102.0").exists())
+        // telemetry fires once per actually-triggered update, with the raw version.json version
+        assertEquals(listOf("0.102.0"), f.triggeredVersions)
+        assertTrue(f.home.updateDir.resolve("updated-0.102").exists())
         assertFalse(f.home.updateDir.resolve("lock").exists(), "the lock is released in the finally")
-        assertFalse(f.home.updateDir.resolve("update-4242-version-0.102.0").exists(), "the per-pid marker exists only while updating")
+        assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "the per-pid marker exists only while updating")
         assertFalse(f.home.updateDir.resolve("install-4242.sh").exists(), "the downloaded script is deleted after the run")
         assertEquals(1, f.notices.size)
         assertTrue(f.notices[0].contains("restart"), f.notices[0])
-        assertTrue(f.notices[0].contains("0.102.0"), f.notices[0])
+        assertTrue(f.notices[0].contains("0.102"), f.notices[0])
 
         // second tick: restart is pending, launcher confirms → no reinstall, no duplicate notice
         f.updater.tick()
@@ -153,7 +158,7 @@ class AutoUpdaterTest {
     fun `torn marker - updated exists but the launcher is older - marker deleted and installer re-runs`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp, launcher = "0.101.0")
         // a flip-back landed after an earlier install: marker says 0.102.0, launcher still at 0.101.0
-        Files.writeString(f.home.updateDir.resolve("updated-0.102.0"), "{}")
+        Files.writeString(f.home.updateDir.resolve("updated-0.102"), "{}")
 
         f.updater.tick()
 
@@ -175,6 +180,7 @@ class AutoUpdaterTest {
 
         f.updater.tick()
         assertEquals(0, f.installerRuns.size)
+        assertEquals(0, f.triggeredVersions.size, "an aborted update must not report a trigger")
         assertEquals(0, f.notices.size, "skew aborts are quiet while bounded")
         assertNotNull(f.updater.coordination.readSkew("0.102.0"))
 

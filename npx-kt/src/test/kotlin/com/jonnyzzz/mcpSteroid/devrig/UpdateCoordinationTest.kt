@@ -39,11 +39,12 @@ class UpdateCoordinationTest {
     @Test
     fun `marker filenames use the canonical base version and parse round-trip`(@TempDir dir: Path) {
         val c = coordination(dir)
-        // `devrig install devrig` sees the full build string; the loop sees version.json's base form —
-        // both must land on the SAME file.
+        // `devrig install devrig` sees the full build string (incl. the #360 release lane
+        // `<base>.0-r-<hash>`); the loop sees version.json's base form — both must land on the SAME file.
         assertEquals(c.updatedMarker("0.102.0"), c.updatedMarker("0.102.0-gh-abc1234"))
-        assertEquals("updated-0.102.0", c.updatedMarker("0.102.0-gh-abc1234").fileName.toString())
-        assertEquals("update-4242-version-0.102.0", c.inProgressMarker("0.102.0").fileName.toString())
+        assertEquals(c.updatedMarker("0.102"), c.updatedMarker("0.102.0-r-abc1234"))
+        assertEquals("updated-0.102", c.updatedMarker("0.102.0-gh-abc1234").fileName.toString())
+        assertEquals("update-4242-version-0.102", c.inProgressMarker("0.102.0").fileName.toString())
 
         assertEquals(4242L to "0.102.0", parseInProgressMarkerName("update-4242-version-0.102.0"))
         // versions with dots and dashes still parse: pid stops at the fixed `-version-` separator
@@ -140,9 +141,11 @@ class UpdateCoordinationTest {
         c.writeUpdatedMarker("0.102.0-gh-abc", stateInfo(target = "0.102.0"))
         c.writeUpdatedMarker("0.101.5", stateInfo(target = "0.101.5"))
 
-        assertEquals("0.102.0", c.newestUpdatedVersion()?.value)
+        assertEquals("0.102", c.newestUpdatedVersion()?.value)
         assertEquals(2, c.updatedVersions().size)
 
+        // deletion is ordering-based: a marker written under a non-canonical ALIAS is still deleted
+        Files.writeString(dir.resolve("updated-0.102.0"), "{}")
         c.deleteUpdatedMarker("0.102.0")
         assertEquals("0.101.5", c.newestUpdatedVersion()?.value)
     }
@@ -265,6 +268,12 @@ class UpdateCoordinationTest {
     fun `base version strips build metadata and never takes the snapshot shortcut`() {
         assertEquals("0.101.441", baseVersionString("0.101.441-gh-abc1234"))
         assertEquals("0.101.441", baseVersionString("0.101.441"))
+        // trailing zero components are canonicalized away: the #360 release build `<base>.0-r-<hash>`
+        // and version.json's plain `<base>` must produce the SAME marker name
+        assertEquals("0.102", baseVersionString("0.102.0-r-abc1234"))
+        assertEquals("0.102", baseVersionString("0.102"))
+        assertEquals("0.95", baseVersionString("0.95.0"))
+        assertEquals("0.100", baseVersionString("0.100"))
         // A SNAPSHOT build's base must NOT compare as "newer than everything" in marker ordering —
         // that shortcut would let a dev build shadow real releases.
         val snapshotBase = baseVersion("0.101.19999-SNAPSHOT-abc")

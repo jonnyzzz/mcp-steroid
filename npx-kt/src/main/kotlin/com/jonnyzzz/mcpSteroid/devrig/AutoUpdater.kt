@@ -48,6 +48,12 @@ class AutoUpdater(
     },
     val noAutoUpdateEnv: String? = System.getenv(ENV_DEVRIG_NO_AUTO_UPDATE),
     val binRegisterOptOutEnv: String? = System.getenv(ENV_BIN_NO_AUTO_REGISTER),
+    /**
+     * Fired exactly once per actually-triggered update — after the lock is held and the skew guard
+     * passed, right before the installer spawns — with the raw promoted version from version.json.
+     * Main wires this to the beacon (`devrig_self_update` with `target_version`).
+     */
+    val onUpdateTriggered: (promotedVersion: String) -> Unit = { },
 ) {
     private var restartNotified = false
     private var manualNotified = false
@@ -127,7 +133,7 @@ class AutoUpdater(
             coordination.writeInProgressMarker(target, info)
             val script = coordination.scriptFile(isWin)
             try {
-                runLockedUpdate(script, scriptUrl, logFile, target)
+                runLockedUpdate(script, scriptUrl, logFile, target, promotedRaw = promoted.value)
             } finally {
                 coordination.deleteInProgressMarker(target)
                 try {
@@ -141,7 +147,7 @@ class AutoUpdater(
         }
     }
 
-    private suspend fun runLockedUpdate(script: Path, scriptUrl: String, logFile: Path, target: String) {
+    private suspend fun runLockedUpdate(script: Path, scriptUrl: String, logFile: Path, target: String, promotedRaw: String) {
         // step 7 — download + skew guard
         if (!downloadScript(scriptUrl, script)) {
             coordination.recordFailure(target, exitCode = null)
@@ -163,14 +169,22 @@ class AutoUpdater(
                 System.err.println("[mcp-steroid] could not find the baked VERSION in $scriptUrl — unexpected script format")
                 return
             }
-            baseVersionString(baked) != target -> {
-                // CDN mid-release propagation: quiet, bounded retry
+            baseVersion(baked).compareTo(baseVersion(target)) != 0 -> {
+                // CDN mid-release propagation: quiet, bounded retry. Ordering-based comparison, not
+                // string equality — `0.102` and `0.102.0` are the same release.
                 coordination.recordSkew(target, parsedVersion = baked)
                 return
             }
         }
 
-        // steps 8–9 — run detached under DEVRIG_AUTO_UPDATE=1, supervise with the tree-kill timeout
+        // steps 8–9 — run detached under DEVRIG_AUTO_UPDATE=1, supervise with the tree-kill timeout.
+        // The self-update is now actually triggered — surface it to telemetry (best-effort) with the
+        // version.json version as the parameter.
+        try {
+            onUpdateTriggered(promotedRaw)
+        } catch (e: Exception) {
+            System.err.println("[mcp-steroid] self-update trigger telemetry failed: $e")
+        }
         val exit = try {
             runInstaller(script, logFile)
         } catch (e: Exception) {

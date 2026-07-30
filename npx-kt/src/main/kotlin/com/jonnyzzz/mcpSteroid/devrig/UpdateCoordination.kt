@@ -156,25 +156,40 @@ class UpdateCoordination(
     fun writeUpdatedMarker(version: String, info: UpdateStateInfo) =
         writeJsonAtomically(updatedMarker(version), updateJson.encodeToString(UpdateStateInfo.serializer(), info))
 
+    /**
+     * Deletes every `updated-*` marker whose parsed version EQUALS [version] (ordering-based, not
+     * name-based): a marker written under a non-canonical alias (e.g. `updated-0.102.0` vs
+     * `updated-0.102`) must still be deletable, or a torn marker could survive its own repair.
+     */
     fun deleteUpdatedMarker(version: String) {
-        try {
-            Files.deleteIfExists(updatedMarker(version))
-        } catch (e: Exception) {
-            System.err.println("[mcp-steroid] could not delete ${updatedMarker(version)}: $e")
+        val target = baseVersion(version)
+        for ((file, v) in updatedMarkerFiles()) {
+            if (v.compareTo(target) != 0) continue
+            try {
+                Files.deleteIfExists(file)
+            } catch (e: Exception) {
+                System.err.println("[mcp-steroid] could not delete $file: $e")
+            }
         }
     }
 
-    /** All `updated-<v>` marker versions present, as base-form [DevrigVersion]s. */
-    fun updatedVersions(): List<DevrigVersion> = listMarkerFiles().mapNotNull { file ->
-        file.name.removePrefix("updated-").takeIf { it != file.name && it.isNotBlank() }?.let { baseVersion(it) }
+    /** All `updated-<v>` marker files with their parsed base-form versions. */
+    fun updatedMarkerFiles(): List<Pair<Path, DevrigVersion>> = listMarkerFiles().mapNotNull { file ->
+        file.name.removePrefix("updated-").takeIf { it != file.name && it.isNotBlank() }?.let { file to baseVersion(it) }
     }
+
+    fun updatedVersions(): List<DevrigVersion> = updatedMarkerFiles().map { it.second }
 
     fun newestUpdatedVersion(): DevrigVersion? = updatedVersions().maxOrNull()
 
     /** The `update-<pid>-version-<v>` marker written by the lock winner. */
     fun readInProgressMarker(version: String): UpdateStateInfo? = readStateInfo(inProgressMarker(version))
 
-    fun readUpdatedMarker(version: String): UpdateStateInfo? = readStateInfo(updatedMarker(version))
+    /** Ordering-based like [deleteUpdatedMarker]: any alias of [version] counts. */
+    fun readUpdatedMarker(version: String): UpdateStateInfo? {
+        val target = baseVersion(version)
+        return updatedMarkerFiles().firstOrNull { it.second.compareTo(target) == 0 }?.let { readStateInfo(it.first) }
+    }
 
     // ── failure + skew counters (single writer: only under the lock) ─────────────────────────────
 
@@ -481,8 +496,18 @@ fun parseInProgressMarkerName(name: String): Pair<Long, String>? {
 fun parseScriptFilePid(name: String): Long? =
     Regex("""^install-(\d+)\.(sh|ps1)$""").find(name)?.groupValues?.get(1)?.toLongOrNull()
 
-/** The canonical base form used in every marker filename: `0.101.441-gh-abc1234` → `0.101.441`. */
-fun baseVersionString(version: String): String = DevrigVersion.parse(version).comparableVersion
+/**
+ * The canonical base form used in every marker filename: strip build metadata, then strip trailing
+ * `.0` components — `0.101.441-gh-abc1234` → `0.101.441`, and crucially `0.102.0-r-abc1234` (the
+ * #360 release-lane build version) → `0.102`, the SAME text as version.json's `version-base`
+ * (`0.102`). VersionComparatorUtil treats trailing zeros as equal, so the canonical name must too —
+ * one release must never yield two textually different marker files.
+ */
+fun baseVersionString(version: String): String {
+    var base = DevrigVersion.parse(version).comparableVersion
+    while (base.endsWith(".0")) base = base.removeSuffix(".0")
+    return base
+}
 
 /**
  * Base-form [DevrigVersion] for marker ordering: strips build metadata AND the snapshot flag, so the
