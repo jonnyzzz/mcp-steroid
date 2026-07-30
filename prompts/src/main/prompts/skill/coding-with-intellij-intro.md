@@ -57,6 +57,26 @@ execute {
 
 > **Early exit.** Use plain `return` to stop the script. There is no `@execute` (or `@script`) label to return to — the body runs as the wrapping suspend function, so any unlabeled `return` exits cleanly. `return@execute` does NOT compile.
 
+### Output: Only What You Print Comes Back
+
+Apart from the `execution_id:` header, the tool response contains ONLY what your script
+explicitly prints — `println(...)`, `printJson(...)`, `printCsv(...)`, or `printToon(...)`.
+The last expression's value is **ignored by the runtime**: the body compiles as a suspend
+function body, not a REPL, so there is no implicit return value. `return` cannot carry one
+either — a bare `return` only exits early, and `return <value>` does not even compile (the
+generated function returns `Unit`). A script that computes a result but never prints it
+responds with just `execution_id: …` — indistinguishable from a script that produced nothing.
+
+```kotlin
+val paths = findProjectFiles("**/*.kt").map { it.path }
+
+// ✗ WRONG — ending the script with the bare expression `paths`:
+// its value is silently discarded and the response shows no output at all.
+
+// ✓ CORRECT — explicitly print everything the caller needs:
+println(paths.joinToString("\n"))
+```
+
 ### Script is a Coroutine
 
 The script body runs as a **suspend function**. This means:
@@ -160,7 +180,7 @@ println(if (problems.isEmpty()) "OK" else problems.toString())
 4. **Execution** - Your script body runs with timeout
    - Progress messages throttled to 1/second
    - Context disposed when complete
-5. **Response** - Output returned to MCP client
+5. **Response** - Everything the script printed (and nothing else) returned to MCP client
 
 ### Fast Failure
 

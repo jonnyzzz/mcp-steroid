@@ -66,6 +66,10 @@ If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` cal
 
 **Quick Start:**
 - Code is a suspend function body (never use runBlocking)
+- **Apart from the `execution_id:` header, the response contains ONLY what your script explicitly
+  prints.** The last expression's value is IGNORED by the runtime — this is a function body, not a
+  REPL, and there is no implicit return value. Print everything the caller needs (`println` /
+  `printJson` / `printCsv` / `printToon`) before the script ends. Full rules in "Output rules" below.
 - With the default `modal=smart_non_modal`, leftover modal dialogs are closed, the IDE is required
   non-modal, documents are committed/saved + VFS refreshed, and `waitForSmartMode()` runs — all before
   your script; then a monitor watches the run and **closes any modal that appears mid-script and FAILS the
@@ -118,8 +122,15 @@ Kotlin, so inspect the captured diagnostics first.
 **Surface is fixed.** `McpScriptContext` won't grow new helpers — call IntelliJ APIs directly. See `mcp-steroid://skill/design-philosophy` Tenet 3.
 
 **Output rules — the #1 reason agents think a call "returned empty":**
-- The last expression's value is NOT auto-printed (this is a Kotlin script, not a REPL).
-- To surface anything to the caller, wrap it in `println(value)` for plain text or `printJson(value)` for structured data.
+- **Everything you need back must be explicitly printed.** The last expression's value is IGNORED
+  by the runtime — never auto-printed, never returned (the code compiles as a suspend function
+  body, not a REPL). `return` only exits early; `return <value>` does not even compile (the
+  generated function returns `Unit`), so nothing can be carried back to the caller.
+- To surface anything to the caller, use a print helper: `println(value)` for plain text,
+  `printJson(value)` for structured data, `printCsv(...)` / `printToon(...)` for tabular records.
+- `progress(...)` is NOT output — it goes to MCP progress notifications and the IDE log, never
+  into the result. The print-only rule describes successful runs; a failed run additionally
+  carries the error text and diagnostic file paths (screenshot / thread dump).
 - A script that ends with `myList` (or any bare expression) prints nothing — you will see only `execution_id: …` in the response, identical to a script that returned no value at all. Always end with an explicit `println(...)` or `printJson(...)` of what the agent needs to see.
 - **For inspection / report tasks, print compact machine-readable lines on the first run.** Stable shapes like `KEY: value` per line or `printJson` parse cheaply on your end and let you build the user-facing summary without a second exec_code pass to reshape verbose IDE output. Recipes in `mcp-steroid://ide/find-duplicates`, `…/inspect-and-fix`, `…/inspection-summary` already follow this convention.
 - **For `runInspectionsDirectly`, do not `printJson(result)` directly.** It is Map-compatible and contains live `ProblemDescriptor` PSI/VFS references. Snapshot descriptor fields inside `readAction { }`, print a DTO, and always include `result.failedTools`; a non-empty `failedTools` means the check is not clean even when the findings map is empty.

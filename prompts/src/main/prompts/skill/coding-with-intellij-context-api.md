@@ -44,6 +44,10 @@ println("Project: ${project.name}, disposed: $isDisposed")
 
 ### Output Methods
 
+These methods are the ONLY channel back to the caller — apart from the `execution_id:` header,
+the tool response contains what the script prints, nothing else. The last expression's value is
+ignored by the runtime (function body, not a REPL), so always compute, then explicitly print.
+
 ```kotlin
 // Output methods:
 println("Hello", "World")               // Print space-separated values

@@ -16,7 +16,10 @@ This is a **STATEFUL** API — every call changes the IDE state. The IntelliJ ID
 **Getting started:**
 1. Call `steroid_list_projects` to see what's open — route every project-scoped call by the `project_name` it returns (the unique, opaque key), never by the human-readable `name`; to map a file/dir path to a project, pick the one whose `path` is the longest prefix of your target path
 2. Use `steroid_fetch_resource` to read the `mcp-steroid://` skill guide for your task
-3. Use `steroid_execute_code` for any IDE automation task (including every file edit)
+3. Use `steroid_execute_code` for any IDE automation task (including every file edit). The call
+   returns an `execution_id` header plus ONLY what the script explicitly prints (`println` /
+   `printJson`) — the last expression's value is ignored by the runtime, so print everything
+   you need to see
 
 **Modality — the `modal` option on `steroid_execute_code`.** By default (`modal=smart_non_modal`) the call
 closes stray modal dialogs, requires a non-modal IDE, commits/saves documents + refreshes the VFS, and waits

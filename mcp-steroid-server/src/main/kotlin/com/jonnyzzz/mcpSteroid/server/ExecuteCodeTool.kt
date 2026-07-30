@@ -82,7 +82,12 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
     val projectName = CommonToolParams.projectName().registerToSchema()
 
     val code = InputSchemaElement.param("code")
-        .description("Kotlin suspend method body")
+        .description(
+            "Kotlin suspend method body. The response carries an execution_id header plus ONLY " +
+                "what the script explicitly prints (println/printJson/printCsv/printToon) — the " +
+                "last expression's value is ignored by the runtime (function body, not a REPL), " +
+                "so print everything you need to see before the script ends."
+        )
         .string()
         .required()
         .registerToSchema()
