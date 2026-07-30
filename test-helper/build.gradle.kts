@@ -18,7 +18,7 @@ dependencies {
     // :mcp-steroid-server is plain JVM Kotlin (no com.intellij imports), so it
     // is safe to pull into test-helper's main classpath.
     implementation(project(":mcp-steroid-server"))
-    implementation(libs.kotlinx.coroutines.core)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 
     // opentest4j + JUnit 4 on the main classpath so AIAgentCompanion.create() can

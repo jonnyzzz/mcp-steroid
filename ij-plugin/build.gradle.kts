@@ -392,7 +392,7 @@ tasks {
         // a paired bump is a one-line edit shared by all six implementation modules.
         systemProperty(
             "mcp.steroid.test.expected.kotlinxCoroutinesVersion",
-            libs.versions.kotlinx.coroutines,
+            providers.gradleProperty("mcp.kotlinx.coroutines.version").get(),
         )
         systemProperty(
             "mcp.steroid.test.expected.kotlinxSerializationVersion",
@@ -417,7 +417,7 @@ val verifyBundledKotlinCompatibility = tasks.register<VerifyBundledKotlinCompati
     val sourceSets = project.extensions.getByType<SourceSetContainer>()
     mainRuntimeClasspath.from(sourceSets.getByName("main").runtimeClasspath)
     mainRuntimeClasspath.from(configurations.getByName("intellijPlatformDependency"))
-    bundledKotlinVersion.set(libs.versions.kotlin.asProvider())
+    bundledKotlinVersion.set(providers.gradleProperty("mcp.kotlinc.version"))
     kotlinPluginVersion.set(providers.provider {
         plugins.getPlugin(org.jetbrains.kotlin.gradle.plugin.KotlinPluginWrapper::class.java).pluginVersion
     })

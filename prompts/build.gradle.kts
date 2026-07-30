@@ -205,7 +205,7 @@ tasks.test {
     }
     dependsOn(ktblockExtraClasspath)
 
-    val kotlinVersion = libs.versions.kotlin.asProvider()
+    val kotlinVersion = providers.gradleProperty("mcp.kotlinc.version")
 
     doFirst {
         for ((spec, unpackDir, _) in ideDownloadTasks) {
