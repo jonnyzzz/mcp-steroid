@@ -116,7 +116,8 @@ The Trust Project dialog has these buttons:
 ← Input delivered
 
 → steroid_list_projects()
-← {"projects":[{"project_name":"untrusted-project-1a2b3c4d","name":"untrusted-project","path":"/path/to/untrusted-project","backend_name":"iu-9fk2a0xq"}, ...]}
+← {"projects":[{"project_name":"untrusted-project-1a2b3c4d","name":"untrusted-project","path":"/path/to/untrusted-project","backend_name":"iu-9fk2a0xq"}, ...],
+   "backends":[{"backend_name":"iu-9fk2a0xq","intellij":{"name":"IntelliJ IDEA 2026.1.3","version":"2026.1.3","build":"IU-261.25134.95"}}]}
 ```
 
 The `project_name` passed to the screenshot/input tools is the unique, opaque routing key from

@@ -72,9 +72,11 @@ entries. Each element is identity-only:
 - On a direct in-IDE connection, `backends` always contains exactly one
   element (the IDE itself), even with zero open projects — so probing a
   fresh IDE's identity is a single `steroid_list_projects` call.
-- Via devrig, `backends` lists exactly the backends referenced by this
-  response's entries — no more. Backend *inventory* (zero-project,
-  startable, and no-plugin IDEs) lives in `devrig backend --json`.
+- Via devrig, `backends` is derived from the same routing snapshot the
+  entries come from: every referenced `backend_name` resolves, and a
+  backend can appear with zero entries only in transient startup
+  states. Backend *inventory* (zero-project, startable, and no-plugin
+  IDEs) lives in `devrig backend --json`.
 - `windows[].projectName` is the opaque routing key, not a display
   name — enrich the human-readable `name`/`path` via
   `steroid_list_projects` (which carries the same `backends` table, so

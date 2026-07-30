@@ -50,7 +50,7 @@ class SelfBackendDescription(
  */
 fun SelfBackendDescription.toListProjectsResponse(): ListProjectsResponse = ListProjectsResponse(
     projects = projects.sortedBy { it.projectName },
-    backends = listOf(selfBackendRef()),
+    backends = backendsTable(listOf(selfBackendRef())),
 )
 
 suspend fun describeSelfBackend(): SelfBackendDescription {

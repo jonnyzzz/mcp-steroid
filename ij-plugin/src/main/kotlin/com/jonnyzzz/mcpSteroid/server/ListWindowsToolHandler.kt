@@ -29,7 +29,7 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
             windows = snapshot.windows.map { it.listed(it.projectName, self.backendName) },
             backgroundTasks = snapshot.backgroundTasks.map { it.listed(it.projectName, self.backendName) },
             // Unconditional self entry — the identity probe works even with zero open windows (#155).
-            backends = listOf(self.selfBackendRef()),
+            backends = backendsTable(listOf(self.selfBackendRef())),
         )
     }
 }

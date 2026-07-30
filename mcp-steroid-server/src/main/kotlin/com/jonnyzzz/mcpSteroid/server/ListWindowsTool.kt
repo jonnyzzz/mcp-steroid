@@ -39,10 +39,12 @@ data class ListWindowsResponse(
     val windows: List<ListedWindow>,
     val backgroundTasks: List<ListedBackgroundTask>,
     /**
-     * Resolution table for this response (#155): exactly the distinct `backend_name` values referenced
-     * by `windows[]` / `backgroundTasks[]` — no more, no less — sorted by `backend_name`, with one
-     * deliberate exception: on a direct in-IDE connection the single self entry is ALWAYS present, even
-     * with zero open windows (a server always describes itself — the identity probe). Identity-only by
+     * Resolution table for this response (#155), sorted by `backend_name`: every `backend_name`
+     * referenced by `windows[]` / `backgroundTasks[]` resolves to exactly one element. On a direct
+     * in-IDE connection it is the single self entry, ALWAYS present even with zero open windows (a
+     * server always describes itself — the identity probe). Via devrig it is derived from the same
+     * routing snapshot the entries come from — a route-owning backend can appear with zero entries in
+     * transient states (e.g. a project registered while its frame is still opening). Identity-only by
      * design: growth belongs to `devrig backend --json` (#151), never here.
      */
     val backends: List<BackendRef> = emptyList(),

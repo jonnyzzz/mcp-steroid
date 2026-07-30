@@ -52,7 +52,8 @@ target path (this disambiguates nested checkouts and git worktrees).
 **Example session:**
 ```
 → steroid_list_projects
-← {"projects":[{"project_name":"my-app-9fk2a0xq","name":"my-app","path":"/path/to/my-app","backend_name":"iu-9fk2a0xq"}]}
+← {"projects":[{"project_name":"my-app-9fk2a0xq","name":"my-app","path":"/path/to/my-app","backend_name":"iu-9fk2a0xq"}],
+   "backends":[{"backend_name":"iu-9fk2a0xq","intellij":{"name":"IntelliJ IDEA 2026.1.3","version":"2026.1.3","build":"IU-261.25134.95"}}]}
 
 → steroid_execute_code(project_name="my-app-9fk2a0xq", code="println(project.name)", ...)
 ← "my-app"

@@ -66,6 +66,11 @@ val expectedResponseExample = """
 println("Expected response format:\n$expectedResponseExample")
 ```
 
+The real response also carries a `backends` lookup (elided above for brevity): on a direct
+in-IDE connection it always holds exactly one element resolving `backend_name` to the IDE's
+identity (`intellij` = `{name, version, build}`) — see
+[Managing IDE backends](mcp-steroid://open-project/managing-backends).
+
 ### Step 4: Start Working
 
 Now you can use `steroid_execute_code` with the project:
@@ -94,7 +99,8 @@ println(executeCodeJson)
 → [wait 3 seconds]
 
 → steroid_list_projects()
-← {"projects":[{"project_name":"my-app-9fk2a0xq","name":"my-app","path":"/Users/me/projects/my-app","backend_name":"iu-9fk2a0xq"}]}
+← {"projects":[{"project_name":"my-app-9fk2a0xq","name":"my-app","path":"/Users/me/projects/my-app","backend_name":"iu-9fk2a0xq"}],
+   "backends":[{"backend_name":"iu-9fk2a0xq","intellij":{"name":"IntelliJ IDEA 2026.1.3","version":"2026.1.3","build":"IU-261.25134.95"}}]}
 
 → steroid_execute_code(project_name="my-app-9fk2a0xq", code="println(project.basePath)", ...)
 ← /Users/me/projects/my-app
