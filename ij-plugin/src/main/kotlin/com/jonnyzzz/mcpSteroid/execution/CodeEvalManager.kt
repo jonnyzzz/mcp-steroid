@@ -221,6 +221,11 @@ class CodeEvalManager(
 
             if (e.toString().contains("Service is dying", ignoreCase = true)) {
                 log.warn("Kotlin daemon is dying detected: ${e.message}", e)
+                // Recovery is deliberately session-close-only (the old KotlinDaemonManager
+                // also deleted the daemon's run files). A fresh session may reconnect to
+                // the same daemon — the stable jar paths key the daemon digest — so if the
+                // dying daemon lingers, the retry can hit it again; acceptable trade-off
+                // for dropping the custom daemon management, revisit if reports recur.
                 kotlinBuildsSession.close()
                 resultBuilder.logMessage("WARN: Script compilation/evaluation failed: Kotlin Daemon is dying. TRY AGAIN otherwise let user know")
                 project.executionStorage.writeCodeExecutionData(

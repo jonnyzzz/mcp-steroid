@@ -6,11 +6,17 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.div
 import kotlin.io.path.exists
 import kotlin.io.path.writeText
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -121,6 +127,78 @@ class KotlinBuildsSessionTest {
             }
             assertTrue(outputJar.exists())
         }
+    }
+
+    @Test
+    fun timeoutSurfacesAsTimeoutCancellationException() {
+        // The caller-visible timeout contract: CodeEvalManager maps
+        // TimeoutCancellationException to the "stopped on timeout" failure. The OCE
+        // that BTA throws after the cooperative cancel must NOT supersede it
+        // (quorum finding: translate OCE inside the async child).
+        val srcDir = tempFolder.newFolder("timeout-src").toPath()
+        val src = srcDir / "source.kt"
+        src.writeText("fun main() { println(\"Hello\") }\n")
+        val outputJar = tempFolder.newFolder("timeout-out").toPath() / "out.jar"
+
+        newSession().use { session ->
+            try {
+                runBlocking {
+                    session.compileKotlin(
+                        sources = listOf(src),
+                        destinationDir = outputJar,
+                        executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
+                        compilationTimeout = 1.milliseconds,
+                    ) {
+                        set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
+                    }
+                }
+                fail("Expected TimeoutCancellationException for a 1ms compilation timeout")
+            } catch (expected: TimeoutCancellationException) {
+                // expected
+            }
+        }
+    }
+
+    @Test
+    fun closeDuringCompileDefersUntilOperationCompletes() {
+        // close() must not tear down the session underneath an in-flight compile:
+        // the actual BuildSession.close() is deferred to the last lease release,
+        // and compiles started after close() get a fresh session.
+        val srcDir = tempFolder.newFolder("close-src").toPath()
+        val src = srcDir / "source.kt"
+        src.writeText("fun main() { println(\"Hello\") }\n")
+        val out1 = tempFolder.newFolder("close-out-1").toPath() / "out.jar"
+        val out2 = tempFolder.newFolder("close-out-2").toPath() / "out.jar"
+
+        val session = newSession()
+        runBlocking {
+            val compile = async(Dispatchers.IO) {
+                session.compileKotlin(
+                    sources = listOf(src),
+                    destinationDir = out1,
+                    executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
+                ) {
+                    set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
+                }
+            }
+            while (session.activeOperations == 0 && !compile.isCompleted) {
+                yield()
+            }
+            session.close()
+            assertEquals(CompilationResult.COMPILATION_SUCCESS, compile.await())
+        }
+
+        // Compiling again after close() starts a fresh session.
+        runBlocking {
+            assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
+                sources = listOf(src),
+                destinationDir = out2,
+                executionPolicy = KotlinBuildsSession.CompilationExecutionPolicy.IN_PROCESS,
+            ) {
+                set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
+            })
+        }
+        session.close()
     }
 
     @Test

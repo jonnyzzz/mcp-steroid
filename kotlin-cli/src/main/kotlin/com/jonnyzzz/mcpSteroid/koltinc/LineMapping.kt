@@ -11,11 +11,6 @@ package com.jonnyzzz.mcpSteroid.koltinc
 class LineMapping(private val wrappedToOriginal: Map<Int, Int>) {
 
     /**
-     * Remap line references in compiler output from wrapped-file lines to user-code lines.
-     * Matches patterns like `input.kt:LINE:COL:` and replaces LINE with the user-relative number.
-     * Lines not in the mapping (wrapper boilerplate) are left as-is.
-     */
-    /**
      * Remap a single wrapped-file line number to the user-code line, or null when
      * the line belongs to wrapper boilerplate rather than user code. Used for
      * structured compiler message locations (BTA [org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer.SourceLocation])
@@ -23,6 +18,11 @@ class LineMapping(private val wrappedToOriginal: Map<Int, Int>) {
      */
     fun remapLine(wrappedLine: Int): Int? = wrappedToOriginal[wrappedLine]
 
+    /**
+     * Remap line references in compiler output from wrapped-file lines to user-code lines.
+     * Matches patterns like `input.kt:LINE:COL:` and replaces LINE with the user-relative number.
+     * Lines not in the mapping (wrapper boilerplate) are left as-is.
+     */
     fun remapCompilerOutput(output: String, fileName: String = "input.kt"): String {
         val pattern = Regex("""${Regex.escape(fileName)}:(\d+):(\d+):""")
         return output.replace(pattern) { match ->
