@@ -79,6 +79,15 @@ class ProjectCommandRenderTest {
             projectPath = path,
         )
 
+    @Test
+    fun `projects are sorted by project_name`() {
+        // Same ordering as the MCP steroid_list_projects response (#155), whatever the input order.
+        val text = render(routes = listOf(route("zulu", "/p/zulu"), route("alpha", "/p/alpha")))
+        val i1 = text.indexOf("[1] alpha-rendertst")
+        val i2 = text.indexOf("[2] zulu-rendertst")
+        assertTrue(i1 in 0 until i2, "projects must render sorted by project_name; got:\n$text")
+    }
+
     // ------------------------------ shape ---------------------------------
 
     @Test
@@ -115,8 +124,8 @@ class ProjectCommandRenderTest {
             "expected list header for one project; got:\n$text")
         assertTrue(text.contains("[1] my-app") && text.contains("→") && text.contains("/Users/x/Work/my-app"),
             "expected project to render as name → path; got:\n$text")
-        assertTrue(text.contains("        IntelliJ IDEA 2025.3.3 (build IU-253.21581.142, pid 1234)"),
-            "expected owning IDE line to reuse backend identity formatting; got:\n$text")
+        assertTrue(text.contains("        IntelliJ IDEA 2025.3.3 (mock-backend-name; build IU-253.21581.142, pid 1234)"),
+            "expected owning IDE line to carry backend_name + identity formatting (#155); got:\n$text")
         assertTrue(text.contains("        MCP Steroid: 0.0.0-test"),
             "expected plugin status line; got:\n$text")
     }

@@ -337,9 +337,10 @@ fun renderBackendOutput3(
     s3: List<InstalledBackend>,
     out: PrintStream,
 ) {
-    // Split S1 by compatibility: ideHome present = compatible (new plugin), absent = incompatible (old plugin)
-    val s1Compatible = s1.filter { it.ideHome != null }
-    val s1Incompatible = s1.filter { it.ideHome == null }
+    // Split S1 by compatibility: ideHome present = compatible (new plugin), absent = incompatible (old plugin).
+    // Same ordering as the MCP backends[] lookup (#155): marker-backed rows sort by backend_name.
+    val s1Compatible = s1.filter { it.ideHome != null }.sortedBy { it.backendName }
+    val s1Incompatible = s1.filter { it.ideHome == null }.sortedBy { it.backendName }
 
     if (s1Compatible.isEmpty() && s1Incompatible.isEmpty() && s2.isEmpty() && s3.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
@@ -363,7 +364,7 @@ fun renderBackendOutput3(
         out.println("  (none)")
     } else {
         for ((index, ide) in s1Compatible.withIndex()) {
-            out.println("  [${index + 1}] ${markerBackendDisplayName(ide)} (${markerBackendLocatorLabel(ide)})")
+            out.println("  [${index + 1}] ${markerBackendDisplayName(ide)} (${ide.backendName}; ${markerBackendLocatorLabel(ide)})")
             val plugin = ide.plugin
             out.println("        ${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }}")
             if (index < s1Compatible.lastIndex) out.println()
@@ -380,14 +381,14 @@ fun renderBackendOutput3(
         out.println("  (none)")
     } else {
         for ((index, ide) in s1Incompatible.withIndex()) {
-            out.println("  [${index + 1}] ${markerBackendDisplayName(ide)} (${markerBackendLocatorLabel(ide)}) (incompatible plugin, old version)")
+            out.println("  [${index + 1}] ${markerBackendDisplayName(ide)} (${ide.backendName}; ${markerBackendLocatorLabel(ide)}) (incompatible plugin, old version)")
             val plugin = ide.plugin
             out.println("        ${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }} (incompatible)")
             if (index < group2Count - 1) out.println()
         }
         for ((index, ide) in s2Sorted.withIndex()) {
             val entryIndex = s1Incompatible.size + index + 1
-            out.println("  [$entryIndex] ${portBackendDisplayName(ide)} (${portBackendLocatorLabel(ide)}) (run: ${provisionCommand(provisionTargetId(ide.port))})")
+            out.println("  [$entryIndex] ${portBackendDisplayName(ide)} (${backendNameForPort(ide.port, ide.buildNumber)}; ${portBackendLocatorLabel(ide)}) (run: ${provisionCommand(provisionTargetId(ide.port))})")
             out.println("        MCP Steroid: not installed")
             if (s1Incompatible.size + index < group2Count - 1) out.println()
         }
@@ -402,7 +403,7 @@ fun renderBackendOutput3(
         out.println("  (none)")
     } else {
         for ((index, installed) in s3.withIndex()) {
-            out.println("  [${index + 1}] ${installed.ide.name} ${installed.ide.version} (managed: ${installed.id})")
+            out.println("  [${index + 1}] ${installed.ide.name} ${installed.ide.version} (${startableBackendName(installed)}; managed: ${installed.id})")
             out.println("        ideHome: ${installed.ideHome}")
             if (index < s3.lastIndex) out.println()
         }
@@ -439,8 +440,9 @@ fun renderBackendJson3(
     s3: List<InstalledBackend>,
     out: PrintStream,
 ) {
-    val s1Compatible = s1.filter { it.ideHome != null }
-    val s1Incompatible = s1.filter { it.ideHome == null }
+    // Same ordering as the MCP backends[] lookup (#155): marker-backed rows sort by backend_name.
+    val s1Compatible = s1.filter { it.ideHome != null }.sortedBy { it.backendName }
+    val s1Incompatible = s1.filter { it.ideHome == null }.sortedBy { it.backendName }
     val allMarkerBuilds = s1.mapNotNull { normaliseBuildForDedup(it.ide.build) }.toSet()
     val s2Deduped = s2.filter { portIde ->
         val norm = normaliseBuildForDedup(portIde.buildNumber)

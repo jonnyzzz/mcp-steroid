@@ -142,6 +142,16 @@ class BackendCommandJsonRenderTest {
     }
 
     @Test
+    fun `mcpSteroidBackends are sorted by backend_name`() {
+        // Same ordering as the MCP backends[] lookup (#155), whatever the discovery order.
+        val a = markerIde(pid = 1111L)
+        val b = markerIde(pid = 2222L)
+        val expected = listOf(a, b).map { it.backendName }.sorted()
+        val backends = render(s1 = listOf(b, a))["mcpSteroidBackends"]!!.jsonArray
+        assertEquals(expected, backends.map { it.jsonObject["backend_name"]?.jsonPrimitive?.contentOrNull })
+    }
+
+    @Test
     fun `multiple S1 entries are ordered as provided`() {
         val ide1 = markerIde(pid = 1L, build = "IU-261.1")
         val ide2 = markerIde(name = "PyCharm", pid = 2L, build = "PC-253.9")

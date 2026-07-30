@@ -130,10 +130,11 @@ class ProjectCommandJsonRenderTest {
     }
 
     @Test
-    fun `multiple projects are rendered in input order`() {
+    fun `multiple projects are sorted by project_name`() {
+        // Same ordering as the MCP steroid_list_projects response (#155), whatever the input order.
         val r1 = route("alpha-aaa", originalName = "alpha", path = "/p/alpha", backendName = "iu-aaa")
         val r2 = route("bravo-bbb", originalName = "bravo", path = "/p/bravo", backendName = "iu-bbb")
-        val projects = render(listOf(r1, r2))["projects"]!!.jsonArray
+        val projects = render(listOf(r2, r1))["projects"]!!.jsonArray
         assertEquals(2, projects.size)
         assertEquals("alpha-aaa", projects[0].jsonObject["project_name"]?.jsonPrimitive?.contentOrNull)
         assertEquals("bravo-bbb", projects[1].jsonObject["project_name"]?.jsonPrimitive?.contentOrNull)

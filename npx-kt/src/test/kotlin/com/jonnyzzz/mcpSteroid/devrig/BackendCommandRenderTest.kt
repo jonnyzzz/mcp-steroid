@@ -41,6 +41,7 @@ class BackendCommandRenderTest {
         build: String = "IU-253.21581.142",
         mcpUrl: String = "http://127.0.0.1:65000/mcp",
         ideHome: String? = "/mock/ide/home",
+        backendName: String = "mock-backend-name",
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
         val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
@@ -50,7 +51,7 @@ class BackendCommandRenderTest {
             bridgeHeaders = emptyMap(),
             ide = ideInfo,
             plugin = pluginInfo,
-            backendName = "mock-backend-name",
+            backendName = backendName,
             ideHome = ideHome,
         )
     }
@@ -126,8 +127,8 @@ class BackendCommandRenderTest {
         val text = render(s1 = listOf(markerIde("IntelliJ IDEA", "2025.3.3", pid = 1234L)))
         assertTrue(text.contains("MCP Steroid backends (1):"),
             "expected section header with count; got:\n$text")
-        assertTrue(text.contains("[1] IntelliJ IDEA 2025.3.3 (build IU-253.21581.142, pid 1234)"),
-            "expected numbered entry with version+build+locator; got:\n$text")
+        assertTrue(text.contains("[1] IntelliJ IDEA 2025.3.3 (mock-backend-name; build IU-253.21581.142, pid 1234)"),
+            "expected numbered entry with backend_name+version+build+locator (#155); got:\n$text")
         assertTrue(text.contains("MCP Steroid: 0.0.0-test"),
             "expected MCP Steroid plugin status; got:\n$text")
     }
@@ -162,8 +163,8 @@ class BackendCommandRenderTest {
         val text = render(s2 = setOf(portIde(port = 63342)))
         assertTrue(text.contains("Other IDEs (incompatible or no MCP Steroid) (1):"),
             "expected S2 section header; got:\n$text")
-        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342) (run: devrig backend provision port-63342)"),
-            "expected S2 entry with provision hint; got:\n$text")
+        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate (${backendNameForPort(63342, "IU-253.21581.142")}; build IU-253.21581.142, port 63342) (run: devrig backend provision port-63342)"),
+            "expected S2 entry with backend_name + provision hint; got:\n$text")
         assertTrue(text.contains("MCP Steroid: not installed"),
             "expected not-installed status; got:\n$text")
     }
@@ -193,8 +194,8 @@ class BackendCommandRenderTest {
     @Test
     fun `S2 port-discovered IDE drops build segment when buildNumber is null`() {
         val text = render(s2 = setOf(portIde(buildNumber = null)))
-        assertTrue(text.contains("(port 63342) (run: devrig backend provision port-63342)"),
-            "no buildNumber → locator should be `port N` only; got:\n$text")
+        assertTrue(text.contains("; port 63342) (run: devrig backend provision port-63342)"),
+            "no buildNumber → locator should be `port N` only after the backend_name; got:\n$text")
         assertFalse(text.contains("build ,"), "must not produce 'build , port …' when buildNumber is null; got:\n$text")
     }
 
@@ -209,11 +210,12 @@ class BackendCommandRenderTest {
 
     @Test
     fun `S3 installed backend shows section header and IDE identity`() {
-        val text = render(s3 = listOf(installedBackend()))
+        val installed = installedBackend()
+        val text = render(s3 = listOf(installed))
         assertTrue(text.contains("Installed, not running (startable) (1):"),
             "expected S3 section header; got:\n$text")
-        assertTrue(text.contains("[1] GoLand 2026.1 (managed: goland-2026.1)"),
-            "expected S3 entry; got:\n$text")
+        assertTrue(text.contains("[1] GoLand 2026.1 (${startableBackendName(installed)}; managed: goland-2026.1)"),
+            "expected S3 entry with backend_name; got:\n$text")
         assertTrue(text.contains("ideHome: /home/user/.mcp-steroid/backends/goland-2026.1/bundle-goland-2026.1"),
             "expected ideHome line; got:\n$text")
     }
@@ -258,8 +260,19 @@ class BackendCommandRenderTest {
         val text = render(s1 = listOf(
             markerIde("IntelliJ IDEA 2026.1.4", "2026.1.4", pid = 1234L, build = "IU-261.1")
         ))
-        assertTrue(text.contains("[1] IntelliJ IDEA 2026.1.4 (build IU-261.1, pid 1234)"), text)
+        assertTrue(text.contains("[1] IntelliJ IDEA 2026.1.4 (mock-backend-name; build IU-261.1, pid 1234)"), text)
         assertFalse(text.contains("2026.1.4 2026.1.4"), text)
+    }
+
+    @Test
+    fun `S1 backends are sorted by backend_name`() {
+        // Same ordering as the MCP backends[] lookup (#155), whatever the discovery order.
+        val late = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1L, backendName = "zz-late")
+        val early = markerIde("GoLand", "2025.3.3", pid = 2L, backendName = "aa-early")
+        val text = render(s1 = listOf(late, early))
+        val i1 = text.indexOf("[1] GoLand 2025.3.3 (aa-early;")
+        val i2 = text.indexOf("[2] IntelliJ IDEA 2025.3.3 (zz-late;")
+        assertTrue(i1 in 0 until i2, "S1 must sort by backend_name; got:\n$text")
     }
     // -------------------- Finding C: compatibility by ideHome ----------------
 

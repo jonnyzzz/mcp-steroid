@@ -18,7 +18,7 @@ build/
 !.idea/dictionaries
 
 out/
-.intellijPlatform/
+.intellijPlatform
 
 .vscode
 

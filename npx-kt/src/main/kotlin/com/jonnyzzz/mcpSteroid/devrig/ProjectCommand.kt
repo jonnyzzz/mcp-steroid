@@ -36,7 +36,7 @@ fun DevrigServices.runProjectCommand(command: DevrigCommand.DevrigCommandProject
  * Listing N open project(s) across M backend(s):
  *
  *   [1] <project-name>  →  <project-path>
- *         <IDE name> <version> (pid <pid>)
+ *         <IDE name> <version> (<backend_name>; build <build>, pid <pid>)
  *         MCP Steroid: <version>
  *
  * Skipped K backend(s) with MCP Steroid not installed:
@@ -70,14 +70,17 @@ fun renderProjectOutput3(
     out.println("Listing ${routes.size} open project(s) across $backendCount backend(s):")
     out.println()
 
-    val padWidth = routes.maxOf { it.exposedProjectName.codePointWidth() }.coerceAtMost(40)
-    for ((index, route) in routes.withIndex()) {
+    // Same ordering and identity key as the MCP steroid_list_projects response (#155):
+    // projects sort by project_name, and every entry names its backend_name.
+    val sortedRoutes = routes.sortedBy { it.exposedProjectName }
+    val padWidth = sortedRoutes.maxOf { it.exposedProjectName.codePointWidth() }.coerceAtMost(40)
+    for ((index, route) in sortedRoutes.withIndex()) {
         val paddedName = route.exposedProjectName.padEndCodePoints(padWidth)
         out.println("  [${index + 1}] $paddedName  →  ${route.projectPath}")
-        out.println("        ${markerBackendDisplayName(route.route)} (${markerBackendLocatorLabel(route.route)})")
+        out.println("        ${markerBackendDisplayName(route.route)} (${route.exposedBackendName}; ${markerBackendLocatorLabel(route.route)})")
         val plugin = route.route.plugin
         out.println("        ${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }}")
-        if (index < routes.lastIndex) out.println()
+        if (index < sortedRoutes.lastIndex) out.println()
     }
 
     renderPortSkippedFooter(portIdes, out)
@@ -117,7 +120,8 @@ fun renderProjectJson3(routes: List<ProjectRoute>, out: PrintStream) {
             put("version", DevrigVersionMetadata.getDevrigVersion())
         })
         putJsonArray("projects") {
-            for (route in routes) {
+            // Same ordering as the MCP steroid_list_projects response (#155): sort by project_name.
+            for (route in routes.sortedBy { it.exposedProjectName }) {
                 add(buildJsonObject {
                     put("project_name", route.exposedProjectName)
                     put("name", route.originalProjectName)
