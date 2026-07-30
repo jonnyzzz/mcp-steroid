@@ -275,12 +275,16 @@ suspend fun superviseInstallerProcess(
     }
     val started = process ?: throw IllegalStateException("no installer host could be started", spawnError)
 
-    // stdin: close our end of the pipe so the child reads EOF immediately (the scripts are
-    // contractually non-interactive; this mirrors install.sh's `< /dev/null`).
-    try {
-        started.outputStream.close()
-    } catch (e: Exception) {
-        System.err.println("[mcp-steroid] could not close the installer's stdin: $e")
+    // Close ALL our ends of the child's stdio: the stdin pipe (the child reads EOF immediately —
+    // the scripts are contractually non-interactive, mirroring install.sh's `< /dev/null`); stdout/
+    // stderr are redirected to the log file, so the JVM-side streams are closed too — devrig keeps
+    // no handle to the child's stdio.
+    for ((name, stream) in listOf("stdin" to started.outputStream, "stdout" to started.inputStream, "stderr" to started.errorStream)) {
+        try {
+            stream.close()
+        } catch (e: Exception) {
+            System.err.println("[mcp-steroid] could not close the installer's $name stream: $e")
+        }
     }
 
     // runInterruptible on Dispatchers.IO: the blocking waitFor must not occupy the caller's thread,
