@@ -1,8 +1,7 @@
-# devrig auto-update via the install scripts (design, simplified)
+# devrig auto-update via the install scripts
 
-Status: **APPROVED** — simplified design, re-validated (8 findings adopted) and
-unanimously 3×-quorum-approved against the criteria *simple, minimal,
-tradeoffs explicit* (0 blocking issues; see "Review log").
+Status: **APPROVED** — three review cycles, each closed by a unanimous 3× quorum
+(see the compact Review log at the end).
 Owner: devrig CLI (`npx-kt`); coordination files under `~/.mcp-steroid/update/`.
 
 ## Goal
@@ -15,28 +14,17 @@ channel, no new artifact format, and **no new obligations on the script**: its
 contract stays exactly what it is today — download, verify, unpack, then call
 `devrig install devrig`, which updates the launcher automatically.
 
-Multiple devrig processes run concurrently as a matter of course (Claude, Codex,
-Gemini each spawn their own `devrig mcp`). Coordination is *advisory*, through
-per-process marker files — there is deliberately **no lock**.
+## How it works, in one paragraph
 
-## Design principles (from the simplification pass)
-
-1. **No lock file.** A fixed-name lock can stay stuck after a failure and
-   creates more problems than it solves. Each process writes its own
-   `update-<pid>-version-<v>` file; everyone cleans up files from dead
-   processes and yields to live ones — and when two announce in the same
-   window, the lowest pid wins (step 8). Best-effort mutual exclusion; the
-   rare double-run is harmless (see Tradeoffs #1).
-2. **`updated-<version>` is the single record of "this version is done."**
-   Written by the supervising devrig after the install script exits 0, with the
-   version taken from `version.json`. Once the file exists, that version needs
-   no more work — every process checks it before starting an update.
-3. **The devrig binary is not a source of truth.** No launcher version stamps,
-   no content verification, no completion markers written by
-   `devrig install devrig` — those coupled the install script's success to new
-   devrig behavior, a heavy dependency the flow does not need. The launcher's
-   correctness is owned by the (rename-based) launcher replacement itself,
-   fixed independently of this design.
+Each `devrig mcp` session runs a background tick every 3–8 hours. A tick fetches
+`version.json`; if a newer version is promoted and nobody else is already
+updating (visible as another process's live marker file), the session announces
+itself with its own `update-<pid>-version-<version>` file, downloads the install
+script, and runs it as a detached, supervised child with stdin closed and all
+output going to a per-pid log. When the script exits 0, the session writes the
+`updated-<version>` completion record and proposes a restart. Every failure, of
+any kind, retries on the next tick — forever. There is no lock, no failure
+bookkeeping, and devrig never reads back the contents of its own marker files.
 
 ## Filesystem layout
 
@@ -91,14 +79,15 @@ Each tick:
    would also poison the GC bound's `min(current, promoted)` comparison.)
 2. **Fetch** `version.json` → `promoted`. Fetch failed → end the tick (GC
    included — it needs `promoted` for a safe bound; housekeeping can wait).
-3. **GC** (cheap): delete stale per-pid markers and orphaned `install-<pid>.*`
-   scripts (staleness rule above); delete `updated-<v>` where
-   `v < min(current, promoted)` — the bound includes `promoted` so a session
-   running NEWER than the promoted version (the post-rollback state) never
-   deletes the `updated-<promoted>` record that older sessions rely on (they
-   would reinstall every tick otherwise); `updated-<current>` still naturally
-   ages out one release later. Delete `logs/update-*.log` older than 30 days
-   and any legacy `update-failed-*` files (a removed mechanism, below).
+3. **GC** (cheap): delete stale per-pid markers, orphaned `install-<pid>.*`
+   scripts, and orphaned `.tmp.<pid>.*` atomic-write staging (staleness rule
+   above); delete `updated-<v>` where `v < min(current, promoted)` — the bound
+   includes `promoted` so a session running NEWER than the promoted version
+   (the post-rollback state) never deletes the `updated-<promoted>` record
+   that older sessions rely on (they would reinstall every tick otherwise);
+   `updated-<current>` still naturally ages out one release later. Delete
+   `logs/update-*.log` older than 30 days and any legacy `update-failed-*`
+   files (an earlier design's failure counter — see Design decisions).
 4. **Update available?** If
    `!DevrigVersion.isUpdateAvailable(current, promoted)` → done. (A promoted
    version moving backward is never auto-applied; rollback = pull the release
@@ -131,9 +120,8 @@ Each tick:
    both announce; this recheck settles that race deterministically (equal
    pids are impossible on one host, and a higher-pid rival whose recheck
    runs after ours sees our lower pid and yields the same way). The residual
-   double-run window is only the announce↔recheck race itself: the
-   lower-pid process announces *after* the higher-pid one's recheck already
-   scanned (see Tradeoff 1 — shrunk, still accepted).
+   double-run window is only the announce↔recheck race itself (see
+   Tradeoff 1).
 9. **Download the script** (`https://devrig.dev/install.sh` or `/install.ps1`)
    → `update/install-<ownPid>.sh|.ps1`. A failed download (HTTP error/timeout
    on a ~40 KB text file) resolves as a stderr line, delete own marker, retry
@@ -152,21 +140,16 @@ Each tick:
     processes never clash; retries of the same version by the same process
     append to the same file, each attempt opening with a timestamped separator
     line followed by a record of the resolved host binary.
-    Supervise with `waitFor` + a 1 h timeout; on timeout force-kill ONLY the
-    process we started (the shell/PowerShell host) **before** any cleanup,
+    Supervise with `waitFor` + a **1 h** timeout; on timeout force-kill ONLY
+    the process we started (the shell/PowerShell host) **before** any cleanup,
     with a short bounded wait for it to die. There is deliberately no
     process-tree walk: children of the killed shell may survive (grandchildren
     are NOT killed — tree management is too much process-plumbing detail for
     this path; a survivor is the same class of unbounded orphan as Tradeoff
-    5's, and the next tick retries anyway). (The kill can land
-    mid-`devrig install devrig` launcher replacement — PR #385's rename
-    sequence must stay crash-safe: never a moment with no `bin/devrig` on
-    disk, since agents spawn devrig by that absolute path and a missing
-    launcher has no self-heal trigger.) The child survives devrig's own death
-    by design: an **unsupervised** orphan (supervisor died) has no timeout and
-    can finish much later — see Tradeoff 5 for what that costs. No `updated-`
-    record is written without a supervisor; the next session re-runs from
-    cached artifacts.
+    5's, and the next tick retries anyway). The kill can land
+    mid-`devrig install devrig` launcher replacement — covered by the
+    launcher-replacement contract below (retried in place, self-heals on the
+    next devrig start; the brief availability gap is accepted).
     "Detached" means own stdio and a lifetime independent of the JVM — the
     child deliberately stays in devrig's own session/process group, NOT
     re-parented into its own session: every real shield is a platform branch
@@ -176,8 +159,11 @@ Each tick:
     contract outright. Consequence: an agent CLI that signals devrig's whole
     process group on session close kills installer and supervisor together —
     rare, accepted (documentation over platform branches; Tradeoff 5); the
-    next session re-runs from cached artifacts, and a shielded survivor
-    would only have become Tradeoff 5's unrecorded orphan anyway.
+    next session re-runs from cached artifacts. The child DOES survive
+    devrig's own death: an **unsupervised** orphan (supervisor died) has no
+    timeout and can finish much later — see Tradeoff 5. No `updated-` record
+    is written without a supervisor; the next session re-runs from cached
+    artifacts.
 11. **On exit 0:** write `updated-<promoted>` (atomic write; version taken from
     `version.json`), delete own marker + script, emit the **restart notice**.
     Telemetry: the trigger (step 10 spawn) was already captured as
@@ -187,6 +173,29 @@ Each tick:
     the next scheduled tick, forever. Own-marker deletion sits in a `finally` —
     a crashed tick leaves only a dead-pid marker, which any process cleans
     (step 3); nothing can stay stuck.
+
+## Launcher replacement (the `devrig install devrig` handoff)
+
+The install script's last step, `devrig install devrig`, replaces
+`~/.mcp-steroid/bin/devrig` (POSIX) / `devrig.cmd` (Windows). That replacement
+uses **one algorithm for all platforms and every launcher write** (PR #385) —
+the file is never edited in place:
+
+1. Write the new script content to a NEW file next to the original, named
+   `<original-name>.new<pid>` (executable bit set before any move).
+2. Attempt to MOVE `.new<pid>` onto the original name (atomic replace). If
+   that works — done.
+3. Otherwise (e.g. Windows holds the original open — replace/delete need
+   delete-access, a plain rename does not): move the original to
+   `<original-name>.old<pid>`, then move `.new<pid>` onto the original name.
+4. If any step fails at any point: wait 10 ms and try again, up to 5 attempts,
+   then give up with a stderr log (the next devrig start self-heals — the
+   launcher is rewritten on every start).
+
+The brief availability gap between the two renames in step 3 is **accepted**
+(as atomic as practical, not theoretically perfect). Stale `.old<pid>` /
+`.new<pid>` leftovers (a crash mid-sequence, a Windows handle pinning the old
+file) are swept best-effort on later starts.
 
 ## Notifications
 
@@ -203,62 +212,57 @@ in-progress marker → silence; `updated-<promoted>` present → restart notice.
 There is no "give up" message anywhere: failures are visible in stderr and the
 per-attempt logs, never as a user-facing nag (Tradeoff 9).
 
-## What the simplification deliberately removed
+## Gating and opt-out
 
-Removed from the previous revision, per the simplification pass — each with the
-failure mode it un-mitigates recorded under Tradeoffs:
+- `DEVRIG_NO_AUTO_UPDATE` = `yes/true/1/on` → active updater off; passive
+  notice remains.
+- `DEVRIG_BIN_NO_AUTO_REGISTER` opt-out → active updater off (launcher writes
+  disabled — an "install" could never take effect).
+- SNAPSHOT/dev builds: whole tick off (explicit invariant with its own test).
+- Active updater: `devrig mcp` only. CLI-invocations-running-MCP-tools support
+  is tracked separately (issue #383).
 
-- the fixed-name `update/lock` + atomic-rename reclaim + pid-checked release
-  (→ Tradeoff 1);
-- the launcher version stamp, the `ensureBinLauncher` no-downgrade guard, and
-  every "never trust the marker over the launcher" reality check
-  (→ Tradeoffs 2, 3);
-- `devrig install devrig` as update authority (content verification, writing
-  `updated-<v>` itself, the `DEVRIG_AUTO_UPDATE` env fence, the marker sweep on
-  rollback) — the script contract is again just "call `devrig install devrig`"
-  (→ Tradeoffs 2, 3, 5);
-- the `update-skew-<v>` counter (→ Tradeoff 6);
-- the baked-version extraction (`^VERSION='…'` / `^\s*\$Version\s*=\s*'…'`)
-  and the version sanity (skew) check on the downloaded script — devrig no
-  longer parses the install script at all, and the DO-NOT-REFORMAT comments
-  briefly added to the templates are reverted with it (the templates match
-  `main` again; auto-update depends on nothing in their text) (→ Tradeoff 6);
-- **failure tracking altogether** (a second owner decision, after the counter
-  had already been trimmed to a bare 3-attempt cap): no `update-failed-*`
-  files, no cap, no "update manually" nag — there are too many possible root
-  causes, and the product goal is to keep users up to date, so updates retry
-  on the 3–8 h schedule forever (→ Tradeoff 9); legacy `update-failed-*`
-  files are GC'd;
-- the `hostname` marker field and the same-host/foreign-host staleness branch
-  (staleness is uniformly "local pid dead OR older than 24 h" → Tradeoff 4);
-- **reading marker contents back** (the JSON `pid`/`startedAt` fields as
-  staleness inputs, and the parse-failure fallback that came with them):
-  parsing our own files couples liveness to a JSON format that must then stay
-  compatible across versions — error-prone for zero benefit, since the
-  filename already carries the pid and the version, and mtime carries the age.
-  Contents remain pretty-printed JSON, but strictly as write-only debugging
-  information;
-- the timeout process-tree kill (`descendants().destroyForcibly()` before the
-  root): on timeout — now 1 h instead of 30 min — devrig force-kills only the
-  process it started; children of the killed shell may survive as the same
-  class of unbounded orphan as a dead supervisor's (→ Tradeoff 5).
+## Design decisions (what was deliberately rejected, and why)
 
-The Windows-specific danger of overwriting a launcher that another process
-holds open is fixed at the root, independently of this design: the launcher
-replacement becomes **rename-based** (rename the original aside, rename the new
-file into its name — delete/overwrite-in-place can fail on Windows file locks).
-That fix lands as its own PR and benefits every launcher write, not just
-auto-update.
+Each rejection trades a rare failure mode (recorded under Tradeoffs) for less
+machinery:
+
+- **No lock file.** A fixed-name lock can stay stuck after a failure and
+  creates more problems than it solves. Per-pid markers + dead-pid cleanup +
+  yield-to-live + the lowest-pid-wins recheck are the only coordination
+  (→ Tradeoff 1).
+- **The devrig binary is not a source of truth.** No launcher version stamps,
+  no content verification, no completion markers written by
+  `devrig install devrig` — those coupled the install script's success to new
+  devrig behavior, a heavy dependency the flow does not need
+  (→ Tradeoffs 2, 3). The launcher's correctness is owned by the
+  rename-based replacement above.
+- **No failure tracking.** No `update-failed-*` files, no attempt cap, no
+  "update manually" nag: too many possible root causes exist, and the product
+  goal is to keep users up to date — retries run on the 3–8 h schedule forever
+  (→ Tradeoff 9). Legacy `update-failed-*` files from earlier builds are GC'd.
+- **The downloaded install script is opaque.** No baked-version extraction, no
+  skew check — devrig depends on nothing inside the script's text, and the
+  templates carry no auto-update coupling (→ Tradeoff 6).
+- **Marker contents are never read back.** Coordination keys on filenames
+  (pid, version) and mtime only; the pretty JSON is write-only debugging
+  information, free to change format at any time.
+- **No process-tree kill.** On timeout only the started shell/PowerShell host
+  is force-killed; grandchildren may survive as the same class of orphan a
+  dead supervisor leaves (→ Tradeoff 5).
+- **No process-group shielding.** The installer keeps its own stdio and
+  survives devrig's death, but stays in devrig's session/process group —
+  every real shield is a platform branch, and full daemonization would break
+  the supervisor contract (→ Tradeoff 5).
 
 ## Tradeoffs (explicit)
 
-1. **Two updaters can still run concurrently — in a much smaller window.**
+1. **Two updaters can still run concurrently — in a small window.**
    "Clean dead → check live → create own → recheck" is not atomic; the
    step-8 lowest-pid-wins recheck settles the common both-announce case, so
    a double-run now needs the **lower**-pid process to announce only *after*
    the higher-pid one's recheck already scanned (both then proceed). That is
-   the announce↔recheck race — sub-second, versus the whole install duration
-   before the recheck existed. Accepted: the install scripts are
+   the announce↔recheck race — sub-second. Accepted: the install scripts are
    concurrency-tolerant by construction (per-pid `.tmp.$$` staging,
    `promote_tree` accepts the winner, launcher written once by each
    `devrig install devrig`), so the worst case is a duplicate download of the
@@ -266,9 +270,8 @@ auto-update.
    in the same few-second window (3–8 h apart per session) — **correlated
    startups collide much more often** (first ticks fire 0.2–1.3 s after
    start, so launching Claude+Codex+Gemini together on a release morning
-   lands ticks close together), but even those now also need the sub-second
-   announce↔recheck interleaving. The harm is unchanged (a duplicate
-   download).
+   lands ticks close together), but even those also need the sub-second
+   announce↔recheck interleaving.
 2. **`updated-<v>` is trust, not proof.** The supervisor writes it on exit 0
    without verifying the launcher actually changed. An install that exited 0
    but did not take effect (e.g. launcher managed manually, exotic failure
@@ -303,18 +306,15 @@ auto-update.
    notice that restarting cannot satisfy, until the next release. The same
    class of orphan also survives a *fired* timeout: the kill takes down only
    the started shell, so a mid-stall child of that shell keeps running
-   unbounded (step 10 — accepted, no tree-kill). Frequency: requires supervisor
-   death (or a timeout-kill with a surviving child) AND a >1 h stall AND an
-   intervening completed install. Accepted as release-cadence-correcting; a
-   transfer timeout in the install scripts is a listed follow-up that shrinks
-   the window with zero protocol complexity.
+   unbounded (step 10 — accepted, no tree-kill). Frequency: requires
+   supervisor death (or a timeout-kill with a surviving child) AND a >1 h
+   stall AND an intervening completed install. Accepted as
+   release-cadence-correcting; a transfer timeout in the install scripts is a
+   listed follow-up that shrinks the window with zero protocol complexity.
    The sibling case — the whole process **group** is signalled (agent CLIs
    may kill devrig's group when the user closes a session) — takes supervisor
    and installer down together: no record AND no orphan; the next session
-   re-runs from cached artifacts. Shielding the installer into its own
-   session was considered and rejected (step 10): no `setsid(1)` on macOS,
-   platform branches everywhere else, for a survivor that would only land in
-   this tradeoff's unrecorded-orphan state.
+   re-runs from cached artifacts.
 6. **A stale install script installs the previous version under the new
    version's record.** The downloaded script is never inspected, so when
    version.json already promotes `v_new` while the CDN still serves the
@@ -326,13 +326,12 @@ auto-update.
    after the CDN settles minutes later — GC never deletes the marker (it is
    not below `min(current, promoted)`), and every session on `v_old` shows a
    restart notice that restarting cannot satisfy. The state heals only at the
-   **next release** (whose new version gets a fresh marker) or via a manual
-   `curl | sh` install once the CDN settles — the same release-cadence
-   self-correction as Tradeoffs 2 and 3. Frequency: a tick must land inside
-   the propagation window; first ticks fire 0.2–1.3 s after session start, so
-   a release-morning session start can hit it. Pipeline-skew detection
-   belongs to the release process (`release/release-instructions.md` Stage 9
-   agreement checks + the weekly URL-liveness action).
+   **next release** or via a manual `curl | sh` install once the CDN settles.
+   Frequency: a tick must land inside the propagation window; first ticks
+   fire 0.2–1.3 s after session start, so a release-morning session start can
+   hit it. Pipeline-skew detection belongs to the release process
+   (`release/release-instructions.md` Stage 9 agreement checks + the weekly
+   URL-liveness action).
 7. **Disk accretion is unbounded.** Nothing deletes superseded
    content-addressed trees under `~/.mcp-steroid/binaries/` (the scripts sweep
    only `.tmp.*` staging). Manual installs made growth rare and
@@ -351,134 +350,87 @@ auto-update.
    pulled version number is never re-promoted; re-releases bump the base
    version.** Frequency: manual rollbacks/re-promotions — rare,
    operator-driven.
-9. **Persistent failures retry forever, silently.** With failure tracking
-   removed (owner decision — too many possible root causes; the product goal
-   is keeping users up to date), a deterministically failing install (GPO
-   blocking script execution, a broken environment, persistent SHA mismatch)
-   re-runs the installer on every 3–8 h tick indefinitely: worst case a few
-   installer runs per day per machine, with a full artifact re-download only
-   when the failure is in the download/verify stage (later stages retry from
-   the content-addressed cache). The user is never nagged to intervene —
-   failures are visible only in stderr and `logs/update-*.log`. Accepted: an
-   unbounded quiet retry is preferred over ever telling users to stop
-   receiving updates.
-
-## Gating and opt-out
-
-- `DEVRIG_NO_AUTO_UPDATE` = `yes/true/1/on` → active updater off; passive
-  notice remains.
-- `DEVRIG_BIN_NO_AUTO_REGISTER` opt-out → active updater off (launcher writes
-  disabled — an "install" could never take effect).
-- SNAPSHOT/dev builds: whole tick off (explicit invariant with its own test).
-- Active updater: `devrig mcp` only. CLI-invocations-running-MCP-tools support
-  is tracked separately (issue #383).
+9. **Persistent failures retry forever, silently.** A deterministically
+   failing install (GPO blocking script execution, a broken environment,
+   persistent SHA mismatch) re-runs the installer on every 3–8 h tick
+   indefinitely: worst case a few installer runs per day per machine, with a
+   full artifact re-download only when the failure is in the download/verify
+   stage (later stages retry from the content-addressed cache). The user is
+   never nagged to intervene — failures are visible only in stderr and
+   `logs/update-*.log`. Accepted: an unbounded quiet retry is preferred over
+   ever telling users to stop receiving updates.
 
 ## Security considerations
 
-Unchanged: auto-update executes a script fetched over TLS from `devrig.dev` —
-the same trust root as the documented manual `curl | sh`; the script SHA-256-
-pins every artifact. Auto-update raises blast radius (a compromised origin
-reaches all auto-updating installs on their next tick); the v7 deployment
-spec's signed manifest remains the designed hardening path, out of scope here.
-Tracked follow-up: issue #389 — sign the install scripts, publish signatures
-in version.json, verify before executing.
+Auto-update executes a script fetched over TLS from `devrig.dev` — the same
+trust root as the documented manual `curl | sh`; the script SHA-256-pins every
+artifact it downloads. Auto-update raises blast radius (a compromised origin
+reaches all auto-updating installs on their next tick); the designed hardening
+path is tracked as follow-up **issue #389** — sign the install scripts, publish
+signatures in `version.json`, verify before executing (the jonnyzzz/devrig
+release-process approach).
 
-## Test plan (sketch)
+## Test plan
 
 - Unit: marker name parse/format + canonical version (incl. `.0-r-` release
   lane); the uniform staleness rule (filename pid dead; > 24 h mtime age; the
   age bound overriding a live-looking pid; contents never read — an
   unparsable marker behaves exactly like a valid one); tick decision tree with
-  fakes (yield to live
-  marker; the step-8 announce race — both announce in the same window, the
-  higher-pid tick yields after announcing and deletes its OWN marker only,
-  the lower-pid tick proceeds; `updated-` short-circuit + restart notice;
-  download failure →
-  quiet retry with no state written and no trigger reported; exit-0 happy path;
-  failing installer retries on EVERY tick with no cap, no state, and no
-  user-facing notice; gate matrix); passive-notice truth table; GC invariants
-  (SNAPSHOT never GCs; `v < min(current, promoted)` including the
-  post-rollback keep-case — a session newer than `promoted` must NOT delete
-  `updated-<promoted>`; legacy `update-failed-*` swept unconditionally; log
-  sweep); stdout purity (`AutoUpdaterStdoutPurityTest`: streams swapped for
-  capture buffers around full ticks — happy path, failing installer,
-  installer timeout, download failure, yield to a live marker — stdout is
-  the MCP JSON-RPC channel and must stay EMPTY in every case, with the
-  expected notice/warning lines landing on stderr).
+  fakes (yield to live marker; the step-8 announce race — both announce in the
+  same window, the higher-pid tick yields after announcing and deletes its OWN
+  marker only, the lower-pid tick proceeds; `updated-` short-circuit + restart
+  notice; download failure → quiet retry with no state written and no trigger
+  reported; exit-0 happy path; failing installer retries on EVERY tick with no
+  cap, no state, and no user-facing notice; gate matrix); passive-notice truth
+  table; GC invariants (SNAPSHOT never GCs; `v < min(current, promoted)`
+  including the post-rollback keep-case — a session newer than `promoted` must
+  NOT delete `updated-<promoted>`; legacy `update-failed-*` and orphaned
+  `.tmp.<pid>.*` staging swept; log sweep); stdout purity
+  (`AutoUpdaterStdoutPurityTest`: streams swapped for capture buffers around
+  full ticks — happy path, failing installer, installer timeout, download
+  failure, yield to a live marker — stdout is the MCP JSON-RPC channel and
+  must stay EMPTY in every case, with the expected notice/warning lines
+  landing on stderr).
 - Process-level (JVM, POSIX): real `/bin/sh` fixture — stdin EOF, log
   redirection behind a per-attempt separator + host-record line, retries
   appending to the same per-pid log, exit-code propagation, timeout kill of
   the started process ONLY (null returned promptly; the detached grandchild
   survives by design — the test asserts it and cleans it up).
+- Launcher replacement (PR #385): the unified `.new<pid>` → move →
+  `.old<pid>` fallback sequence with the 10 ms × 5 retry, exercised on POSIX
+  via an injected failing first move; stale `.new*`/`.old*` sweep.
 - Integration (planned — not yet implemented): drive the real `install.sh`
   through the auto-update path end-to-end against the nginx fixture model of
   the existing installer lane (`:installer-gen:installerIntegrationTest`,
   `InstallerBootstrapTest`); today that lane covers the script side alone.
 
-## Review log
+## Review log (compact)
 
-- 2026-07-30 — validation workflow (3 lenses, adversarial verify): 9 findings
-  confirmed, 1 refuted → v1 design; 3× quorum: unanimous approve, 0 blocking.
-- 2026-07-30 — **simplification pass** (owner decision): drop the lock file
-  (stuck-lock risk outweighs the double-run it prevents), keep per-pid markers
-  as the only coordination; `updated-<version>` written by the supervisor from
-  version.json is the completion record; stop using the devrig binary as
-  source of truth (no stamps/guards/authority — the script contract is only
-  `devrig install devrig`); launcher replacement made rename-based in a
-  separate dedicated PR (#385, Windows file locks).
-- 2026-07-30 — re-validation of the simplified design (3 lenses: correctness
-  within the binding decisions, further minimality, tradeoff completeness):
-  8 findings, all adopted — GC bound became `min(current, promoted)` with
-  fetch-before-GC (rollback reinstall-loop fix); the 1 h spacing arm dropped
-  (a pacing condition fired the manual banner); script-download failure
-  reclassified as quiet retry (no counter burn on network blips); `hostname` +
-  the host-branch dropped (uniform staleness rule); orphan-flip-back, disk
-  accretion, and rollback-leftover-marker recorded as Tradeoffs 5/7/8; the
-  never-re-promote release invariant recorded.
-- 2026-07-30 — 3× quorum on the simplified design (protocol soundness;
-  minimality; tradeoff honesty + implementability): **unanimous
-  APPROVE_WITH_NITS, 0 blocking issues.** All nits folded in: stale test-plan
-  text (spacing arm, host vocabulary, old GC bound), the SNAPSHOT-gate
-  rationale, Tradeoff 1's correlated-startup frequency, Tradeoff 8 trimmed to
-  its real residual (the leftover marker is inert; only re-promotion is
-  blocked), the unreadable-script case classified with download failure, the
-  passive failure-cap row clarified, the PR #385 crash-safety cross-reference,
-  and DO-NOT-REFORMAT guards on the templates' baked-version lines (later
-  reverted with the parsing removal — the templates carry no auto-update
-  coupling).
-- 2026-07-30 — **owner decision, round 2:** failure tracking removed entirely
-  (the 3-attempt cap included). There are too many possible root causes to
-  ever stop; updates retry on a **3–8 h jittered schedule, forever**, and no
-  "update manually" nag exists — diagnosis lives in stderr + the per-attempt
-  logs (Tradeoff 9). `update-failed-*` becomes a legacy name swept by GC.
-- 2026-07-30 — **owner directives, round 3 (ten decisions, simplicity
-  first):** one pass over the whole flow, every point traded toward less
-  machinery. (a) The downloaded install script is **never parsed** — the
-  baked-VERSION extraction and the version sanity (skew) check are removed;
-  the mid-propagation consequence (a stale script installs the previous
-  version while `updated-<promoted>` records the new one, healing only at
-  the next release) is folded into Tradeoff 6. (b) The templates'
-  DO-NOT-REFORMAT guards are reverted with it — devrig must not depend on
-  script internals (the templates match `main` again). (c) Marker contents
-  are **never read back**: staleness keys on the filename pid + file mtime
-  only; the pretty JSON stays as write-only debugging information. (d) No
-  descendant/process-tree kill — too much process-plumbing detail: on
-  timeout, raised from 30 min to **1 h**, only the started shell/PowerShell
-  host is force-killed (step 10, Tradeoff 5). (e) The installer runs
-  **detached** where sensible — own stdio, lifetime independent of the JVM —
-  but deliberately stays in devrig's session/process group: every real
-  shield against a group-wide kill is a platform branch (`setsid(1)` on
-  Linux only; macOS ships none; Windows needs CreateProcess flags the JVM
-  cannot set), full daemonization would break the `waitFor` → `updated-`
-  contract, and a shielded survivor would only become Tradeoff 5's
-  unrecorded orphan — documentation over code (step 10). (f) stdin of the
-  started script is closed (immediate EOF) and its output goes to the
-  clash-free per-pid `logs/update-<pid>-<version>.log`, each attempt behind
-  a timestamped separator (step 10). (g) A **post-announce recheck** settles
-  the both-announce race: the lowest pid wins (new step 8; Tradeoff 1
-  shrinks to the sub-second announce↔recheck window). (h) stdout purity of
-  the whole update path is pinned by test (`AutoUpdaterStdoutPurityTest`) —
-  everything user-facing is stderr-only; stdout is the JSON-RPC channel.
-  (i) Signed install scripts — signatures published via version.json,
-  verified before executing, the jonnyzzz/devrig release-process approach —
-  are filed as follow-up issue #389, deliberately out of scope here.
+All on 2026-07-30, each cycle closed by a unanimous 3× quorum with 0 blocking
+issues:
+
+1. **v1** — full validation (3 adversarial lenses: 9 findings confirmed,
+   1 refuted) + quorum. Included a fixed-name lock, launcher version stamps, a
+   no-downgrade guard, `devrig install devrig` as update authority, and
+   failure/skew counters.
+2. **Simplification (owner):** lock, stamps, guard, and authority removed —
+   per-pid markers as the only coordination; supervisor-written `updated-<v>`;
+   the binary is not a source of truth. Re-validated (8 findings adopted:
+   `min(current, promoted)` GC bound, quiet-retry classifications, uniform
+   staleness) + quorum.
+3. **Owner round 2:** failure tracking removed entirely; retries every
+   3–8 h forever, no caps, no nags.
+4. **Owner round 3 (ten directives, one dedicated agent each):** no script
+   parsing (templates carry no coupling); marker JSON write-only; no
+   tree-kill (1 h timeout, kill the started process only); detached-in-group
+   with the rationale documented; stdin/log handling audited; lowest-pid-wins
+   recheck added; stdout purity pinned by test; signed-scripts follow-up
+   filed as issue #389. Quorum: unanimous, first round.
+5. **Launcher replacement unified (owner, PR #385):** one algorithm for all —
+   write `.new<pid>`, move onto the original, fallback via `.old<pid>`,
+   10 ms × 5 retries; the brief availability gap accepted.
+
+Related: PR #380 (this feature), PR #385 (launcher replacement), issue #383
+(CLI-runs-MCP-tools auto-update), issue #389 (signed install scripts),
+`release/release-instructions.md` (the website-advance rollout gate +
+never-re-promote invariant).
