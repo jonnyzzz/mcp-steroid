@@ -31,7 +31,13 @@ class KotlinBuildsSessionTest {
     @Rule
     val tempFolder: TemporaryFolder = TemporaryFolder()
 
-    private fun newSession() = KotlinBuildsSession(KotlinBuildsSession.implJarsFromSystemProperty())
+    // The BTA impl jar directory comes from Gradle (kotlin-cli/build.gradle.kts sets the
+    // system property for the test JVM). Production never reads properties — the plugin
+    // resolves its dist folder explicitly; tests are the only property consumers.
+    private fun newSession() = KotlinBuildsSession(KotlinBuildsSession.implJarsFrom(
+        java.nio.file.Path.of(System.getProperty("mcp.steroid.bta.impl.dir")
+            ?: error("Gradle sets mcp.steroid.bta.impl.dir (see kotlin-cli/build.gradle.kts)"))
+    ))
 
     @Test
     fun smokeCompile() {

@@ -263,17 +263,6 @@ class KotlinBuildsSession(
         }
 
         /**
-         * [implJarsFrom] with the directory taken from the `mcp.steroid.bta.impl.dir` system
-         * property — the contract Gradle test tasks use (see `:kotlin-cli` / `:prompts`
-         * build scripts).
-         */
-        fun implJarsFromSystemProperty(property: String = "mcp.steroid.bta.impl.dir"): List<Path> {
-            val dir = System.getProperty(property)
-                ?: error("Missing system property '$property' — BTA implementation jar directory not provided")
-            return implJarsFrom(Path.of(dir))
-        }
-
-        /**
          * Default `-jvm-target` for snippet compilation, derived from the JVM
          * that owns this process — `java.specification.version` is `"21"`
          * on JDK 21, `"25"` on JDK 25, etc. The Kotlin inline-bytecode
