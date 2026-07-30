@@ -947,7 +947,11 @@ private fun spawnDetachedOnWindows(
 
         val finished = helper.waitFor(10, TimeUnit.SECONDS)
         if (!finished) {
+            // Kill the whole helper tree, not just powershell.exe: capture descendants BEFORE the
+            // root dies — orphans reparent afterwards and would escape the sweep.
+            val descendants = helper.descendants().toList()
             helper.destroyForcibly()
+            descendants.forEach { it.destroyForcibly() }
             error("WMI spawn helper timed out launching $launcher")
         }
         if (helper.exitValue() != 0) {

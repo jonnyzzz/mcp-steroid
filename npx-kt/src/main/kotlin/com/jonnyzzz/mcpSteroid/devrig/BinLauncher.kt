@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
@@ -307,20 +308,27 @@ internal fun ensureWindowsPathEntry(binDir: Path) {
             "[Environment]::SetEnvironmentVariable('Path', \$new, 'User'); " +
             "[Console]::Error.WriteLine('[mcp-steroid] registered ' + \$d + ' on the user PATH (1 entry; open a new terminal to use it)')"
     try {
-        val exit = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+        val process = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
             .redirectErrorStream(false)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD) // keep the MCP JSON-RPC channel clean
             .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start()
-            .waitFor()
-        if (exit == 0) {
+        process.outputStream.close() // stdin: immediate EOF — never an open pipe the child could block on
+        // This runs on the devrig start-up path: an unbounded waitFor() would let a stuck
+        // powershell block every `devrig mcp` start forever. Bounded + killed instead.
+        if (!process.waitFor(60, TimeUnit.SECONDS)) {
+            val descendants = process.descendants().toList() // capture BEFORE the root dies — they reparent after
+            process.destroyForcibly()
+            descendants.forEach { it.destroyForcibly() }
+            System.err.println("[mcp-steroid] PowerShell PATH registration timed out after 60s and was killed; will retry next start")
+        } else if (process.exitValue() == 0) {
             try {
                 Files.writeString(marker, bin)
             } catch (e: Exception) {
                 System.err.println("[mcp-steroid] could not write the user-PATH marker $marker: $e")
             }
         } else {
-            System.err.println("[mcp-steroid] PowerShell PATH registration exited $exit; will retry next start")
+            System.err.println("[mcp-steroid] PowerShell PATH registration exited ${process.exitValue()}; will retry next start")
         }
     } catch (e: Exception) {
         System.err.println(
