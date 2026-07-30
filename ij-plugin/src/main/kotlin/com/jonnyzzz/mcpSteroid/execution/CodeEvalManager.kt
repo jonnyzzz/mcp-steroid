@@ -2,12 +2,12 @@
 package com.jonnyzzz.mcpSteroid.execution
 
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.util.execution.ParametersListUtil
 import com.jonnyzzz.mcpSteroid.PluginDescriptorProvider
@@ -40,9 +40,7 @@ inline val Project.codeEvalManager: CodeEvalManager get() = service()
 class CodeEvalManager(
     private val project: Project,
 ) : Disposable {
-    override fun dispose() {
-        kotlinBuildsSession.close()
-    }
+    override fun dispose() = Unit
 
     private val log = thisLogger()
     private val compilationMutex = Mutex()
@@ -57,17 +55,27 @@ class CodeEvalManager(
         // EVERY in-process compile — writes `idea.config.path=some/non/existent/path`
         // when the property is unset (property names are JVM-global, not relocated;
         // every other property it writes equals the IDE bundle default). Pre-seed it
-        // with the host IDE's real config path so third-party readers never observe
-        // the garbage value.
+        // with a dedicated path under the system temp dir so third-party readers never
+        // observe the garbage value — and never the IDE's own config folder, which
+        // must not be advertised through a property the IDE itself didn't set.
         if (System.getProperty("idea.config.path") == null) {
-            System.setProperty("idea.config.path", PathManager.getConfigPath())
+            System.setProperty(
+                "idea.config.path",
+                Paths.get(System.getProperty("java.io.tmpdir"), "mcp-steroid-kotlin-config").toString(),
+            )
         }
-        KotlinBuildsSession(
+        val session = KotlinBuildsSession(
             implClasspath = KotlinBuildsSession.implJarsFrom(
                 PluginDescriptorProvider.getInstance().descriptor.pluginPath.resolve("kotlinc")
             ),
             kotlinLogger = KotlinLoggerWrapper(log),
         )
+        // The session closes through the Disposer tree rather than an inline
+        // dispose() override — children are disposed in a well-defined order
+        // before the parent, and the registration is explicit at the same
+        // place the resource is created.
+        Disposer.register(this, Disposable { session.close() })
+        session
     }
 
     suspend fun evalCode(executionId: ExecutionId, code: String, resultBuilder: ExecutionResultBuilder): EvalResult? {
@@ -120,14 +128,12 @@ class CodeEvalManager(
                     destinationDir = outputJar,
                     compilerMessageRenderer = compilerMessageRenderer,
                 ) {
-                    if (extraParams.isNotEmpty()) {
-                        // Must be applied FIRST: applyArgumentStrings re-applies every
-                        // argument key and would reset options configured before it back
-                        // to compiler defaults. Invalid registry parameters throw — the
-                        // generic handler below surfaces them as an execution error
-                        // instead of silently compiling without the requested flags.
-                        applyArgumentStrings(extraParams)
-                    }
+                    // Must be applied FIRST: applyArgumentStrings re-applies every
+                    // argument key and would reset options configured before it back
+                    // to compiler defaults. Invalid registry parameters throw — the
+                    // generic handler below surfaces them as an execution error
+                    // instead of silently compiling without the requested flags.
+                    applyArgumentStrings(extraParams)
                     set(JvmCompilerArguments.CLASSPATH, compileClasspath)
                 }
             } catch (_: TimeoutCancellationException) {
