@@ -539,10 +539,67 @@ gradle.projectsEvaluated {
 // rest of ~/.mcp-steroid/ (runtime state — backends, caches, logs, markers,
 // eid_* sessions) untouched. Agent registration (claude/codex/gemini) is a
 // one-time setup handled by the devrig launcher's own CLI, not by this task.
-val deployNpx = tasks.register<Sync>("deployNpx") {
+val deployDevrigDist = tasks.register<Sync>("deployDevrigDist") {
     description = "Build :npx-kt:installDist and sync it into ~/.mcp-steroid/devrig/."
     group = "deployment"
     dependsOn(":npx-kt:installDist")
     from(project(":npx-kt").layout.buildDirectory.dir("install/devrig"))
     into(File(System.getProperty("user.home"), ".mcp-steroid/devrig"))
+}
+
+// Local devrig deploy: stage the dist (above), then have devrig regenerate its own stable
+// ~/.mcp-steroid/bin/devrig(.cmd) launcher + PATH registration via `devrig install devrig`
+// — the exact delegation the generated install.sh / install.ps1 use (this build never
+// writes the wrapper itself). The wrapper pins the Gradle daemon's JDK (25, see
+// gradle/gradle-daemon-jvm.properties) through --jdk-home / DEVRIG_JAVA_HOME.
+val deployDevrig = tasks.register<Exec>("deployDevrig") {
+    description = "Deploy devrig to ~/.mcp-steroid/devrig/ and regenerate the ~/.mcp-steroid/bin/devrig launcher."
+    group = "deployment"
+    dependsOn(deployDevrigDist)
+
+    val isWin = System.getProperty("os.name").lowercase().contains("windows")
+    val userHome = File(System.getProperty("user.home"))
+    val installScript = File(userHome, ".mcp-steroid/devrig/bin/" + (if (isWin) "devrig.bat" else "devrig"))
+    val jdkHome = System.getProperty("java.home")
+
+    val installArgs = listOf("install", "devrig", "--install-script=${installScript.absolutePath}", "--jdk-home=$jdkHome")
+    if (isWin) {
+        // A .bat is not a process image — it needs the cmd interpreter (same shape as
+        // DevrigUserLauncher.invocation: `cmd.exe /d /c <script> …`).
+        executable = "cmd.exe"
+        args(listOf("/d", "/c", installScript.absolutePath) + installArgs)
+    } else {
+        executable = installScript.absolutePath
+        args(installArgs)
+    }
+    // DEVRIG_JAVA_HOME beats any JAVA_HOME the caller's shell exported, so the freshly staged
+    // dist always launches on the daemon's JDK 25 (devrig is class-file v69).
+    environment("DEVRIG_JAVA_HOME", jdkHome)
+    environment("JAVA_HOME", jdkHome)
+    // `devrig install devrig` is contractually non-interactive (see runInstallDevrigCommand):
+    // hand it an already-EOF stdin, mirroring install.sh's `< /dev/null` and install.ps1's `$null |`.
+    standardInput = java.io.InputStream.nullInputStream()
+
+    doLast {
+        // The Exec already failed on a non-zero exit; this asserts the observable outcome too —
+        // a PRE-EXISTING stale launcher would pass a bare exists() check, so require that the
+        // launcher's content actually hands off to the install tree this task just staged.
+        val launcher = File(userHome, ".mcp-steroid/bin/" + (if (isWin) "devrig.cmd" else "devrig"))
+        require(launcher.isFile) {
+            "deployDevrig: 'devrig install devrig' exited 0 but the launcher $launcher does not exist"
+        }
+        require(launcher.readText().contains(installScript.absolutePath)) {
+            "deployDevrig: $launcher does not point at the freshly staged $installScript — " +
+                "it was not regenerated (a DEVRIG_BIN_NO_AUTO_REGISTER opt-out, or a launcher guard kept it)"
+        }
+        println("deployDevrig: ~/.mcp-steroid/devrig/ refreshed and $launcher regenerated")
+        println("deployDevrig: verify with '~/.mcp-steroid/bin/devrig version'")
+    }
+}
+
+// Backwards-compatible alias — this task was called deployNpx before devrig got its name.
+tasks.register("deployNpx") {
+    description = "Deprecated alias for deployDevrig."
+    group = "deployment"
+    dependsOn(deployDevrig)
 }

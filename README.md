@@ -100,14 +100,17 @@ Download the latest ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-s
 ### One-time setup (from a checkout of this repo)
 
 ```bash
-# Build :npx-kt:installDist and stage the launcher under ~/.mcp-steroid/devrig/
-./gradlew deployNpx
+# Build :npx-kt:installDist, stage it under ~/.mcp-steroid/devrig/, and regenerate the stable
+# ~/.mcp-steroid/bin/devrig launcher (the task runs `devrig install devrig` — the same
+# self-registration the public install scripts use). `deployNpx` remains as an alias.
+./gradlew deployDevrig
 
 # Register `mcp-steroid` (stdio) at user scope for each agent — once per machine.
-# The first call (run by full path, since devrig is not on PATH yet) self-installs the stable
-# launcher ~/.mcp-steroid/bin/devrig, links it onto PATH as `devrig`, and registers THAT — so
-# registrations survive devrig upgrades. Use `devrig` (a fresh shell picks it up) thereafter.
-~/.mcp-steroid/devrig/bin/devrig install claude
+# The registrations point at the stable launcher ~/.mcp-steroid/bin/devrig, so they survive
+# devrig upgrades. deployDevrig also tries to link it onto PATH as `devrig` (into a writable
+# PATH dir under $HOME); if no such dir exists, add ~/.mcp-steroid/bin to PATH yourself —
+# the full-path invocation below works either way.
+~/.mcp-steroid/bin/devrig install claude
 devrig install codex
 devrig install gemini
 ```
@@ -116,7 +119,7 @@ Each `install` call delegates to the agent's own `mcp add` CLI, so the entry lan
 
 ### Refreshing the launcher
 
-After pulling new commits, run `./gradlew deployNpx` again. It rebuilds `:npx-kt:installDist` and re-syncs `~/.mcp-steroid/devrig/` — the launcher path stays the same, so no re-registration is needed. Runtime state under `~/.mcp-steroid/{backends,caches,logs,markers,state}` is preserved.
+After pulling new commits, run `./gradlew deployDevrig` again. It rebuilds `:npx-kt:installDist`, re-syncs `~/.mcp-steroid/devrig/`, and regenerates `~/.mcp-steroid/bin/devrig` — the launcher path stays the same, so no re-registration is needed. Runtime state under `~/.mcp-steroid/{backends,caches,logs,markers,state}` is preserved.
 
 ### Verifying it works
 
@@ -126,6 +129,31 @@ claude -p "List all open projects using steroid_list_projects"
 ```
 
 The plugin also writes the raw server URL to `.idea/mcp-steroid.md` in each open project at `http://127.0.0.1:6315/mcp` (Streamable HTTP transport) for clients that prefer to talk to the IDE directly.
+
+### Local development loop (deploy both halves from a checkout)
+
+Working on MCP Steroid itself? Two Gradle tasks push your checkout into the live environment — no IDE restarts, no reinstalling.
+
+**One-time per IDE**: install the [Plugin Hot Reload](https://github.com/jonnyzzz/intellij-plugin-hot-reload) plugin into every IDE you deploy to — download the ZIP from its Releases page, then `Settings | Plugins | ⚙ | Install Plugin from Disk…`, restart once. It exposes the local hot-reload endpoint (a `~/.<pid>.hot-reload` marker per running IDE) that `deployPlugin` talks to.
+
+```bash
+# 1. devrig (the CLI): build, stage under ~/.mcp-steroid/devrig/, and regenerate the
+#    ~/.mcp-steroid/bin/devrig launcher via `devrig install devrig`.
+./gradlew deployDevrig
+
+# assert: the launcher runs YOUR build — a dev version stamped with your checkout's git hash
+~/.mcp-steroid/bin/devrig version
+# → <base>.19999-SNAPSHOT-<git hash of your HEAD>
+
+# 2. the IDE plugin: build the plugin ZIP and hot-reload it into every running IDE.
+./gradlew :ij-plugin:deployPlugin
+
+# assert: the task output ends with SUCCESS per IDE —
+#   Installing and loading plugin: MCP Steroid (<base>.19999-SNAPSHOT-<git hash>)
+#   Plugin MCP Steroid reloaded successfully
+```
+
+Both tasks fail loudly instead of half-deploying: `deployDevrig` fails when `devrig install devrig` cannot write the launcher (e.g. a `DEVRIG_BIN_NO_AUTO_REGISTER` opt-out), and `deployPlugin` fails with `No running IDEs found` when no IDE with the hot-reload plugin is up, or on anything but `SUCCESS` from an IDE.
 
 ---
 
