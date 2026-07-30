@@ -7,6 +7,7 @@ repositories {
 }
 
 dependencies {
+    implementation(project(":mcp-core"))
 }
 
 kotlin {

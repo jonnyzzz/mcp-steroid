@@ -1,6 +1,8 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.util.process.ProcessRunSpec
+import com.jonnyzzz.mcpSteroid.util.process.runProcess
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -9,6 +11,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
 import kotlin.io.path.exists
 import kotlin.io.path.readText
+import kotlin.time.Duration.Companion.seconds
 
 internal fun isWindows(): Boolean =
     System.getProperty("os.name").lowercase().contains("windows")
@@ -298,31 +301,44 @@ internal fun ensureWindowsPathEntry(binDir: Path) {
     val marker = binDirNorm.resolve(".user-path-registered")
     if (Files.exists(marker)) return
     val bin = binDirNorm.toString()
-    // De-dup: drop blanks and any existing == bin entry, then append exactly one bin entry.
+    // De-dup: drop blanks and any existing == bin entry, then append exactly one bin entry. The UTF-8
+    // prologue keeps localized PowerShell diagnostics readable through the runner's UTF-8 file decoding.
     val script =
-        "\$d = '${bin.replace("'", "''")}'; " +
+        "\$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " +
+            "\$d = '${bin.replace("'", "''")}'; " +
             "\$p = [Environment]::GetEnvironmentVariable('Path','User'); if (\$null -eq \$p) { \$p = '' }; " +
             "\$parts = @(\$p -split ';' | Where-Object { \$_ -ne '' -and \$_ -ne \$d }); " +
             "\$new = (\$parts + \$d) -join ';'; " +
             "[Environment]::SetEnvironmentVariable('Path', \$new, 'User'); " +
             "[Console]::Error.WriteLine('[mcp-steroid] registered ' + \$d + ' on the user PATH (1 entry; open a new terminal to use it)')"
     try {
-        val exit = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-            .redirectErrorStream(false)
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD) // keep the MCP JSON-RPC channel clean
-            .redirectError(ProcessBuilder.Redirect.INHERIT)
-            .start()
-            .waitFor()
-        if (exit == 0) {
+        // Output goes to the runner's log files (never to stdout — the MCP JSON-RPC channel stays clean);
+        // stderr is replayed to our stderr after completion, preserving the old INHERIT narration.
+        val result = runProcess(
+            ProcessRunSpec(
+                command = listOf("powershell", "-NoProfile", "-NonInteractive", "-Command", script),
+                timeout = 60.seconds,
+                name = "powershell-user-path",
+                mergeStderrIntoStdout = false,
+            ),
+        )
+        val stderrText = result.logs.readStderr()
+        if (stderrText.isNotBlank()) System.err.print(stderrText.let { if (it.endsWith("\n")) it else it + "\n" })
+        if (result.exitCode == 0) {
+            result.logs.delete() // routine success — the log files are noise
             try {
                 Files.writeString(marker, bin)
             } catch (e: Exception) {
                 System.err.println("[mcp-steroid] could not write the user-PATH marker $marker: $e")
             }
         } else {
-            System.err.println("[mcp-steroid] PowerShell PATH registration exited $exit; will retry next start")
+            System.err.println(
+                "[mcp-steroid] PowerShell PATH registration exited ${result.exitCode}; will retry next start " +
+                    "(details: ${result.logs.commandLog})",
+            )
         }
     } catch (e: Exception) {
+        // Includes ProcessRunException (timeout / powershell missing) — registration stays best-effort.
         System.err.println(
             "[mcp-steroid] could not register $bin on the user PATH ($e); add it manually via " +
                 "System Properties -> Environment Variables (User PATH), or run devrig by full path",

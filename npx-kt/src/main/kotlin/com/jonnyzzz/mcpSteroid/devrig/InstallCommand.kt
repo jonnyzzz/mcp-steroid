@@ -1,9 +1,11 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliResult
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliRunner
 import com.jonnyzzz.mcpSteroid.aiAgents.ProcessAiAgentCliRunner
+import com.jonnyzzz.mcpSteroid.util.process.ProcessRunException
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpAddStdioInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpListInvocation
@@ -143,14 +145,15 @@ fun runInstallCommand(
     out.println()
 
     // Step 1 — review the agent's registered MCP servers so we can act on every devrig-owned entry,
-    // not just the canonical name. Listing is best-effort: if it fails or we can't parse it, we fall
-    // back to reconciling the known devrig names.
+    // not just the canonical name. Listing is best-effort: if it fails, times out, or the agent CLI
+    // cannot even start, we fall back to reconciling the known devrig names.
     out.println("Step 1/3: reviewing ${agent.displayName}'s registered MCP servers…")
-    val listResult = runner.run(mcpListInvocation(agent))
-    val listed = if (listResult.exitCode == 0) parseMcpServerList(agent, listResult.output) else emptyList()
+    val listResult = runAgentCliOrNull(runner, mcpListInvocation(agent), err)
+    val listReadable = listResult != null && listResult.exitCode == 0
+    val listed = if (listResult != null && listResult.exitCode == 0) parseMcpServerList(agent, listResult.output) else emptyList()
     val detected = listed.filter { it.isDevrigOwned() }
     when {
-        listResult.exitCode != 0 ->
+        !listReadable ->
             out.println("  could not read the server list; reconciling the known devrig names.")
         detected.isEmpty() ->
             out.println("  no existing devrig / '$DEVRIG_MCP_SERVER_NAME' registration found.")
@@ -162,14 +165,15 @@ fun runInstallCommand(
 
     // The shared install plan — `--check` prints exactly this same set (see installRemovalNames), so the
     // dry-run can never drift from what install actually removes.
-    val namesToRemove = installRemovalNames(detected, listReadable = listResult.exitCode == 0)
+    val namesToRemove = installRemovalNames(detected, listReadable = listReadable)
 
-    // Step 2 — clear them all. Each removal is best-effort: a non-zero exit means "not present", which is
-    // expected and not fatal. Underlying agent messages go to stderr; stdout reports confirmed removals.
+    // Step 2 — clear them all. Each removal is best-effort: a non-zero exit means "not present", and a
+    // timeout / unstartable CLI is diagnosed and skipped — neither is fatal. Underlying agent messages go
+    // to stderr; stdout reports confirmed removals.
     out.println("Step 2/3: consolidating into a single '$DEVRIG_MCP_SERVER_NAME' entry…")
     val removed = mutableListOf<String>()
     for (name in namesToRemove) {
-        val removeResult = runner.run(mcpRemoveInvocation(agent, name))
+        val removeResult = runAgentCliOrNull(runner, mcpRemoveInvocation(agent, name), err) ?: continue
         if (removeResult.exitCode == 0) removed += name
         emitAgentOutput(removeResult, err)
     }
@@ -179,10 +183,22 @@ fun runInstallCommand(
         removed.forEach { out.println("  - removed '$it'") }
     }
 
-    // Step 3 — add the single canonical registration.
+    // Step 3 — add the single canonical registration. This step is fatal on failure — unlike list and
+    // remove, a registration that did not happen must be reported loudly, but still with the friendly
+    // epilogue rather than Main.kt's unexpected-error stack trace.
     out.println("Step 3/3: registering '$DEVRIG_MCP_SERVER_NAME' with ${agent.displayName}…")
     val addInvocation = mcpAddStdioInvocation(agent, mcpCommand, DEVRIG_MCP_SERVER_NAME)
-    val addResult = runner.run(addInvocation)
+    val addResult = try {
+        runner.run(addInvocation)
+    } catch (e: ProcessRunException) {
+        err.println()
+        err.println(
+            "Registration FAILED: '${agent.binary} ${addInvocation.args.joinToString(" ")}' " +
+                "did not complete: ${e.message}",
+        )
+        err.println("Fix the error reported above, then re-run 'devrig install ${agent.binary}'.")
+        return 1
+    }
     emitAgentOutput(addResult, err)
     if (addResult.exitCode != 0) {
         err.println()
@@ -199,6 +215,23 @@ fun runInstallCommand(
     out.println("  Command ${agent.displayName} will run: $renderedCommand")
     out.println("  Verify with: ${agent.binary} mcp list")
     return 0
+}
+
+/**
+ * Runs a BEST-EFFORT agent CLI invocation: the [ProcessRunException] family (a timeout or an agent CLI
+ * that cannot start, e.g. not on PATH) becomes a stderr diagnostic and `null`, so the caller takes its
+ * existing graceful-degradation branch instead of aborting the whole flow. Fatal steps (the canonical
+ * add) do NOT use this — they catch the family themselves and fail loudly.
+ */
+private fun runAgentCliOrNull(
+    runner: AiAgentCliRunner,
+    invocation: AiAgentCliInvocation,
+    err: PrintStream,
+): AiAgentCliResult? = try {
+    runner.run(invocation)
+} catch (e: ProcessRunException) {
+    err.println("  '${invocation.binary} ${invocation.args.joinToString(" ")}' did not complete: ${e.message}")
+    null
 }
 
 private fun emitAgentOutput(result: AiAgentCliResult, err: PrintStream) {
@@ -261,7 +294,9 @@ fun DevrigServices.collectIdeReachability(): IdeReachabilityReport {
  * list cannot be read, since the state cannot be verified then.
  *
  * Stateless by design (Tenet 3): the only agent CLI invocation is the read-only `mcp list`, the IDE probe
- * reads markers/ports on demand, and the check writes nothing — two concurrent `--check` runs are safe.
+ * reads markers/ports on demand, and the check changes no agent configuration or launcher state — two
+ * concurrent `--check` runs are safe. (Like every devrig process launch, the `mcp list` call leaves
+ * diagnostic process logs under `~/.mcp-steroid/logs`; the runner's cleanup bounds them.)
  */
 fun runInstallCheckCommand(
     command: DevrigCommand.DevrigCommandInstall,
@@ -290,11 +325,12 @@ fun runInstallCheckCommand(
         out.println()
     }
 
-    // The SAME review step install performs — and the only agent CLI call --check makes.
+    // The SAME review step install performs — and the only agent CLI call --check makes. A timeout or an
+    // unstartable agent CLI degrades to the same unreadable-list drift path as a non-zero exit.
     val listInvocation = mcpListInvocation(agent)
-    val listResult = runner.run(listInvocation)
-    val listReadable = listResult.exitCode == 0
-    val listed = if (listReadable) parseMcpServerList(agent, listResult.output) else emptyList()
+    val listResult = runAgentCliOrNull(runner, listInvocation, err)
+    val listReadable = listResult != null && listResult.exitCode == 0
+    val listed = if (listResult != null && listResult.exitCode == 0) parseMcpServerList(agent, listResult.output) else emptyList()
     val detected = listed.filter { it.isDevrigOwned() }
 
     out.println("Current registration state:")
@@ -303,7 +339,7 @@ fun runInstallCheckCommand(
             out.println(
                 "  could not read ${agent.displayName}'s MCP server list " +
                     "('${listInvocation.binary} ${listInvocation.args.joinToString(" ")}' " +
-                    "exited with code ${listResult.exitCode}).",
+                    (if (listResult != null) "exited with code ${listResult.exitCode})." else "did not complete)."),
             )
         detected.isEmpty() ->
             out.println("  no existing devrig / '$DEVRIG_MCP_SERVER_NAME' registration found.")

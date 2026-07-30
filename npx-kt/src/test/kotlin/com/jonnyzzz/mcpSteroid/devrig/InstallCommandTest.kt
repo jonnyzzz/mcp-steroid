@@ -5,13 +5,18 @@ import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliResult
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliRunner
+import com.jonnyzzz.mcpSteroid.util.process.ProcessRunLogs
+import com.jonnyzzz.mcpSteroid.util.process.ProcessStartException
+import com.jonnyzzz.mcpSteroid.util.process.ProcessTimeoutException
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.PrintStream
 import java.nio.file.Path
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.Test
 
 class InstallCommandTest {
@@ -345,6 +350,148 @@ class InstallCommandTest {
             reachability = IdeReachabilityReport(reachable = 0, discovered = 0),
         )
         assertContains(r.stdout, "none discovered")
+    }
+
+    // --- ProcessRunException semantic boundaries (design doc v6, migration table) ------------------
+    // A hung agent CLI (ProcessTimeoutException) or one that cannot start, e.g. not on PATH
+    // (ProcessStartException), must degrade exactly like a non-zero exit at the best-effort steps
+    // (list, remove, --check list) and fail loudly-but-friendly at the fatal step (add) — never via
+    // Main.kt's unexpected-error stack trace.
+
+    private fun timeoutFailure(binary: String) = ProcessTimeoutException(
+        "process '$binary' (pid 123) timed out after 30s",
+        processName = binary,
+        pid = 123,
+        timeout = 30.seconds,
+        outputTail = emptyList(),
+        logs = dummyLogs(),
+    )
+
+    private fun startFailure(binary: String) = ProcessStartException(
+        "process '$binary' failed to start: No such file or directory",
+        processName = binary,
+        logs = dummyLogs(),
+        cause = IOException("No such file or directory"),
+    )
+
+    private fun dummyLogs() = ProcessRunLogs(
+        commandLog = Path.of("build/test-dummy-command.log"),
+        stdoutLog = Path.of("build/test-dummy-stdout.log"),
+        stderrLog = null,
+    )
+
+    /** Wraps a [RecordingRunner]; throws [failure] for invocations whose args contain [failOnArg]. */
+    private class FailingRunner(
+        private val delegate: RecordingRunner,
+        private val failOnArg: String,
+        private val failure: Throwable,
+    ) : AiAgentCliRunner {
+        override fun run(invocation: AiAgentCliInvocation): AiAgentCliResult {
+            if (invocation.args.contains(failOnArg)) throw failure
+            return delegate.run(invocation)
+        }
+    }
+
+    private fun runInstallWith(agent: AiAgentCli, runner: AiAgentCliRunner): Triple<Int, String, String> {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val exitCode = runInstallCommand(
+            command = DevrigCommand.DevrigCommandInstall(agent),
+            mcpCommand = mcpCommand,
+            out = PrintStream(stdout, true, Charsets.UTF_8),
+            err = PrintStream(stderr, true, Charsets.UTF_8),
+            runner = runner,
+        )
+        return Triple(exitCode, stdout.toString(Charsets.UTF_8), stderr.toString(Charsets.UTF_8))
+    }
+
+    @Test
+    fun `install list timeout falls back to the known devrig names and still succeeds`() {
+        val recording = RecordingRunner()
+        val (exitCode, stdout, stderr) = runInstallWith(
+            AiAgentCli.CLAUDE,
+            FailingRunner(recording, failOnArg = "list", failure = timeoutFailure("claude")),
+        )
+        assertEquals(0, exitCode, "install must still register:\n$stderr")
+        assertContains(stdout, "could not read the server list; reconciling the known devrig names.")
+        assertContains(stderr, "did not complete")
+        assertTrue(recording.invocations.any { it.args.contains("add") }, "the add step must still run")
+        // Unreadable list ⇒ the legacy name is cleared defensively too.
+        assertTrue(
+            recording.invocations.filter { it.args.contains("remove") }.map { it.args.last() }
+                .containsAll(listOf("mcp-steroid", "devrig")),
+            recording.invocations.toString(),
+        )
+    }
+
+    @Test
+    fun `install removal timeout is diagnosed and the remaining steps still run`() {
+        val recording = RecordingRunner()
+        val (exitCode, _, stderr) = runInstallWith(
+            AiAgentCli.CLAUDE,
+            FailingRunner(recording, failOnArg = "remove", failure = timeoutFailure("claude")),
+        )
+        assertEquals(0, exitCode, "removals are best-effort:\n$stderr")
+        assertContains(stderr, "did not complete")
+        assertTrue(recording.invocations.any { it.args.contains("add") }, "the add step must still run")
+    }
+
+    @Test
+    fun `install add timeout reports Registration FAILED with pinned exit 1`() {
+        val (exitCode, _, stderr) = runInstallWith(
+            AiAgentCli.CLAUDE,
+            FailingRunner(RecordingRunner(), failOnArg = "add", failure = timeoutFailure("claude")),
+        )
+        assertEquals(1, exitCode)
+        assertContains(stderr, "Registration FAILED")
+        assertContains(stderr, "did not complete")
+        assertContains(stderr, "re-run 'devrig install claude'")
+        assertFalse(stderr.contains("Unexpected error"), "must never take the Main.kt catch-all:\n$stderr")
+    }
+
+    @Test
+    fun `install add start failure (agent CLI not on PATH) reports Registration FAILED with exit 1`() {
+        val (exitCode, _, stderr) = runInstallWith(
+            AiAgentCli.CODEX,
+            FailingRunner(RecordingRunner(), failOnArg = "add", failure = startFailure("codex")),
+        )
+        assertEquals(1, exitCode)
+        assertContains(stderr, "Registration FAILED")
+        assertContains(stderr, "failed to start")
+    }
+
+    @Test
+    fun `check list timeout reports drift without crashing`() {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val exitCode = runInstallCheckCommand(
+            command = DevrigCommand.DevrigCommandInstall(AiAgentCli.CLAUDE, check = true),
+            mcpCommand = mcpCommand,
+            out = PrintStream(stdout, true, Charsets.UTF_8),
+            err = PrintStream(stderr, true, Charsets.UTF_8),
+            runner = FailingRunner(RecordingRunner(), failOnArg = "list", failure = timeoutFailure("claude")),
+            ideReachability = { IdeReachabilityReport(reachable = 0, discovered = 0) },
+        )
+        assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, exitCode)
+        val out = stdout.toString(Charsets.UTF_8)
+        assertContains(out, "did not complete")
+        assertContains(out, "Drift detected")
+    }
+
+    @Test
+    fun `check list start failure reports drift without crashing`() {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val exitCode = runInstallCheckCommand(
+            command = DevrigCommand.DevrigCommandInstall(AiAgentCli.GEMINI, check = true),
+            mcpCommand = mcpCommand,
+            out = PrintStream(stdout, true, Charsets.UTF_8),
+            err = PrintStream(stderr, true, Charsets.UTF_8),
+            runner = FailingRunner(RecordingRunner(), failOnArg = "list", failure = startFailure("gemini")),
+            ideReachability = { IdeReachabilityReport(reachable = 0, discovered = 0) },
+        )
+        assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, exitCode)
+        assertContains(stdout.toString(Charsets.UTF_8), "Drift detected")
     }
 
     private fun runCheck(

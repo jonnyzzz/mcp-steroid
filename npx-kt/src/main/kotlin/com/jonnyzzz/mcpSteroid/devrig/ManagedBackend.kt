@@ -13,6 +13,10 @@ import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.unpackIdeArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.writeIdeStartupConfigFiles
 import com.jonnyzzz.mcpSteroid.ideDownloader.writeIdeUserStartupConfigFiles
+import com.jonnyzzz.mcpSteroid.util.process.ProcessRunSpec
+import com.jonnyzzz.mcpSteroid.util.process.ProcessTimeoutException
+import com.jonnyzzz.mcpSteroid.util.process.nullDevice
+import com.jonnyzzz.mcpSteroid.util.process.runProcess
 import java.io.File
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
@@ -27,6 +31,7 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.jvm.optionals.getOrNull
 import kotlin.streams.asSequence
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -860,10 +865,6 @@ private fun deleteRecursively(path: Path) {
     }
 }
 
-private fun nullDevice(): File {
-    return if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) File("NUL") else File("/dev/null")
-}
-
 /**
  * Spawn the IDE launcher detached from the current process's lifetime, so it
  * survives devrig termination (and, on Windows, the surrounding shell's).
@@ -872,6 +873,11 @@ private fun nullDevice(): File {
  * and outlives the parent without special flags.
  *
  * Windows — see [spawnDetachedOnWindows].
+ *
+ * This is the ONE documented exception to "all process launches go through
+ * `runProcess`" (docs/design/process-runner-api.md): the IDE is detached by
+ * design, its output is appended to the backend's own log files, and it is
+ * never awaited — the runner's run-to-completion contract does not apply.
  */
 private fun spawnIdeProcess(
     launcher: Path,
@@ -910,65 +916,70 @@ private fun spawnDetachedOnWindows(
     // Start-Process (still inherits the caller's Job Object on Windows) is
     // sufficient — the IDE dies the moment a non-interactive shell session
     // (e.g. SSH-spawned cmd.exe) closes. WMI is the only stdlib-only escape.
-    val pidFile = Files.createTempFile("devrig-spawn-", ".pid")
-    val errFile = Files.createTempFile("devrig-spawn-", ".err")
-    try {
-        val launcherExt = launcher.fileName.toString().substringAfterLast('.', "").lowercase()
-        val isBatchScript = launcherExt == "bat" || launcherExt == "cmd"
-        val script = buildString {
-            // Win32_Process.Create (which wraps CreateProcess) cannot execute .bat/.cmd scripts
-            // directly — they require the cmd.exe interpreter. Wrap with cmd.exe /c so the batch
-            // file path is still visible in the process's command-line arguments, which lets
-            // processCommandIsUnderBackendsDir() recognise the process for stop/list tracking.
-            if (isBatchScript) {
-                append("\$cmd = 'cmd.exe /c \"' + '").append(psQuote(launcher.toString())).append("' + '\"'; ")
-            } else {
-                append("\$cmd = '\"' + '").append(psQuote(launcher.toString())).append("' + '\"'; ")
-            }
-            if (environment.isEmpty()) {
-                append("\$startup = \$null; ")
-            } else {
-                append("\$startup = ([wmiclass]'\\\\.\\root\\cimv2:Win32_ProcessStartup').CreateInstance(); ")
-                append("\$startup.EnvironmentVariables = @(")
-                append(environment.entries.joinToString(", ") { "'${psQuote("${it.key}=${it.value}")}'" })
-                append("); ")
-            }
-            append("\$r = ([wmiclass]'\\\\.\\root\\cimv2:Win32_Process').Create(\$cmd, '")
-            append(psQuote(workDir.toString())).append("', \$startup); ")
-            append("if (\$r.ReturnValue -ne 0) { Write-Error (\"Win32_Process.Create returned \" + \$r.ReturnValue); exit \$r.ReturnValue }; ")
-            append("\$r.ProcessId | Out-File -FilePath '").append(psQuote(pidFile.toAbsolutePath().toString())).append("' -Encoding ASCII")
-        }
-
-        val helper = ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
-            .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            .redirectError(errFile.toFile())
-            .start()
-
-        val finished = helper.waitFor(10, TimeUnit.SECONDS)
-        if (!finished) {
-            helper.destroyForcibly()
-            error("WMI spawn helper timed out launching $launcher")
-        }
-        if (helper.exitValue() != 0) {
-            val errOutput = Files.readString(errFile).trim()
-            error("WMI spawn helper exited ${helper.exitValue()} launching $launcher; stderr: $errOutput")
-        }
-        val pidText = Files.readString(pidFile).trim()
-        return pidText.toLongOrNull()
-            ?: error("Could not parse pid from WMI spawn helper output: '$pidText'")
-    } finally {
-        deleteTempQuietly(pidFile)
-        deleteTempQuietly(errFile)
+    //
+    // Note: if the helper dies AFTER Win32_Process.Create succeeded, the IDE may
+    // be running although we report failure — the WMI-created process is not our
+    // descendant and cannot be tracked from here (same indeterminacy as always).
+    val result = try {
+        runProcess(
+            ProcessRunSpec(
+                command = listOf("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", buildWmiSpawnScript(launcher, workDir, environment)),
+                timeout = 10.seconds,
+                name = "powershell-wmi-spawn",
+                mergeStderrIntoStdout = false,
+            ),
+        )
+    } catch (e: ProcessTimeoutException) {
+        error("WMI spawn helper timed out launching $launcher; logs: ${e.logs.commandLog}")
     }
+    if (result.exitCode != 0) {
+        error(
+            "WMI spawn helper exited ${result.exitCode} launching $launcher; " +
+                "stderr: ${result.logs.readStderr().trim()}; logs: ${result.logs.commandLog}",
+        )
+    }
+    // STRICT pid contract: the script prints exactly one line — the pid. Anything else (PowerShell
+    // chatter, profiles, encoding banners) must NOT be turned into a fake pid; keep the logs and fail.
+    val stdoutLines = result.logs.readStdout().lines().filter { it.isNotBlank() }
+    val pid = stdoutLines.singleOrNull()?.trim()?.toLongOrNull()
+        ?: error(
+            "Could not parse pid from WMI spawn helper output (${stdoutLines.size} non-blank line(s)); " +
+                "logs kept: ${result.logs.commandLog}",
+        )
+    result.logs.delete() // clean success — the log files are noise (matches the old temp-file lifecycle)
+    return pid
 }
 
-private fun deleteTempQuietly(path: Path) {
-    try {
-        Files.deleteIfExists(path)
-    } catch (e: Exception) {
-        System.err.println("Failed to delete temp file $path: $e")
+/**
+ * The PowerShell `-Command` script for [spawnDetachedOnWindows]. Factored and public (top-level) so the
+ * script text is unit-testable platform-neutrally: UTF-8 prologue, Win32_Process.Create, and the pid
+ * printed as the script's ONLY stdout line (the runner captures stdout to a log file; no temp files).
+ */
+fun buildWmiSpawnScript(launcher: Path, workDir: Path, environment: Map<String, String>): String = buildString {
+    append("\$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ")
+    val launcherExt = launcher.fileName.toString().substringAfterLast('.', "").lowercase()
+    val isBatchScript = launcherExt == "bat" || launcherExt == "cmd"
+    // Win32_Process.Create (which wraps CreateProcess) cannot execute .bat/.cmd scripts
+    // directly — they require the cmd.exe interpreter. Wrap with cmd.exe /c so the batch
+    // file path is still visible in the process's command-line arguments, which lets
+    // processCommandIsUnderBackendsDir() recognise the process for stop/list tracking.
+    if (isBatchScript) {
+        append("\$cmd = 'cmd.exe /c \"' + '").append(psQuote(launcher.toString())).append("' + '\"'; ")
+    } else {
+        append("\$cmd = '\"' + '").append(psQuote(launcher.toString())).append("' + '\"'; ")
     }
+    if (environment.isEmpty()) {
+        append("\$startup = \$null; ")
+    } else {
+        append("\$startup = ([wmiclass]'\\\\.\\root\\cimv2:Win32_ProcessStartup').CreateInstance(); ")
+        append("\$startup.EnvironmentVariables = @(")
+        append(environment.entries.joinToString(", ") { "'${psQuote("${it.key}=${it.value}")}'" })
+        append("); ")
+    }
+    append("\$r = ([wmiclass]'\\\\.\\root\\cimv2:Win32_Process').Create(\$cmd, '")
+    append(psQuote(workDir.toString())).append("', \$startup); ")
+    append("if (\$r.ReturnValue -ne 0) { Write-Error (\"Win32_Process.Create returned \" + \$r.ReturnValue); exit \$r.ReturnValue }; ")
+    append("\$r.ProcessId")
 }
 
 /** Doubles single quotes for embedding inside a PowerShell single-quoted string literal. */
