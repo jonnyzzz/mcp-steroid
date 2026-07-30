@@ -35,19 +35,18 @@ class InstallerProcessTest {
     }
 
     @Test
-    fun `stdin is EOF, output lands in the log, env carries the auto-update flag, exit code propagates`(
+    fun `stdin is EOF, output lands in the log, exit code propagates`(
         @org.junit.jupiter.api.io.TempDir tmp: Path,
     ) {
         val script = writeScript(
             tmp,
             """
             if read line; then echo "stdin-had-data"; else echo "stdin-eof"; fi
-            echo "auto-update-env=${'$'}DEVRIG_AUTO_UPDATE"
             echo "a stderr line" >&2
             exit 3
             """.trimIndent(),
         )
-        val log = tmp.resolve("logs/update-1-0.102.0.log")
+        val log = tmp.resolve("logs/update-1-0.102.log")
 
         val exit = runBlocking { superviseInstallerProcess(script, log, isWin = false) }
 
@@ -55,7 +54,6 @@ class InstallerProcessTest {
         val logged = log.readText()
         assertTrue(logged.startsWith("[mcp-steroid] installer host: /bin/sh"), logged)
         assertTrue(logged.contains("stdin-eof"), "the installer must see an immediate EOF on stdin: $logged")
-        assertTrue(logged.contains("auto-update-env=1"), "DEVRIG_AUTO_UPDATE=1 must reach the script: $logged")
         assertTrue(logged.contains("a stderr line"), "stderr is merged into the log: $logged")
     }
 

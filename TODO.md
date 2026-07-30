@@ -27,6 +27,12 @@
     agreement (the release process now gates the website advance via
     `release/scripts/verify-release-ready.sh` + Stage 9 agreement checks, but a scheduled
     assertion would catch late CDN/publish drift too).
+  - [ ] Install-script transfer timeouts (`curl --max-time` / `Invoke-WebRequest -TimeoutSec`,
+    generous, e.g. 1 h): bounds the unsupervised-orphan window (design Tradeoff 5) with zero
+    protocol complexity; benefits manual installs too. Template change in `:installer-gen`.
+  - [ ] `binaries/` auto-GC (design Tradeoff 7): after an update lands, sweep `devrig-*` trees not
+    referenced by the current launcher (keep one previous) — auto-update makes disk accretion
+    automatic (~50–200 MB/release). The v7 deployment-spec auto-GC sketch is the model.
 
 - [ ] **Native MCP tools — implement per `docs/native-mcp-tools-design.md`** (spec landed first;
   research 3×-quorum validated + live-tested on IU-261.25134.95, 2026-07-22):

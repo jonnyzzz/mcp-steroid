@@ -7,7 +7,6 @@ import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -30,27 +29,23 @@ class AutoUpdaterTest {
 
     private fun fixture(
         tmp: Path,
-        current: String = "0.101.0",
-        promoted: String? = "0.102.0",
-        launcher: String? = "0.101.0",
+        current: String = "0.101",
+        promoted: String? = "0.102",
         scriptBody: (String) -> String = { "VERSION='$it'\n" },
+        downloadSucceeds: Boolean = true,
         installerExit: Int? = 0,
-        installerWritesMarker: Boolean = true,
-        selfHeals: MutableList<Unit> = mutableListOf(),
     ): Fixture {
         val home = HomePaths(tmp.resolve("home/.mcp-steroid"))
         home.mkdirsAll()
         val coordination = UpdateCoordination(
             updateDir = home.updateDir,
             ownPid = 4242L,
-            hostname = "test-host",
             clock = { now },
             isPidAlive = { it in livePids },
         )
         val notices = mutableListOf<String>()
         val installerRuns = mutableListOf<Path>()
         val triggeredVersions = mutableListOf<String>()
-        var launcherVersion = launcher
         val updater = AutoUpdater(
             homePaths = home,
             currentVersion = DevrigVersion.parse(current),
@@ -59,25 +54,16 @@ class AutoUpdaterTest {
             notify = { notices += it },
             fetchPromoted = { promoted?.let { DevrigVersion.parse(it) } },
             downloadScript = { _, target ->
-                Files.createDirectories(target.parent)
-                Files.writeString(target, scriptBody(promoted ?: ""))
-                true
+                if (downloadSucceeds) {
+                    Files.createDirectories(target.parent)
+                    Files.writeString(target, scriptBody(promoted ?: ""))
+                }
+                downloadSucceeds
             },
-            launcherVersion = { launcherVersion?.let { DevrigVersion.parse(it) } },
-            selfHealLauncher = { selfHeals += Unit },
             runInstaller = { script, logFile ->
                 installerRuns.add(script) // .add, not `+=`: Path is Iterable<Path>, which makes plusAssign ambiguous
                 Files.createDirectories(logFile.parent)
                 Files.writeString(logFile, "fake installer ran\n")
-                if (installerExit == 0 && installerWritesMarker) {
-                    // the real `devrig install devrig` handoff attests the marker + repoints the launcher
-                    val target = baseVersionString(promoted ?: "")
-                    coordination.writeUpdatedMarker(
-                        target,
-                        UpdateStateInfo(pid = 1L, hostname = "test-host", currentVersion = target, targetVersion = target, startedAt = now),
-                    )
-                    launcherVersion = target
-                }
                 installerExit
             },
             noAutoUpdateEnv = null,
@@ -88,23 +74,23 @@ class AutoUpdaterTest {
     }
 
     @Test
-    fun `happy path - installs, cleans up, and proposes a restart exactly once`(@TempDir tmp: Path) = runTest {
+    fun `happy path - installs, supervisor writes the record, cleans up, proposes a restart once`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp)
 
         f.updater.tick()
 
         assertEquals(1, f.installerRuns.size)
         // telemetry fires once per actually-triggered update, with the raw version.json version
-        assertEquals(listOf("0.102.0"), f.triggeredVersions)
+        assertEquals(listOf("0.102"), f.triggeredVersions)
+        // the SUPERVISOR writes the completion record after exit 0 (nothing else does)
         assertTrue(f.home.updateDir.resolve("updated-0.102").exists())
-        assertFalse(f.home.updateDir.resolve("lock").exists(), "the lock is released in the finally")
         assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "the per-pid marker exists only while updating")
         assertFalse(f.home.updateDir.resolve("install-4242.sh").exists(), "the downloaded script is deleted after the run")
         assertEquals(1, f.notices.size)
         assertTrue(f.notices[0].contains("restart"), f.notices[0])
         assertTrue(f.notices[0].contains("0.102"), f.notices[0])
 
-        // second tick: restart is pending, launcher confirms → no reinstall, no duplicate notice
+        // second tick: step 6 short-circuits on the record → no reinstall, no duplicate notice
         f.updater.tick()
         assertEquals(1, f.installerRuns.size)
         assertEquals(1, f.notices.size, "restart is notified once per process")
@@ -117,80 +103,68 @@ class AutoUpdaterTest {
         snapshot.updater.tick()
         assertEquals(0, snapshot.installerRuns.size)
 
-        val release = fixture(tmp.resolve("b"), current = "0.101.0")
+        val release = fixture(tmp.resolve("b"), current = "0.101")
         assertTrue(release.updater.isActive())
         assertFalse(
-            AutoUpdater(homePaths = release.home, currentVersion = DevrigVersion.parse("0.101.0"), noAutoUpdateEnv = "yes", binRegisterOptOutEnv = null).isActive(),
+            AutoUpdater(homePaths = release.home, currentVersion = DevrigVersion.parse("0.101"), noAutoUpdateEnv = "yes", binRegisterOptOutEnv = null).isActive(),
             "DEVRIG_NO_AUTO_UPDATE opts out",
         )
         assertFalse(
-            AutoUpdater(homePaths = release.home, currentVersion = DevrigVersion.parse("0.101.0"), noAutoUpdateEnv = null, binRegisterOptOutEnv = "1").isActive(),
-            "the launcher-write opt-out also disables the updater (every install would fail its verify step)",
+            AutoUpdater(homePaths = release.home, currentVersion = DevrigVersion.parse("0.101"), noAutoUpdateEnv = null, binRegisterOptOutEnv = "1").isActive(),
+            "the launcher-write opt-out also disables the updater (an install could never take effect)",
         )
     }
 
     @Test
-    fun `no update promoted - nothing happens`(@TempDir tmp: Path) = runTest {
-        val f = fixture(tmp, current = "0.102.0", promoted = "0.102.0")
+    fun `no update promoted - nothing happens, and a backward promotion never downgrades`(@TempDir tmp: Path) = runTest {
+        val f = fixture(tmp, current = "0.102", promoted = "0.102")
         f.updater.tick()
         assertEquals(0, f.installerRuns.size)
         assertEquals(0, f.notices.size)
-        // a promoted version moving BACKWARD is never auto-applied either
-        val back = fixture(tmp.resolve("b"), current = "0.102.0", promoted = "0.101.0")
+
+        val back = fixture(tmp.resolve("b"), current = "0.102", promoted = "0.101")
         back.updater.tick()
         assertEquals(0, back.installerRuns.size)
     }
 
     @Test
-    fun `in-flight lock elsewhere - stop silently, no notification`(@TempDir tmp: Path) = runTest {
+    fun `a live in-progress marker from another process - yield silently`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp)
         livePids += 100L
-        UpdateCoordination(f.home.updateDir, ownPid = 100L, hostname = "test-host", clock = { now }, isPidAlive = { it in livePids })
-            .tryAcquireLock(UpdateStateInfo(pid = 100L, hostname = "test-host", currentVersion = "0.101.0", targetVersion = "0.102.0", startedAt = now))
+        UpdateCoordination(f.home.updateDir, ownPid = 100L, clock = { now }, isPidAlive = { it in livePids })
+            .writeInProgressMarker("0.102", UpdateStateInfo(pid = 100L, currentVersion = "0.101", targetVersion = "0.102", startedAt = now))
 
         f.updater.tick()
 
         assertEquals(0, f.installerRuns.size)
         assertEquals(0, f.notices.size, "no update notification while an install is in flight")
-    }
 
-    @Test
-    fun `torn marker - updated exists but the launcher is older - marker deleted and installer re-runs`(@TempDir tmp: Path) = runTest {
-        val f = fixture(tmp, launcher = "0.101.0")
-        // a flip-back landed after an earlier install: marker says 0.102.0, launcher still at 0.101.0
-        Files.writeString(f.home.updateDir.resolve("updated-0.102"), "{}")
-
+        // once the owner dies, the next tick cleans the marker and proceeds
+        livePids -= 100L
         f.updater.tick()
-
-        assertEquals(1, f.installerRuns.size, "the torn state must self-heal by re-running the installer")
-        assertTrue(f.notices.any { it.contains("restart") })
+        assertEquals(1, f.installerRuns.size)
     }
 
     @Test
-    fun `flip-back below current - launcher self-heal runs`(@TempDir tmp: Path) = runTest {
-        val heals = mutableListOf<Unit>()
-        val f = fixture(tmp, current = "0.102.0", promoted = "0.102.0", launcher = "0.101.0", selfHeals = heals)
+    fun `download failure - quiet retry with NO counter`(@TempDir tmp: Path) = runTest {
+        val f = fixture(tmp, downloadSucceeds = false)
         f.updater.tick()
-        assertEquals(1, heals.size, "a launcher older than the RUNNING binary is re-healed on the spot")
+        f.updater.tick()
+        assertEquals(0, f.installerRuns.size)
+        assertEquals(0, f.notices.size)
+        assertNull(f.updater.coordination.readFailure("0.102"), "transient network blips must not burn the cap")
+        assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "the marker is cleaned in the finally")
     }
 
     @Test
-    fun `skew - script serves a different version - quiet bounded retry, then the manual notice`(@TempDir tmp: Path) = runTest {
+    fun `skew - script serves a different version - quiet retry with NO counter`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp, scriptBody = { "VERSION='0.101.9'\n" }) // CDN still serves the previous release
-
+        f.updater.tick()
         f.updater.tick()
         assertEquals(0, f.installerRuns.size)
+        assertEquals(0, f.notices.size, "skew retries are quiet; surfacing belongs to the release process")
+        assertNull(f.updater.coordination.readFailure("0.102"))
         assertEquals(0, f.triggeredVersions.size, "an aborted update must not report a trigger")
-        assertEquals(0, f.notices.size, "skew aborts are quiet while bounded")
-        assertNotNull(f.updater.coordination.readSkew("0.102.0"))
-
-        f.updater.tick()
-        f.updater.tick()
-        assertEquals(0, f.installerRuns.size)
-        // the 3rd recorded skew caps it → the NEXT tick reports the diagnosis
-        f.updater.tick()
-        assertEquals(1, f.notices.size)
-        assertTrue(f.notices[0].contains("0.101.9"), "the skew diagnosis names the served version: ${f.notices[0]}")
     }
 
     @Test
@@ -198,44 +172,51 @@ class AutoUpdaterTest {
         val f = fixture(tmp, scriptBody = { "#!/bin/sh\necho no version line here\n" })
         f.updater.tick()
         assertEquals(0, f.installerRuns.size)
-        assertEquals(1, f.updater.coordination.readFailure("0.102.0")?.attempts)
+        assertEquals(1, f.updater.coordination.readFailure("0.102")?.attempts)
     }
 
     @Test
-    fun `failing installer - records the exit code and retries only after the 1h spacing`(@TempDir tmp: Path) = runTest {
+    fun `failing installer - three attempts, then the manual notice once`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp, installerExit = 7)
 
         f.updater.tick()
-        assertEquals(1, f.installerRuns.size)
-        val failure = f.updater.coordination.readFailure("0.102.0")
-        assertEquals(7, failure?.lastExitCode)
-        assertFalse(f.home.updateDir.resolve("lock").exists(), "the lock is released after a failure")
+        assertEquals(7, f.updater.coordination.readFailure("0.102")?.lastExitCode)
+        f.updater.tick()
+        f.updater.tick()
+        assertEquals(3, f.installerRuns.size, "no spacing arm: each tick retries until the cap")
+        assertEquals(0, f.notices.size, "failures are quiet until the cap")
 
         f.updater.tick()
-        assertEquals(1, f.installerRuns.size, "the 1h spacing blocks an immediate retry")
-        now += UPDATE_MIN_RETRY_INTERVAL_MILLIS + 1
+        assertEquals(3, f.installerRuns.size, "the cap stops further installer runs")
+        assertEquals(1, f.notices.size)
+        assertTrue(f.notices[0].contains("manually", ignoreCase = true) || f.notices[0].contains("Update manually"), f.notices[0])
+
         f.updater.tick()
-        assertEquals(2, f.installerRuns.size)
+        assertEquals(1, f.notices.size, "the manual notice fires once per process")
     }
 
     @Test
-    fun `exit 0 without a marker - launcher stamp decides between fallback marker and failed attempt`(@TempDir tmp: Path) = runTest {
-        // installer "succeeds" but never writes the marker AND the launcher still shows the old version
-        val f = fixture(tmp, installerExit = 0, installerWritesMarker = false, launcher = "0.101.0")
+    fun `rollback keep-case - a session newer than promoted never deletes the promoted record`(@TempDir tmp: Path) = runTest {
+        // this session runs 0.103; version.json was pulled back to 0.102, which an older session installed
+        val f = fixture(tmp, current = "0.103", promoted = "0.102")
+        Files.writeString(f.home.updateDir.resolve("updated-0.102"), "{}")
+        Files.writeString(f.home.updateDir.resolve("update-failed-0.102"), "{}")
+
         f.updater.tick()
-        assertNull(f.updater.coordination.readUpdatedMarker("0.102.0"), "no unguarded fallback marker")
-        assertEquals(0, f.updater.coordination.readFailure("0.102.0")?.lastExitCode)
-        assertEquals(0, f.notices.size, "no spurious restart notice for an install that did not land")
+
+        assertTrue(f.home.updateDir.resolve("updated-0.102").exists(), "GC bound is min(current, promoted)")
+        assertTrue(f.home.updateDir.resolve("update-failed-0.102").exists())
+        assertEquals(0, f.installerRuns.size, "a backward promotion is never applied")
     }
 
     @Test
-    fun `gc keeps updated-current as flip-back evidence and drops older ones`(@TempDir tmp: Path) = runTest {
-        val f = fixture(tmp, current = "0.101.0", promoted = "0.101.0")
-        Files.writeString(f.home.updateDir.resolve("updated-0.100.0"), "{}")
-        Files.writeString(f.home.updateDir.resolve("updated-0.101.0"), "{}")
+    fun `gc ages out updated-below-current on the steady-state tick`(@TempDir tmp: Path) = runTest {
+        val f = fixture(tmp, current = "0.102", promoted = "0.102")
+        Files.writeString(f.home.updateDir.resolve("updated-0.101"), "{}")
+        Files.writeString(f.home.updateDir.resolve("updated-0.102"), "{}")
         f.updater.tick()
-        assertFalse(f.home.updateDir.resolve("updated-0.100.0").exists())
-        assertTrue(f.home.updateDir.resolve("updated-0.101.0").exists())
+        assertFalse(f.home.updateDir.resolve("updated-0.101").exists())
+        assertTrue(f.home.updateDir.resolve("updated-0.102").exists(), "updated-<current> is kept one release")
     }
 }
 
@@ -258,7 +239,7 @@ class InstallScriptVersionParseTest {
     fun `sh pattern matches the real template line shape`() {
         val template = Files.readString(templatesDir().resolve("install.sh.tmpl"))
         assertEquals("@@VERSION@@", parseInstallScriptVersion(template, isWin = false), "the anchored VERSION=' line must match the template")
-        assertEquals("0.102.0", parseInstallScriptVersion(template.replace("@@VERSION@@", "0.102.0"), isWin = false))
+        assertEquals("0.102", parseInstallScriptVersion(template.replace("@@VERSION@@", "0.102"), isWin = false))
     }
 
     @Test
@@ -266,7 +247,7 @@ class InstallScriptVersionParseTest {
         val template = Files.readString(templatesDir().resolve("install.ps1.tmpl"))
         // the template pads with spaces before `=` — an exact-literal match would never fire
         assertEquals("@@VERSION@@", parseInstallScriptVersion(template, isWin = true))
-        assertEquals("0.102.0", parseInstallScriptVersion(template.replace("@@VERSION@@", "0.102.0"), isWin = true))
+        assertEquals("0.102", parseInstallScriptVersion(template.replace("@@VERSION@@", "0.102"), isWin = true))
     }
 
     @Test
@@ -277,70 +258,53 @@ class InstallScriptVersionParseTest {
     }
 }
 
-/** The passive-notice truth table (short CLI commands + opted-out sessions). */
+/** The passive-notice truth table (short CLI commands + opted-out sessions): exactly two file checks. */
 class PassiveUpdateNoticeTest {
 
     private var now = 1_000_000_000_000L
     private val livePids = mutableSetOf(4242L)
 
-    private fun coordination(dir: Path) = UpdateCoordination(
+    private fun coordination(dir: Path, pid: Long = 4242L) = UpdateCoordination(
         updateDir = dir,
-        ownPid = 4242L,
-        hostname = "test-host",
+        ownPid = pid,
         clock = { now },
         isPidAlive = { it in livePids },
     )
 
     @Test
     fun `in flight - silence`(@TempDir dir: Path) {
-        val c = coordination(dir)
         livePids += 100L
-        UpdateCoordination(dir, ownPid = 100L, hostname = "test-host", clock = { now }, isPidAlive = { it in livePids })
-            .tryAcquireLock(UpdateStateInfo(pid = 100L, hostname = "test-host", currentVersion = "0.101.0", targetVersion = "0.102.0", startedAt = now))
+        coordination(dir, pid = 100L)
+            .writeInProgressMarker("0.102", UpdateStateInfo(pid = 100L, currentVersion = "0.101", targetVersion = "0.102", startedAt = now))
 
         assertEquals(
             PassiveUpdateNotice.NONE,
-            passiveUpdateNotice(DevrigVersion.parse("0.102.0"), c, launcherVersion = DevrigVersion.parse("0.101.0")),
+            passiveUpdateNotice(DevrigVersion.parse("0.102"), coordination(dir)),
         )
     }
 
     @Test
-    fun `completed and launcher confirms - restart`(@TempDir dir: Path) {
+    fun `completed - restart notice`(@TempDir dir: Path) {
         val c = coordination(dir)
-        c.writeUpdatedMarker("0.102.0", UpdateStateInfo(pid = 1L, hostname = "test-host", currentVersion = "0.101.0", targetVersion = "0.102.0", startedAt = now))
-        assertEquals(
-            PassiveUpdateNotice.RESTART,
-            passiveUpdateNotice(DevrigVersion.parse("0.102.0"), c, launcherVersion = DevrigVersion.parse("0.102.0")),
-        )
-    }
-
-    @Test
-    fun `completed but the launcher disagrees - banner, never trust the marker over the launcher`(@TempDir dir: Path) {
-        val c = coordination(dir)
-        c.writeUpdatedMarker("0.102.0", UpdateStateInfo(pid = 1L, hostname = "test-host", currentVersion = "0.101.0", targetVersion = "0.102.0", startedAt = now))
-        assertEquals(
-            PassiveUpdateNotice.DOWNLOAD_BANNER,
-            passiveUpdateNotice(DevrigVersion.parse("0.102.0"), c, launcherVersion = DevrigVersion.parse("0.101.0")),
-        )
+        c.writeUpdatedMarker("0.102", UpdateStateInfo(pid = 1L, currentVersion = "0.101", targetVersion = "0.102", startedAt = now))
+        assertEquals(PassiveUpdateNotice.RESTART, passiveUpdateNotice(DevrigVersion.parse("0.102"), c))
     }
 
     @Test
     fun `nothing in flight, nothing completed - the plain banner`(@TempDir dir: Path) {
         assertEquals(
             PassiveUpdateNotice.DOWNLOAD_BANNER,
-            passiveUpdateNotice(DevrigVersion.parse("0.102.0"), coordination(dir), launcherVersion = DevrigVersion.parse("0.101.0")),
+            passiveUpdateNotice(DevrigVersion.parse("0.102"), coordination(dir)),
         )
     }
 
     @Test
     fun `a DEAD updater does not silence the notice`(@TempDir dir: Path) {
-        val c = coordination(dir)
-        UpdateCoordination(dir, ownPid = 100L, hostname = "test-host", clock = { now }, isPidAlive = { it in livePids })
-            .tryAcquireLock(UpdateStateInfo(pid = 100L, hostname = "test-host", currentVersion = "0.101.0", targetVersion = "0.102.0", startedAt = now))
-        // pid 100 is NOT in livePids → the lock reads dead → not in flight
+        coordination(dir, pid = 100L) // pid 100 is NOT in livePids
+            .writeInProgressMarker("0.102", UpdateStateInfo(pid = 100L, currentVersion = "0.101", targetVersion = "0.102", startedAt = now))
         assertEquals(
             PassiveUpdateNotice.DOWNLOAD_BANNER,
-            passiveUpdateNotice(DevrigVersion.parse("0.102.0"), c, launcherVersion = DevrigVersion.parse("0.101.0")),
+            passiveUpdateNotice(DevrigVersion.parse("0.102"), coordination(dir)),
         )
     }
 }

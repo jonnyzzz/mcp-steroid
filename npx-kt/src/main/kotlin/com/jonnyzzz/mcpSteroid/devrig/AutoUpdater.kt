@@ -26,9 +26,9 @@ const val DEVRIG_INSTALL_PS1_URL = "https://devrig.dev/install.ps1"
 
 /**
  * The active auto-updater — one `tick()` per docs/updates-check/devrig-auto-update.md's
- * "The update loop". Runs ONLY inside `devrig mcp` sessions (a long-lived parent that can supervise
- * the installer and deliver the restart notice over MCP); every collaborator is injected so the whole
- * decision tree is unit-testable without HTTP, processes, or a real `~/.mcp-steroid`.
+ * "The update tick". Runs ONLY inside `devrig mcp` sessions (a long-lived parent that can supervise
+ * the installer and deliver the restart notice over MCP); every collaborator is injected so the
+ * whole decision tree is unit-testable without HTTP, processes, or a real `~/.mcp-steroid`.
  */
 class AutoUpdater(
     val homePaths: HomePaths,
@@ -38,10 +38,6 @@ class AutoUpdater(
     val notify: (String) -> Unit = { },
     val fetchPromoted: suspend () -> DevrigVersion? = { fetchVersionInfo()?.let { DevrigVersion.parse(it.versionBase) } },
     val downloadScript: suspend (url: String, target: Path) -> Boolean = ::downloadInstallScript,
-    val launcherVersion: () -> DevrigVersion? = {
-        readLauncherVersion(DevrigUserLauncher.path(homePaths, windows = isWindows()))?.let { DevrigVersion.parse(it) }
-    },
-    val selfHealLauncher: () -> Unit = { ensureBinLauncher(homePaths, registerWindowsPath = false) },
     /** Spawn + supervise the installer; exit code, or null when the 30 min timeout killed the tree. */
     val runInstaller: suspend (script: Path, logFile: Path) -> Int? = { script, logFile ->
         superviseInstallerProcess(script, logFile, isWindows())
@@ -49,9 +45,9 @@ class AutoUpdater(
     val noAutoUpdateEnv: String? = System.getenv(ENV_DEVRIG_NO_AUTO_UPDATE),
     val binRegisterOptOutEnv: String? = System.getenv(ENV_BIN_NO_AUTO_REGISTER),
     /**
-     * Fired exactly once per actually-triggered update — after the lock is held and the skew guard
-     * passed, right before the installer spawns — with the raw promoted version from version.json.
-     * Main wires this to the beacon (`devrig_self_update` with `target_version`).
+     * Fired exactly once per actually-triggered update — right before the installer spawns — with
+     * the raw promoted version from version.json. Main wires this to the beacon
+     * (`devrig_self_update` with `target_version`).
      */
     val onUpdateTriggered: (promotedVersion: String) -> Unit = { },
 ) {
@@ -59,127 +55,108 @@ class AutoUpdater(
     private var manualNotified = false
 
     /**
-     * The step-1 gate. A SNAPSHOT build must skip the WHOLE tick including GC (it compares newer than
-     * every promoted version, so the GC would delete every `updated-*` marker — the restart-pending
-     * signal). The launcher-write opt-out also disables the updater: with launcher writes disabled,
-     * every install attempt would fail its verify step by construction, burning capped attempts.
+     * The step-1 gate. A SNAPSHOT build must skip the WHOLE tick including GC (a dev build must not
+     * GC or write records for real installs; a SNAPSHOT `current` would also poison the GC bound).
+     * The launcher-write opt-out also disables the updater: with launcher writes disabled, an
+     * install could never take effect.
      */
     fun isActive(): Boolean = !currentVersion.isSnapshotBuild &&
         !parseUpdateEnvFlag(noAutoUpdateEnv) &&
         !parseUpdateEnvFlag(binRegisterOptOutEnv)
 
     suspend fun tick() {
+        // steps 1-2 — gate, then fetch (GC needs `promoted` for its bound; no fetch → no tick at all)
         if (!isActive()) return
-
-        // step 2 — GC
-        coordination.gc(currentVersion, homePaths.logsDir)
-
-        // step 3 — restart pending? (local; never trust the marker over the launcher)
-        val launcherV = launcherVersion()?.let { baseVersion(it.value) }
-        val newestUpdated = coordination.newestUpdatedVersion()
-        if (newestUpdated != null && newestUpdated > baseVersion(currentVersion.value)) {
-            if (launcherV != null && launcherV >= newestUpdated) {
-                notifyRestartOnce(newestUpdated.value)
-                return
-            }
-            // torn: a flip-back landed after the install — repair by re-running the installer below
-            System.err.println(
-                "[mcp-steroid] updated-$newestUpdated is torn (launcher is at ${launcherV ?: "unknown"}); re-running the installer",
-            )
-            coordination.deleteUpdatedMarker(newestUpdated.value)
-        } else if (launcherV != null && launcherV < baseVersion(currentVersion.value)) {
-            // a flip-back landed while only newer sessions were running — self-heal on the spot
-            selfHealLauncher()
-        }
-
-        // step 4 — fetch; never downgrade
         val promoted = fetchPromoted() ?: return
+
+        // step 3 — GC below min(current, promoted): a session running newer than the promoted
+        // version (post-rollback) must not delete the records older sessions rely on
+        coordination.gc(currentVersion, promoted, homePaths.logsDir)
+
+        // step 4 — never downgrade; nothing to do when up to date
         if (!DevrigVersion.isUpdateAvailable(current = currentVersion, promoted = promoted)) return
         val target = baseVersionString(promoted.value)
 
-        // step 5 — caps
+        // step 5 — someone else updating (after the step-3 dead-file cleanup) → yield silently:
+        // no notification before an install script completes
+        if (coordination.anyLiveInProgressMarker()) return
+
+        // step 6 — this version already installed → propose a restart, once per process
+        if (coordination.hasUpdatedMarker(target)) {
+            notifyRestartOnce(target)
+            return
+        }
+
+        // step 7 — bounded retries (3 per version, no spacing arm)
         if (coordination.isFailureCapped(target)) {
             notifyManualOnce(promoted.value, "auto-update attempts for $target failed (see ${homePaths.logsDir}/update-*-$target.log)")
             return
         }
-        if (coordination.isSkewCapped(target)) {
-            val skew = coordination.readSkew(target)
-            notifyManualOnce(
-                promoted.value,
-                "the install script still serves ${skew?.parsedVersion ?: "an unknown version"}, expected $target",
-            )
-            return
-        }
 
-        // step 6 — the lock (in-flight elsewhere → stop silently: no notification during an install)
+        // step 8 — announce ourselves (the "I am updating" record others yield to; not a lock)
         val scriptUrl = if (isWin) DEVRIG_INSTALL_PS1_URL else DEVRIG_INSTALL_SH_URL
         val logFile = logFileFor(target)
         val info = UpdateStateInfo(
             pid = coordination.ownPid,
-            hostname = coordination.hostname,
             currentVersion = currentVersion.value,
             targetVersion = target,
             startedAt = coordination.clock(),
             logFile = logFile.toString(),
             scriptUrl = scriptUrl,
         )
-        if (!coordination.tryAcquireLock(info)) return
+        coordination.writeInProgressMarker(target, info)
+        val script = coordination.scriptFile(isWin)
         try {
-            // re-verify steps 3–5 under the lock (the scan-then-lock TOCTOU)
-            val nowUpdated = coordination.newestUpdatedVersion()
-            if (nowUpdated != null && nowUpdated >= baseVersion(target)) return
-            if (coordination.isFailureCapped(target) || coordination.isSkewCapped(target)) return
-
-            coordination.writeInProgressMarker(target, info)
-            val script = coordination.scriptFile(isWin)
-            try {
-                runLockedUpdate(script, scriptUrl, logFile, target, promotedRaw = promoted.value)
-            } finally {
-                coordination.deleteInProgressMarker(target)
-                try {
-                    Files.deleteIfExists(script)
-                } catch (e: Exception) {
-                    System.err.println("[mcp-steroid] could not delete the downloaded install script $script: $e")
-                }
-            }
+            runAnnouncedUpdate(script, scriptUrl, logFile, target, info, promotedRaw = promoted.value)
         } finally {
-            coordination.releaseLock()
+            // a crashed tick leaves only a dead-pid marker, which any process cleans (step 3)
+            coordination.deleteInProgressMarker(target)
+            try {
+                Files.deleteIfExists(script)
+            } catch (e: Exception) {
+                System.err.println("[mcp-steroid] could not delete the downloaded install script $script: $e")
+            }
         }
     }
 
-    private suspend fun runLockedUpdate(script: Path, scriptUrl: String, logFile: Path, target: String, promotedRaw: String) {
-        // step 7 — download + skew guard
+    private suspend fun runAnnouncedUpdate(
+        script: Path,
+        scriptUrl: String,
+        logFile: Path,
+        target: String,
+        info: UpdateStateInfo,
+        promotedRaw: String,
+    ) {
+        // step 9 — download + version sanity check. Download/read failures and CDN skew are QUIET
+        // retries with NO counter (transient blips must not burn the no-decay cap whose rationale is
+        // installer-run cost); only an unparsable script counts as a failed attempt (template drift
+        // must surface via the step-7 cap, not loop silently).
         if (!downloadScript(scriptUrl, script)) {
-            coordination.recordFailure(target, exitCode = null)
-            System.err.println("[mcp-steroid] could not download $scriptUrl; will retry later")
+            System.err.println("[mcp-steroid] could not download $scriptUrl; will retry next tick")
             return
         }
         val scriptContent = try {
             Files.readString(script)
         } catch (e: Exception) {
-            System.err.println("[mcp-steroid] could not read the downloaded install script $script: $e")
-            coordination.recordFailure(target, exitCode = null)
+            System.err.println("[mcp-steroid] could not read the downloaded install script $script: $e; will retry next tick")
             return
         }
         val baked = parseInstallScriptVersion(scriptContent, isWin)
         when {
             baked == null -> {
-                // template drift/corruption must surface via the cap, not loop silently forever
                 coordination.recordFailure(target, exitCode = null)
                 System.err.println("[mcp-steroid] could not find the baked VERSION in $scriptUrl — unexpected script format")
                 return
             }
             baseVersion(baked).compareTo(baseVersion(target)) != 0 -> {
-                // CDN mid-release propagation: quiet, bounded retry. Ordering-based comparison, not
-                // string equality — `0.102` and `0.102.0` are the same release.
-                coordination.recordSkew(target, parsedVersion = baked)
+                // CDN mid-release propagation: without this check a stale script would install the
+                // OLD version while updated-<promoted> records the new one — a false record
+                System.err.println("[mcp-steroid] $scriptUrl still serves $baked, expected $target; will retry next tick")
                 return
             }
         }
 
-        // steps 8–9 — run detached under DEVRIG_AUTO_UPDATE=1, supervise with the tree-kill timeout.
-        // The self-update is now actually triggered — surface it to telemetry (best-effort) with the
-        // version.json version as the parameter.
+        // step 10 — the self-update is actually triggered; surface it to telemetry (best-effort)
         try {
             onUpdateTriggered(promotedRaw)
         } catch (e: Exception) {
@@ -194,37 +171,10 @@ class AutoUpdater(
             return
         }
 
-        // steps 10–11
+        // steps 11-12
         if (exit == 0) {
-            if (coordination.readUpdatedMarker(target) == null) {
-                // exit-0-without-marker is anomalous; attest the fallback marker ONLY when the launcher
-                // stamp confirms the install actually landed — otherwise this is a failed attempt.
-                val landed = launcherVersion()?.let { baseVersion(it.value) >= baseVersion(target) } == true
-                if (landed) {
-                    coordination.writeUpdatedMarker(
-                        target,
-                        UpdateStateInfo(
-                            pid = coordination.ownPid,
-                            hostname = coordination.hostname,
-                            currentVersion = currentVersion.value,
-                            targetVersion = target,
-                            startedAt = coordination.clock(),
-                            completedAt = coordination.clock(),
-                            logFile = logFile.toString(),
-                            scriptUrl = scriptUrl,
-                        ),
-                    )
-                } else {
-                    coordination.recordFailure(target, exitCode = 0)
-                    System.err.println(
-                        "[mcp-steroid] installer for $target exited 0 but neither the completion marker " +
-                            "nor the launcher confirm it — treating as failed (log: $logFile)",
-                    )
-                    return
-                }
-            }
+            coordination.writeUpdatedMarker(target, info.copy(completedAt = coordination.clock()))
             coordination.clearFailure(target)
-            coordination.clearSkew(target)
             notifyRestartOnce(target)
         } else {
             coordination.recordFailure(target, exitCode = exit)
@@ -269,7 +219,8 @@ const val INSTALLER_TIMEOUT_MINUTES = 30L
 /**
  * The baked devrig version of a downloaded install script. Anchored, whitespace-tolerant patterns
  * matched against the real templates: `VERSION='…'` at column 0 (install.sh) and the padding-aligned
- * `$Version      = '…'` (install.ps1) — an exact-literal `$Version = ` match would never fire.
+ * `$Version      = '…'` (install.ps1) — an exact-literal `$Version = ` match would never fire. The
+ * templates carry DO-NOT-REFORMAT guards on these lines.
  */
 fun parseInstallScriptVersion(content: String, isWin: Boolean): String? {
     val regex = if (isWin) ps1BakedVersionRegex else shBakedVersionRegex
@@ -296,12 +247,12 @@ fun windowsInstallerHostCandidates(systemRoot: String? = System.getenv("SystemRo
 
 /**
  * Start the install script as a dedicated detached process — stdin closed (immediate EOF), stdout +
- * stderr appended to [logFile] whose first line records the resolved host binary, environment carries
- * `DEVRIG_AUTO_UPDATE=1` (so the `devrig install devrig` handoff honors the no-downgrade guard) —
- * then supervise: exit code, or null when the timeout fired and the WHOLE process tree was killed
- * before returning (the lock must never be released while a process that can mutate ~/.mcp-steroid
- * may still run). The child survives devrig's own death: an unsupervised installer completes and its
- * `devrig install devrig` handoff writes the completion marker itself.
+ * stderr appended to [logFile] whose first line records the resolved host binary — then supervise:
+ * exit code, or null when the timeout fired and the WHOLE process tree was killed before returning
+ * (a supervised installer must never finish hours later against a newer state; note the kill can
+ * land mid-`devrig install devrig`, so the launcher replacement must be crash-safe — PR #385). The
+ * child survives devrig's own death by design: an unsupervised orphan completes, but no `updated-`
+ * record is written without a supervisor — the next session re-runs from cached artifacts.
  */
 suspend fun superviseInstallerProcess(
     script: Path,
@@ -327,7 +278,6 @@ suspend fun superviseInstallerProcess(
             StandardOpenOption.CREATE, StandardOpenOption.APPEND,
         )
         val builder = ProcessBuilder(command)
-        builder.environment()[ENV_DEVRIG_AUTO_UPDATE] = "1"
         builder.redirectErrorStream(true)
         builder.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()))
         try {
@@ -376,7 +326,7 @@ suspend fun killProcessTree(root: ProcessHandle) {
     }
 }
 
-/** Download an install script over TLS to [target]; false on any failure (caller records the attempt). */
+/** Download an install script over TLS to [target]; false on any failure (the caller retries quietly). */
 suspend fun downloadInstallScript(url: String, target: Path): Boolean {
     class InstallScriptDownloader
 

@@ -36,6 +36,10 @@ the promoted version downloads and runs the install script (see
    hard in that case — `:website-gen`/`:installer-gen` cannot resolve the missing release, so the
    old site stays live — but that is the backstop, not the workflow. Hold website tweaks until
    Stage 7c, or land them before Stage 3.)
+3. **A pulled version number is never re-promoted.** If a release is rolled back (version.json
+   moved backward), fleets keep an `updated-<pulled-version>` record that permanently
+   short-circuits any re-promotion of that same number. A re-release always bumps the base
+   version — never reuses the pulled one.
 
 The `website` branch is **origin-only** — `jb` runs TeamCity only and carries no GitHub Actions, so
 `website` is never synced to `jb`.

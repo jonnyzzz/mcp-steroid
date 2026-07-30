@@ -67,7 +67,6 @@ suspend fun checkForUpdates(homePaths: HomePaths? = null, onNotice: (String) -> 
     val notice = if (homePaths == null) PassiveUpdateNotice.DOWNLOAD_BANNER else passiveUpdateNotice(
         promoted = promotedVersion,
         coordination = UpdateCoordination(homePaths.updateDir),
-        launcherVersion = readLauncherVersion(DevrigUserLauncher.path(homePaths))?.let { DevrigVersion.parse(it) },
     )
 
     val newVersion = remoteVersion.versionBase
@@ -92,17 +91,15 @@ suspend fun checkForUpdates(homePaths: HomePaths? = null, onNotice: (String) -> 
 enum class PassiveUpdateNotice { NONE, RESTART, DOWNLOAD_BANNER }
 
 /**
- * Pure decision for the passive paths: in-flight → say nothing; completed AND the launcher confirms
- * it (never trust the marker over the launcher) → propose a restart; otherwise → the manual banner.
+ * Pure decision for the passive paths — exactly two cheap file checks (it never reads
+ * `update-failed-*`): a live in-progress marker → say nothing (no notification before an install
+ * script completes); `updated-<promoted>` present → propose a restart; otherwise → the banner.
  */
 fun passiveUpdateNotice(
     promoted: DevrigVersion,
     coordination: UpdateCoordination,
-    launcherVersion: DevrigVersion?,
-): PassiveUpdateNotice {
-    if (coordination.isUpdateInFlight()) return PassiveUpdateNotice.NONE
-    val target = baseVersion(promoted.value)
-    val installed = coordination.updatedVersions().any { it >= target } &&
-        launcherVersion != null && baseVersion(launcherVersion.value) >= target
-    return if (installed) PassiveUpdateNotice.RESTART else PassiveUpdateNotice.DOWNLOAD_BANNER
+): PassiveUpdateNotice = when {
+    coordination.isUpdateInFlight() -> PassiveUpdateNotice.NONE
+    coordination.hasUpdatedMarker(baseVersionString(promoted.value)) -> PassiveUpdateNotice.RESTART
+    else -> PassiveUpdateNotice.DOWNLOAD_BANNER
 }

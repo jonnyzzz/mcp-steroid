@@ -8,9 +8,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpAddStdioInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpListInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpRemoveInvocation
-import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 import java.io.PrintStream
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
 
@@ -46,125 +44,16 @@ fun DevrigServices.runInstallDevrigCommand(command: DevrigCommand.DevrigCommandI
     // --jdk-home is what the wrapper pins as DEVRIG_JAVA_HOME; fall back to the JDK we run under.
     val jdkHome = command.jdkHome?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
         ?: Path.of(System.getProperty("java.home"))
-    val script = Path.of(installScript)
-    return runInstallDevrigCore(
-        homePaths = homePaths,
-        installScript = script,
-        ownVersion = DevrigVersionMetadata.getBuildVersion(),
-        autoUpdateRun = parseUpdateEnvFlag(System.getenv(ENV_DEVRIG_AUTO_UPDATE)),
-        isWin = isWindows(),
-        writeLauncher = { bypass ->
-            ensureBinLauncherForInstallScript(
-                homePaths, script, jdkHome,
-                force = true, registerWindowsPath = true, bypassNoDowngradeGuard = bypass,
-            )
-        },
-    )
-}
+    ensureBinLauncherForInstallScript(homePaths, Path.of(installScript), jdkHome, force = true, registerWindowsPath = true)
 
-/** Distinct exit code: an auto-update-spawned `devrig install devrig` refused to downgrade past a newer completed update. */
-const val INSTALL_DEVRIG_NO_DOWNGRADE_EXIT_CODE = 65
-
-/**
- * The update-authority core of `devrig install devrig` (docs/updates-check/devrig-auto-update.md):
- * this command runs AS the version being installed, so it is the one place that can both rewrite the
- * launcher and attest the result. It (1) VERIFIES the launcher content actually references the
- * install-script it registered — a swallowed Windows sharing violation must not report success for a
- * launcher that never changed; (2) writes the `updated-<v>` completion marker on verified success
- * (never for a SNAPSHOT build — its marker would compare above every release and block self-heal);
- * (3) honors intent: an auto-update run ([ENV_DEVRIG_AUTO_UPDATE]) keeps the no-downgrade guard and
- * refuses when a newer completed update exists, while a manual run (incl. rollback) bypasses the
- * guard and first sweeps every newer-version marker so they cannot re-block the self-heal.
- *
- * Every input is explicit so the decision tree is unit-testable without a [DevrigServices].
- */
-fun runInstallDevrigCore(
-    homePaths: HomePaths,
-    installScript: Path,
-    ownVersion: DevrigVersion,
-    autoUpdateRun: Boolean,
-    isWin: Boolean,
-    writeLauncher: (bypassNoDowngradeGuard: Boolean) -> LauncherWriteOutcome?,
-    coordination: UpdateCoordination = UpdateCoordination(homePaths.updateDir),
-): Int {
-    if (autoUpdateRun) {
-        val newest = newestUpdatedMarkerVersion(homePaths.updateDir)
-        if (newest != null && newest > baseVersion(ownVersion.value)) {
-            System.err.println(
-                "[mcp-steroid] refusing to install devrig $ownVersion: a completed update to $newest is " +
-                    "pending restart, and this is an auto-update run (a delayed installer must never downgrade).",
-            )
-            return INSTALL_DEVRIG_NO_DOWNGRADE_EXIT_CODE
-        }
-    } else {
-        // Explicit install intent (manual curl|sh, incl. rollback): newer-version markers are swept so
-        // they cannot re-block the launcher self-heal after this install.
-        coordination.sweepMarkersNewerThan(ownVersion.value)
-    }
-
-    val outcome = try {
-        writeLauncher(!autoUpdateRun)
-    } catch (e: Exception) {
-        System.err.println("[mcp-steroid] ERROR: 'devrig install devrig' could not write the launcher: $e")
-        e.printStackTrace(System.err)
-        return 64
-    }
-
-    val launcher = DevrigUserLauncher.path(homePaths, windows = isWin)
-    if (outcome == null) {
-        // DEVRIG_BIN_NO_AUTO_REGISTER opt-out: the user manages the launcher themselves. Nothing was
-        // written and no completion marker is attested (the active updater is disabled under this
-        // opt-out for the same reason — see the design doc's gating section).
-        if (!launcher.isRegularFile()) {
-            System.err.println(
-                "[mcp-steroid] ERROR: 'devrig install devrig' did not create the launcher $launcher " +
-                    "(DEVRIG_BIN_NO_AUTO_REGISTER opts out of writing it).",
-            )
-            return 64
-        }
-        System.err.println("[mcp-steroid] launcher $launcher is managed manually ($ENV_BIN_NO_AUTO_REGISTER); leaving it unchanged")
-        return 0
-    }
-    if (outcome == LauncherWriteOutcome.SKIPPED_NO_DOWNGRADE) {
-        System.err.println("[mcp-steroid] launcher rewrite was skipped by the no-downgrade guard")
-        return INSTALL_DEVRIG_NO_DOWNGRADE_EXIT_CODE
-    }
-
-    // Verify, don't assume: the launcher on disk must reference the exact install-script we registered.
-    // isRegularFile() alone would pass on the OLD launcher after a silently failed rewrite.
-    val expectedRef = installScript.toAbsolutePath().normalize().toString()
-        .let { if (isWin) it else it.replace('\\', '/') }
-    val content = try {
-        Files.readString(launcher)
-    } catch (e: Exception) {
-        System.err.println("[mcp-steroid] ERROR: could not read back the launcher $launcher: $e")
-        return 64
-    }
-    if (!content.contains(expectedRef)) {
+    val launcher = DevrigUserLauncher.path(homePaths)
+    if (!launcher.isRegularFile()) {
         System.err.println(
-            "[mcp-steroid] ERROR: the launcher $launcher does not reference $expectedRef after the " +
-                "rewrite — the write did not land (concurrent rewrite or a swallowed IO failure).",
+            "[mcp-steroid] ERROR: 'devrig install devrig' did not create the launcher $launcher " +
+                "(DEVRIG_BIN_NO_AUTO_REGISTER may opt out of writing it).",
         )
         return 64
     }
-
-    // The completion marker: attested by the same process that rewrote + verified the launcher, so
-    // there is no window in which the launcher is new but the no-downgrade guard has no marker to see.
-    if (!ownVersion.isSnapshotBuild) {
-        val now = System.currentTimeMillis()
-        coordination.writeUpdatedMarker(
-            ownVersion.value,
-            UpdateStateInfo(
-                pid = coordination.ownPid,
-                hostname = coordination.hostname,
-                currentVersion = ownVersion.value,
-                targetVersion = baseVersionString(ownVersion.value),
-                startedAt = now,
-                completedAt = now,
-            ),
-        )
-    }
-
     System.err.println("[mcp-steroid] devrig is on PATH via $launcher")
 
     // Also offer the MCP Steroid plugin to any IDE already running: fire each IDE's native install

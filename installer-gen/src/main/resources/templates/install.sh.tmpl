@@ -14,6 +14,9 @@
 
 set -eu
 
+# DO NOT REFORMAT the VERSION line: devrig's auto-updater parses it with the anchored
+# pattern ^VERSION='...' (docs/updates-check/devrig-auto-update.md); a reformat would make
+# every deployed devrig treat the script as drifted and burn its bounded retry attempts.
 VERSION='@@VERSION@@'
 DEVRIG_URL='@@DEVRIG_URL@@'
 DEVRIG_SHA256='@@DEVRIG_SHA256@@'
