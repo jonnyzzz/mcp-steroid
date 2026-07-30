@@ -129,7 +129,12 @@ class AutoUpdater(
             return
         }
 
-        // step 10 — the update is actually starting; surface the lifecycle to telemetry (best-effort)
+        // step 10 — recheck other markers once more AFTER the download, right before spawning:
+        // the download took real time, and a lower-pid rival may have announced meanwhile
+        // (same lowest-pid-wins rule as step 8; own marker + script are cleaned in the finally)
+        if (coordination.liveInProgressPids().any { it < coordination.ownPid }) return
+
+        // step 11 — the update is actually starting; surface the lifecycle to telemetry (best-effort)
         updateEvent("started", promotedRaw, exitCode = null)
         val exit = try {
             runInstaller(script, logFile)
@@ -140,7 +145,7 @@ class AutoUpdater(
             return
         }
 
-        // steps 11-12
+        // steps 12-13
         if (exit == 0) {
             coordination.writeUpdatedMarker(target, info.copy(completedAt = coordination.clock()))
             updateEvent("completed", promotedRaw, exitCode = 0)

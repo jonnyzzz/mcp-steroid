@@ -35,8 +35,9 @@ class AutoUpdaterTest {
         installerExit: Int? = 0,
         pid: Long = 4242L,
         clock: () -> Long = { now },
+        home: HomePaths = HomePaths(tmp.resolve("home/.mcp-steroid")),
+        downloadScript: (suspend (String, Path) -> Boolean)? = null,
     ): Fixture {
-        val home = HomePaths(tmp.resolve("home/.mcp-steroid"))
         home.mkdirsAll()
         val coordination = UpdateCoordination(
             updateDir = home.updateDir,
@@ -55,7 +56,7 @@ class AutoUpdaterTest {
             coordination = coordination,
             notify = { notices += it },
             fetchPromoted = { promoted?.let { DevrigVersion.parse(it) } },
-            downloadScript = { _, target ->
+            downloadScript = downloadScript ?: { _, target ->
                 if (downloadSucceeds) {
                     Files.createDirectories(target.parent)
                     // the content is opaque to the updater — it is never parsed, only executed
@@ -230,6 +231,27 @@ class AutoUpdaterTest {
             "each attempt reports started then failed with the exit code")
         assertEquals(0, f.notices.size, "failures never produce a user-facing notice (stderr + logs only)")
         assertFalse(f.home.updateDir.resolve("update-failed-0.102").exists(), "no failure state is ever written")
+    }
+
+    @Test
+    fun `a lower-pid rival announcing DURING the download wins - installer never spawns`(@TempDir tmp: Path) = runTest {
+        val home = HomePaths(tmp.resolve("home/.mcp-steroid"))
+        val rival = UpdateCoordination(home.updateDir, ownPid = 100L, clock = { now }, isPidAlive = { it in livePids })
+        livePids += 100L
+        val f = fixture(tmp, home = home, downloadScript = { _, target ->
+            // the rival announces while OUR download is in flight
+            rival.writeInProgressMarker("0.102", UpdateStateInfo(pid = 100L, currentVersion = "0.101", targetVersion = "0.102", startedAt = now))
+            Files.createDirectories(target.parent)
+            Files.writeString(target, "#!/bin/sh\necho fake install script\n")
+            true
+        })
+
+        f.updater.tick()
+
+        assertEquals(0, f.installerRuns.size, "the post-download recheck must yield before spawning")
+        assertEquals(0, f.updateEvents.size, "no lifecycle event for a yielded update")
+        assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "own marker cleaned on yield")
+        assertFalse(f.home.updateDir.resolve("install-4242.sh").exists(), "downloaded script cleaned on yield")
     }
 
     @Test

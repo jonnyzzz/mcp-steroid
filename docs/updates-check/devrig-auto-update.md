@@ -135,7 +135,11 @@ Each tick:
    (the same quiet-retry path). A mid-propagation stale script therefore
    installs the previous version under the new record — an accepted tradeoff
    (Tradeoff 6).
-10. **Run the installer as a dedicated detached process:** POSIX
+10. **Recheck again — after the download, before the spawn.** The download
+    took real time; re-scan for other live markers and yield if one carries a
+    lower pid, exactly as in step 8 (own marker + script are cleaned on the
+    way out).
+11. **Run the installer as a dedicated detached process:** POSIX
     `/bin/sh <script>`; Windows `powershell.exe` (absolute
     `%SystemRoot%\System32\...\powershell.exe` first, PATH `powershell`, then
     `pwsh`) with `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File`.
@@ -168,7 +172,7 @@ Each tick:
     timeout and can finish much later — see Tradeoff 5. No `updated-` record
     is written without a supervisor; the next session re-runs from cached
     artifacts.
-11. **On exit 0:** write `updated-<promoted>` (atomic write; version taken from
+12. **On exit 0:** write `updated-<promoted>` (atomic write; version taken from
     `version.json`), delete own marker + script, emit the **restart notice**.
     Telemetry: the update lifecycle is captured to the beacon as
     `devrig_self_update_started` (installer spawning), then exactly one of
@@ -176,7 +180,7 @@ Each tick:
     `exit_code` when the installer returned one) — all carrying
     `target_version` = the raw version.json version. Quiet aborts before the
     spawn (yield, download failure) report nothing.
-12. **On non-zero exit / timeout / spawn failure:** delete own marker + script
+13. **On non-zero exit / timeout / spawn failure:** delete own marker + script
     (keep the log), print a stderr warning with the log path — and retry on
     the next scheduled tick, forever. Own-marker deletion sits in a `finally` —
     a crashed tick leaves only a dead-pid marker, which any process cleans
@@ -317,7 +321,7 @@ machinery:
    notice that restarting cannot satisfy, until the next release. The same
    class of orphan also survives a *fired* timeout: the kill takes down only
    the started shell, so a mid-stall child of that shell keeps running
-   unbounded (step 10 — accepted, no tree-kill). Frequency: requires
+   unbounded (step 11 — accepted, no tree-kill). Frequency: requires
    supervisor death (or a timeout-kill with a surviving child) AND a >1 h
    stall AND an intervening completed install. Accepted as
    release-cadence-correcting; a transfer timeout in the install scripts is a
