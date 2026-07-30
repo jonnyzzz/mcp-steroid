@@ -85,13 +85,15 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
     val code = InputSchemaElement.param("code")
         .description(
             "Kotlin code. The response carries an execution_id header plus ONLY what the script " +
-                "explicitly prints — print everything you need to see " +
-                "(println/printJson/printCsv/printToon) before the script ends. Not a REPL: the " +
-                "code becomes the body of a `suspend McpScriptContext.() -> Unit` function, the " +
-                "last expression's value is discarded, and `return <value>` does not compile. " +
-                "Read about the McpScriptContext receiver (built-in helpers, print methods, file " +
-                "access, read/write actions) in ${CodingWithIntelliJContextApiPromptArticle().uri} " +
-                "— fetch it with steroid_fetch_resource."
+                "explicitly prints (failed runs add error details) — print everything you need " +
+                "to see (println/printJson/printCsv/printToon); e.g. end with " +
+                "`printJson(results)`, never a bare `results`. Not a REPL: the code becomes the " +
+                "body of a " +
+                "`suspend McpScriptContext.() -> Unit` function, the last expression's value is " +
+                "ignored, and `return <value>` does not compile. Read about the McpScriptContext " +
+                "receiver (built-in helpers, print methods, file access, read/write actions) in " +
+                "${CodingWithIntelliJContextApiPromptArticle().uri} — fetch it with " +
+                "steroid_fetch_resource."
         )
         .string()
         .required()

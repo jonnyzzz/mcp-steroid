@@ -140,7 +140,7 @@ Give your AI agent a senior developer's toolkit: semantic code understanding, au
 
 **Returns:** `execution_id` plus ONLY what the script explicitly prints (`println` / `printJson` /
 `printCsv` / `printToon`). The last expression's value is ignored by the runtime — a script that
-computes but never prints returns no output at all.
+computes but never prints returns no data, just a `HINT:` about the missing print.
 
 **Complete guide:** `mcp-steroid://skill/coding-with-intellij` (API reference, patterns, examples, best practices)
 

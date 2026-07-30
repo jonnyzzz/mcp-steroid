@@ -66,10 +66,11 @@ If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` cal
 
 **Quick Start:**
 - **Apart from the `execution_id:` header, the response contains ONLY what your script explicitly
-  prints.** Your code becomes the body of a `suspend McpScriptContext.() -> Unit` function (never
-  use runBlocking) — not a REPL: the last expression's value is IGNORED, and there is no implicit
-  return value. Print everything the caller needs (`println` / `printJson` / `printCsv` /
-  `printToon`) before the script ends. Full rules in "Output rules" below.
+  prints.** Your code becomes the body of a `suspend McpScriptContext.() -> Unit` function — not a
+  REPL: the last expression's value is IGNORED, and there is no implicit return value. Print
+  everything the caller needs (`println` / `printJson` / `printCsv` / `printToon`) before the
+  script ends. Full rules in "Output rules" below.
+- The body is already suspend — call suspend APIs directly; never use `runBlocking`.
 - With the default `modal=smart_non_modal`, leftover modal dialogs are closed, the IDE is required
   non-modal, documents are committed/saved + VFS refreshed, and `waitForSmartMode()` runs — all before
   your script; then a monitor watches the run and **closes any modal that appears mid-script and FAILS the
@@ -124,17 +125,20 @@ Kotlin, so inspect the captured diagnostics first.
 **Output rules — the #1 reason agents think a call "returned empty":**
 
 ```
-results            // ✗ as the last line: value discarded — response shows only execution_id: …
-printJson(results) // ✓ as the last line: this is what the caller receives
+results            // ✗ value ignored — no data in the response, only a no-output HINT
+return results     // ✗ does not compile — the script body returns Unit
+printJson(results) // ✓ response: execution_id + the printed JSON
 ```
 
 - **Everything you need back must be explicitly printed** — `println(value)` for plain text,
   `printJson(value)` for structured data, `printCsv(...)` / `printToon(...)` for tabular records.
-  Always end with an explicit print of what you need to see.
+  Prints anywhere in the script are captured, in order — just don't finish without printing what
+  you need.
 - The last expression's value is IGNORED by the runtime — never auto-printed, never returned (the
   code compiles as a suspend function body, not a REPL). `return` only exits early; `return <value>`
-  does not even compile (the generated function returns `Unit`), so nothing can be carried back to
-  the caller.
+  does not even compile (the generated function returns `Unit`). A print-less script still
+  SUCCEEDS — the response just carries a `HINT:` line about the missing print instead of your
+  data; it does not mean the call failed.
 - `progress(...)` is NOT output — it goes to MCP progress notifications and the IDE log, never
   into the result. The print-only rule describes successful runs; a failed run additionally
   carries the error text and diagnostic file paths (screenshot / thread dump).
