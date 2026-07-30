@@ -3,7 +3,7 @@ Execute Code Tool
 MCP tool description for the steroid_execute_code tool.
 
 ###_NO_AUTO_TOC_###
-Execute Kotlin code directly in IntelliJ's runtime with full API access — builds, tests, refactoring, inspections, debugging, navigation.
+Execute Kotlin code directly in IntelliJ's runtime with full API access — builds, tests, refactoring, inspections, debugging, navigation. The response contains only what your script explicitly prints.
 
 ## Multi-site edits: one script, one write action
 
@@ -57,7 +57,7 @@ literal anchors keep failing): the IDE's tolerance-matching patch engine — fet
 | **Tabular output (array of records — find-references, call-hierarchy, project-search, document-symbols)** | `printCsv(headers: List<String>, rows: Iterable<List<Any?>>, dictColumns: Set<String> = emptySet())` — CSV with optional path-dictionary preamble. **OR** `printToon(value: Any?)` — TOON array-of-records (Token-Oriented Object Notation). **Signatures differ**: `printCsv` wants parallel `List<List<Any?>>` rows; `printToon` wants `List<Map<String, Any?>>` and infers column order from the first map. Do not pass `List<Map>` to `printCsv` (common compile error). |
 | **Git / Docker CLI / shell** | native `Bash` — genuinely outside the IDE |
 
-If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` call, check this table first. The IDE path keeps VFS + PSI consistent, reuses the warm JVM, and one call reliably replaces 3-5 chained native-tool calls.
+If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` call, check this table first. The IDE path keeps VFS + PSI consistent, reuses the warm JVM, and one call reliably replaces 3-5 chained native-tool calls. The rows show the core call only — in a real script, always print the result, or the response carries no data.
 
 **Before your first call, read the guide for your task** with `steroid_fetch_resource`:
 - Building/testing → `mcp-steroid://prompt/test-skill`
@@ -65,11 +65,10 @@ If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` cal
 - Any IDE task → `mcp-steroid://prompt/skill`
 
 **Quick Start:**
-- **Apart from the `execution_id:` header, the response contains ONLY what your script explicitly
-  prints.** Your code becomes the body of a `suspend McpScriptContext.() -> Unit` function — not a
-  REPL: the last expression's value is IGNORED, and there is no implicit return value. Print
-  everything the caller needs (`println` / `printJson` / `printCsv` / `printToon`) before the
-  script ends. Full rules in "Output rules" below.
+- **The response is the `execution_id:` header plus ONLY what your script explicitly prints**
+  (a `HINT:` line is added if you print nothing; failures add error text). Your code becomes the
+  body of a `suspend McpScriptContext.() -> Unit` function — not a REPL. Full rules in
+  "Output rules" below.
 - The body is already suspend — call suspend APIs directly; never use `runBlocking`.
 - With the default `modal=smart_non_modal`, leftover modal dialogs are closed, the IDE is required
   non-modal, documents are committed/saved + VFS refreshed, and `waitForSmartMode()` runs — all before
@@ -79,6 +78,29 @@ If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` cal
 - **Use `project` directly** — not `context.project` (no `context.` prefix exists).
 - **Do not invent helpers.** `buildProject()`, `compileProject()`, `createProjectFile()`, `projectDir`, `findProjectDir()`, top-level `readText(vf)` do not exist. For build use `ProjectTaskManager.getInstance(project).buildAllModules().await()` (needs `import com.intellij.task.ProjectTaskManager` + `import org.jetbrains.concurrency.await`); for new files create+write inside one `writeAction` using `VfsUtil.createDirectoryIfMissing` + `dir.createChildData` + `VfsUtil.saveText`; for the project root use `project.basePath` or `project.guessProjectDir()`; for file content use `String(vf.contentsToByteArray(), vf.charset)`. Full table: `mcp-steroid://skill/coding-with-intellij-context-api` → "Real helpers vs invented names".
 - **Do not call daemon-highlighting internals** (`DaemonCodeAnalyzerImpl`, `DaemonProgressIndicator`, `HighlightingSession`) — they require state that does not exist in a script context. For inspection diagnostics use `runInspectionsDirectly(file)` or `mcp-steroid://ide/inspect-and-fix`.
+
+**Output rules — the #1 reason agents think a call "returned empty":**
+
+```
+results            // ✗ value ignored — run SUCCEEDS, but the response has only a no-output HINT
+return results     // ✗ does not compile — the script body returns Unit
+printJson(results) // ✓ response: execution_id + the printed JSON
+```
+
+- **Everything you need back must be explicitly printed** — `println(value)` for plain text,
+  `printJson(value)` for structured data, `printCsv(...)` / `printToon(...)` for tabular records.
+  Prints anywhere in the script are captured, in order — just don't finish without printing what
+  you need.
+- The last expression's value is IGNORED by the runtime — never auto-printed, never returned (the
+  code compiles as a suspend function body, not a REPL). `return` only exits early; `return <value>`
+  does not even compile (the generated function returns `Unit`). A print-less script still
+  SUCCEEDS — the response just carries a `HINT:` line about the missing print instead of your
+  data; it does not mean the call failed.
+- `progress(...)` is NOT output — it goes to MCP progress notifications and the IDE log, never
+  into the result. The print-only rule describes successful runs; a failed run additionally
+  carries the error text and diagnostic file paths (screenshot / thread dump).
+- **For inspection / report tasks, print compact machine-readable lines on the first run.** Stable shapes like `KEY: value` per line or `printJson` parse cheaply on your end and let you build the user-facing summary without a second exec_code pass to reshape verbose IDE output. Recipes in `mcp-steroid://ide/find-duplicates`, `…/inspect-and-fix`, `…/inspection-summary` already follow this convention.
+- **For `runInspectionsDirectly`, do not `printJson(result)` directly.** It is Map-compatible and contains live `ProblemDescriptor` PSI/VFS references. Snapshot descriptor fields inside `readAction { }`, print a DTO, and always include `result.failedTools`; a non-empty `failedTools` means the check is not clean even when the findings map is empty.
 
 ## Modality (the `modal` option)
 
@@ -121,29 +143,6 @@ smart-mode pre-flight hitting its deadlock-safety timeout) — that's documented
 Kotlin, so inspect the captured diagnostics first.
 
 **Surface is fixed.** `McpScriptContext` won't grow new helpers — call IntelliJ APIs directly. See `mcp-steroid://skill/design-philosophy` Tenet 3.
-
-**Output rules — the #1 reason agents think a call "returned empty":**
-
-```
-results            // ✗ value ignored — no data in the response, only a no-output HINT
-return results     // ✗ does not compile — the script body returns Unit
-printJson(results) // ✓ response: execution_id + the printed JSON
-```
-
-- **Everything you need back must be explicitly printed** — `println(value)` for plain text,
-  `printJson(value)` for structured data, `printCsv(...)` / `printToon(...)` for tabular records.
-  Prints anywhere in the script are captured, in order — just don't finish without printing what
-  you need.
-- The last expression's value is IGNORED by the runtime — never auto-printed, never returned (the
-  code compiles as a suspend function body, not a REPL). `return` only exits early; `return <value>`
-  does not even compile (the generated function returns `Unit`). A print-less script still
-  SUCCEEDS — the response just carries a `HINT:` line about the missing print instead of your
-  data; it does not mean the call failed.
-- `progress(...)` is NOT output — it goes to MCP progress notifications and the IDE log, never
-  into the result. The print-only rule describes successful runs; a failed run additionally
-  carries the error text and diagnostic file paths (screenshot / thread dump).
-- **For inspection / report tasks, print compact machine-readable lines on the first run.** Stable shapes like `KEY: value` per line or `printJson` parse cheaply on your end and let you build the user-facing summary without a second exec_code pass to reshape verbose IDE output. Recipes in `mcp-steroid://ide/find-duplicates`, `…/inspect-and-fix`, `…/inspection-summary` already follow this convention.
-- **For `runInspectionsDirectly`, do not `printJson(result)` directly.** It is Map-compatible and contains live `ProblemDescriptor` PSI/VFS references. Snapshot descriptor fields inside `readAction { }`, print a DTO, and always include `result.failedTools`; a non-empty `failedTools` means the check is not clean even when the findings map is empty.
 
 **Threading rules — apply preventively, not after an error:**
 

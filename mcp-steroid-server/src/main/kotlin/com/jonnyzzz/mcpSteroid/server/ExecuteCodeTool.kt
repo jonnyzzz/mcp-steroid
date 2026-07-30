@@ -87,7 +87,8 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
             "Kotlin code. The response carries an execution_id header plus ONLY what the script " +
                 "explicitly prints (failed runs add error details) — print everything you need " +
                 "to see (println/printJson/printCsv/printToon); e.g. end with " +
-                "`printJson(results)`, never a bare `results`. Not a REPL: the code becomes the " +
+                "`printJson(results)`, never a bare `results` (a print-less run still succeeds, " +
+                "returning only a HINT line). Not a REPL: the code becomes the " +
                 "body of a " +
                 "`suspend McpScriptContext.() -> Unit` function, the last expression's value is " +
                 "ignored, and `return <value>` does not compile. Read about the McpScriptContext " +
