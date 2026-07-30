@@ -146,53 +146,45 @@ class AutoUpdaterTest {
     }
 
     @Test
-    fun `download failure - quiet retry with NO counter`(@TempDir tmp: Path) = runTest {
+    fun `download failure - quiet retry, no state left behind`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp, downloadSucceeds = false)
         f.updater.tick()
         f.updater.tick()
         assertEquals(0, f.installerRuns.size)
         assertEquals(0, f.notices.size)
-        assertNull(f.updater.coordination.readFailure("0.102"), "transient network blips must not burn the cap")
         assertFalse(f.home.updateDir.resolve("update-4242-version-0.102").exists(), "the marker is cleaned in the finally")
     }
 
     @Test
-    fun `skew - script serves a different version - quiet retry with NO counter`(@TempDir tmp: Path) = runTest {
+    fun `skew - script serves a different version - quiet retry`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp, scriptBody = { "VERSION='0.101.9'\n" }) // CDN still serves the previous release
         f.updater.tick()
         f.updater.tick()
         assertEquals(0, f.installerRuns.size)
         assertEquals(0, f.notices.size, "skew retries are quiet; surfacing belongs to the release process")
-        assertNull(f.updater.coordination.readFailure("0.102"))
         assertEquals(0, f.triggeredVersions.size, "an aborted update must not report a trigger")
     }
 
     @Test
-    fun `unparsable script - counts as a failed attempt, not a silent loop`(@TempDir tmp: Path) = runTest {
+    fun `unparsable script - quiet retry, the installer never runs on an unverified script`(@TempDir tmp: Path) = runTest {
         val f = fixture(tmp, scriptBody = { "#!/bin/sh\necho no version line here\n" })
         f.updater.tick()
+        f.updater.tick()
         assertEquals(0, f.installerRuns.size)
-        assertEquals(1, f.updater.coordination.readFailure("0.102")?.attempts)
+        assertEquals(0, f.notices.size)
     }
 
     @Test
-    fun `failing installer - three attempts, then the manual notice once`(@TempDir tmp: Path) = runTest {
+    fun `failing installer - retries on EVERY tick, never gives up, never nags`(@TempDir tmp: Path) = runTest {
+        // No failure tracking by design: too many transient root causes; the schedule (3-8h ticks)
+        // is the pacing, and the goal is to keep users up to date.
         val f = fixture(tmp, installerExit = 7)
 
-        f.updater.tick()
-        assertEquals(7, f.updater.coordination.readFailure("0.102")?.lastExitCode)
-        f.updater.tick()
-        f.updater.tick()
-        assertEquals(3, f.installerRuns.size, "no spacing arm: each tick retries until the cap")
-        assertEquals(0, f.notices.size, "failures are quiet until the cap")
+        repeat(5) { f.updater.tick() }
 
-        f.updater.tick()
-        assertEquals(3, f.installerRuns.size, "the cap stops further installer runs")
-        assertEquals(1, f.notices.size)
-        assertTrue(f.notices[0].contains("manually", ignoreCase = true) || f.notices[0].contains("Update manually"), f.notices[0])
-
-        f.updater.tick()
-        assertEquals(1, f.notices.size, "the manual notice fires once per process")
+        assertEquals(5, f.installerRuns.size, "every scheduled tick retries; there is no cap")
+        assertEquals(0, f.notices.size, "failures never produce a user-facing notice (stderr + logs only)")
+        assertFalse(f.home.updateDir.resolve("update-failed-0.102").exists(), "no failure state is ever written")
     }
 
     @Test
@@ -200,12 +192,10 @@ class AutoUpdaterTest {
         // this session runs 0.103; version.json was pulled back to 0.102, which an older session installed
         val f = fixture(tmp, current = "0.103", promoted = "0.102")
         Files.writeString(f.home.updateDir.resolve("updated-0.102"), "{}")
-        Files.writeString(f.home.updateDir.resolve("update-failed-0.102"), "{}")
 
         f.updater.tick()
 
         assertTrue(f.home.updateDir.resolve("updated-0.102").exists(), "GC bound is min(current, promoted)")
-        assertTrue(f.home.updateDir.resolve("update-failed-0.102").exists())
         assertEquals(0, f.installerRuns.size, "a backward promotion is never applied")
     }
 

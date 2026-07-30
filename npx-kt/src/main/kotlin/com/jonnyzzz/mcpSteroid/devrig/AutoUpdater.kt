@@ -52,7 +52,6 @@ class AutoUpdater(
     val onUpdateTriggered: (promotedVersion: String) -> Unit = { },
 ) {
     private var restartNotified = false
-    private var manualNotified = false
 
     /**
      * The step-1 gate. A SNAPSHOT build must skip the WHOLE tick including GC (a dev build must not
@@ -87,13 +86,11 @@ class AutoUpdater(
             return
         }
 
-        // step 7 — bounded retries (3 per version, no spacing arm)
-        if (coordination.isFailureCapped(target)) {
-            notifyManualOnce(promoted.value, "auto-update attempts for $target failed (see ${homePaths.logsDir}/update-*-$target.log)")
-            return
-        }
+        // There is deliberately NO failure tracking and NO retry cap: too many transient root causes
+        // exist, and the goal is to keep users up to date — every failure simply retries on the next
+        // scheduled tick (3–8 h), forever. Diagnosis lives in stderr + the per-attempt log files.
 
-        // step 8 — announce ourselves (the "I am updating" record others yield to; not a lock)
+        // step 7 — announce ourselves (the "I am updating" record others yield to; not a lock)
         val scriptUrl = if (isWin) DEVRIG_INSTALL_PS1_URL else DEVRIG_INSTALL_SH_URL
         val logFile = logFileFor(target)
         val info = UpdateStateInfo(
@@ -127,10 +124,9 @@ class AutoUpdater(
         info: UpdateStateInfo,
         promotedRaw: String,
     ) {
-        // step 9 — download + version sanity check. Download/read failures and CDN skew are QUIET
-        // retries with NO counter (transient blips must not burn the no-decay cap whose rationale is
-        // installer-run cost); only an unparsable script counts as a failed attempt (template drift
-        // must surface via the step-7 cap, not loop silently).
+        // step 8 — download + version sanity check. Every aberration here (failed download, unreadable
+        // file, unparsable or skewed baked version) resolves the same way: a stderr line and a quiet
+        // retry on the next scheduled tick.
         if (!downloadScript(scriptUrl, script)) {
             System.err.println("[mcp-steroid] could not download $scriptUrl; will retry next tick")
             return
@@ -144,8 +140,7 @@ class AutoUpdater(
         val baked = parseInstallScriptVersion(scriptContent, isWin)
         when {
             baked == null -> {
-                coordination.recordFailure(target, exitCode = null)
-                System.err.println("[mcp-steroid] could not find the baked VERSION in $scriptUrl — unexpected script format")
+                System.err.println("[mcp-steroid] could not find the baked VERSION in $scriptUrl — unexpected script format; will retry next tick")
                 return
             }
             baseVersion(baked).compareTo(baseVersion(target)) != 0 -> {
@@ -156,7 +151,7 @@ class AutoUpdater(
             }
         }
 
-        // step 10 — the self-update is actually triggered; surface it to telemetry (best-effort)
+        // step 9 — the self-update is actually triggered; surface it to telemetry (best-effort)
         try {
             onUpdateTriggered(promotedRaw)
         } catch (e: Exception) {
@@ -166,22 +161,19 @@ class AutoUpdater(
             runInstaller(script, logFile)
         } catch (e: Exception) {
             // spawn failure (missing shell, IO error) follows the same path as a non-zero exit
-            System.err.println("[mcp-steroid] could not start the installer for $target: $e")
-            coordination.recordFailure(target, exitCode = null)
+            System.err.println("[mcp-steroid] could not start the installer for $target: $e; will retry next tick")
             return
         }
 
-        // steps 11-12
+        // steps 10-11
         if (exit == 0) {
             coordination.writeUpdatedMarker(target, info.copy(completedAt = coordination.clock()))
-            coordination.clearFailure(target)
             notifyRestartOnce(target)
         } else {
-            coordination.recordFailure(target, exitCode = exit)
             System.err.println(
                 "[mcp-steroid] devrig auto-update to $target failed " +
                     (if (exit == null) "(timed out after $INSTALLER_TIMEOUT_MINUTES min; installer tree killed)" else "(exit $exit)") +
-                    "; log: $logFile",
+                    "; log: $logFile — will retry next tick",
             )
         }
     }
@@ -200,18 +192,6 @@ class AutoUpdater(
         notify(message)
     }
 
-    private fun notifyManualOnce(promoted: String, reason: String) {
-        if (manualNotified) return
-        manualNotified = true
-        val message = buildString {
-            appendLine()
-            appendLine("A new version of devrig is available: $promoted (current: $currentVersion), but $reason.")
-            appendLine("Update manually: https://devrig.dev/releases/")
-            appendLine()
-        }
-        System.err.println(message)
-        notify(message)
-    }
 }
 
 const val INSTALLER_TIMEOUT_MINUTES = 30L
@@ -232,8 +212,9 @@ private val ps1BakedVersionRegex = Regex("""(?m)^\s*\${'$'}Version\s*=\s*'([^']*
 
 /**
  * Windows installer-host candidates, most reliable first: the absolute System32 Windows PowerShell
- * (GUI-launched agents commonly carry stripped PATHs, and a spawn failure would burn a capped attempt
- * on a non-install problem), then PATH `powershell`, then `pwsh` (not in-box on any Windows).
+ * (GUI-launched agents commonly carry stripped PATHs, and a spawn failure would waste a whole
+ * 3–8 h retry cycle on a non-install problem), then PATH `powershell`, then `pwsh` (not in-box on
+ * any Windows).
  */
 fun windowsInstallerHostCandidates(systemRoot: String? = System.getenv("SystemRoot")): List<String> {
     val root = systemRoot?.takeIf { it.isNotBlank() } ?: "C:\\Windows"

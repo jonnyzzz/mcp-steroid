@@ -46,7 +46,6 @@ per-process marker files — there is deliberately **no lock**.
 │   │                                        while devrig <pid> drives an update
 │   ├── updated-<version>                  ← completion record, written by the supervisor
 │   │                                        after the install script exits 0
-│   ├── update-failed-<version>            ← failure counter (bounded retries)
 │   └── install-<pid>.sh|.ps1              ← downloaded install script (deleted after run)
 └── logs/
     └── update-<pid>-<version>.log         ← installer stdout+stderr (30-day retention)
@@ -56,9 +55,8 @@ per-process marker files — there is deliberately **no lock**.
 trailing `.0` components (`0.102.0-r-abc1234` → `0.102`, matching
 `version.json`'s `0.102` — one release, one filename). Marker file contents are
 human-readable JSON: `pid`, `currentVersion`, `targetVersion`, `startedAt`,
-`logFile`, `scriptUrl`; `update-failed-*` adds `attempts`, `lastAttemptAt`
-(informational), `lastExitCode`. The `-version-` infix in the in-progress marker
-name keeps it unambiguous next to the `updated-` / `update-failed-` siblings.
+`logFile`, `scriptUrl`. The `-version-` infix in the in-progress marker name
+keeps it unambiguous next to the `updated-` sibling.
 
 **Staleness rule** (the only liveness machinery, uniform for every per-pid
 file): *stale* = the pid is dead in the local pid table
@@ -75,8 +73,9 @@ commands keep the passive notice (below); their next invocation goes through
 `bin/devrig`, which already points at the new version after an update.
 
 The background slot runs a loop: first tick after the existing 0.2–1.3 s random
-delay, then every 30–60 min (jittered) — a one-shot check could never tell a
-session that another process finished the install. Each tick:
+delay, then **every 3–8 h (jittered)** — the retry schedule; a one-shot check
+could also never tell a session that another process finished the install.
+Each tick:
 
 1. **Gate.** SNAPSHOT/dev build, `DEVRIG_NO_AUTO_UPDATE`, or
    `DEVRIG_BIN_NO_AUTO_REGISTER` (launcher writes disabled → installs could
@@ -86,13 +85,13 @@ session that another process finished the install. Each tick:
 2. **Fetch** `version.json` → `promoted`. Fetch failed → end the tick (GC
    included — it needs `promoted` for a safe bound; housekeeping can wait).
 3. **GC** (cheap): delete stale per-pid markers and orphaned `install-<pid>.*`
-   scripts (staleness rule above); delete `updated-<v>` / `update-failed-<v>`
-   where `v < min(current, promoted)` — the bound includes `promoted` so a
-   session running NEWER than the promoted version (the post-rollback state)
-   never deletes the `updated-<promoted>` / `update-failed-<promoted>` records
-   that older sessions rely on (they would reinstall every tick otherwise);
-   `updated-<current>` still naturally ages out one release later. Delete
-   `logs/update-*.log` older than 30 days.
+   scripts (staleness rule above); delete `updated-<v>` where
+   `v < min(current, promoted)` — the bound includes `promoted` so a session
+   running NEWER than the promoted version (the post-rollback state) never
+   deletes the `updated-<promoted>` record that older sessions rely on (they
+   would reinstall every tick otherwise); `updated-<current>` still naturally
+   ages out one release later. Delete `logs/update-*.log` older than 30 days
+   and any legacy `update-failed-*` files (a removed mechanism, below).
 4. **Update available?** If
    `!DevrigVersion.isUpdateAvailable(current, promoted)` → done. (A promoted
    version moving backward is never auto-applied; rollback = pull the release
@@ -107,32 +106,26 @@ session that another process finished the install. Each tick:
    by step 4 here; the same check carries the condition explicitly on the
    passive path, which has no step 4. Stop. This check runs *after* the
    in-progress check, per the flow contract.
-7. **Failure cap.** `update-failed-<promoted>` at ≥ 3 attempts → emit the
-   manual-update notice (with the log path), once per process; stop. The cap
-   bounds the worst case — a download/verify-stage failure re-downloads
-   hundreds of MB, while later-stage failures retry from the content-addressed
-   cache — and surfaces persistent breakage. There is no retry-spacing arm:
-   ticks are already 30–60 min apart, and a pacing condition must never fire a
-   user-facing "update manually" banner for a self-healing situation. The
-   counter dies with its version (GC'd once every local session runs past it —
-   a capped-then-superseded counter can linger one restart longer, inert); a
-   capped version is simply skipped until the next release.
-8. **Announce.** Write our own `update-<ownPid>-version-<promoted>` marker
+   There is deliberately **no failure tracking and no retry cap** between this
+   step and the next: too many transient root causes exist (network, proxies,
+   AV, GPO, disk), and the goal is to keep users up to date — every failure
+   simply retries on the next scheduled tick, forever. Diagnosis lives in
+   stderr and the per-attempt log files; devrig never tells the user to give
+   up (see Tradeoff 9).
+7. **Announce.** Write our own `update-<ownPid>-version-<promoted>` marker
    (full JSON state). This is the "I am updating" record other processes yield
    to — not a lock; see Tradeoffs #1 for the accepted race.
-9. **Download the script** (`https://devrig.dev/install.sh` or `/install.ps1`)
-   → `update/install-<ownPid>.sh|.ps1`. A failed download (HTTP error/timeout
-   on a ~40 KB text file) — or a downloaded file that cannot be read back
-   (local IO) — → delete own marker, stop quietly, retry next tick —
-   **no counter**: transient network/IO blips must not burn the no-decay cap
-   whose rationale is installer-run cost. **Version sanity check:** extract the
-   baked version (`^VERSION='…'` / the padded `^\s*\$Version\s*=\s*'…'`) and
-   compare to `promoted` by version ordering. Mismatch (CDN mid-propagation) →
-   same quiet retry, no counter. Unparsable → count as a failed attempt
-   (template drift must surface via the step-7 cap, not loop silently).
-   Without this check a stale script would install the OLD version while
-   `updated-<promoted>` records the new one — a false record.
-10. **Run the installer as a dedicated detached process:** POSIX
+8. **Download the script** (`https://devrig.dev/install.sh` or `/install.ps1`)
+   → `update/install-<ownPid>.sh|.ps1`. Every aberration here resolves the same
+   way — a stderr line, delete own marker, retry next tick: a failed download
+   (HTTP error/timeout on a ~40 KB text file), a downloaded file that cannot
+   be read back, an unparsable baked version, or a **version sanity mismatch**:
+   extract the baked version (`^VERSION='…'` / the padded
+   `^\s*\$Version\s*=\s*'…'`) and compare to `promoted` by version ordering —
+   a mismatch means CDN mid-propagation, and without this check a stale script
+   would install the OLD version while `updated-<promoted>` records the new
+   one — a false record.
+9. **Run the installer as a dedicated detached process:** POSIX
     `/bin/sh <script>`; Windows `powershell.exe` (absolute
     `%SystemRoot%\System32\...\powershell.exe` first, PATH `powershell`, then
     `pwsh`) with `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File`.
@@ -149,17 +142,15 @@ session that another process finished the install. Each tick:
     much later — see Tradeoff 5 for what that costs. No `updated-` record is
     written without a supervisor; the next session re-runs from cached
     artifacts.
-11. **On exit 0:** write `updated-<promoted>` (atomic write; version taken from
-    `version.json`), delete own marker + script + any
-    `update-failed-<promoted>`, emit the **restart notice**. Telemetry: the
-    trigger (step 10 spawn) was already captured as `devrig_self_update` with
-    `target_version` = the raw version.json version.
-12. **On non-zero exit / timeout / spawn failure:** increment
-    `update-failed-<promoted>`, delete own marker + script (keep the log),
-    print a stderr warning with the log path. A later tick retries until the
-    step-7 cap. Own-marker deletion sits in a `finally` — a crashed tick leaves
-    only a dead-pid marker, which any process cleans (step 3); nothing can
-    stay stuck.
+10. **On exit 0:** write `updated-<promoted>` (atomic write; version taken from
+    `version.json`), delete own marker + script, emit the **restart notice**.
+    Telemetry: the trigger (step 9 spawn) was already captured as
+    `devrig_self_update` with `target_version` = the raw version.json version.
+11. **On non-zero exit / timeout / spawn failure:** delete own marker + script
+    (keep the log), print a stderr warning with the log path — and retry on
+    the next scheduled tick, forever. Own-marker deletion sits in a `finally` —
+    a crashed tick leaves only a dead-pid marker, which any process cleans
+    (step 3); nothing can stay stuck.
 
 ## Notifications
 
@@ -168,13 +159,13 @@ session that another process finished the install. Each tick:
 | Update available, nothing in flight | none — install runs silently (log only) | manual download banner |
 | Install in flight (any live marker) | none | none |
 | `updated-<promoted>` exists, `current < promoted` | restart notice (once per process) | restart notice |
-| Failure cap reached | manual banner + log path (once per process) | manual download banner (same as row 1) |
+| Install attempts keep failing | none — stderr + log files only, retries forever | manual download banner (same as row 1) |
 
 The passive entry point (`checkForUpdates()`, used by short CLI commands and
 opted-out sessions) does exactly two cheap file checks before printing — a live
-in-progress marker → silence; `updated-<promoted>` present → restart notice —
-and **never reads `update-failed-*`**, so for it the failure-cap row is
-indistinguishable from row 1 by design.
+in-progress marker → silence; `updated-<promoted>` present → restart notice.
+There is no "give up" message anywhere: failures are visible in stderr and the
+per-attempt logs, never as a user-facing nag (Tradeoff 9).
 
 ## What the simplification deliberately removed
 
@@ -191,10 +182,12 @@ failure mode it un-mitigates recorded under Tradeoffs:
   rollback) — the script contract is again just "call `devrig install devrig`"
   (→ Tradeoffs 2, 3, 5);
 - the `update-skew-<v>` counter (→ Tradeoff 6);
-- the failure counter's 7-day decay window, 9-attempt lifetime cap, AND the
-  1 h retry-spacing arm (simplified to: 3 attempts per version, forever — ticks
-  are already 30–60 min apart, and the next release resets naturally; a pacing
-  condition must never fire the user-facing manual banner);
+- **failure tracking altogether** (a second owner decision, after the counter
+  had already been trimmed to a bare 3-attempt cap): no `update-failed-*`
+  files, no cap, no "update manually" nag — there are too many possible root
+  causes, and the product goal is to keep users up to date, so updates retry
+  on the 3–8 h schedule forever (→ Tradeoff 9); legacy `update-failed-*`
+  files are GC'd;
 - the `hostname` marker field and the same-host/foreign-host staleness branch
   (staleness is uniformly "local pid dead OR older than 24 h" → Tradeoff 4).
 
@@ -213,8 +206,8 @@ auto-update.
    (per-pid `.tmp.$$` staging, `promote_tree` accepts the winner, launcher
    written once by each `devrig install devrig`), so the worst case is a
    duplicate download of the same version. Frequency: steady-state collisions
-   need two sessions ticking in the same few-second window (30–60 min apart
-   per session) — but **correlated startups collide much more often**: first
+   need two sessions ticking in the same few-second window (3–8 h apart per
+   session) — but **correlated startups collide much more often**: first
    ticks fire 0.2–1.3 s after start, so launching Claude+Codex+Gemini together
    on a release morning makes a double-run fairly likely. The harm is
    unchanged (a duplicate download).
@@ -278,6 +271,17 @@ auto-update.
    pulled version number is never re-promoted; re-releases bump the base
    version.** Frequency: manual rollbacks/re-promotions — rare,
    operator-driven.
+9. **Persistent failures retry forever, silently.** With failure tracking
+   removed (owner decision — too many possible root causes; the product goal
+   is keeping users up to date), a deterministically failing install (GPO
+   blocking script execution, a broken environment, persistent SHA mismatch)
+   re-runs the installer on every 3–8 h tick indefinitely: worst case a few
+   installer runs per day per machine, with a full artifact re-download only
+   when the failure is in the download/verify stage (later stages retry from
+   the content-addressed cache). The user is never nagged to intervene —
+   failures are visible only in stderr and `logs/update-*.log`. Accepted: an
+   unbounded quiet retry is preferred over ever telling users to stop
+   receiving updates.
 
 ## Gating and opt-out
 
@@ -301,14 +305,15 @@ spec's signed manifest remains the designed hardening path, out of scope here.
 
 - Unit: marker name parse/format + canonical version (incl. `.0-r-` release
   lane); the uniform staleness rule (local pid dead; > 24 h age; the age bound
-  overriding a live-looking pid); failure cap arithmetic (3 per version, no
-  spacing arm); baked-version extraction against the real installer-gen
-  templates; tick decision tree with fakes (yield to live marker; `updated-`
-  short-circuit + restart notice; download-failure and skew → quiet retry with
-  NO counter vs unparsable-counts-as-failure; exit-0 happy path; failure path;
-  gate matrix); passive-notice truth table; GC invariants (SNAPSHOT never GCs;
-  `v < min(current, promoted)` including the post-rollback keep-case — a
-  session newer than `promoted` must NOT delete `updated-<promoted>`; log
+  overriding a live-looking pid); baked-version extraction against the real
+  installer-gen templates; tick decision tree with fakes (yield to live
+  marker; `updated-` short-circuit + restart notice; download failure / skew /
+  unparsable script → quiet retry with no state written; exit-0 happy path;
+  failing installer retries on EVERY tick with no cap, no state, and no
+  user-facing notice; gate matrix); passive-notice truth table; GC invariants
+  (SNAPSHOT never GCs; `v < min(current, promoted)` including the
+  post-rollback keep-case — a session newer than `promoted` must NOT delete
+  `updated-<promoted>`; legacy `update-failed-*` swept unconditionally; log
   sweep).
 - Process-level (JVM, POSIX): real `/bin/sh` fixture — stdin EOF, log
   redirection + host first-line, exit-code propagation, timeout tree-kill of a
@@ -345,3 +350,8 @@ spec's signed manifest remains the designed hardening path, out of scope here.
   blocked), the unreadable-script case classified with download failure, the
   passive failure-cap row clarified, the PR #385 crash-safety cross-reference,
   and DO-NOT-REFORMAT guards on the templates' baked-version lines.
+- 2026-07-30 — **owner decision, round 2:** failure tracking removed entirely
+  (the 3-attempt cap included). There are too many possible root causes to
+  ever stop; updates retry on a **3–8 h jittered schedule, forever**, and no
+  "update manually" nag exists — diagnosis lives in stderr + the per-attempt
+  logs (Tradeoff 9). `update-failed-*` becomes a legacy name swept by GC.

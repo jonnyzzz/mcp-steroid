@@ -125,8 +125,10 @@ suspend fun DevrigServices.mainImpl2(
             if (updater != null && updater.isActive()) {
                 // The ACTIVE auto-updater (docs/updates-check/devrig-auto-update.md): only the
                 // long-lived `devrig mcp` session runs it — it supervises the installer and delivers
-                // the restart notice over MCP. Periodic (30–60 min jittered): a one-shot check would
-                // never tell a session that lost the update race that the install completed.
+                // the restart notice over MCP. Scheduled every 3–8 h (jittered) and NEVER stops:
+                // there is no failure tracking — too many transient root causes exist, and the goal
+                // is to keep users up to date. A one-shot check would also never tell a session that
+                // lost the update race that the install completed.
                 while (true) {
                     try {
                         updater.tick()
@@ -135,7 +137,7 @@ suspend fun DevrigServices.mainImpl2(
                     } catch (e: Exception) {
                         System.err.println("[mcp-steroid] auto-update tick failed: $e")
                     }
-                    delay(Random.nextLong(30, 61).minutes)
+                    delay(Random.nextLong(180, 481).minutes)
                 }
             } else {
                 // Passive, marker-aware notice: short CLI commands and opted-out/SNAPSHOT sessions.

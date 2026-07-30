@@ -30,7 +30,6 @@ class UpdateCoordination(
 ) {
     fun inProgressMarker(version: String): Path = updateDir.resolve("update-$ownPid-version-${baseVersionString(version)}")
     fun updatedMarker(version: String): Path = updateDir.resolve("updated-${baseVersionString(version)}")
-    fun failureMarker(version: String): Path = updateDir.resolve("update-failed-${baseVersionString(version)}")
     fun scriptFile(isWin: Boolean): Path = updateDir.resolve("install-$ownPid." + if (isWin) "ps1" else "sh")
 
     // ── in-progress markers (the only coordination) ──────────────────────────────────────────────
@@ -70,46 +69,16 @@ class UpdateCoordination(
         file.name.removePrefix("updated-").takeIf { it != file.name && it.isNotBlank() }?.let { file to baseVersion(it) }
     }
 
-    // ── failure counter (bounded retries) ────────────────────────────────────────────────────────
-
-    fun readFailure(version: String): UpdateFailureInfo? = readJson(failureMarker(version), UpdateFailureInfo.serializer())
-
-    fun recordFailure(version: String, exitCode: Int?): UpdateFailureInfo {
-        val next = UpdateFailureInfo(
-            targetVersion = baseVersionString(version),
-            attempts = (readFailure(version)?.attempts ?: 0) + 1,
-            lastAttemptAt = clock(),
-            lastExitCode = exitCode,
-        )
-        writeJsonAtomically(failureMarker(version), updateJson.encodeToString(UpdateFailureInfo.serializer(), next))
-        return next
-    }
-
-    fun clearFailure(version: String) {
-        try {
-            Files.deleteIfExists(failureMarker(version))
-        } catch (e: Exception) {
-            System.err.println("[mcp-steroid] could not delete ${failureMarker(version)}: $e")
-        }
-    }
-
-    /**
-     * The step-7 cap: 3 attempts per version, no spacing arm (ticks are already 30–60 min apart, and
-     * a pacing condition must never fire the user-facing manual banner). The counter dies with its
-     * version via [gc]; the next release resets naturally.
-     */
-    fun isFailureCapped(version: String): Boolean =
-        (readFailure(version)?.attempts ?: 0) >= UPDATE_MAX_ATTEMPTS
-
     // ── GC (step 3) ──────────────────────────────────────────────────────────────────────────────
 
     /**
      * The cheap per-tick sweep. MUST NOT run on SNAPSHOT builds (the caller gates — a SNAPSHOT
-     * `current` would poison the bound). Version-keyed records are deleted strictly below
+     * `current` would poison the bound). `updated-<v>` records are deleted strictly below
      * `min(current, promoted)`: the bound includes `promoted` so a session running NEWER than the
-     * promoted version (the post-rollback state) never deletes the `updated-<promoted>` /
-     * `update-failed-<promoted>` records that older sessions rely on — they would reinstall every
-     * tick otherwise. `updated-<current>` still ages out one release later.
+     * promoted version (the post-rollback state) never deletes the `updated-<promoted>` record that
+     * older sessions rely on — they would reinstall every tick otherwise. `updated-<current>` still
+     * ages out one release later. `update-failed-*` files are a removed mechanism (failure tracking
+     * was dropped — retries are unconditionally scheduled) and are swept as legacy leftovers.
      */
     fun gc(current: DevrigVersion, promoted: DevrigVersion, logsDir: Path) {
         val bound = minOf(baseVersion(current.value), baseVersion(promoted.value))
@@ -117,7 +86,7 @@ class UpdateCoordination(
             val name = file.name
             val scriptPid = parseScriptFilePid(name)
             val obsolete = when {
-                name.startsWith("update-failed-") -> baseVersion(name.removePrefix("update-failed-")) < bound
+                name.startsWith("update-failed-") -> true // legacy: failure tracking no longer exists
                 name.startsWith("updated-") -> baseVersion(name.removePrefix("updated-")) < bound
                 parseInProgressMarkerName(name) != null -> isFileStale(file)
                 scriptPid != null -> scriptPid != ownPid && isPidStale(scriptPid, file)
@@ -248,17 +217,8 @@ data class UpdateStateInfo(
     val installerHost: String? = null,
 )
 
-@Serializable
-data class UpdateFailureInfo(
-    val targetVersion: String,
-    val attempts: Int,
-    val lastAttemptAt: Long,
-    val lastExitCode: Int? = null,
-)
-
 const val UPDATE_STALE_AGE_MILLIS: Long = 24L * 60 * 60 * 1000
 const val UPDATE_LOG_RETENTION_MILLIS: Long = 30L * 24 * 60 * 60 * 1000
-const val UPDATE_MAX_ATTEMPTS = 3
 
 /** User opt-out for the active updater (`yes/true/1/on`); the passive marker-aware notice remains. */
 const val ENV_DEVRIG_NO_AUTO_UPDATE = "DEVRIG_NO_AUTO_UPDATE"

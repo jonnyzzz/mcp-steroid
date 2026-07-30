@@ -130,43 +130,35 @@ class UpdateCoordinationTest {
         assertTrue(c.hasUpdatedMarker("0.104"))
     }
 
-    // ── failure counter ──────────────────────────────────────────────────────────────────────────
-
-    @Test
-    fun `failure cap - 3 attempts per version, no spacing arm`(@TempDir dir: Path) {
-        val c = coordination(dir)
-        val v = "0.102"
-
-        assertFalse(c.isFailureCapped(v))
-        c.recordFailure(v, exitCode = 1)
-        assertFalse(c.isFailureCapped(v), "no retry-spacing arm: one failure does not cap")
-        c.recordFailure(v, exitCode = 1)
-        assertFalse(c.isFailureCapped(v))
-        c.recordFailure(v, exitCode = 7)
-        assertTrue(c.isFailureCapped(v), "3 attempts cap the version")
-        assertEquals(7, c.readFailure(v)?.lastExitCode)
-
-        c.clearFailure(v)
-        assertFalse(c.isFailureCapped(v))
-    }
-
     // ── GC ───────────────────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `gc bound is min(current, promoted) - a newer session never deletes the promoted records`(@TempDir dir: Path) {
+    fun `gc bound is min(current, promoted) - a newer session never deletes the promoted record`(@TempDir dir: Path) {
         val logsDir = dir.resolve("logs")
         Files.createDirectories(logsDir)
         val c = coordination(dir)
         // the post-rollback state: this session runs 0.103, but version.json was pulled back to 0.102
         c.writeUpdatedMarker("0.102", stateInfo(target = "0.102"))
-        Files.writeString(dir.resolve("update-failed-0.102"), "{}")
         c.writeUpdatedMarker("0.101", stateInfo(target = "0.101"))
 
         c.gc(current = DevrigVersion.parse("0.103.0-r-abc"), promoted = DevrigVersion.parse("0.102"), logsDir = logsDir)
 
         assertTrue(c.updatedMarker("0.102").exists(), "updated-<promoted> must survive a newer session's GC (rollback keep-case)")
-        assertTrue(dir.resolve("update-failed-0.102").exists(), "update-failed-<promoted> must survive too")
         assertFalse(c.updatedMarker("0.101").exists(), "records below min(current, promoted) are swept")
+    }
+
+    @Test
+    fun `gc sweeps legacy update-failed files unconditionally - failure tracking no longer exists`(@TempDir dir: Path) {
+        val logsDir = dir.resolve("logs")
+        Files.createDirectories(logsDir)
+        val c = coordination(dir)
+        Files.writeString(dir.resolve("update-failed-0.102"), "{}")
+        Files.writeString(dir.resolve("update-failed-0.200"), "{}")
+
+        c.gc(current = DevrigVersion.parse("0.101"), promoted = DevrigVersion.parse("0.102"), logsDir = logsDir)
+
+        assertFalse(dir.resolve("update-failed-0.102").exists())
+        assertFalse(dir.resolve("update-failed-0.200").exists())
     }
 
     @Test
