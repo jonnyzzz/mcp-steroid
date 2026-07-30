@@ -85,9 +85,11 @@ class BinLauncherWindowsTest {
         // semantics of a running executable/mapped file. The file handle itself shares read/write/delete,
         // so the section is the only blocker (isolates the NTFS rule under test).
         val path = target.toString().replace("'", "''")
+        // NB [NullString]::Value: PowerShell coerces $null to "" for String parameters, and
+        // CreateFromFile rejects an empty map name.
         val holder = startHolder(
             "\$fs=[System.IO.File]::Open('$path',[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]'ReadWrite, Delete'); " +
-                "\$mmf=[System.IO.MemoryMappedFiles.MemoryMappedFile]::CreateFromFile(\$fs,\$null,0,[System.IO.MemoryMappedFiles.MemoryMappedFileAccess]::Read,\$null,[System.IO.HandleInheritability]::None,\$true); " +
+                "\$mmf=[System.IO.MemoryMappedFiles.MemoryMappedFile]::CreateFromFile(\$fs,[NullString]::Value,0,[System.IO.MemoryMappedFiles.MemoryMappedFileAccess]::Read,\$null,[System.IO.HandleInheritability]::None,\$true); " +
                 "[Console]::Out.WriteLine('LOCKED'); Start-Sleep -Seconds 150",
         )
         val aside = dir.resolve("devrig.cmd.old${ProcessHandle.current().pid()}")
@@ -165,12 +167,12 @@ class BinLauncherWindowsTest {
         val reader = process.inputStream.bufferedReader()
         val line = reader.readLine() // bounded by the class-level @Timeout
         if (line != "LOCKED") {
+            killTree(process) // kill FIRST: draining a still-sleeping holder would block until its exit
             val rest = try {
                 reader.readText()
             } catch (e: Exception) {
                 "(output unreadable: $e)"
             }
-            killTree(process)
             throw IllegalStateException("the PowerShell holder failed to acquire the lock: $line\n$rest")
         }
         return process
