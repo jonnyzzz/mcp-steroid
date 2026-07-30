@@ -34,9 +34,12 @@ suspend fun fetchVersionInfo(): DevrigVersionInfo? {
     }
 
     return try {
-        val response = client.get("https://devrig.dev/version.json") {
+        // Cache-buster: each periodic re-check must see the CURRENT promotion, not Cloudflare's
+        // cached copy (query strings bypass the edge cache).
+        val response = client.get("https://devrig.dev/version.json?_=${System.currentTimeMillis()}") {
             header("Accept", "application/json")
             header("User-Agent", "devrig/${DevrigVersionMetadata.getDevrigVersion()}")
+            header("Cache-Control", "no-cache")
         }
         if (!response.status.isSuccess()) return null
         return json.decodeFromString<DevrigVersionInfo>(response.bodyAsText())

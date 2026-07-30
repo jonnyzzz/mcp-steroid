@@ -77,8 +77,10 @@ Each tick:
    never take effect) → skip the entire tick, including GC. (A dev build must
    not GC or write records for real installs at all; note a SNAPSHOT `current`
    would also poison the GC bound's `min(current, promoted)` comparison.)
-2. **Fetch** `version.json` → `promoted`. Fetch failed → end the tick (GC
-   included — it needs `promoted` for a safe bound; housekeeping can wait).
+2. **Fetch** `version.json` → `promoted` — a FRESH download on every tick,
+   with a cache-busting query so a 3–8 h re-check sees the current promotion,
+   never Cloudflare's cached copy. Fetch failed → end the tick (GC included —
+   it needs `promoted` for a safe bound; housekeeping can wait).
 3. **GC** (cheap): delete stale per-pid markers, orphaned `install-<pid>.*`
    scripts, and orphaned `.tmp.<pid>.*` atomic-write staging (staleness rule
    above); delete `updated-<v>` where `v < min(current, promoted)` — the bound
@@ -122,7 +124,10 @@ Each tick:
    double-run window is only the announce↔recheck race itself (see
    Tradeoff 1).
 9. **Download the script** (`https://devrig.dev/install.sh` or `/install.ps1`)
-   → `update/install-<ownPid>.sh|.ps1`. A failed download (HTTP error/timeout
+   → `update/install-<ownPid>.sh|.ps1` — freshly on every attempt (the file is
+   deleted after each run, and the GET carries the same cache-buster), so a
+   retry picks up a server-side fix made during the wait. A failed download
+   (HTTP error/timeout
    on a ~40 KB text file) resolves as a stderr line, delete own marker, retry
    next tick. The downloaded script is deliberately **never inspected** —
    devrig does not parse the script and has no dependency on its internal

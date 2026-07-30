@@ -300,8 +300,11 @@ suspend fun downloadInstallScript(url: String, target: Path): Boolean {
         expectSuccess = false
     }
     return try {
-        val response = client.get(url) {
+        // Cache-buster: a 3-8h retry must see a server-side fix, not Cloudflare's cached copy
+        // (query strings bypass the edge cache — same pattern as the release verification).
+        val response = client.get("$url?_=${System.currentTimeMillis()}") {
             header("User-Agent", "devrig/${DevrigVersionMetadata.getDevrigVersion()}")
+            header("Cache-Control", "no-cache")
         }
         if (!response.status.isSuccess()) {
             System.err.println("[mcp-steroid] GET $url returned ${response.status}")
