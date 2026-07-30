@@ -343,9 +343,8 @@ lines on anomalies, so a JSON-printing script stays machine-parseable after stri
 The same separation applies to ALL in-flight progress (`progress(...)`, indexing/compile waits,
 multi-block progress): `ExecutionManager.logProgress` delivers it via MCP progress notifications
 (when the client passed a `progressToken`) + idea.log + the execution event storage — never the
-result content. A pre-flight failure instead names its step + profile in the returned error
-(`pre-flight '<step>' (modal=<profile>): …` via `ScriptExecutor.preFlight`, original exception
-chained as cause), so a stall is still localizable from the error alone or from idea.log.
+result content. A failing pre-flight step propagates the context API's own error untouched;
+a stall is localized via the per-step `[PRE]` lines in idea.log.
 
 **Tests:** unit `ModalModeTest` (wire/default/parse) + `ExecutionManagerTest` profile-pipeline cases;
 integration `DialogKillerIntegrationTest` (Docker) — Step-1 opens a modal with `modal=unleashed` (no

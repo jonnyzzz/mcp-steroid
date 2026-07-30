@@ -55,8 +55,8 @@ residual write-intent stall fails fast instead of hanging:
 6. **Stage markers** (`[PRE] …`, `[RUN] script`, `[POST] …`) are logged on entry to each stage, so if
    anything ever stalls the last marker pinpoints the exact stuck stage. *Updated for issue #154:* the
    markers originally went into the tool result, which broke machine parsing of script output; they now
-   go to **idea.log only**, and a pre-flight failure instead names its step + modality profile in the
-   returned error itself (`pre-flight '<step>' (modal=<profile>): …`).
+   go to **idea.log only** — a failing stage propagates its own error untouched, and the last `[PRE]`
+   line in idea.log pinpoints a stuck stage.
 
 New `exec_code` parameter **`allow_modal: Boolean = false`** drives step 4 (threaded through
 `ExecCodeParams` + the tool schema, and forwarded by the devrig stdio bridge in

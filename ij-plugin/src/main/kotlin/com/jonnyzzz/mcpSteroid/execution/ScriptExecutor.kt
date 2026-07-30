@@ -140,20 +140,20 @@ class ScriptExecutor(
         // script that prints a single JSON document stays machine-parseable after stripping the
         // execution_id line. The same holds for ALL in-flight progress (indexing waits, compile
         // waits, multi-block progress): ExecutionManager.logProgress delivers it via MCP progress
-        // notifications + idea.log + event storage, never the result content. Because the framing
-        // no longer localizes a failure in the output, every stage failure names its step and
-        // modality profile in the error itself (see [preFlight]).
+        // notifications + idea.log + event storage, never the result content. A failing step
+        // propagates its own error untouched; the per-step [PRE] lines in idea.log localize a stall.
         when (exec.modal) {
             ModalMode.SMART_NON_MODAL -> {
-                preFlight(executionId, exec.modal, "close modal dialogs") { context.closeModalDialogs() }
+                log.info("[$executionId] [PRE] close modal dialogs (modal=${exec.modal.wire})")
+                context.closeModalDialogs()
                 log.info("[$executionId] [PRE] require non-modal (modal=${exec.modal.wire})")
                 requireNonModalOrFail(executionId, exec.modal)
-                preFlight(executionId, exec.modal, "sync documents") { context.syncDocuments() }
-                // Step name deliberately avoids the "smart mode" substring: the hint engine
-                // (ExecutionSuggestionService) matches it and would append a smartReadAction TIP
-                // to the INDEXING IN PROGRESS error, whose own instruction is "just keep polling".
-                preFlight(executionId, exec.modal, "wait for indexing") { context.waitForSmartMode() }
-                preFlight(executionId, exec.modal, "start modal-dialog monitor") { context.monitorAndCloseModalDialogs() }
+                log.info("[$executionId] [PRE] sync documents (modal=${exec.modal.wire})")
+                context.syncDocuments()
+                log.info("[$executionId] [PRE] wait for smart mode (modal=${exec.modal.wire})")
+                context.waitForSmartMode()
+                log.info("[$executionId] [PRE] start modal-dialog monitor (modal=${exec.modal.wire})")
+                context.monitorAndCloseModalDialogs()
             }
 
             ModalMode.NON_MODAL -> {
@@ -187,40 +187,6 @@ class ScriptExecutor(
                     "WARNING: post-flight 'sync documents' (modal=${exec.modal.wire}) was skipped: ${e.message}"
                 )
             }
-        }
-    }
-
-    /**
-     * Runs one pre-flight step of the `modal` profile. The step's progress is logged to the IDE log
-     * only — never added to the tool result (#154). When the step fails, it is rethrown with the
-     * step name and modality profile prefixed, so the returned error is self-sufficient now that no
-     * `[PRE]` framing in the output localizes the failing step. The original exception is chained
-     * as the cause, so the stack trace logged upstream (ExecutionManager) still points at the real
-     * throw site inside the step. Cancellation (CE/PCE) propagates untouched.
-     */
-    private suspend fun preFlight(
-        executionId: ExecutionId,
-        modal: ModalMode,
-        step: String,
-        action: suspend () -> Unit,
-    ) {
-        log.info("[$executionId] [PRE] $step (modal=${modal.wire})")
-        try {
-            action()
-        } catch (e: ToolCallErrorException) {
-            throw ToolCallErrorException("pre-flight '$step' (modal=${modal.wire}): ${e.message}")
-                .apply { initCause(e) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: ProcessCanceledException) {
-            // Explicit defense for any PCE that does not extend CancellationException
-            // (mirrors executeCodeBlocks): control-flow exceptions propagate untouched.
-            throw e
-        } catch (t: Throwable) {
-            // Unexpected failures (e.g. a RuntimeException out of commitAllDocuments) must also
-            // name the failing step + profile — ExecutionManager's generic handler reports the
-            // wrapper's message and stack (with this cause chain) in the result.
-            throw RuntimeException("pre-flight '$step' (modal=${modal.wire}): ${t.message}", t)
         }
     }
 
