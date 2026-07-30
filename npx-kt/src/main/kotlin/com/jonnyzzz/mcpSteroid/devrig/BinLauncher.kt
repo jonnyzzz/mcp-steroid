@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -338,28 +337,65 @@ internal fun ensureWindowsPathEntry(binDir: Path) {
 
 private fun writeAtomically(dir: Path, target: Path, content: String, executable: Boolean) {
     Files.createDirectories(dir)
-    val tmp = dir.resolve(".tmp.${ProcessHandle.current().pid()}.${target.fileName}")
-    try {
-        Files.writeString(tmp, content)
-        // Set the executable bit on the staging file BEFORE the move, so the final launcher is never
-        // momentarily non-executable (mirrors install.sh: chmod +x then mv).
-        if (executable) setExecutable(tmp)
+    replaceLauncherFile(target, content, executable)
+}
+
+/**
+ * Replace [target] with [content] via a sibling `.new<pid>` staging file: move it onto the target
+ * (atomic, then plain); if blocked (Windows holds the launcher open), rename the original to `.old<pid>`
+ * — NTFS allows renaming an open file — and move again; delete the `.old<pid>`. Any failure retries the
+ * whole sequence after 10 ms, up to 5 attempts; then the last failure propagates to the caller's
+ * best-effort catch. Crash leftovers (`.new<pid>`/`.old<pid>`) are accepted and never swept.
+ */
+fun replaceLauncherFile(
+    target: Path,
+    content: String,
+    executable: Boolean,
+    move: (from: Path, to: Path, atomic: Boolean) -> Unit = ::moveFile,
+) {
+    val pid = ProcessHandle.current().pid()
+    val fresh = target.resolveSibling("${target.fileName}.new$pid")
+    val old = target.resolveSibling("${target.fileName}.old$pid")
+    var lastFailure: Exception? = null
+    for (attempt in 1..5) {
+        if (attempt > 1) Thread.sleep(10)
         try {
-            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (e: AtomicMoveNotSupportedException) {
-            System.err.println("[mcp-steroid] atomic move unsupported (${e.message}); using a plain move")
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
-        }
-    } finally {
-        // On success the move consumed tmp (this is a no-op); on any failure above, sweep the orphan
-        // staging file instead of leaking a `.tmp.<pid>.devrig` into the bin dir.
-        if (Files.exists(tmp)) {
+            Files.writeString(fresh, content)
+            if (executable) setExecutable(fresh) // +x BEFORE any move: the launcher is never non-executable
             try {
-                Files.deleteIfExists(tmp)
-            } catch (e: Exception) {
-                System.err.println("[mcp-steroid] could not remove staging file $tmp: $e")
+                moveOnto(fresh, target, move)
+            } catch (blocked: Exception) {
+                System.err.println("[mcp-steroid] $target is held open ($blocked); renaming it aside")
+                move(target, old, true) // park the held-open original; its open handles follow the rename
+                moveOnto(fresh, target, move)
             }
+            Files.deleteIfExists(old)
+            return
+        } catch (e: Exception) {
+            lastFailure = e
+            System.err.println("[mcp-steroid] replace of $target, attempt $attempt/5 failed: $e")
         }
+    }
+    throw lastFailure ?: IllegalStateException("no replace attempt was made for $target")
+}
+
+/** The two move attempts of the sequence: atomic first, plain second; the plain failure propagates. */
+private fun moveOnto(from: Path, to: Path, move: (from: Path, to: Path, atomic: Boolean) -> Unit) {
+    try {
+        move(from, to, true)
+        return
+    } catch (e: Exception) {
+        System.err.println("[mcp-steroid] atomic move $from -> $to failed ($e); trying a plain move")
+    }
+    move(from, to, false)
+}
+
+/** Default production move; the [replaceLauncherFile] seam lets tests inject failures. */
+private fun moveFile(from: Path, to: Path, atomic: Boolean) {
+    if (atomic) {
+        Files.move(from, to, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    } else {
+        Files.move(from, to, StandardCopyOption.REPLACE_EXISTING)
     }
 }
 

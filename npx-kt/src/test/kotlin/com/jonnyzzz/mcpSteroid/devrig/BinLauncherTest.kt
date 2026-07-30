@@ -5,11 +5,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.DisabledOnOs
 import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 import kotlin.io.path.readText
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -155,6 +157,76 @@ class BinLauncherTest {
 
         run()
         assertTrue(Files.isExecutable(launcher), "self-heal must restore +x even when bytes are unchanged")
+    }
+
+    // ── rename-based replace (Windows lock scenario exercised on POSIX via the move seam) ───────
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `a blocked direct move parks the original as old-pid, renames the new file into place, deletes the old`(@TempDir dir: Path) {
+        val target = dir.resolve("devrig")
+        Files.writeString(target, "old launcher\n")
+        val old = dir.resolve("devrig.old${ProcessHandle.current().pid()}")
+
+        // Model the Windows lock semantics: moving ONTO an existing (held-open) file fails; renames of
+        // that file and moves to a free name succeed.
+        var calls = 0
+        replaceLauncherFile(target, "new launcher\n", executable = true) { from, to, _ ->
+            calls++
+            if (Files.exists(to)) throw IOException("simulated sharing violation: target is held open")
+            if (to == target) {
+                // The into-place move AFTER parking: the original must sit at old-pid with its bytes.
+                assertEquals("old launcher\n", old.readText(), "the original must be parked before this move")
+            }
+            Files.move(from, to)
+        }
+
+        assertEquals(4, calls, "expected atomic + plain direct moves (fail) + park + into-place rename, got $calls")
+        assertEquals("new launcher\n", target.readText())
+        assertTrue(Files.isExecutable(target), "the executable bit set on the staged file must survive the rename")
+        assertFalse(Files.exists(old), "the old-pid file must be deleted as the last step of the sequence")
+        assertFalse(Files.exists(dir.resolve("devrig.new${ProcessHandle.current().pid()}")), "the staged file must be consumed")
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `a missing original converges on the first attempt - one atomic move, nothing to park or delete`(@TempDir dir: Path) {
+        val target = dir.resolve("devrig")
+
+        var calls = 0
+        replaceLauncherFile(target, "new launcher\n", executable = true) { from, to, _ ->
+            calls++
+            Files.move(from, to)
+        }
+
+        assertEquals(1, calls, "the first atomic move must already succeed when the original is missing")
+        assertEquals("new launcher\n", target.readText())
+        assertTrue(Files.isExecutable(target))
+        val leftovers = Files.list(dir).use { s -> s.filter { it != target }.toList() }
+        assertTrue(leftovers.isEmpty(), "no staging or old-pid file may remain: $leftovers")
+    }
+
+    @Test
+    fun `when every move keeps failing the 5 attempts give up loudly and the original stays untouched`(@TempDir dir: Path) {
+        val target = dir.resolve("devrig")
+        Files.writeString(target, "old launcher\n")
+
+        var calls = 0
+        val startNanos = System.nanoTime()
+        val boom = assertFailsWith<IOException> {
+            replaceLauncherFile(target, "new launcher\n", executable = false) { _, _, _ ->
+                calls++
+                throw IOException("simulated persistent lock")
+            }
+        }
+        val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
+
+        assertEquals("simulated persistent lock", boom.message, "the LAST failure must propagate unwrapped")
+        assertEquals(15, calls, "each of the 5 attempts = atomic + plain direct moves + park, all failing")
+        assertTrue(elapsedMs >= 40, "4 inter-attempt delays of 10 ms expected, took only ${elapsedMs} ms")
+        assertEquals("old launcher\n", target.readText(), "a total failure must leave the original launcher in place")
+        assertFalse(Files.exists(dir.resolve("devrig.old${ProcessHandle.current().pid()}")),
+            "no old-pid file can exist when even the park move failed")
     }
 
     // ── PATH symlink (POSIX) ────────────────────────────────────────────────────────────────────
