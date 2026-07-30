@@ -179,23 +179,26 @@ Each tick:
 The install script's last step, `devrig install devrig`, replaces
 `~/.mcp-steroid/bin/devrig` (POSIX) / `devrig.cmd` (Windows). That replacement
 uses **one algorithm for all platforms and every launcher write** (PR #385) —
-the file is never edited in place:
+the file is never edited in place, and the sequence is identical whether or
+not the original file exists:
 
-1. Write the new script content to a NEW file next to the original, named
-   `<original-name>.new<pid>` (executable bit set before any move).
-2. Attempt to MOVE `.new<pid>` onto the original name (atomic replace). If
-   that works — done.
-3. Otherwise (e.g. Windows holds the original open — replace/delete need
-   delete-access, a plain rename does not): move the original to
-   `<original-name>.old<pid>`, then move `.new<pid>` onto the original name.
-4. If any step fails at any point: wait 10 ms and try again, up to 5 attempts,
-   then give up with a stderr log (the next devrig start self-heals — the
-   launcher is rewritten on every start).
+1. Create `<original-name>.new<pid>` with the new launcher content
+   (executable bit set).
+2. Attempt to move it onto the original name atomically; then attempt a
+   non-atomic move.
+3. Rename the original file to `<original-name>.old<pid>` (frees the name on
+   Windows, where replacing an open file fails but a plain rename succeeds).
+4. Repeat the two move attempts.
+5. Delete own `.old<pid>`.
+6. If anything failed: wait 10 ms and repeat the whole sequence, up to 5
+   attempts, then give up with a stderr log — the next devrig start rewrites
+   the launcher anyway.
 
-The brief availability gap between the two renames in step 3 is **accepted**
-(as atomic as practical, not theoretically perfect). Stale `.old<pid>` /
-`.new<pid>` leftovers (a crash mid-sequence, a Windows handle pinning the old
-file) are swept best-effort on later starts.
+The brief availability gap between the rename-aside and the move-in is
+**accepted** (as atomic as practical, not theoretically perfect). Each process
+touches only its OWN `.new<pid>`/`.old<pid>` files — no directory scanning, no
+cross-process cleanup; a crash may leave one tiny leftover file behind,
+accepted.
 
 ## Notifications
 
@@ -397,8 +400,9 @@ release-process approach).
   the started process ONLY (null returned promptly; the detached grandchild
   survives by design — the test asserts it and cleans it up).
 - Launcher replacement (PR #385): the unified `.new<pid>` → move →
-  `.old<pid>` fallback sequence with the 10 ms × 5 retry, exercised on POSIX
-  via an injected failing first move; stale `.new*`/`.old*` sweep.
+  `.old<pid>` → move → delete-own-`.old<pid>` sequence with the 10 ms × 5
+  retry, exercised on POSIX via an injected failing move; missing-original
+  and everything-fails paths covered.
 - Integration (planned — not yet implemented): drive the real `install.sh`
   through the auto-update path end-to-end against the nginx fixture model of
   the existing installer lane (`:installer-gen:installerIntegrationTest`,
@@ -427,8 +431,10 @@ issues:
    recheck added; stdout purity pinned by test; signed-scripts follow-up
    filed as issue #389. Quorum: unanimous, first round.
 5. **Launcher replacement unified (owner, PR #385):** one algorithm for all —
-   write `.new<pid>`, move onto the original, fallback via `.old<pid>`,
-   10 ms × 5 retries; the brief availability gap accepted.
+   write `.new<pid>`, two move attempts, rename-aside to `.old<pid>`, move
+   again, delete own `.old<pid>`; 10 ms × 5 retries of the whole sequence;
+   no directory sweeps (each process touches only its own files); the brief
+   availability gap accepted.
 
 Related: PR #380 (this feature), PR #385 (launcher replacement), issue #383
 (CLI-runs-MCP-tools auto-update), issue #389 (signed install scripts),
