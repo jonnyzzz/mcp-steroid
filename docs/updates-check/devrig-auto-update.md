@@ -402,7 +402,12 @@ release-process approach).
 - Launcher replacement (PR #385): the unified `.new<pid>` → move →
   `.old<pid>` → move → delete-own-`.old<pid>` sequence with the 10 ms × 5
   retry, exercised on POSIX via an injected failing move; missing-original
-  and everything-fails paths covered.
+  and everything-fails paths covered. Validated on REAL Windows (NTFS,
+  PowerShell 5.1) with genuine holders — cmd.exe executing the launcher
+  imposes no contention (full sharing); a memory-mapped holder blocks the
+  replace but the rename-aside lands the new content (the exact case the
+  sequence exists for); a no-delete-share holder blocks everything → loud
+  5-round give-up with the original intact, healing on the next write.
 - Integration (planned — not yet implemented): drive the real `install.sh`
   through the auto-update path end-to-end against the nginx fixture model of
   the existing installer lane (`:installer-gen:installerIntegrationTest`,
