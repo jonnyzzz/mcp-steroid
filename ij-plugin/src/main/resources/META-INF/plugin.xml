@@ -4,35 +4,22 @@
     <vendor>jonnyzzz.com</vendor>
 
     <description><![CDATA[
-    <p><strong>MCP Steroid</strong> brings the full power of the IntelliJ Platform to AI agents through the Model Context Protocol (MCP).</p>
+    <p><strong>MCP Steroid</strong> gives AI agents the whole IDE, not just the files.</p>
 
-    <p><b>IntelliJ platform works for AI agents as great as for human developers.</b></p>
+    <p>It runs a Model Context Protocol (MCP) server inside your IDE. Connected agents — Claude Code,
+    Codex, Gemini CLI, or any MCP-compatible agent — execute Kotlin against the live IntelliJ Platform:
+    semantic navigation, inspections, refactorings, the debugger, and test runs. Screenshots let the
+    agent see the IDE. Guides bundled with the plugin teach the agent these APIs as it works.</p>
 
-    <p>MCP Steroid is an independent research project by Eugene Petrenko (<a href="https://jonnyzz.com">@jonnyzzz</a>). Not affiliated with, endorsed by, or supported by JetBrains s.r.o.</p>
+    <p>The recommended way to connect an agent is the <a href="https://devrig.dev/docs/devrig/">devrig CLI</a>:
+    one bridge that reaches every IDE you have open and keeps working across restarts and port changes.
+    Documentation and examples: <a href="https://devrig.dev">devrig.dev</a>.</p>
 
-    <h3>What You Get</h3>
-    <ul>
-        <li><b>8 MCP Tools:</b> Control IntelliJ IDEA programmatically - execute code, take screenshots, debug, and more</li>
-        <li><b>80+ MCP Resources:</b> Comprehensive guides covering LSP, IDE operations, debugger, tests, VCS, and more</li>
-        <li><b>Vision Capabilities:</b> AI agents can see your IDE with screenshots and OCR (unique to MCP Steroid)</li>
-        <li><b>Deep Integration:</b> Access PSI, inspections, refactorings, and full IntelliJ Platform API</li>
-    </ul>
+    <p>MCP Steroid is an independent research project by Eugene Petrenko
+    (<a href="https://jonnyzzz.com">@jonnyzzz</a>). Not affiliated with, endorsed by, or supported by
+    JetBrains s.r.o.</p>
 
-    <h3>Why MCP Steroid?</h3>
-    <p>Unlike LSP-only solutions, MCP Steroid gives AI agents the same powerful IDE capabilities that developers use - semantic understanding, advanced refactorings, debugging, test running, and visual awareness.</p>
-
-    <p><b>Compatible with all IntelliJ Platform-based IDEs:</b> IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, Rider, and more.</p>
-
-    <p><b>Requirements:</b> IntelliJ IDEA 2026.1 or newer (build 261 or later)</p>
-
-    <br />
-    <h3>Demo: CodeDozer & IntelliJ Debugger</h3>
-    <iframe width="560" height="315" src="https://www.youtube.com/embed/8MjogrpfXLU" frameborder="0" allowfullscreen></iframe>
-    <br /><br />
-
-    <p>Visit <a href="https://devrig.dev">https://devrig.dev</a> for documentation and examples.</p>
-
-    <p><small>IntelliJ IDEA, IntelliJ Platform, PyCharm, WebStorm, and JetBrains are trademarks of JetBrains s.r.o.</small></p>
+    <p><small>IntelliJ Platform and JetBrains are trademarks of JetBrains s.r.o.</small></p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

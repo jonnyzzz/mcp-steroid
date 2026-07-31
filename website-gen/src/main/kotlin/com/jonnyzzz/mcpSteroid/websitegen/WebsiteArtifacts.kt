@@ -124,19 +124,20 @@ private fun readZipEntry(zipBytes: ByteArray, predicate: (String) -> Boolean): B
     return null
 }
 
+// Keep aligned with the <description> CDATA in ij-plugin/src/main/resources/META-INF/plugin.xml.
 private const val DESCRIPTION_HTML =
-    "<p><b>MCP Steroid</b> brings the full power of the IntelliJ Platform to AI agents through the Model " +
-        "Context Protocol (MCP).</p>\n" +
-        "<p>IntelliJ platform works for AI agents as great as for human developers.</p>\n" +
-        "<ul>\n" +
-        "<li><b>MCP Tools:</b> Control IntelliJ IDEA programmatically — execute code, take screenshots, debug, and more</li>\n" +
-        "<li><b>MCP Resources:</b> Comprehensive guides covering LSP, IDE operations, debugger, tests, VCS, and more</li>\n" +
-        "<li><b>Vision Capabilities:</b> AI agents can see your IDE with screenshots and OCR</li>\n" +
-        "<li><b>Deep Integration:</b> Access PSI, inspections, refactorings, and full IntelliJ Platform API</li>\n" +
-        "</ul>\n" +
-        "<p>Compatible with all IntelliJ Platform-based IDEs: IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, Rider, and more.</p>\n" +
-        "<p>Requirements: IntelliJ IDEA 2025.3 or newer (build 253 or later).</p>\n" +
-        "<p>Visit <a href=\"https://devrig.dev\">devrig.dev</a> for documentation and examples.</p>"
+    "<p><strong>MCP Steroid</strong> gives AI agents the whole IDE, not just the files.</p>\n" +
+        "<p>It runs a Model Context Protocol (MCP) server inside your IDE. Connected agents — Claude Code, " +
+        "Codex, Gemini CLI, or any MCP-compatible agent — execute Kotlin against the live IntelliJ Platform: " +
+        "semantic navigation, inspections, refactorings, the debugger, and test runs. Screenshots let the " +
+        "agent see the IDE. Guides bundled with the plugin teach the agent these APIs as it works.</p>\n" +
+        "<p>The recommended way to connect an agent is the <a href=\"https://devrig.dev/docs/devrig/\">devrig CLI</a>: " +
+        "one bridge that reaches every IDE you have open and keeps working across restarts and port changes. " +
+        "Documentation and examples: <a href=\"https://devrig.dev\">devrig.dev</a>.</p>\n" +
+        "<p>MCP Steroid is an independent research project by Eugene Petrenko " +
+        "(<a href=\"https://jonnyzzz.com\">@jonnyzzz</a>). Not affiliated with, endorsed by, or supported by " +
+        "JetBrains s.r.o.</p>\n" +
+        "<p><small>IntelliJ Platform and JetBrains are trademarks of JetBrains s.r.o.</small></p>"
 
 /** Convert release-notes markdown (`release/notes/<version>.md`) to the change-notes HTML fragment. */
 fun markdownToHtml(notes: String?, version: String): String {

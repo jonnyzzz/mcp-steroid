@@ -1,5 +1,13 @@
 # TODO
 
+- [ ] **Tool/resource counts drift across surfaces** (found during the 2026-07-31 plugin-description
+  rewrite review). The MCP tool surface is **8** (`docs/PHILOSOPHY.md` Tenet 1, canonical; confirmed
+  against live registrations), but root `CLAUDE.md` and `ij-plugin/CLAUDE.md` say "10 today", and
+  `README.md` still carries "### 8 MCP Tools" plus a stale "### 58 MCP Resources" heading with
+  per-category counts summing to 60 while there are 106 prompt articles. Reconcile the CLAUDE.md
+  numbers with PHILOSOPHY.md and de-count the README sections (headings without volatile numbers),
+  the way the Marketplace description now does.
+
 - [ ] **KtBlock matrix ignores the production kotlinc language/api pin (drift).**
   `CodeEvalManager` compiles every `steroid_execute_code` script with the
   `mcp.steroid.kotlinc.parameters` registry extras (`-language-version 2.3 -api-version 2.3` since
