@@ -36,8 +36,10 @@ dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
 
     btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:$kotlincVersion") {
-        // The daemon execution flow is gone — in-process is the only path. These two jars
-        // exist solely for the daemon *client* connection and are dead weight:
+        // The daemon execution flow is gone — in-process is the only path (the daemon
+        // clears the compiler cache after each compilation, upstream KT-88183; re-check
+        // when updating the kotlinc/BTA logic). These two jars exist solely for the
+        // daemon *client* connection and are dead weight:
         //  - kotlin-compiler-runner: KotlinCompilerRunnerUtils.newDaemonConnection + CompilerOutputParser
         //    (its one in-process-path symbol, toArgumentStrings, ships inside kotlin-compiler-embeddable)
         //  - kotlin-daemon-client: the RMI client (BasicCompilerServicesWithResultsFacadeServer et al.),
