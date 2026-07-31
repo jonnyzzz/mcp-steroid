@@ -367,8 +367,8 @@ inspection when one process listing transiently omits a live tracked process.
 
 The next Codex quorum caught a newly advanced `origin/main` commit whose
 `TODO-TC-COVERAGE-AUDIT.md` appeared deleted in the branch diff. The verified iteration was committed
-and rebased again; the branch is now zero commits behind `origin/main`, four commits ahead, and
-preserves that upstream audit file.
+and rebased again; the branch is zero commits behind `origin/main` and preserves that upstream audit
+file.
 
 ### Final three-model quorum — PASS
 
