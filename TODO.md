@@ -94,6 +94,19 @@
     touching the argument list.
 
 - [ ] Backend management follow-ups (deferred, surfaced during the design):
+  - [x] Launch managed IntelliJ Ultimate 2026.2 as a native Remote Development backend and prove the
+    clean-machine Claude/Codex Keycloak hierarchy flow described in
+    `docs/devrig-remote-development-backend-e2e.md`.
+  - Apply the secret-safe environment allowlist to standard managed launches too, while explicitly
+    retaining `http_proxy` / `https_proxy` / `no_proxy` variants needed by IDE networking.
+  - Replace hardcoded `/usr/bin/setsid` / `/bin/setsid` lookup with a portable executable search so
+    detached managed launches work on non-FHS systems such as NixOS.
+  - Snapshot PID + start identity before launch instead of excluding raw PIDs, and make failed-start
+    cleanup diagnostics distinguish a deliberate identity-change refusal from a termination failure.
+  - Revalidate the native Remote Development launcher for baseline 263+, using cold-CI telemetry to
+    tune the 180-second readiness bound and the caller-cancellation behavior before widening support.
+  - Put the pure Remote Development NDJSON parser/workflow contracts on a normal CI-backed task; the
+    experimental task's direct-invocation guard currently keeps them out of aggregate CI runs.
   - Stream download progress to the agent (downloads can take minutes; CLI is silent until done).
   - Consider enriching `backend --json` / `backend download --json` with release date + download channel so agents can reason about staleness; consider exposing `IdeProduct` metadata (license tier, launcher) for richer IDE choice.
   - Optional explicit `open_project` target (by managed-backend id / pid) for the case where the agent wants a specific backend even when several are running — today the global lock makes "prefer managed" sufficient.
