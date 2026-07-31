@@ -30,8 +30,10 @@ import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jv
  * The session pins the compiler application environment ([CompilerEnvironmentPin]) so
  * jar/classpath caches survive across compilations (measured 367 -> 218 ms warm snippet
  * compiles on an IDE-sized classpath). There is deliberately no daemon flow: BTA 2.4.10
- * clears the daemon-side jar caches around every operation, so the daemon could never be
- * made this fast from our side, and the plugin ships only the in-process jars.
+ * clears the daemon-side jar caches around every operation (reported upstream as
+ * KT-88183), so the daemon could never be made this fast from our side, and the plugin
+ * ships only the in-process jars. REVIEW when updating the kotlinc/BTA logic or bumping
+ * mcp.kotlinc.version: if KT-88183 is fixed, the daemon flow becomes viable again.
  *
  * This class keeps Kotlin caches between different compilations. To drop them - call `close()` method.
  * It is fine to call again compilation after calling `close()`.

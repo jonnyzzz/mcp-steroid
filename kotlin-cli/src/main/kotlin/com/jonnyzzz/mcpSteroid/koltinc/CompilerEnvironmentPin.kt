@@ -31,6 +31,13 @@ package com.jonnyzzz.mcpSteroid.koltinc
  * for a full IDE classpath of ~1.1M entries). The one growth hazard is a VARYING jar
  * classpath: every distinct jar path pins a full entry tree until [dispose] — keep
  * snippet classpaths canonical and constant, and never put per-execution jars on them.
+ *
+ * Upstream issues to REVIEW when updating the kotlinc/BTA logic or bumping
+ * mcp.kotlinc.version:
+ * - KT-88182 — contention in FastJarHandler during compilation (the very caches this
+ *   pin keeps warm; a fix may change the residual per-compile classpath cost).
+ * - KT-88183 — compilation via daemon clears the compiler cache after each compilation
+ *   (why the daemon flow was removed; a fix makes the daemon viable again).
  */
 class CompilerEnvironmentPin private constructor(
     private val disposeMethod: java.lang.reflect.Method,

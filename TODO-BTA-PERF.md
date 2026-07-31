@@ -62,6 +62,12 @@ first-wins order, STORED, zip64) jar:
 
 ## 3. Upstream / no-ops (verified against v2.4.10 sources)
 
+Filed upstream from this work — review both whenever the kotlinc/BTA logic changes or
+`mcp.kotlinc.version` is bumped:
+- **KT-88182** — Contention in FastJarHandler during compilation.
+- **KT-88183** — Compilation via daemon clears the compiler cache after each compilation
+  (the reason the daemon flow was removed; a fix makes it viable again).
+
 - Kotlin master's BTA pins the environment per BuildSession automatically → upgrading the
   BTA impl to the 2.5 line makes item 1 free. Also relevant for DAEMON-policy pinning.
 - `-Xuse-fast-jar-file-system` is already default-on for K2; **no other classpath-perf
