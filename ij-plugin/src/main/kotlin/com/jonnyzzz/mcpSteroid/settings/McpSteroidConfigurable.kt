@@ -63,7 +63,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 )
             }
             row {
-                browserLink("Report issues, join the Discord community", FEEDBACK_URL)
+                browserLink("Report issues on GitHub", FEEDBACK_URL)
             }.topGap(TopGap.SMALL)
 
             group("Status") {
@@ -212,6 +212,6 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         const val DEVRIG_INSTALL_SH = "curl -fsSL https://devrig.dev/install.sh | sh"
         const val DEVRIG_INSTALL_PS1 = "irm https://devrig.dev/install.ps1 | iex"
 
-        const val FEEDBACK_URL = "https://devrig.dev"
+        const val FEEDBACK_URL = "https://github.com/jonnyzzz/mcp-steroid/issues"
     }
 }

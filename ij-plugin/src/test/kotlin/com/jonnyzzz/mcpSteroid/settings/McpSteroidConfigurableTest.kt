@@ -43,9 +43,9 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             assertContainsText(texts, "AI Agents")
             assertContainsText(texts, "Devrig")
 
-            // The feedback link references the actual community channels (GitHub issues + Discord,
-            // both linked from devrig.dev). There is no Slack workspace.
-            assertContainsText(texts, "Discord")
+            // The feedback link points at GitHub issues only. There is no Slack workspace —
+            // the old label falsely promised one.
+            assertContainsText(texts, "Report issues on GitHub")
             assertFalse("No Slack workspace exists — the label must not mention Slack", joined.contains("Slack"))
 
             // devrig install is implemented: the panel shows the copyable one-liners for both
