@@ -19,22 +19,25 @@ import org.junit.jupiter.api.Test
  * hints stay invisible.
  *
  * `description` values are masked out to a fixed [DESCRIPTION_MASK] placeholder before comparison (see
- * [maskDescriptions]) — those texts are actively-tuned prompt-engineering copy (see e.g. commit
- * `8a1b212b`), and the eight `*ToolSpecSchemaTest.kt` files already pin them individually. Everything
- * else — property set, property order, `type`, `required`, `enum`, `minimum`/`maximum` — stays
- * byte-identical, which is exactly the surface CLI metadata could accidentally leak onto.
+ * [maskDescriptions]) — those texts are actively-tuned prompt-engineering copy, and they are
+ * **deliberately pinned by no test**: the per-tool `*ToolSpecSchemaTest.kt` files assert only that each
+ * description is present and non-blank, so routine prompt edits never churn this test. The accepted
+ * trade-off is that a leak *into a description's text* is invisible here. Everything else — property
+ * set, property order, `type`, `required`, `enum`, `minimum`/`maximum` — stays byte-identical, which is
+ * exactly the surface CLI metadata could accidentally leak onto.
  *
- * Each expected string below was captured from `main` (commit 2fb59a5f, the tip of `main` at the time
- * this test was written), NOT from this branch's working tree — capturing it from the edited tree would
- * make the comparison tautological (it would pass no matter what the CLI-metadata edits did to
- * `asMcpJson()`). It was produced by checking out a disposable `git worktree add /tmp/mcp-steroid-main-golden
- * main`, adding a throwaway JUnit test there that instantiates every `devrigToolSpecs(...)` tool with an
- * `unreachableHandler()` handler and writes `Json.encodeToString(JsonObject.serializer(), tool.inputSchema)`
- * for each to a file, running `./gradlew :mcp-steroid-server:test --tests '*GoldenSchemaDumpTest*'` inside
- * that worktree, and then removing the worktree and the throwaway test entirely
- * (`git worktree remove /tmp/mcp-steroid-main-golden --force`) — nothing from that worktree was merged
- * or left behind. The `description` values were then masked out of the captured strings by parsing them
- * as JSON and applying the same [maskDescriptions] transform used below, not by hand-editing the text.
+ * Each expected string below was captured from `main` at commit `75c611b1` (the merge-base of the branch
+ * that introduced this test), NOT from that branch's working tree — capturing it from the edited tree
+ * would make the comparison tautological (it would pass no matter what the CLI-metadata edits did to
+ * `asMcpJson()`). Capture recipe: check out a disposable `git worktree add /tmp/mcp-steroid-main-golden
+ * <main-commit>`, add a throwaway JUnit test there that instantiates every devrig tool with an
+ * `unreachableHandler()` handler, applies the same [maskDescriptions] transform to each `inputSchema`
+ * (masking on the parsed JSON tree, never by hand-editing text), and writes
+ * `Json.encodeToString(JsonObject.serializer(), masked)` per tool to a file; run
+ * `./gradlew :mcp-steroid-server:test --tests '*GoldenSchemaDumpTest*'` inside that worktree; then remove
+ * the worktree and the throwaway test entirely (`git worktree remove /tmp/mcp-steroid-main-golden
+ * --force`) — nothing from it is merged or left behind. All eight constants were re-captured from
+ * `75c611b1` with exactly this recipe during the PR #356 review and matched byte-for-byte.
  *
  * **To legitimately update these constants** (a new devrig tool, a new/renamed/removed property, a
  * changed `type`/`required`/`enum`/`minimum`/`maximum`): regenerate from `main` (or another commit known
@@ -43,8 +46,8 @@ import org.junit.jupiter.api.Test
  * constant, eyeball the diff for exactly one thing: does it introduce a **new property**, a **`cli*`
  * key**, or a **new `minimum`/`maximum`** that isn't an intentional, reviewed part of the change you're
  * making? If so, stop — that is precisely the CLI-metadata-leaking-onto-the-wire failure this test
- * exists to catch. A `description`-only difference is invisible here by design; it is covered by the
- * per-tool `*ToolSpecSchemaTest.kt` files instead.
+ * exists to catch. A `description`-only difference is invisible here by design — descriptions are
+ * unpinned tuned copy (see the masking rationale above), not covered by any byte-level test.
  */
 class DevrigToolSpecsGoldenSchemaTest {
 
