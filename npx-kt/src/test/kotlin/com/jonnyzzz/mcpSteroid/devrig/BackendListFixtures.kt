@@ -29,8 +29,11 @@ fun backendFixture(
 
 class FakeProcessInspector(
     private val alivePids: Set<Long> = emptySet(),
+    private val snapshots: Map<Long, ProcessSnapshot> = emptyMap(),
 ) : ManagedProcessInspector {
     override fun isAlive(pid: Long): Boolean = pid in alivePids
 
-    override fun allProcesses(): List<ProcessSnapshot> = emptyList()
+    override fun allProcesses(): List<ProcessSnapshot> = snapshots.values.toList()
+
+    override fun snapshot(pid: Long): ProcessSnapshot? = snapshots[pid]
 }

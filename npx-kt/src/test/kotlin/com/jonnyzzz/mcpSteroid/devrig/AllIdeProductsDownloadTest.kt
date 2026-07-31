@@ -292,6 +292,17 @@ class AllIdeProductsDownloadTest {
             )
             Files.writeString(bundleDir.resolve("bin/$launcherExecutable.sh"), "#!/usr/bin/env sh\n")
             Files.writeString(bundleDir.resolve("bin/$launcherExecutable.bat"), "@echo off\r\n")
+            // A real IU 262 artifact ships the native Remote Development launcher and plugin, and
+            // download() refuses an idea-ultimate 262 install without them — mirror the artifact.
+            if (ManagedBackendLauncherResolver().usesRemoteDevelopment(resolution.product.id, installedBuild)) {
+                Files.writeString(bundleDir.resolve("bin/remote-dev-server"), "#!/usr/bin/env sh\n")
+                    .toFile()
+                    .setExecutable(true)
+                Files.writeString(bundleDir.resolve("bin/remote-dev-server.exe"), "remote development launcher")
+                val pluginJar = bundleDir.resolve("plugins/remote-dev-server/lib/remote-dev-server.jar")
+                Files.createDirectories(pluginJar.parent)
+                Files.writeString(pluginJar, "remote development plugin")
+            }
             return BackendDownloadArtifact(sourceArchiveSha256 = "sha-$installedProductCode")
         }
     }

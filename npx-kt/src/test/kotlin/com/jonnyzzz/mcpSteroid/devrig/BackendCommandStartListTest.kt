@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 
 class BackendCommandStartListTest {
 
@@ -97,6 +98,35 @@ class BackendCommandStartListTest {
         assertEquals(setOf("id", "productKey", "version", "displayName", "state", "pid", "installPath", "cachePath"), stopped.keys)
         assertEquals("installed", stopped["state"]!!.jsonPrimitive.content)
         assertNull(stopped["pid"]!!.jsonPrimitive.contentOrNull)
+    }
+
+    @Test
+    fun `reused pid with a different process start time is not listed as running`(@TempDir tempDir: Path) {
+        val homePaths = HomePaths(tempDir)
+        homePaths.mkdirsAll()
+        val id = "idea-community-2025.3.3"
+        backendFixture(homePaths, id, productKey = "idea-community", productCode = "IC", version = "2025.3.3")
+        Files.writeString(
+            homePaths.pidFile(id),
+            Json.encodeToString(
+                ManagedBackendProcessState(pid = 12345L, startInstant = "2026-07-31T08:00:00Z"),
+            ),
+        )
+        val processInspector = FakeProcessInspector(
+            alivePids = setOf(12345L),
+            snapshots = mapOf(
+                12345L to ProcessSnapshot(
+                    pid = 12345L,
+                    command = "/usr/bin/java",
+                    startInstant = Instant.parse("2026-07-31T09:00:00Z"),
+                ),
+            ),
+        )
+
+        val row = collectInstalledBackendListRows(homePaths, processInspector).single()
+
+        assertEquals(LocalBackendState.INSTALLED, row.state)
+        assertNull(row.pid)
     }
 
     @Test

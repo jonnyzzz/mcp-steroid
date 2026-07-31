@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayInputStream
@@ -15,6 +16,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.exists
@@ -22,6 +24,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.fail
+import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.condition.DisabledOnOs
 import org.junit.jupiter.api.condition.OS
 
@@ -34,12 +37,13 @@ class SingleInstanceLockTest {
     ) {
         val homePaths = HomePaths(tempDir.resolve("home"))
         installStubBackend(homePaths, id = "idea-community-2025.3.3")
-        val requestedProcess = startSleeper()
-        val otherProcess = startSleeper()
+        installStubBackend(homePaths, id = "idea-community-2025.3.2")
+        val requestedProcess = startManagedStub(homePaths, "idea-community-2025.3.3")
+        val otherProcess = startManagedStub(homePaths, "idea-community-2025.3.2")
         try {
             Files.createDirectories(homePaths.stateDir)
-            Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "${requestedProcess.pid()}\n")
-            Files.writeString(homePaths.pidFile("idea-community-2025.3.2"), "${otherProcess.pid()}\n")
+            writeProcessState(homePaths.pidFile("idea-community-2025.3.3"), requestedProcess)
+            writeProcessState(homePaths.pidFile("idea-community-2025.3.2"), otherProcess)
 
             val (exit, stdout, stderr) = captureCli { stdoutStream ->
                 runStartCli(homePaths, "idea-community-2025.3.3", stdoutStream)
@@ -63,25 +67,33 @@ class SingleInstanceLockTest {
     }
 
     @Test
-    fun `start reports already running for requested backend and prints normal paths`(
+    fun `start rejects a live unrelated pid file and launches the requested backend`(
         @TempDir tempDir: Path,
-    ) {
+    ) = runBlocking {
         val homePaths = HomePaths(tempDir.resolve("home"))
-        installStubBackend(homePaths, id = "idea-community-2025.3.3")
+        val id = "idea-community-2025.3.3"
+        installStubBackend(homePaths, id = id)
         val pid = ProcessHandle.current().pid()
         Files.createDirectories(homePaths.stateDir)
-        Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "$pid\n")
+        Files.writeString(homePaths.pidFile(id), "$pid\n")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test")),
+            ideUserHome = tempDir.resolve("user-home"),
+        )
 
-        val (exit, stdout, stderr) = captureCli { stdoutStream ->
-            runStartCli(homePaths, "idea-community-2025.3.3", stdoutStream)
+        val started = manager.start(parseBackendId(id))
+        try {
+            assertFalse(started.alreadyRunning)
+            assertTrue(started.pid > 0)
+            assertTrue(started.pid != pid, "the unrelated current JVM pid must not be trusted as the backend")
+            val processState = requireNotNull(readManagedBackendProcessState(homePaths.pidFile(id)))
+            assertEquals(started.pid, processState.pid)
+            assertTrue(processState.startInstant != null)
+        } finally {
+            manager.stop(parseBackendId(id))
         }
-
-        assertEquals(0, exit)
-        assertEquals("", stderr)
-        assertTrue(stdout.contains("already running: idea-community-2025.3.3 (pid $pid)"), stdout)
-        assertTrue(stdout.contains("pid: $pid"), stdout)
-        assertTrue(stdout.contains("log: ${homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/managed.log")}"), stdout)
-        assertTrue(stdout.contains("config: ${homePaths.cacheDir("idea-community-2025.3.3").resolve("config")}"), stdout)
     }
 
     @Test
@@ -119,6 +131,7 @@ class SingleInstanceLockTest {
     ) = runBlocking {
         val homePaths = HomePaths(tempDir.resolve("home"))
         installStubBackend(homePaths, id = "idea-community-2025.3.3")
+        installStubBackend(homePaths, id = "idea-community-2025.3.2")
         val orphanCommand = homePaths.backendsDir
             .resolve("idea-community-2025.3.2/idea-IC-253.1/bin/idea.sh")
             .toString()
@@ -142,6 +155,105 @@ class SingleInstanceLockTest {
         assertTrue(error.contains("error: another managed backend is already running: idea-community-2025.3.2 (pid 4242)"), error)
         assertTrue(error.contains("stop it first:  devrig backend stop idea-community-2025.3.2"), error)
         assertTrue(error.contains("cleanup stale state under ${homePaths.stateDir}"), error)
+    }
+
+    @Test
+    fun `process list fallback repairs pid state for an untracked matching backend`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val id = "idea-community-2025.3.3"
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, id = id)
+        val managedCommand = homePaths.backendsDir
+            .resolve("$id/idea-IC-253.1/bin/idea.sh")
+            .toString()
+        val processStartedAt = Instant.parse("2026-07-31T12:00:00Z")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test")),
+            ideUserHome = tempDir.resolve("user-home"),
+            processInspector = FakeProcessInspector(
+                snapshots = listOf(
+                    ProcessSnapshot(pid = 4242L, command = managedCommand, startInstant = processStartedAt),
+                ),
+            ),
+        )
+
+        val started = manager.start(parseBackendId(id))
+
+        assertTrue(started.alreadyRunning)
+        assertEquals(4242L, started.pid)
+        val processState = requireNotNull(readManagedBackendProcessState(homePaths.pidFile(id)))
+        assertEquals(4242L, processState.pid)
+        assertEquals(processStartedAt.toString(), processState.startInstant)
+    }
+
+    @Test
+    fun `process list ignores an unrelated argument that merely contains a backend path`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val id = "idea-community-2025.3.3"
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, id = id)
+        val mentionedPath = homePaths.backendDir(id).resolve("idea-IC-253.1/bin/idea.sh")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test")),
+            ideUserHome = tempDir.resolve("user-home"),
+            processInspector = FakeProcessInspector(
+                snapshots = listOf(
+                    ProcessSnapshot(
+                        pid = 4242L,
+                        command = "/bin/echo",
+                        arguments = listOf("--message=$mentionedPath", "${0.toChar()}"),
+                    ),
+                ),
+            ),
+        )
+
+        val started = manager.start(parseBackendId(id))
+        try {
+            assertFalse(started.alreadyRunning)
+            assertTrue(started.pid > 0)
+        } finally {
+            manager.stop(parseBackendId(id))
+        }
+    }
+
+    @Test
+    fun `process list ignores an unrelated exact file argument under a managed bundle`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val id = "idea-community-2025.3.3"
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, id = id)
+        val unrelatedFile = homePaths.backendDir(id).resolve("idea-IC-253.1/product-info.json")
+        Files.writeString(unrelatedFile, "{}")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test")),
+            ideUserHome = tempDir.resolve("user-home"),
+            processInspector = FakeProcessInspector(
+                snapshots = listOf(
+                    ProcessSnapshot(
+                        pid = 4242L,
+                        command = "/usr/bin/tail",
+                        arguments = listOf("-f", unrelatedFile.toString()),
+                    ),
+                ),
+            ),
+        )
+
+        val started = manager.start(parseBackendId(id))
+        try {
+            assertFalse(started.alreadyRunning)
+            assertTrue(started.pid > 0)
+        } finally {
+            manager.stop(parseBackendId(id))
+        }
     }
 
     @Test
@@ -171,7 +283,7 @@ class SingleInstanceLockTest {
         val first = async(Dispatchers.Default) {
             firstManager.start(parseBackendId("idea-community-2025.3.3"))
         }
-        withTimeout(5_000) { firstScanEntered.await() }
+        withTimeout(5.seconds) { firstScanEntered.await() }
 
         val second = async(Dispatchers.Default) {
             try {
@@ -182,9 +294,9 @@ class SingleInstanceLockTest {
             }
         }
 
-        assertEquals("another devrig backend operation is in progress; retry shortly", withTimeout(5_000) { second.await() })
+        assertEquals("another devrig backend operation is in progress; retry shortly", withTimeout(5.seconds) { second.await() })
         releaseFirstScan.complete(Unit)
-        val started = withTimeout(5_000) { first.await() }
+        val started = withTimeout(5.seconds) { first.await() }
         try {
             assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
         } finally {
@@ -263,8 +375,18 @@ class SingleInstanceLockTest {
         while true; do sleep 1; done
         """.trimIndent() + "\n"
 
-    private fun startSleeper(): Process =
-        ProcessBuilder("sh", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done").start()
+    private fun startManagedStub(homePaths: HomePaths, id: String): Process =
+        ProcessBuilder(
+            homePaths.backendDir(id).resolve("idea-IC-253.1/bin/idea.sh").toString(),
+        ).start()
+
+    private fun writeProcessState(path: Path, process: Process) {
+        val state = ManagedBackendProcessState(
+            pid = process.pid(),
+            startInstant = process.toHandle().info().startInstant().orElseThrow().toString(),
+        )
+        Files.writeString(path, Json.encodeToString(state) + "\n")
+    }
 
     private fun stopProcess(process: Process) {
         process.destroy()
@@ -277,8 +399,13 @@ class SingleInstanceLockTest {
     private class FakeProcessInspector(
         private val snapshots: List<ProcessSnapshot>,
     ) : ManagedProcessInspector {
-        override fun isAlive(pid: Long): Boolean = snapshots.any { it.pid == pid }
+        override fun isAlive(pid: Long): Boolean =
+            snapshots.any { it.pid == pid } || DefaultManagedProcessInspector.isAlive(pid)
+
         override fun allProcesses(): List<ProcessSnapshot> = snapshots
+
+        override fun snapshot(pid: Long): ProcessSnapshot? =
+            snapshots.firstOrNull { it.pid == pid } ?: DefaultManagedProcessInspector.snapshot(pid)
     }
 
     private class BlockingFirstScanInspector(
@@ -294,11 +421,13 @@ class SingleInstanceLockTest {
             if (firstScan.compareAndSet(true, false)) {
                 firstScanEntered.complete(Unit)
                 runBlocking {
-                    withTimeout(5_000) { releaseFirstScan.await() }
+                    withTimeout(5.seconds) { releaseFirstScan.await() }
                 }
             }
             return emptyList()
         }
+
+        override fun snapshot(pid: Long): ProcessSnapshot? = DefaultManagedProcessInspector.snapshot(pid)
     }
 
     private object StaticDownloader : ManagedBackendDownloader {

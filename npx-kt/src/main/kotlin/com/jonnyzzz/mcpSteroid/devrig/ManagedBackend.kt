@@ -25,11 +25,18 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.jvm.optionals.getOrNull
 import kotlin.streams.asSequence
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.apache.commons.compress.archivers.zip.ZipFile
+
+private const val FAILED_START_CLEANUP_MAX_SCANS = 20
+private const val FAILED_START_CLEANUP_QUIET_SCANS = 3
+private const val FAILED_START_CLEANUP_SCAN_DELAY_MILLIS = 100L
 
 @Serializable
 data class BackendDescriptor(
@@ -124,11 +131,30 @@ interface BundledPluginResolver {
 data class ProcessSnapshot(
     val pid: Long,
     val command: String?,
+    val arguments: List<String> = emptyList(),
+    val startInstant: Instant? = null,
+)
+
+enum class ManagedProcessTerminationOutcome {
+    TERMINATED,
+    NOT_RUNNING,
+    IDENTITY_CHANGED,
+    FAILED,
+}
+
+@Serializable
+data class ManagedBackendProcessState(
+    val schemaVersion: Int = 1,
+    val pid: Long,
+    val startInstant: String? = null,
 )
 
 interface ManagedProcessInspector {
     fun isAlive(pid: Long): Boolean
     fun allProcesses(): List<ProcessSnapshot>
+    fun snapshot(pid: Long): ProcessSnapshot? = allProcesses().firstOrNull { it.pid == pid }
+    fun terminateIfMatches(expected: ProcessSnapshot): ManagedProcessTerminationOutcome =
+        terminateProcessIfMatches(expected)
 }
 
 object DefaultManagedProcessInspector : ManagedProcessInspector {
@@ -138,9 +164,28 @@ object DefaultManagedProcessInspector : ManagedProcessInspector {
     override fun allProcesses(): List<ProcessSnapshot> =
         ProcessHandle.allProcesses().use { stream ->
             stream.asSequence()
-                .map { handle -> ProcessSnapshot(handle.pid(), handle.info().command().orElse(null)) }
+                .map { handle ->
+                    val info = handle.info()
+                    ProcessSnapshot(
+                        pid = handle.pid(),
+                        command = info.command().orElse(null),
+                        arguments = info.arguments().orElse(emptyArray()).toList(),
+                        startInstant = info.startInstant().orElse(null),
+                    )
+                }
                 .toList()
         }
+
+    override fun snapshot(pid: Long): ProcessSnapshot? {
+        val handle = ProcessHandle.of(pid).getOrNull() ?: return null
+        val info = handle.info()
+        return ProcessSnapshot(
+            pid = pid,
+            command = info.command().orElse(null),
+            arguments = info.arguments().orElse(emptyArray()).toList(),
+            startInstant = info.startInstant().orElse(null),
+        )
+    }
 }
 
 class ManagedBackendLockException(message: String) : RuntimeException(message)
@@ -274,6 +319,7 @@ class BackendManager(
         archiveDownloadDir = homePaths.downloadsDir,
     ),
     private val launcherResolver: LauncherResolver = LauncherResolver(),
+    private val backendLauncherResolver: ManagedBackendLauncherResolver = ManagedBackendLauncherResolver(),
     private val bundledPluginResolver: BundledPluginResolver = ClasspathBundledPluginResolver(),
     private val processInspector: ManagedProcessInspector = DefaultManagedProcessInspector,
     /**
@@ -284,13 +330,14 @@ class BackendManager(
     private val pluginBuildRange: PluginBuildRange? = null,
     private val ideUserHome: Path = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
     private val stopGracePeriodMillis: Long = 5_000L,
+    private val remoteDevelopmentStartupTimeoutMillis: Long = 180_000L,
 ) : ManagedBackendService {
     init {
         homePaths.mkdirsAll()
         migrateLegacyArchives(homePaths)
     }
 
-    override suspend fun download(id: BackendId): DownloadResult {
+    override suspend fun download(id: BackendId): DownloadResult = withContext(Dispatchers.IO) {
         homePaths.mkdirsAll()
         val resolution = downloader.resolve(id)
         requirePluginCompatibleBuild(resolution.product, resolution.version, resolution.build)
@@ -299,35 +346,53 @@ class BackendManager(
         val descriptorPath = descriptorPath(backendDir)
         val existingDescriptor = readDescriptorOrNull(descriptorPath)
 
-        val prepared = if (isReusableBackendInstall(backendDir, existingDescriptor)) {
-            val bundleDir = resolveBundleDir(backendDir)
-            val launcher = launcherResolver.resolve(bundleDir)
-            val artifact = BackendDownloadArtifact(sourceArchiveSha256 = existingDescriptor?.sourceArchiveSha256)
-            validateInstalledProductCode(
-                product = resolution.product,
-                actualProductCode = launcher.productCode,
-                downloadedUrl = resolution.url,
-                archivePath = artifact.archivePath,
-                bundleDir = bundleDir,
-                descriptorPath = descriptorPath,
-            )
-            validateInstalledBuildNumber(
-                product = resolution.product,
-                expectedBuild = resolution.build,
-                expectedBuildIsBaseline = resolution.buildIsBaseline,
-                actualBuildNumber = launcher.buildNumber,
-                downloadedUrl = resolution.url,
-                archivePath = artifact.archivePath,
-                bundleDir = bundleDir,
-                descriptorPath = descriptorPath,
-            )
-            PreparedBackendInstall(
-                bundleDirName = bundleDir.fileName.toString(),
-                launcher = launcher,
-                downloadArtifact = artifact,
-                downloadedAt = existingDescriptor?.downloadedAt,
-            )
+        val reusablePrepared = if (isReusableBackendInstall(backendDir, existingDescriptor)) {
+            try {
+                validateReusableDescriptor(existingDescriptor, resolved, resolution)
+                val bundleDir = resolveBundleDir(backendDir)
+                val launcher = launcherResolver.resolve(bundleDir)
+                val artifact = BackendDownloadArtifact(sourceArchiveSha256 = existingDescriptor?.sourceArchiveSha256)
+                validateInstalledProductCode(
+                    product = resolution.product,
+                    actualProductCode = launcher.productCode,
+                    downloadedUrl = resolution.url,
+                    archivePath = artifact.archivePath,
+                    bundleDir = bundleDir,
+                    descriptorPath = descriptorPath,
+                )
+                validateInstalledBuildNumber(
+                    product = resolution.product,
+                    expectedBuild = resolution.build,
+                    expectedBuildIsBaseline = resolution.buildIsBaseline,
+                    actualBuildNumber = launcher.buildNumber,
+                    downloadedUrl = resolution.url,
+                    archivePath = artifact.archivePath,
+                    bundleDir = bundleDir,
+                    descriptorPath = descriptorPath,
+                )
+                backendLauncherResolver.validateRequiredAssets(
+                    resolution.product.id,
+                    launcher.buildNumber,
+                    bundleDir,
+                )
+                PreparedBackendInstall(
+                    bundleDirName = bundleDir.fileName.toString(),
+                    launcher = launcher,
+                    downloadArtifact = artifact,
+                    downloadedAt = existingDescriptor?.downloadedAt,
+                )
+            } catch (e: Exception) {
+                System.err.println(
+                    "WARN: managed backend install at $backendDir is not reusable and will be replaced: ${e.message}",
+                )
+                deleteRecursively(backendDir)
+                null
+            }
         } else {
+            null
+        }
+
+        val prepared = reusablePrepared ?: run {
             val partialDir = homePaths.backendsDir.resolve("${resolved.id}.partial")
             deleteRecursively(backendDir)
             deleteRecursively(partialDir)
@@ -354,12 +419,17 @@ class BackendManager(
                     bundleDir = partialBundleDir,
                     descriptorPath = descriptorPath(partialDir),
                 )
+                backendLauncherResolver.validateRequiredAssets(
+                    resolution.product.id,
+                    launcher.buildNumber,
+                    partialBundleDir,
+                )
                 Files.move(partialDir, backendDir, StandardCopyOption.ATOMIC_MOVE)
                 PreparedBackendInstall(
                     bundleDirName = partialBundleDir.fileName.toString(),
                     launcher = launcher,
                     downloadArtifact = artifact,
-                    downloadedAt = existingDescriptor?.downloadedAt,
+                    downloadedAt = null,
                 )
             } catch (e: Exception) {
                 deleteRecursively(partialDir)
@@ -367,13 +437,14 @@ class BackendManager(
             }
         }
 
+        val effectiveBuildNumber = prepared.launcher.buildNumber ?: resolution.build
         val vmOptionsPath = writeBackendVmOptions(homePaths, resolved.id, prepared.bundleDirName)
         val descriptor = BackendDescriptor(
             id = resolved.id,
             productKey = resolution.product.id,
             productCode = prepared.launcher.productCode ?: resolution.product.code,
             version = resolution.version,
-            buildNumber = prepared.launcher.buildNumber ?: resolution.build,
+            buildNumber = effectiveBuildNumber,
             bundleDirName = prepared.bundleDirName,
             launcherPath = prepared.launcher.launcherPath,
             downloadedAt = prepared.downloadedAt ?: Instant.now().toString(),
@@ -381,7 +452,7 @@ class BackendManager(
         )
         writeDescriptor(descriptorPath, descriptor)
         deployMcpSteroidPlugin(resolved.id)
-        return DownloadResult(resolved.id, descriptor, backendDir, vmOptionsPath)
+        DownloadResult(resolved.id, descriptor, backendDir, vmOptionsPath)
     }
 
     /**
@@ -412,6 +483,34 @@ class BackendManager(
         }
     }
 
+    private fun validateReusableDescriptor(
+        descriptor: BackendDescriptor?,
+        resolved: ResolvedBackendId,
+        resolution: BackendDownloadResolution,
+    ) {
+        descriptor ?: return
+        val expectedProductCode = resolution.product.installedProductCode
+        val mismatches = buildList {
+            if (descriptor.id != resolved.id) add("id=${descriptor.id}")
+            if (descriptor.productKey != resolution.product.id) add("productKey=${descriptor.productKey}")
+            if (descriptor.productCode != expectedProductCode) add("productCode=${descriptor.productCode}")
+            if (descriptor.version != resolution.version) add("version=${descriptor.version}")
+            if (descriptor.buildNumber != null && !ideBuildMatches(
+                    actual = descriptor.buildNumber,
+                    expected = resolution.build,
+                    expectedIsBaseline = resolution.buildIsBaseline,
+                )
+            ) {
+                add("buildNumber=${descriptor.buildNumber}")
+            }
+        }
+        if (mismatches.isNotEmpty()) {
+            throw ManagedBackendValidationException(
+                "backend descriptor does not match resolved ${resolved.id} (${resolution.build}): ${mismatches.joinToString()}",
+            )
+        }
+    }
+
     fun deployMcpSteroidPlugin(id: String): Path {
         val source = bundledPluginResolver.resolveBundledPluginZip()
         require(Files.isRegularFile(source)) { "Bundled ij-plugin.zip is missing: $source" }
@@ -432,9 +531,9 @@ class BackendManager(
         return target
     }
 
-    override suspend fun start(id: BackendId): StartResult {
+    override suspend fun start(id: BackendId): StartResult = withContext(Dispatchers.IO) {
         homePaths.mkdirsAll()
-        return withGlobalBackendOperationLock {
+        withGlobalBackendOperationLock {
             startLocked(id)
         }
     }
@@ -442,6 +541,7 @@ class BackendManager(
     private suspend fun startLocked(id: BackendId): StartResult {
         val resolved = resolveConcreteId(id)
         val descriptor = loadDescriptor(resolved)
+        val pidFile = homePaths.pidFile(resolved.id)
         descriptor.buildNumber?.let { build -> requirePluginCompatibleBuild(resolved.product, descriptor.version, build) }
         val running = scanRunningManagedProcesses()
         val other = running.firstOrNull { it.backendId != resolved.id }
@@ -450,6 +550,10 @@ class BackendManager(
         }
         val existing = running.firstOrNull { it.backendId == resolved.id }
         if (existing != null) {
+            if (existing.untracked) {
+                val startInstant = existing.startInstant ?: throw ManagedBackendLockException(lockConflictMessage(existing))
+                writePidFile(pidFile, existing.pid, startInstant)
+            }
             return StartResult(
                 id = resolved.id,
                 pid = existing.pid,
@@ -459,10 +563,11 @@ class BackendManager(
             )
         }
 
-        val pidFile = homePaths.pidFile(resolved.id)
         val bundleDir = homePaths.backendDir(resolved.id).resolve(descriptor.bundleDirName)
-        val launcher = bundleDir.resolve(descriptor.launcherPath)
-        require(Files.isExecutable(launcher)) { "Launcher is not executable: $launcher" }
+        val launchSpec = backendLauncherResolver.resolve(descriptor, bundleDir)
+        require(Files.isExecutable(launchSpec.executable)) {
+            "Launcher is not executable: ${launchSpec.executable}"
+        }
 
         writeBackendVmOptions(homePaths, resolved.id, descriptor.bundleDirName)
         // Re-provision the current bundled plugin before launch so a backend downloaded by an older
@@ -477,25 +582,314 @@ class BackendManager(
         writeIdeUserStartupConfigFiles(ideUserHome)
 
         val managedLog = logDir.resolve("managed.log")
-        val pid = spawnIdeProcess(
-            launcher = launcher,
-            workDir = bundleDir,
-            stdoutLog = managedLog.toFile(),
-            stderrLog = managedLog.toFile(),
-            environment = emptyMap(),
-        )
-
-        Files.createDirectories(pidFile.parent)
-        Files.writeString(pidFile, "$pid\n")
+        val expectedPluginHome = cacheDir.resolve("plugins/mcp-steroid")
+        val preLaunchPids = processInspector.allProcesses().mapTo(mutableSetOf()) { it.pid }
+        var launcherPid: Long? = null
+        var backendPid: Long? = null
+        try {
+            val spawnedPid = spawnIdeProcess(
+                launcher = launchSpec.executable,
+                arguments = launchSpec.arguments,
+                workDir = launchSpec.workingDirectory,
+                stdoutLog = managedLog.toFile(),
+                stderrLog = managedLog.toFile(),
+                environment = launchSpec.environment,
+            )
+            launcherPid = spawnedPid
+            val launcherSnapshot = processInspector.snapshot(spawnedPid)
+            val readyPid = if (backendLauncherResolver.usesRemoteDevelopment(descriptor)) {
+                awaitRemoteDevelopmentBackendMarker(
+                    backendId = resolved.id,
+                    descriptor = descriptor,
+                    expectedIdeHome = launchSpec.workingDirectory,
+                    expectedPluginHome = expectedPluginHome,
+                    launcherPid = spawnedPid,
+                    excludedPids = preLaunchPids,
+                ).pid
+            } else {
+                spawnedPid
+            }
+            backendPid = readyPid
+            val readyStartInstant = processInspector.snapshot(readyPid)?.startInstant
+                ?: throw ManagedBackendValidationException(
+                    "Managed backend '${resolved.id}' pid $readyPid has no process start instant; " +
+                        "refusing to persist PID-only state that could later target a reused PID.",
+                )
+            retireHandedOffLauncher(
+                backendId = resolved.id,
+                launcherPid = spawnedPid,
+                launcherSnapshot = launcherSnapshot,
+                backendPid = readyPid,
+            )
+            writePidFile(pidFile, readyPid, readyStartInstant)
+        } catch (e: Throwable) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                try {
+                    terminateFailedBackendStart(
+                        descriptor = descriptor,
+                        expectedIdeHome = launchSpec.workingDirectory,
+                        expectedPluginHome = expectedPluginHome,
+                        launcherPid = launcherPid,
+                        knownBackendPid = backendPid,
+                        pidFile = pidFile,
+                        excludedPids = preLaunchPids,
+                    )
+                } catch (cleanupError: Exception) {
+                    System.err.println(
+                        "WARN: failed to clean up unsuccessful managed backend '${resolved.id}' start: ${cleanupError.message}",
+                    )
+                    e.addSuppressed(cleanupError)
+                }
+            }
+            throw e
+        }
         return StartResult(
             id = resolved.id,
-            pid = pid,
+            pid = backendPid,
             ideaLogPath = managedLog,
             configPath = cacheDir.resolve("config"),
         )
     }
 
-    private suspend fun <T> withGlobalBackendOperationLock(block: suspend () -> T): T {
+    private fun retireHandedOffLauncher(
+        backendId: String,
+        launcherPid: Long,
+        launcherSnapshot: ProcessSnapshot?,
+        backendPid: Long,
+    ) {
+        if (launcherPid == backendPid || !processInspector.isAlive(launcherPid)) return
+        val expectedLauncher = launcherSnapshot
+            ?: throw ManagedBackendValidationException(
+                "Managed backend '$backendId' handed off from launcher pid $launcherPid to backend pid $backendPid, " +
+                    "but the still-live launcher has no process identity; refusing to leave it untracked.",
+            )
+        when (processInspector.terminateIfMatches(expectedLauncher)) {
+            ManagedProcessTerminationOutcome.TERMINATED,
+            ManagedProcessTerminationOutcome.NOT_RUNNING,
+            ManagedProcessTerminationOutcome.IDENTITY_CHANGED,
+            -> Unit
+
+            ManagedProcessTerminationOutcome.FAILED -> throw ManagedBackendValidationException(
+                "Managed backend '$backendId' handed off to pid $backendPid, but launcher pid $launcherPid " +
+                    "could not be terminated; refusing to leave it untracked.",
+            )
+        }
+    }
+
+    private suspend fun awaitRemoteDevelopmentBackendMarker(
+        backendId: String,
+        descriptor: BackendDescriptor,
+        expectedIdeHome: Path,
+        expectedPluginHome: Path,
+        launcherPid: Long,
+        excludedPids: Set<Long>,
+    ): PidMarker {
+        val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(remoteDevelopmentStartupTimeoutMillis)
+        val warnedMarkers = mutableSetOf<Path>()
+        while (System.nanoTime() < deadlineNanos) {
+            findReadyRemoteDevelopmentMarker(
+                descriptor,
+                expectedIdeHome,
+                expectedPluginHome,
+                warnedMarkers,
+                excludedPids,
+            )?.let { return it }
+            delay(100.milliseconds)
+        }
+
+        // Do one final scan at the deadline boundary before tearing down the unready launch.
+        findReadyRemoteDevelopmentMarker(
+            descriptor,
+            expectedIdeHome,
+            expectedPluginHome,
+            warnedMarkers,
+            excludedPids,
+        )?.let { return it }
+        val launcherAlive = processInspector.isAlive(launcherPid)
+        throw ManagedBackendValidationException(
+            "Timed out waiting for the MCP Steroid readiness marker for '$backendId' after " +
+                "${remoteDevelopmentStartupTimeoutMillis}ms (launcher pid $launcherPid, alive=$launcherAlive). " +
+                "The IDE was not recorded as running; inspect ${homePaths.cacheDir(backendId).resolve("logs/managed.log")} " +
+                "and ${homePaths.cacheDir(backendId).resolve("logs")}.",
+        )
+    }
+
+    private fun findReadyRemoteDevelopmentMarker(
+        descriptor: BackendDescriptor,
+        expectedIdeHome: Path,
+        expectedPluginHome: Path,
+        warnedMarkers: MutableSet<Path>,
+        excludedPids: Set<Long>,
+    ): PidMarker? {
+        val markerDir = PidMarker.markerDirectory(ideUserHome)
+        if (!Files.isDirectory(markerDir)) return null
+        return Files.list(markerDir).use { stream ->
+            stream.asSequence()
+                .filter { Files.isRegularFile(it) }
+                .mapNotNull { markerPath ->
+                    val markerPid = PidMarker.pidFromFileName(markerPath.fileName.toString()) ?: return@mapNotNull null
+                    val marker = try {
+                        PidMarkerJson.decode(Files.readString(markerPath))
+                    } catch (e: Exception) {
+                        if (warnedMarkers.add(markerPath)) {
+                            System.err.println(
+                                "WARN: failed to decode MCP Steroid readiness marker $markerPath: ${e.javaClass.simpleName}",
+                            )
+                        }
+                        return@mapNotNull null
+                    }
+                    if (marker.pid != markerPid) return@mapNotNull null
+                    if (marker.pid in excludedPids) return@mapNotNull null
+                    if (!processInspector.isAlive(marker.pid)) return@mapNotNull null
+                    val processStartInstant = processInspector.snapshot(marker.pid)?.startInstant
+                        ?: return@mapNotNull null
+                    if (!markerWasCreatedForProcess(marker, processStartInstant, markerPath, warnedMarkers)) {
+                        return@mapNotNull null
+                    }
+                    val matchesBackend = markerMatchesManagedBackend(
+                        marker,
+                        descriptor,
+                        expectedIdeHome,
+                        expectedPluginHome,
+                        markerPath,
+                        warnedMarkers,
+                    )
+                    if (!matchesBackend) return@mapNotNull null
+                    marker
+                }
+                .firstOrNull()
+        }
+    }
+
+    private fun markerMatchesManagedBackend(
+        marker: PidMarker,
+        descriptor: BackendDescriptor,
+        expectedIdeHome: Path,
+        expectedPluginHome: Path,
+        markerPath: Path,
+        warnedMarkers: MutableSet<Path>,
+    ): Boolean {
+        if (marker.schema != PidMarker.SCHEMA_VERSION) return false
+        if (marker.plugin.id != MCP_STEROID_PLUGIN_ID) return false
+        if (marker.devrigEndpoint == null) return false
+        val expectedBuild = descriptor.buildNumber ?: return false
+        // Marker builds carry the product-code prefix (`IC-262.8665.258`) that product-info.json
+        // omits, and a descriptor written from a baseline-only resolution holds just `262`.
+        if (!ideBuildMatches(
+                actual = marker.ide.build,
+                expected = expectedBuild,
+                expectedIsBaseline = isPlatformBaselineOnly(expectedBuild),
+            )
+        ) {
+            return false
+        }
+        val markerIdeHome = marker.ideHome ?: return false
+        val parsedMarkerHome = try {
+            Path.of(markerIdeHome).toAbsolutePath().normalize()
+        } catch (e: Exception) {
+            if (warnedMarkers.add(markerPath)) {
+                System.err.println(
+                    "WARN: invalid ideHome in MCP Steroid readiness marker $markerPath: ${e.javaClass.simpleName}",
+                )
+            }
+            return false
+        }
+        if (parsedMarkerHome != expectedIdeHome.toAbsolutePath().normalize()) return false
+        val markerPluginHome = marker.mcpSteroidServer?.pluginPath ?: return false
+        val parsedPluginHome = try {
+            Path.of(markerPluginHome).toAbsolutePath().normalize()
+        } catch (e: Exception) {
+            if (warnedMarkers.add(markerPath)) {
+                System.err.println(
+                    "WARN: invalid pluginPath in MCP Steroid readiness marker $markerPath: ${e.javaClass.simpleName}",
+                )
+            }
+            return false
+        }
+        return parsedPluginHome == expectedPluginHome.toAbsolutePath().normalize()
+    }
+
+    private suspend fun terminateFailedBackendStart(
+        descriptor: BackendDescriptor,
+        expectedIdeHome: Path,
+        expectedPluginHome: Path,
+        launcherPid: Long?,
+        knownBackendPid: Long?,
+        pidFile: Path,
+        excludedPids: Set<Long>,
+    ) {
+        val candidatePids = linkedSetOf<Long>()
+        launcherPid?.let(candidatePids::add)
+        knownBackendPid?.let(candidatePids::add)
+        val warnedMarkers = mutableSetOf<Path>()
+        var scanCount = 0
+        var quietScanCount = 0
+        while (scanCount < FAILED_START_CLEANUP_MAX_SCANS && quietScanCount < FAILED_START_CLEANUP_QUIET_SCANS) {
+            scanCount++
+            findReadyRemoteDevelopmentMarker(
+                descriptor,
+                expectedIdeHome,
+                expectedPluginHome,
+                warnedMarkers,
+                excludedPids,
+            )?.pid?.let(candidatePids::add)
+            val currentProcesses = processInspector.allProcesses()
+            for (process in currentProcesses) {
+                if (process.pid !in excludedPids && processSnapshotMatchesManagedLauncher(process, descriptor)) {
+                    candidatePids += process.pid
+                }
+            }
+            val snapshotsByPid = currentProcesses.associateBy { it.pid }
+            val ownedProcesses = candidatePids.mapNotNull { pid ->
+                if (!processInspector.isAlive(pid)) return@mapNotNull null
+                val snapshot = snapshotsByPid[pid] ?: return@mapNotNull null
+                val ownedByCommand = processSnapshotMatchesManagedLauncher(snapshot, descriptor)
+                snapshot.takeIf {
+                    ownedByCommand || pidMarkerMatchesDescriptor(pid, descriptor, snapshot.startInstant)
+                }
+            }
+            var terminationFailed = false
+            for (process in ownedProcesses.sortedByDescending { it.pid }) {
+                when (processInspector.terminateIfMatches(process)) {
+                    ManagedProcessTerminationOutcome.TERMINATED,
+                    ManagedProcessTerminationOutcome.NOT_RUNNING,
+                    -> {
+                        candidatePids.remove(process.pid)
+                        deleteMcpMarker(process.pid)
+                    }
+
+                    ManagedProcessTerminationOutcome.IDENTITY_CHANGED -> {
+                        candidatePids.remove(process.pid)
+                    }
+
+                    ManagedProcessTerminationOutcome.FAILED -> terminationFailed = true
+                }
+            }
+
+            val liveCandidateRemains = candidatePids.any(processInspector::isAlive)
+            quietScanCount = if (!terminationFailed && !liveCandidateRemains) quietScanCount + 1 else 0
+            if (scanCount < FAILED_START_CLEANUP_MAX_SCANS && quietScanCount < FAILED_START_CLEANUP_QUIET_SCANS) {
+                delay(FAILED_START_CLEANUP_SCAN_DELAY_MILLIS.milliseconds)
+            }
+        }
+
+        val survivingPids = candidatePids.filter(processInspector::isAlive)
+        if (survivingPids.isNotEmpty()) {
+            throw ManagedBackendValidationException(
+                "Failed to clean up unsuccessful managed backend '${descriptor.id}'; " +
+                    "candidate processes still alive: ${survivingPids.sorted().joinToString()}.",
+            )
+        }
+        deleteRecursively(pidFile)
+    }
+
+    private fun writePidFile(pidFile: Path, pid: Long, startInstant: Instant) {
+        Files.createDirectories(pidFile.parent)
+        val state = ManagedBackendProcessState(pid = pid, startInstant = startInstant.toString())
+        Files.writeString(pidFile, backendJson.encodeToString(state) + "\n")
+    }
+
+    private suspend fun <T> withGlobalBackendOperationLock(block: suspend () -> T): T = withContext(Dispatchers.IO) {
         Files.createDirectories(homePaths.stateDir)
         val lockPath = homePaths.stateDir.resolve("global.lock")
         FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
@@ -508,30 +902,31 @@ class BackendManager(
                 throw ManagedBackendLockException("another devrig backend operation is in progress; retry shortly")
             }
             lock.use {
-                return block()
+                block()
             }
         }
     }
 
-    override suspend fun stop(id: BackendId): StopResult {
+    override suspend fun stop(id: BackendId): StopResult = withContext(Dispatchers.IO) {
         val resolved = resolveConcreteId(id)
         val pidFile = homePaths.pidFile(resolved.id)
-        val pid = readPid(pidFile)
-        if (pid == null) {
+        val processState = readManagedBackendProcessState(pidFile)
+        if (processState == null) {
             Files.deleteIfExists(pidFile)
-            return StopResult(resolved.id, pid = null, outcome = "not running")
+            return@withContext StopResult(resolved.id, pid = null, outcome = "not running")
         }
+        val pid = processState.pid
         val descriptor = loadDescriptor(resolved)
 
         val handle = ProcessHandle.of(pid).getOrNull()
         if (handle == null || !handle.isAlive) {
             deleteMcpMarker(pid)
             Files.deleteIfExists(pidFile)
-            return StopResult(resolved.id, pid = pid, outcome = "already stopped")
+            return@withContext StopResult(resolved.id, pid = pid, outcome = "already stopped")
         }
-        if (!isManagedBackendProcess(handle, descriptor, pid)) {
+        if (!isManagedBackendProcess(handle, descriptor, processState)) {
             Files.deleteIfExists(pidFile)
-            return StopResult(
+            return@withContext StopResult(
                 id = resolved.id,
                 pid = null,
                 outcome = "stale",
@@ -545,57 +940,121 @@ class BackendManager(
             "stopped"
         } else {
             handle.destroyForcibly()
-            waitForExit(handle, timeoutMillis = 5_000L)
+            if (!waitForExit(handle, timeoutMillis = 5_000L)) {
+                throw ManagedBackendValidationException(
+                    "Managed backend '${resolved.id}' pid $pid is still alive after forced termination; " +
+                        "its pid file and marker were retained for a retry.",
+                )
+            }
             "killed"
         }
         deleteMcpMarker(pid)
         Files.deleteIfExists(pidFile)
-        return StopResult(resolved.id, pid = pid, outcome = outcome)
+        StopResult(resolved.id, pid = pid, outcome = outcome)
     }
 
     private fun isManagedBackendProcess(
         handle: ProcessHandle,
         descriptor: BackendDescriptor,
-        pid: Long,
+        processState: ManagedBackendProcessState,
     ): Boolean {
-        return processCommandIsUnderBackendsDir(handle) || pidMarkerMatchesDescriptor(pid, descriptor)
-    }
-
-    private fun processCommandIsUnderBackendsDir(handle: ProcessHandle): Boolean {
+        val pid = processState.pid
         val info = handle.info()
-        val command = info.command().orElse(null)
-        if (command != null && processPathIsUnderBackendsDir(command)) return true
-        return info.arguments().orElse(emptyArray()).any { processPathIsUnderBackendsDir(it) }
+        val snapshot = ProcessSnapshot(
+            pid = pid,
+            command = info.command().orElse(null),
+            arguments = info.arguments().orElse(emptyArray()).toList(),
+            startInstant = info.startInstant().orElse(null),
+        )
+        if (processState.startInstant != null) return processState.matchesProcessSnapshot(snapshot)
+        return pidMarkerMatchesDescriptor(pid, descriptor, snapshot.startInstant)
     }
 
-    private fun processPathIsUnderBackendsDir(rawPath: String): Boolean {
-        val commandPath = try {
-            Path.of(rawPath)
+    private fun processSnapshotMatchesManagedLauncher(
+        process: ProcessSnapshot,
+        descriptor: BackendDescriptor,
+    ): Boolean {
+        val expectedBundle = homePaths.backendDir(descriptor.id)
+            .resolve(descriptor.bundleDirName)
+            .toAbsolutePath()
+            .normalize()
+        val commandPath = process.command?.let(::parseAbsoluteProcessPath)
+
+        val expectedLauncher = try {
+            backendLauncherResolver.resolve(descriptor, expectedBundle).executable.toAbsolutePath().normalize()
         } catch (e: Exception) {
-            System.err.println("WARN: failed to parse process path '$rawPath': ${e.message}")
+            System.err.println(
+                "WARN: failed to resolve managed backend '${descriptor.id}' while scanning processes: " +
+                    e.javaClass.simpleName,
+            )
             return false
         }
-        if (!commandPath.isAbsolute) return false
-        val backendsDir = homePaths.backendsDir.toAbsolutePath().normalize()
-        return commandPath.toAbsolutePath().normalize().startsWith(backendsDir)
+        return commandPath == expectedLauncher ||
+            (commandPath != null && recognizedInterpreterLaunches(commandPath, process.arguments, expectedLauncher))
     }
 
-    private fun pidMarkerMatchesDescriptor(pid: Long, descriptor: BackendDescriptor): Boolean {
+    private fun recognizedInterpreterLaunches(commandPath: Path, arguments: List<String>, expectedLauncher: Path): Boolean {
+        val executableName = commandPath.fileName.toString().lowercase()
+        val unixShells = setOf("sh", "bash", "dash", "zsh", "ksh")
+        if (executableName in unixShells) {
+            return arguments.firstOrNull()?.let(::parseAbsoluteProcessPath) == expectedLauncher
+        }
+        val windowsShells = setOf("cmd", "cmd.exe")
+        if (executableName in windowsShells && arguments.size >= 2 && arguments.first().equals("/c", ignoreCase = true)) {
+            return parseAbsoluteProcessPath(arguments[1]) == expectedLauncher
+        }
+        return false
+    }
+
+    private fun pidMarkerMatchesDescriptor(
+        pid: Long,
+        descriptor: BackendDescriptor,
+        processStartInstant: Instant?,
+    ): Boolean {
+        processStartInstant ?: return false
         val markerPath = markerPathsForPid(pid).firstOrNull { Files.isRegularFile(it) } ?: return false
         val marker = try {
             PidMarkerJson.decode(Files.readString(markerPath))
         } catch (e: Exception) {
-            System.err.println("WARN: failed to decode MCP Steroid marker file $markerPath: ${e.message}")
+            System.err.println("WARN: failed to decode MCP Steroid marker file $markerPath: ${e.javaClass.simpleName}")
             return false
         }
-        val expectedBuild = descriptor.buildNumber ?: return false
-        // Marker builds carry the product-code prefix (`IC-262.8665.258`) that product-info.json
-        // omits, and a descriptor written from a baseline-only resolution holds just `262`.
-        return marker.pid == pid && ideBuildMatches(
-            actual = marker.ide.build,
-            expected = expectedBuild,
-            expectedIsBaseline = isPlatformBaselineOnly(expectedBuild),
+        if (marker.pid != pid) return false
+        if (!markerWasCreatedForProcess(marker, processStartInstant, markerPath, mutableSetOf())) return false
+        val bundleDir = homePaths.backendDir(descriptor.id).resolve(descriptor.bundleDirName)
+        val expectedIdeHome = try {
+            backendLauncherResolver.resolve(descriptor, bundleDir).workingDirectory
+        } catch (e: Exception) {
+            System.err.println("WARN: failed to resolve managed backend '${descriptor.id}' while validating pid $pid: ${e.message}")
+            return false
+        }
+        return markerMatchesManagedBackend(
+            marker = marker,
+            descriptor = descriptor,
+            expectedIdeHome = expectedIdeHome,
+            expectedPluginHome = homePaths.cacheDir(descriptor.id).resolve("plugins/mcp-steroid"),
+            markerPath = markerPath,
+            warnedMarkers = mutableSetOf(),
         )
+    }
+
+    private fun markerWasCreatedForProcess(
+        marker: PidMarker,
+        processStartInstant: Instant,
+        markerPath: Path,
+        warnedMarkers: MutableSet<Path>,
+    ): Boolean {
+        val markerCreatedAt = try {
+            Instant.parse(marker.createdAt)
+        } catch (e: Exception) {
+            if (warnedMarkers.add(markerPath)) {
+                System.err.println(
+                    "WARN: invalid createdAt in MCP Steroid marker file $markerPath: ${e.javaClass.simpleName}",
+                )
+            }
+            return false
+        }
+        return !markerCreatedAt.isBefore(processStartInstant)
     }
 
     private fun deleteMcpMarker(pid: Long) {
@@ -614,17 +1073,20 @@ class BackendManager(
 
     fun list(): List<ManagedBackendInfo> {
         if (!Files.isDirectory(homePaths.backendsDir)) return emptyList()
+        val snapshotsByPid = processInspector.allProcesses().associateBy { it.pid }
         return Files.list(homePaths.backendsDir).use { stream ->
             stream.asSequence()
                 .filter { it.isDirectory() }
                 .mapNotNull { dir ->
                     try {
                         val descriptor = readDescriptorOrNull(descriptorPath(dir)) ?: return@mapNotNull null
-                        val pid = readPid(homePaths.pidFile(descriptor.id))
-                        val alivePid = pid?.takeIf { processInspector.isAlive(it) }
+                        val processState = readManagedBackendProcessState(homePaths.pidFile(descriptor.id))
+                        val alivePid = processState
+                            ?.takeIf { isOwnedManagedBackendProcess(it, descriptor, snapshotsByPid) }
+                            ?.pid
                         val state = when {
                             alivePid != null -> ManagedBackendState.RUNNING
-                            pid != null -> ManagedBackendState.UNREACHABLE
+                            processState != null -> ManagedBackendState.UNREACHABLE
                             else -> ManagedBackendState.INSTALLED
                         }
                         ManagedBackendInfo(
@@ -686,17 +1148,27 @@ class BackendManager(
         val byId = mutableListOf<RunningManagedProcess>()
         val trackedPids = mutableSetOf<Long>()
         val trackedIds = mutableSetOf<String>()
+        val processSnapshots = processInspector.allProcesses()
+        val snapshotsByPid = processSnapshots.associateBy { it.pid }
         if (Files.isDirectory(homePaths.stateDir)) {
             Files.list(homePaths.stateDir).use { stream ->
                 stream.asSequence()
                     .filter { it.fileName.toString().endsWith(".pid") }
                     .forEach { pidFile ->
                         val backendId = pidFile.fileName.toString().removeSuffix(".pid")
-                        val pid = readPid(pidFile)
-                        if (pid != null && processInspector.isAlive(pid)) {
-                            trackedPids += pid
+                        val processState = readManagedBackendProcessState(pidFile)
+                        val descriptor = readDescriptorOrNull(descriptorPath(homePaths.backendDir(backendId)))
+                        if (processState != null && descriptor != null &&
+                            isOwnedManagedBackendProcess(processState, descriptor, snapshotsByPid)
+                        ) {
+                            trackedPids += processState.pid
                             trackedIds += backendId
-                            byId += RunningManagedProcess(backendId, pid, untracked = false)
+                            byId += RunningManagedProcess(
+                                backendId = backendId,
+                                pid = processState.pid,
+                                startInstant = processState.parsedStartInstant(),
+                                untracked = false,
+                            )
                         } else {
                             Files.deleteIfExists(pidFile)
                         }
@@ -704,24 +1176,66 @@ class BackendManager(
             }
         }
 
-        for (process in processInspector.allProcesses()) {
+        for (process in processSnapshots) {
             if (process.pid in trackedPids) continue
-            val backendId = backendIdFromCommand(process.command) ?: continue
-            if (backendId in trackedIds) continue
-            byId += RunningManagedProcess(backendId, process.pid, untracked = true)
+            for (backendId in backendIdsFromProcess(process)) {
+                if (backendId in trackedIds) continue
+                val descriptor = readDescriptorOrNull(descriptorPath(homePaths.backendDir(backendId))) ?: continue
+                val launcherMatches = processSnapshotMatchesManagedLauncher(process, descriptor)
+                val markerMatches = pidMarkerMatchesDescriptor(process.pid, descriptor, process.startInstant)
+                if (!launcherMatches && !markerMatches) continue
+                byId += RunningManagedProcess(
+                    backendId = backendId,
+                    pid = process.pid,
+                    startInstant = process.startInstant,
+                    untracked = true,
+                )
+                break
+            }
         }
 
         return byId.sortedWith(compareBy({ it.backendId }, { it.pid }))
     }
 
+    private fun isOwnedManagedBackendProcess(
+        processState: ManagedBackendProcessState,
+        descriptor: BackendDescriptor,
+        snapshotsByPid: Map<Long, ProcessSnapshot>,
+    ): Boolean {
+        val pid = processState.pid
+        if (!processInspector.isAlive(pid)) return false
+        val snapshot = snapshotsByPid[pid] ?: processInspector.snapshot(pid) ?: return false
+        if (processState.startInstant != null) return processState.matchesProcessSnapshot(snapshot)
+        return pidMarkerMatchesDescriptor(pid, descriptor, snapshot.startInstant)
+    }
+
+    private fun backendIdsFromProcess(process: ProcessSnapshot): List<String> =
+        (listOfNotNull(process.command).asSequence() + process.arguments.asSequence())
+            .mapNotNull(::backendIdFromCommand)
+            .distinct()
+            .toList()
+
     private fun backendIdFromCommand(command: String?): String? {
         if (command.isNullOrBlank()) return null
-        val backendsRoot = homePaths.backendsDir.toAbsolutePath().normalize().toString().pathKey() + "/"
-        val commandPath = Path.of(command).toAbsolutePath().normalize().toString().pathKey()
-        val index = commandPath.indexOf(backendsRoot)
-        if (index < 0) return null
-        val rest = commandPath.substring(index + backendsRoot.length)
-        return rest.substringBefore('/').takeIf { it.isNotBlank() }
+        val backendsRoot = homePaths.backendsDir.toAbsolutePath().normalize()
+        val commandPath = parseAbsoluteProcessPath(command) ?: return null
+        if (!commandPath.startsWith(backendsRoot)) return null
+        val relative = backendsRoot.relativize(commandPath)
+        if (relative.nameCount < 2) return null
+        return relative.getName(0).toString().takeIf { it.isNotBlank() }
+    }
+
+    private fun parseAbsoluteProcessPath(rawPath: String): Path? {
+        val path = try {
+            Path.of(rawPath)
+        } catch (e: Exception) {
+            System.err.println(
+                "WARN: ignored an invalid process path while scanning managed backends: ${e.javaClass.simpleName}",
+            )
+            return null
+        }
+        if (!path.isAbsolute) return null
+        return path.toAbsolutePath().normalize()
     }
 
     private fun lockConflictMessage(process: RunningManagedProcess): String = buildString {
@@ -737,11 +1251,9 @@ class BackendManager(
 private data class RunningManagedProcess(
     val backendId: String,
     val pid: Long,
+    val startInstant: Instant?,
     val untracked: Boolean,
 )
-
-private fun String.pathKey(): String =
-    replace('\\', '/').trimEnd('/').lowercase()
 
 fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirName: String): Path {
     val cacheDir = homePaths.cacheDir(id).toAbsolutePath().normalize()
@@ -884,11 +1396,56 @@ private fun hasProductInfoCandidate(dir: Path): Boolean {
     ).any { it.exists() }
 }
 
-private fun readPid(path: Path): Long? {
+fun readManagedBackendProcessState(path: Path): ManagedBackendProcessState? {
     if (!path.exists()) return null
     val text = Files.readString(path).trim()
     if (text.isBlank()) return null
-    return text.toLongOrNull()
+    text.toLongOrNull()?.let { legacyPid ->
+        return ManagedBackendProcessState(pid = legacyPid, startInstant = null)
+    }
+    return try {
+        backendJson.decodeFromString<ManagedBackendProcessState>(text)
+    } catch (e: Exception) {
+        System.err.println("WARN: failed to decode managed backend process state $path: ${e.javaClass.simpleName}")
+        null
+    }
+}
+
+private fun ManagedBackendProcessState.parsedStartInstant(): Instant? {
+    val raw = startInstant ?: return null
+    return try {
+        Instant.parse(raw)
+    } catch (e: Exception) {
+        System.err.println("WARN: invalid managed backend process start instant: ${e.javaClass.simpleName}")
+        null
+    }
+}
+
+fun ManagedBackendProcessState.matchesProcessSnapshot(snapshot: ProcessSnapshot?): Boolean {
+    val recordedStartInstant = parsedStartInstant() ?: return false
+    return recordedStartInstant == snapshot?.startInstant
+}
+
+private fun terminateProcessIfMatches(expected: ProcessSnapshot): ManagedProcessTerminationOutcome {
+    val expectedStartInstant = expected.startInstant
+        ?: return ManagedProcessTerminationOutcome.IDENTITY_CHANGED
+    val handle = ProcessHandle.of(expected.pid).getOrNull()
+        ?: return ManagedProcessTerminationOutcome.NOT_RUNNING
+    if (!handle.isAlive) return ManagedProcessTerminationOutcome.NOT_RUNNING
+    val currentStartInstant = handle.info().startInstant().orElse(null)
+    if (currentStartInstant != expectedStartInstant) {
+        return ManagedProcessTerminationOutcome.IDENTITY_CHANGED
+    }
+    handle.destroy()
+    if (waitForExit(handle, timeoutMillis = 2_000L)) {
+        return ManagedProcessTerminationOutcome.TERMINATED
+    }
+    handle.destroyForcibly()
+    if (waitForExit(handle, timeoutMillis = 5_000L)) {
+        return ManagedProcessTerminationOutcome.TERMINATED
+    }
+    System.err.println("WARN: failed to terminate managed backend process pid ${expected.pid}")
+    return ManagedProcessTerminationOutcome.FAILED
 }
 
 private fun waitForExit(handle: ProcessHandle, timeoutMillis: Long): Boolean {
@@ -932,25 +1489,52 @@ private fun nullDevice(): File {
  * Spawn the IDE launcher detached from the current process's lifetime, so it
  * survives devrig termination (and, on Windows, the surrounding shell's).
  *
- * Linux / macOS — [ProcessBuilder] is sufficient: the child gets its own session
- * and outlives the parent without special flags.
+ * Linux uses `setsid`; macOS uses a short job-control helper plus `nohup`. Both
+ * detach the launcher from the invoking agent tool's process group before returning.
  *
  * Windows — see [spawnDetachedOnWindows].
  */
 private fun spawnIdeProcess(
     launcher: Path,
+    arguments: List<String>,
     workDir: Path,
     stdoutLog: File,
     stderrLog: File,
     environment: Map<String, String>,
-): Long = if (resolveHostOs() == HostOs.WINDOWS) {
-    // stdoutLog/stderrLog are not propagated on Windows; the WMI-spawned child
-    // is created by the winmgmt service and has no caller-attached stdio.
-    // idea64.exe is GUI-subsystem and writes idea.log itself anyway.
-    spawnDetachedOnWindows(launcher, workDir, environment)
-} else {
-    ProcessBuilder(launcher.toString())
-        .also { builder -> builder.environment().putAll(environment) }
+): Long {
+    val hostOs = resolveHostOs()
+    if (hostOs == HostOs.WINDOWS) {
+        // stdoutLog/stderrLog are not propagated on Windows; the WMI-spawned child
+        // is created by the winmgmt service and has no caller-attached stdio.
+        // idea64.exe is GUI-subsystem and writes idea.log itself anyway.
+        return spawnDetachedOnWindows(launcher, arguments, workDir, environment)
+    }
+    if (hostOs == HostOs.MAC) {
+        return spawnDetachedOnMacOs(
+            launcher = launcher,
+            arguments = arguments,
+            workDir = workDir,
+            stdoutLog = stdoutLog,
+            stderrLog = stderrLog,
+            environment = environment,
+        )
+    }
+
+    // Agent shell tools terminate their whole process group after a command completes. The native
+    // Remote Development launcher stays in the foreground, so it must lead a new session or it is
+    // killed immediately after `devrig backend start` returns. `setsid` execs the launcher in that
+    // session while preserving its PID for the normal marker handoff.
+    val command = listOf(resolveSetsidExecutable().toString(), launcher.toString()) + arguments
+    return ProcessBuilder(command)
+        .also { builder ->
+            if (environment.isNotEmpty()) {
+                // Agent CLIs carry API keys in their environment. A Remote Development backend needs
+                // normal OS/session variables plus its explicit REMOTE_DEV_* flags, never those secrets.
+                val childEnvironment = managedProcessEnvironment(System.getenv(), environment, hostOs)
+                builder.environment().clear()
+                builder.environment().putAll(childEnvironment)
+            }
+        }
         .directory(workDir.toFile())
         .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
         .redirectOutput(ProcessBuilder.Redirect.appendTo(stdoutLog))
@@ -959,8 +1543,85 @@ private fun spawnIdeProcess(
         .pid()
 }
 
+private fun spawnDetachedOnMacOs(
+    launcher: Path,
+    arguments: List<String>,
+    workDir: Path,
+    stdoutLog: File,
+    stderrLog: File,
+    environment: Map<String, String>,
+): Long {
+    val pidFile = Files.createTempFile("devrig-spawn-", ".pid")
+    val errFile = Files.createTempFile("devrig-spawn-", ".err")
+    try {
+        val command = buildMacOsDetachedProcessCommand(
+            launcher = launcher,
+            arguments = arguments,
+            stdoutLog = stdoutLog.toPath(),
+            stderrLog = stderrLog.toPath(),
+        )
+        val helper = ProcessBuilder(command)
+            .also { builder ->
+                if (environment.isNotEmpty()) {
+                    val childEnvironment = managedProcessEnvironment(System.getenv(), environment, HostOs.MAC)
+                    builder.environment().clear()
+                    builder.environment().putAll(childEnvironment)
+                }
+            }
+            .directory(workDir.toFile())
+            .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
+            .redirectOutput(pidFile.toFile())
+            .redirectError(errFile.toFile())
+            .start()
+
+        val finished = helper.waitFor(10, TimeUnit.SECONDS)
+        if (!finished) {
+            helper.destroyForcibly()
+            error("macOS detach helper timed out launching $launcher")
+        }
+        if (helper.exitValue() != 0) {
+            val errOutput = Files.readString(errFile).trim()
+            error("macOS detach helper exited ${helper.exitValue()} launching $launcher; stderr: $errOutput")
+        }
+        val pidText = Files.readString(pidFile).trim()
+        return pidText.toLongOrNull()
+            ?: error("Could not parse pid from macOS detach helper output: '$pidText'")
+    } finally {
+        deleteTempQuietly(pidFile)
+        deleteTempQuietly(errFile)
+    }
+}
+
+private const val MAC_OS_DETACH_SCRIPT =
+    $$"set -m; out=$1; err=$2; shift 2; /usr/bin/nohup \"$@\" </dev/null >>\"$out\" 2>>\"$err\" & printf '%s\\n' \"$!\""
+
+fun buildMacOsDetachedProcessCommand(
+    launcher: Path,
+    arguments: List<String>,
+    stdoutLog: Path,
+    stderrLog: Path,
+): List<String> = listOf(
+    "/bin/sh",
+    "-c",
+    MAC_OS_DETACH_SCRIPT,
+    "devrig-detach",
+    stdoutLog.toString(),
+    stderrLog.toString(),
+    launcher.toString(),
+) + arguments
+
+private fun resolveSetsidExecutable(): Path {
+    val candidates = listOf(Path.of("/usr/bin/setsid"), Path.of("/bin/setsid"))
+    return candidates.firstOrNull { Files.isExecutable(it) }
+        ?: throw ManagedBackendValidationException(
+            "Cannot detach the managed IDE: setsid is required on Linux but was not found at " +
+                candidates.joinToString(),
+        )
+}
+
 private fun spawnDetachedOnWindows(
     launcher: Path,
+    arguments: List<String>,
     workDir: Path,
     environment: Map<String, String>,
 ): Long {
@@ -977,30 +1638,22 @@ private fun spawnDetachedOnWindows(
     val pidFile = Files.createTempFile("devrig-spawn-", ".pid")
     val errFile = Files.createTempFile("devrig-spawn-", ".err")
     try {
-        val launcherExt = launcher.fileName.toString().substringAfterLast('.', "").lowercase()
-        val isBatchScript = launcherExt == "bat" || launcherExt == "cmd"
+        val processCommand = buildWindowsProcessCommand(launcher, arguments)
         val script = buildString {
-            // Win32_Process.Create (which wraps CreateProcess) cannot execute .bat/.cmd scripts
-            // directly — they require the cmd.exe interpreter. Wrap with cmd.exe /c so the batch
-            // file path is still visible in the process's command-line arguments, which lets
-            // processCommandIsUnderBackendsDir() recognise the process for stop/list tracking.
-            if (isBatchScript) {
-                append("\$cmd = 'cmd.exe /c \"' + '").append(psQuote(launcher.toString())).append("' + '\"'; ")
-            } else {
-                append("\$cmd = '\"' + '").append(psQuote(launcher.toString())).append("' + '\"'; ")
-            }
+            append($$"$cmd = '").append(psQuote(processCommand)).append("'; ")
             if (environment.isEmpty()) {
-                append("\$startup = \$null; ")
+                append($$"$startup = $null; ")
             } else {
-                append("\$startup = ([wmiclass]'\\\\.\\root\\cimv2:Win32_ProcessStartup').CreateInstance(); ")
-                append("\$startup.EnvironmentVariables = @(")
-                append(environment.entries.joinToString(", ") { "'${psQuote("${it.key}=${it.value}")}'" })
+                val mergedEnvironment = windowsProcessEnvironment(System.getenv(), environment)
+                append($$"$startup = ([wmiclass]'\\\\.\\root\\cimv2:Win32_ProcessStartup').CreateInstance(); ")
+                append($$"$startup.EnvironmentVariables = @(")
+                append(mergedEnvironment.entries.joinToString(", ") { "'${psQuote("${it.key}=${it.value}")}'" })
                 append("); ")
             }
-            append("\$r = ([wmiclass]'\\\\.\\root\\cimv2:Win32_Process').Create(\$cmd, '")
-            append(psQuote(workDir.toString())).append("', \$startup); ")
-            append("if (\$r.ReturnValue -ne 0) { Write-Error (\"Win32_Process.Create returned \" + \$r.ReturnValue); exit \$r.ReturnValue }; ")
-            append("\$r.ProcessId | Out-File -FilePath '").append(psQuote(pidFile.toAbsolutePath().toString())).append("' -Encoding ASCII")
+            append($$"$r = ([wmiclass]'\\\\.\\root\\cimv2:Win32_Process').Create($cmd, '")
+            append(psQuote(workDir.toString())).append($$"', $startup); ")
+            append($$"if ($r.ReturnValue -ne 0) { Write-Error (\"Win32_Process.Create returned \" + $r.ReturnValue); exit $r.ReturnValue }; ")
+            append($$"$r.ProcessId | Out-File -FilePath '").append(psQuote(pidFile.toAbsolutePath().toString())).append("' -Encoding ASCII")
         }
 
         val helper = ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
@@ -1037,6 +1690,122 @@ private fun deleteTempQuietly(path: Path) {
 
 /** Doubles single quotes for embedding inside a PowerShell single-quoted string literal. */
 private fun psQuote(s: String): String = s.replace("'", "''")
+
+/** Builds the command line passed to Win32_Process.Create. */
+fun buildWindowsProcessCommand(launcher: Path, arguments: List<String>): String {
+    val launcherExt = launcher.fileName.toString().substringAfterLast('.', "").lowercase()
+    val executable = quoteWindowsProcessArgument(launcher.toString(), alwaysQuote = true)
+    val command = (listOf(executable) + arguments.map { quoteWindowsProcessArgument(it) }).joinToString(" ")
+    return if (launcherExt == "bat" || launcherExt == "cmd") {
+        // Win32_Process.Create cannot execute batch scripts directly. Keep the script path in
+        // the command line so processCommandIsUnderBackendsDir() can still recognise the process.
+        "cmd.exe /c $command"
+    } else {
+        command
+    }
+}
+
+fun windowsProcessEnvironment(
+    inherited: Map<String, String>,
+    overrides: Map<String, String>,
+): Map<String, String> = managedProcessEnvironment(inherited, overrides, HostOs.WINDOWS)
+
+fun managedProcessEnvironment(
+    inherited: Map<String, String>,
+    overrides: Map<String, String>,
+    hostOs: HostOs,
+): Map<String, String> {
+    val requiredKeys = if (hostOs == HostOs.WINDOWS) WINDOWS_PROCESS_ENVIRONMENT_KEYS else UNIX_PROCESS_ENVIRONMENT_KEYS
+    val caseInsensitive = hostOs == HostOs.WINDOWS
+
+    fun allowed(key: String): Boolean = if (caseInsensitive) {
+        key.uppercase() in requiredKeys
+    } else {
+        key in requiredKeys || key.startsWith("LC_")
+    }
+
+    fun overridden(key: String): Boolean = if (caseInsensitive) {
+        overrides.keys.any { it.equals(key, ignoreCase = true) }
+    } else {
+        key in overrides
+    }
+
+    val result = linkedMapOf<String, String>()
+    inherited.entries
+        .filter { allowed(it.key) }
+        .filterNot { overridden(it.key) }
+        .sortedBy { if (caseInsensitive) it.key.uppercase() else it.key }
+        .forEach { result[it.key] = it.value }
+    overrides.entries.sortedBy { it.key }.forEach { result[it.key] = it.value }
+    return result
+}
+
+private val WINDOWS_PROCESS_ENVIRONMENT_KEYS = setOf(
+    "APPDATA",
+    "COMSPEC",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "JAVA_HOME",
+    "LOCALAPPDATA",
+    "PATH",
+    "PATHEXT",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "USERNAME",
+    "USERPROFILE",
+)
+
+private val UNIX_PROCESS_ENVIRONMENT_KEYS = setOf(
+    "DISPLAY",
+    "HOME",
+    "JAVA_HOME",
+    "JDK_HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LOGNAME",
+    "PATH",
+    "SHELL",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "USER",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_RUNTIME_DIR",
+)
+
+private fun quoteWindowsProcessArgument(value: String, alwaysQuote: Boolean = false): String {
+    if (!alwaysQuote && value.isNotEmpty() && value.none { it.isWhitespace() || it == '"' }) return value
+
+    val result = StringBuilder().append('"')
+    var backslashes = 0
+    for (character in value) {
+        when (character) {
+            '\\' -> backslashes++
+            '"' -> {
+                repeat(backslashes * 2 + 1) { result.append('\\') }
+                result.append('"')
+                backslashes = 0
+            }
+            else -> {
+                repeat(backslashes) { result.append('\\') }
+                result.append(character)
+                backslashes = 0
+            }
+        }
+    }
+    repeat(backslashes * 2) { result.append('\\') }
+    return result.append('"').toString()
+}
 
 private fun sha256(path: Path): String {
     val digest = MessageDigest.getInstance("SHA-256")

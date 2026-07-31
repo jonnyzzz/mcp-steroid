@@ -119,7 +119,7 @@ private fun installedBackendRowOrNull(
     val descriptorFile = descriptorPath(dir)
     if (!Files.isRegularFile(descriptorFile) || !Files.isReadable(descriptorFile)) return null
     readDescriptorOrNull(descriptorFile) ?: return null
-    val alivePid = readBackendPidOrNull(homePaths.pidFile(parsed.id))?.takeIf { processInspector.isAlive(it) }
+    val alivePid = liveManagedBackendPidOrNull(homePaths.pidFile(parsed.id), processInspector)
     return InstalledBackendListRow(
         id = parsed.id,
         productKey = parsed.product.id,
@@ -139,13 +139,25 @@ private fun runningBackendRowOrNull(
 ): RunningBackendListRow? {
     val id = pidFile.name.removeSuffix(".pid")
     val parsed = parseConcreteBackendDirectoryNameOrNull(id) ?: return null
-    val pid = readBackendPidOrNull(pidFile)?.takeIf { processInspector.isAlive(it) } ?: return null
+    val pid = liveManagedBackendPidOrNull(pidFile, processInspector) ?: return null
     return RunningBackendListRow(
         id = parsed.id,
         pid = pid,
         displayName = parsed.displayName,
         logPath = homePaths.cacheDir(parsed.id).resolve("logs/managed.log"),
     )
+}
+
+private fun liveManagedBackendPidOrNull(
+    pidFile: Path,
+    processInspector: ManagedProcessInspector,
+): Long? {
+    val processState = readManagedBackendProcessState(pidFile) ?: return null
+    if (!processInspector.isAlive(processState.pid)) return null
+    if (processState.startInstant == null) return processState.pid
+    return processState.pid.takeIf {
+        processState.matchesProcessSnapshot(processInspector.snapshot(processState.pid))
+    }
 }
 
 private fun parseConcreteBackendDirectoryNameOrNull(raw: String): ParsedConcreteBackendId? {
@@ -156,13 +168,6 @@ private fun parseConcreteBackendDirectoryNameOrNull(raw: String): ParsedConcrete
     val version = raw.removePrefix("${product.id}-")
     if (!isSupportedBackendVersion(version)) return null
     return ParsedConcreteBackendId(product, version)
-}
-
-private fun readBackendPidOrNull(path: Path): Long? {
-    if (!Files.isRegularFile(path)) return null
-    val text = Files.readString(path).trim()
-    if (text.isBlank()) return null
-    return text.toLongOrNull()
 }
 
 private fun backendProductSortIndex(productKey: String): Int =

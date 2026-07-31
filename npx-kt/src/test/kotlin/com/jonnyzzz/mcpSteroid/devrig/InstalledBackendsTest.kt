@@ -112,7 +112,6 @@ class InstalledBackendsTest {
         val bundleDirName = "idea-IU-261.1.app"
         val backendDir = tempDir.resolve("backends").resolve(id)
         val bundleDir = backendDir.resolve(bundleDirName)
-        val launcherPath = "../bin/idea"  // product-info.json on macOS: launcherPath is relative from Contents/Resources
         // Contents/bin must exist for resolveIdeHome to detect macOS layout
         val contentsBin = bundleDir.resolve("Contents/bin")
         Files.createDirectories(contentsBin)
@@ -226,6 +225,81 @@ class InstalledBackendsTest {
 
         assertEquals(0, backends.size, "incomplete install (missing launcher) must be skipped")
     }
+
+    @Test
+    fun `installedBackends accepts IU 262 with remote development assets`(@TempDir tempDir: Path) {
+        val id = "idea-ultimate-2026.2.0.1"
+        val bundleDirName = "idea-ultimate"
+        val backendDir = tempDir.resolve("backends").resolve(id)
+        val bundleDir = backendDir.resolve(bundleDirName)
+        Files.createDirectories(bundleDir.resolve("bin"))
+        Files.createFile(bundleDir.resolve("bin/idea.sh"))
+        installRemoteDevelopmentAssets(bundleDir)
+        writeDescriptor(
+            descriptorPath(backendDir),
+            BackendDescriptor(
+                id = id,
+                productKey = "idea-ultimate",
+                productCode = "IU",
+                version = "2026.2.0.1",
+                buildNumber = "IU-262.8665.337",
+                bundleDirName = bundleDirName,
+                launcherPath = "bin/idea.sh",
+                downloadedAt = "2026-01-01T00:00:00Z",
+            ),
+        )
+
+        val services = DevrigServices(
+            com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost(),
+            homePaths = HomePaths(tempDir),
+            mcpStdin = System.`in`,
+            mcpStdout = System.out,
+        )
+
+        val backend = services.installedBackends().single()
+
+        assertEquals(id, backend.id)
+        assertTrue(
+            backend.launcher.fileName.toString() in setOf("remote-dev-server", "remote-dev-server.exe"),
+            "IU 262 must use the native Remote Development launcher, actual: ${backend.launcher}",
+        )
+    }
+
+    @Test
+    fun `installedBackends skips IU 262 with missing remote development launcher`(@TempDir tempDir: Path) {
+        val id = "idea-ultimate-2026.2.0.1"
+        val bundleDirName = "idea-ultimate"
+        val backendDir = tempDir.resolve("backends").resolve(id)
+        val bundleDir = backendDir.resolve(bundleDirName)
+        Files.createDirectories(bundleDir.resolve("bin"))
+        Files.createFile(bundleDir.resolve("bin/idea.sh"))
+        Files.createDirectories(bundleDir.resolve("plugins/remote-dev-server"))
+        writeDescriptor(
+            descriptorPath(backendDir),
+            BackendDescriptor(
+                id = id,
+                productKey = "idea-ultimate",
+                productCode = "IU",
+                version = "2026.2.0.1",
+                buildNumber = "IU-262.8665.337",
+                bundleDirName = bundleDirName,
+                launcherPath = "bin/idea.sh",
+                downloadedAt = "2026-01-01T00:00:00Z",
+            ),
+        )
+
+        val services = DevrigServices(
+            com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost(),
+            homePaths = HomePaths(tempDir),
+            mcpStdin = System.`in`,
+            mcpStdout = System.out,
+        )
+
+        val backends = services.installedBackends()
+
+        assertTrue(backends.isEmpty(), "IU 262 without a native Remote Development launcher must be skipped")
+    }
+
     @Test
     fun `startable excludes installed backend with a running managed pid`() {
         val a = installed(id = "idea-community-2026.1", home = "/b/idea")
@@ -244,6 +318,18 @@ class InstalledBackendsTest {
         val runningIdea = discoveredIde(ideHome = "/b/idea")
         val startable = startableBackends(listOf(a, b), listOf(runningIdea), runningManagedIds = setOf("goland-2026.1"))
         assertTrue(startable.isEmpty(), "both exclusion paths must work together")
+    }
+
+    private fun installRemoteDevelopmentAssets(bundleDir: Path) {
+        val ideHome = resolveIdeHome(bundleDir)
+        Files.createDirectories(ideHome.resolve("bin"))
+        Files.writeString(ideHome.resolve("bin/remote-dev-server"), "remote development launcher")
+            .toFile()
+            .setExecutable(true)
+        Files.writeString(ideHome.resolve("bin/remote-dev-server.exe"), "remote development launcher")
+        val pluginJar = ideHome.resolve("plugins/remote-dev-server/lib/remote-dev-server.jar")
+        Files.createDirectories(pluginJar.parent)
+        Files.writeString(pluginJar, "remote development plugin")
     }
 
 

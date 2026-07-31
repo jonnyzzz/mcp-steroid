@@ -14,6 +14,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 
 class BackendCommandStopListTest {
 
@@ -61,6 +62,31 @@ class BackendCommandStopListTest {
         assertEquals(12345L, running["pid"]!!.jsonPrimitive.long)
         assertEquals("IntelliJ IDEA Community 2025.3.3", running["displayName"]!!.jsonPrimitive.content)
         assertEquals(homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/managed.log").toString(), running["logPath"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `reused pid with a different process start time is omitted`(@TempDir tempDir: Path) {
+        val homePaths = HomePaths(tempDir)
+        homePaths.mkdirsAll()
+        val id = "idea-community-2025.3.3"
+        Files.writeString(
+            homePaths.pidFile(id),
+            Json.encodeToString(
+                ManagedBackendProcessState(pid = 12345L, startInstant = "2026-07-31T08:00:00Z"),
+            ),
+        )
+        val processInspector = FakeProcessInspector(
+            alivePids = setOf(12345L),
+            snapshots = mapOf(
+                12345L to ProcessSnapshot(
+                    pid = 12345L,
+                    command = "/usr/bin/java",
+                    startInstant = Instant.parse("2026-07-31T09:00:00Z"),
+                ),
+            ),
+        )
+
+        assertTrue(collectRunningBackendListRows(homePaths, processInspector).isEmpty())
     }
 
     private fun renderStopText(rows: List<RunningBackendListRow>): String {

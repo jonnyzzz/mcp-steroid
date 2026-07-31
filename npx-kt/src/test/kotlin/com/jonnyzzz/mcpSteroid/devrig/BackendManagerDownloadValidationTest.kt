@@ -2,7 +2,9 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.junit.jupiter.api.Test
@@ -36,7 +38,171 @@ class BackendManagerDownloadValidationTest {
         assertEquals("IC", result.descriptor.productCode)
         assertEquals("sha-IC", result.descriptor.sourceArchiveSha256)
         assertTrue(descriptorPath(result.backendDir).exists())
-        assertTrue(result.backendDir.resolve(result.descriptor.bundleDirName).resolve("product-info.json").exists())
+        val bundleDir = result.backendDir.resolve(result.descriptor.bundleDirName)
+        assertTrue(bundleDir.resolve("product-info.json").exists())
+        assertFalse(bundleDir.resolve("bin/remote-dev-server").exists())
+    }
+
+    @Test
+    fun `download accepts matching unqualified resolver and product-info build numbers`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = InstallingDownloader(
+                productCode = "IC",
+                buildNumber = "253.1",
+                resolvedBuildNumber = "253.1",
+                archivePath = fakeArchive(tempDir, "ideaIC-2025.3.3-aarch64.dmg"),
+            ),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
+        )
+
+        val result = manager.download(parseBackendId("idea-community-2025.3.3"))
+
+        assertEquals("253.1", result.descriptor.buildNumber)
+        assertTrue(result.backendDir.resolve(result.descriptor.bundleDirName).exists())
+    }
+
+    @Test
+    fun `download rejects bundle without remote development assets and cleans partial install`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val backendId = "idea-ultimate-2026.2.0.1"
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = InstallingDownloader(
+                product = IdeProduct.IntelliJIdea,
+                productCode = "IU",
+                buildNumber = "IU-262.8665.337",
+                archivePath = fakeArchive(tempDir, "ideaIU-2026.2.0.1-aarch64.dmg"),
+                includeRemoteDevelopmentAssets = false,
+            ),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
+        )
+
+        val error = assertFailsWith<ManagedBackendValidationException> {
+            manager.download(parseBackendId(backendId))
+        }
+
+        assertTrue(error.message!!.contains("native Remote Development launcher is missing"), error.message)
+        assertFalse(homePaths.backendDir(backendId).exists(), "invalid install must not be published")
+        assertFalse(homePaths.backendsDir.resolve("$backendId.partial").exists(), "invalid partial install must be removed")
+    }
+
+    @Test
+    fun `download replaces a corrupt reusable remote development install`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val backendId = "idea-ultimate-2026.2.0.1"
+        val downloader = InstallingDownloader(
+            product = IdeProduct.IntelliJIdea,
+            productCode = "IU",
+            buildNumber = "IU-262.8665.337",
+            archivePath = fakeArchive(tempDir, "ideaIU-2026.2.0.1-aarch64.dmg"),
+            includeRemoteDevelopmentAssets = true,
+        )
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = downloader,
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
+        )
+
+        val first = manager.download(parseBackendId(backendId))
+        val remoteLauncher = first.backendDir.resolve(first.descriptor.bundleDirName).resolve("bin/remote-dev-server")
+        assertTrue(remoteLauncher.exists())
+        Files.delete(remoteLauncher)
+
+        var repaired = manager.download(parseBackendId(backendId))
+
+        assertEquals(2, downloader.downloadCount, "the corrupt published install must be downloaded again")
+        assertTrue(
+            repaired.backendDir.resolve(repaired.descriptor.bundleDirName).resolve("bin/remote-dev-server").exists(),
+            "the replacement install must restore the required native launcher",
+        )
+
+        val repairedLauncher = repaired.backendDir.resolve(repaired.descriptor.bundleDirName).resolve("bin/remote-dev-server")
+        Files.writeString(repairedLauncher, "")
+        repaired = manager.download(parseBackendId(backendId))
+        assertEquals(3, downloader.downloadCount, "a zero-byte native launcher must not be reused")
+
+        val nonExecutableLauncher = repaired.backendDir.resolve(repaired.descriptor.bundleDirName).resolve("bin/remote-dev-server")
+        nonExecutableLauncher.toFile().setExecutable(false)
+        repaired = manager.download(parseBackendId(backendId))
+        assertEquals(4, downloader.downloadCount, "a non-executable Unix native launcher must not be reused")
+
+        val pluginJar = repaired.backendDir.resolve(repaired.descriptor.bundleDirName)
+            .resolve("plugins/remote-dev-server/lib/remote-dev-server.jar")
+        Files.writeString(pluginJar, "")
+        repaired = manager.download(parseBackendId(backendId))
+        assertEquals(5, downloader.downloadCount, "a zero-byte Remote Development plugin jar must not be reused")
+        assertTrue(Files.size(
+            repaired.backendDir.resolve(repaired.descriptor.bundleDirName)
+                .resolve("plugins/remote-dev-server/lib/remote-dev-server.jar"),
+        ) > 0L)
+        assertFalse(homePaths.backendsDir.resolve("$backendId.partial").exists())
+    }
+
+    @Test
+    fun `download replaces a reusable install whose product-info build differs from the resolved build`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val backendId = "idea-ultimate-2026.2.0.1"
+        val expectedBuild = "IU-262.8665.337"
+        val downloader = InstallingDownloader(
+            product = IdeProduct.IntelliJIdea,
+            productCode = "IU",
+            buildNumber = expectedBuild,
+            archivePath = fakeArchive(tempDir, "ideaIU-2026.2.0.1-aarch64.dmg"),
+            includeRemoteDevelopmentAssets = true,
+        )
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = downloader,
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
+        )
+
+        val first = manager.download(parseBackendId(backendId))
+        val productInfo = first.backendDir.resolve(first.descriptor.bundleDirName).resolve("product-info.json")
+        Files.writeString(productInfo, Files.readString(productInfo).replace(expectedBuild, "IU-263.1"))
+
+        val repaired = manager.download(parseBackendId(backendId))
+
+        assertEquals(2, downloader.downloadCount)
+        assertEquals(expectedBuild, repaired.descriptor.buildNumber)
+        assertTrue(Files.readString(productInfo).contains(expectedBuild))
+    }
+
+    @Test
+    fun `download rejects a freshly unpacked IDE whose build differs from the resolved artifact`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val backendId = "idea-ultimate-2026.2.0.1"
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = InstallingDownloader(
+                product = IdeProduct.IntelliJIdea,
+                productCode = "IU",
+                buildNumber = "IU-263.1",
+                resolvedBuildNumber = "IU-262.8665.337",
+                archivePath = fakeArchive(tempDir, "ideaIU-2026.2.0.1-aarch64.dmg"),
+            ),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
+        )
+
+        val error = assertFailsWith<ManagedBackendValidationException> {
+            manager.download(parseBackendId(backendId))
+        }
+
+        assertTrue(error.message!!.contains("IU-263.1"), error.message)
+        assertTrue(error.message!!.contains("IU-262.8665.337"), error.message)
+        assertFalse(homePaths.backendDir(backendId).exists())
+        assertFalse(homePaths.backendsDir.resolve("$backendId.partial").exists())
     }
 
     @Test
@@ -96,10 +262,10 @@ class BackendManagerDownloadValidationTest {
             homePaths = homePaths,
             downloader = InstallingDownloader(
                 productCode = "IC",
-                archivePath = archivePath,
-                resolvedBuild = "262",
+                buildNumber = "262.8665.258",
+                resolvedBuildNumber = "262",
                 buildIsBaseline = true,
-                installedBuild = "262.8665.258",
+                archivePath = archivePath,
             ),
             bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
         )
@@ -121,10 +287,10 @@ class BackendManagerDownloadValidationTest {
             homePaths = homePaths,
             downloader = InstallingDownloader(
                 productCode = "IC",
-                archivePath = archivePath,
-                resolvedBuild = "262",
+                buildNumber = "261.24374.151",
+                resolvedBuildNumber = "262",
                 buildIsBaseline = true,
-                installedBuild = "261.24374.151",
+                archivePath = archivePath,
             ),
             bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
         )
@@ -149,9 +315,9 @@ class BackendManagerDownloadValidationTest {
             homePaths = homePaths,
             downloader = InstallingDownloader(
                 productCode = "IC",
+                buildNumber = "253.28294.999",
+                resolvedBuildNumber = "253.28294.334",
                 archivePath = archivePath,
-                resolvedBuild = "253.28294.334",
-                installedBuild = "253.28294.999",
             ),
             bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
         )
@@ -294,7 +460,7 @@ class BackendManagerDownloadValidationTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-        ): BackendDownloadArtifact {
+        ): BackendDownloadArtifact = withContext(Dispatchers.IO) {
             targetDirs.add(targetDir)
             attempts++
             val bundleDir = targetDir.resolve("idea-IC-253.1")
@@ -307,7 +473,7 @@ class BackendManagerDownloadValidationTest {
             Files.writeString(bundleDir.resolve("product-info.json"), productInfo())
             Files.writeString(bundleDir.resolve("bin/idea.sh"), "#!/usr/bin/env sh\n")
             Files.writeString(bundleDir.resolve("bin/idea.bat"), "@echo off\r\n")
-            return BackendDownloadArtifact(
+            BackendDownloadArtifact(
                 sourceArchiveSha256 = "sha-retry",
                 archivePath = archivePath,
             )
@@ -328,19 +494,24 @@ class BackendManagerDownloadValidationTest {
     }
 
     private class InstallingDownloader(
+        private val product: IdeProduct = IdeProduct.IntelliJIdeaCommunity,
         private val productCode: String,
-        private val archivePath: Path,
+        /** What the unpacked `product-info.json` reports (also names the bundle dir). */
+        private val buildNumber: String = "$productCode-253.1",
         /** What the release feed resolved to — a full build, or a baseline when [buildIsBaseline]. */
-        private val resolvedBuild: String = "$productCode-253.1",
+        private val resolvedBuildNumber: String = buildNumber,
         private val buildIsBaseline: Boolean = false,
-        /** What the unpacked `product-info.json` reports. */
-        private val installedBuild: String = "$productCode-253.1",
+        private val archivePath: Path,
+        private val includeRemoteDevelopmentAssets: Boolean = false,
     ) : ManagedBackendDownloader {
+        var downloadCount: Int = 0
+            private set
+
         override suspend fun resolve(id: BackendId): BackendDownloadResolution =
             BackendDownloadResolution(
-                product = IdeProduct.IntelliJIdeaCommunity,
+                product = product,
                 version = id.version ?: "2025.3.3",
-                build = resolvedBuild,
+                build = resolvedBuildNumber,
                 buildIsBaseline = buildIsBaseline,
                 url = "https://download.jetbrains.com/idea/${archivePath.fileName}",
             )
@@ -348,26 +519,28 @@ class BackendManagerDownloadValidationTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-        ): BackendDownloadArtifact {
-            val bundleDir = targetDir.resolve("idea-$productCode-253.1")
+        ): BackendDownloadArtifact = withContext(Dispatchers.IO) {
+            downloadCount++
+            val bundleDir = targetDir.resolve("idea-$buildNumber")
             Files.createDirectories(bundleDir.resolve("bin"))
             Files.writeString(
                 bundleDir.resolve("product-info.json"),
-                productInfo(productCode),
+                productInfo(productCode, buildNumber),
             )
             Files.writeString(bundleDir.resolve("bin/idea.sh"), "#!/usr/bin/env sh\n")
             Files.writeString(bundleDir.resolve("bin/idea.bat"), "@echo off\r\n")
-            return BackendDownloadArtifact(
+            if (includeRemoteDevelopmentAssets) writeRemoteDevelopmentAssets(bundleDir)
+            BackendDownloadArtifact(
                 sourceArchiveSha256 = "sha-$productCode",
                 archivePath = archivePath,
             )
         }
 
-        private fun productInfo(productCode: String): String =
+        private fun productInfo(productCode: String, buildNumber: String): String =
             """
             {
               "productCode": "$productCode",
-              "buildNumber": "$installedBuild",
+              "buildNumber": "$buildNumber",
               "launch": [
                 { "os": "Linux", "launcherPath": "bin/idea.sh" },
                 { "os": "macOS", "launcherPath": "bin/idea.sh" },
@@ -375,5 +548,17 @@ class BackendManagerDownloadValidationTest {
               ]
             }
             """.trimIndent()
+    }
+
+    companion object {
+        private fun writeRemoteDevelopmentAssets(bundleDir: Path) {
+            Files.writeString(bundleDir.resolve("bin/remote-dev-server"), "#!/usr/bin/env sh\n")
+                .toFile()
+                .setExecutable(true)
+            Files.writeString(bundleDir.resolve("bin/remote-dev-server.exe"), "remote development launcher")
+            val pluginJar = bundleDir.resolve("plugins/remote-dev-server/lib/remote-dev-server.jar")
+            Files.createDirectories(pluginJar.parent)
+            Files.writeString(pluginJar, "remote development plugin")
+        }
     }
 }

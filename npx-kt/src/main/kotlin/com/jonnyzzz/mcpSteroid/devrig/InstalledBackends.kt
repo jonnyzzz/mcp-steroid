@@ -103,10 +103,7 @@ fun DevrigServices.installedBackends(): List<InstalledBackend> {
                     val descriptor = readDescriptorOrNull(descriptorPath(dir)) ?: return@mapNotNull null
                     val bundleDir = homePaths.backendDir(descriptor.id).resolve(descriptor.bundleDirName)
                     if (!Files.isDirectory(bundleDir)) return@mapNotNull null
-                    val launcher = bundleDir.resolve(descriptor.launcherPath)
-                    // Guard against incomplete installs: a missing or non-file launcher means
-                    // the backend cannot be started and must not appear as a startable candidate.
-                    if (!Files.isRegularFile(launcher)) return@mapNotNull null
+                    val launchSpec = ManagedBackendLauncherResolver().resolve(descriptor, bundleDir)
                     val ide = IdeInfo(
                         name = descriptor.productKey,
                         version = descriptor.version,
@@ -116,7 +113,7 @@ fun DevrigServices.installedBackends(): List<InstalledBackend> {
                         id = descriptor.id,
                         ide = ide,
                         ideHome = normalizeHome(resolveIdeHome(bundleDir).toString()),
-                        launcher = launcher,
+                        launcher = launchSpec.executable,
                     )
                 } catch (e: Exception) {
                     log.warn("failed to read installed backend from $dir", e)

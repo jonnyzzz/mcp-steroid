@@ -5,7 +5,6 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdePidDiscoveryService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.PortDiscovery
-import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import java.io.OutputStream
 import java.io.PrintStream
 import kotlin.system.measureTimeMillis
@@ -106,9 +105,11 @@ fun runBackendDownloadCommand(
     val result = runBlocking(Dispatchers.IO) {
         backendService.download(backendId)
     }
+    val bundleDir = result.backendDir.resolve(result.descriptor.bundleDirName)
+    val launcher = ManagedBackendLauncherResolver().resolve(result.descriptor, bundleDir).executable
     out.println("id: ${result.id}")
     out.println("install: ${result.backendDir}")
-    out.println("launcher: ${result.backendDir.resolve(result.descriptor.bundleDirName).resolve(result.descriptor.launcherPath)}")
+    out.println("launcher: $launcher")
     out.println("vmoptions: ${result.vmOptionsPath}")
     return 0
 }
