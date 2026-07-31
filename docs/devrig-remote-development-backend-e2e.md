@@ -201,7 +201,8 @@ than merely mentioning it.
   before terminating any stuck run.
 - [x] Inspect relevant source diagnostics and runtime logs; fix every warning/error in scope.
 - [x] Run final three-reviewer quorum, iterate on blockers, and repeat affected tests.
-- [ ] Record final evidence, update TODOs, commit atomically, push, and open a PR.
+- [x] Record final evidence, update TODOs, commit atomically, push, and open
+  [PR #411](https://github.com/jonnyzzz/mcp-steroid/pull/411).
 
 ## Risks and explicit non-goals
 
