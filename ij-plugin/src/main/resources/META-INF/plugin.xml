@@ -135,6 +135,12 @@
         <registryKey key="mcp.steroid.updates.enabled" defaultValue="true"
             description="Enable automatic update checks"/>
 
+        <!-- Devrig onboarding: status-bar widget + the once-per-run startup offer. Off by default:
+             status-bar space and startup balloons are not ours to take uninvited, and the settings
+             page carries the same offer with room to explain it. -->
+        <registryKey key="mcp.steroid.devrig.widget.enabled" defaultValue="false"
+            description="Show the devrig status-bar widget and the startup offer to install devrig"/>
+
         <!-- Storage folder configuration -->
         <registryKey key="mcp.steroid.storage.path" defaultValue=""
             description="Custom path for MCP execution storage. Empty (default) uses ~/.mcp-steroid/runs/"/>
