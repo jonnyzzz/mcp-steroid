@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.onboarding
 
+import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -55,14 +56,20 @@ fun installedDevrigVersion(launcherText: String?): String? {
 }
 
 /**
- * True iff [installedVersion] is not on the [latestBaseVersion] line (`version-base` from
- * `version.json`). Uses the same `startsWith` semantics as the plugin's own update check
- * ([com.jonnyzzz.mcpSteroid.updates.UpdateChecker]), so a snapshot of the current release
- * (`0.101-SNAPSHOT-abc` vs `0.101`) counts as current, not stale.
+ * True iff the installed devrig is behind [latestBaseVersion] (`version-base` from `version.json`).
+ *
+ * Defers to [DevrigVersion.isUpdateAvailable] — the one gate devrig's own updater and the plugin's
+ * update check already share — instead of comparing strings here. Two consequences worth knowing: the
+ * comparison is semantic, not textual, and a SNAPSHOT install (someone's local build) is never reported
+ * as stale, because it is by definition ahead of anything published.
  *
  * Unknown inputs are never "outdated" — we only nag when we actually know the user is behind.
  */
 fun isDevrigOutdated(installedVersion: String?, latestBaseVersion: String?): Boolean {
-    if (installedVersion.isNullOrBlank() || latestBaseVersion.isNullOrBlank()) return false
-    return !installedVersion.startsWith(latestBaseVersion)
+    val installed = installedVersion?.takeIf { it.isNotBlank() } ?: return false
+    val latest = latestBaseVersion?.takeIf { it.isNotBlank() } ?: return false
+    return DevrigVersion.isUpdateAvailable(
+        current = DevrigVersion.parse(installed),
+        promoted = DevrigVersion.parse(latest),
+    )
 }

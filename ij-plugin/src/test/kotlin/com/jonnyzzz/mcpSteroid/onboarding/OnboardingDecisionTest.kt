@@ -75,7 +75,11 @@ class OnboardingDecisionTest {
         assertFalse(isDevrigOutdated("0.101", "0.101"))
         // A snapshot of the current release counts as current (same semantics as the plugin's own check).
         assertFalse(isDevrigOutdated("0.101-SNAPSHOT-abc1234", "0.101"))
-        assertTrue(isDevrigOutdated("0.100.19999-SNAPSHOT-c6568a61", "0.101"))
+        // A local SNAPSHOT build is never stale: DevrigVersion ranks it ahead of anything published,
+        // which is the same rule devrig's own updater and the plugin update check use.
+        assertFalse(isDevrigOutdated("0.100.19999-SNAPSHOT-c6568a61", "0.101"))
+        // The comparison is semantic, not textual: 0.99 is behind 0.101, though it sorts after as a string.
+        assertTrue(isDevrigOutdated("0.99", "0.101"))
         // Unknown inputs must never produce a nag.
         assertFalse(isDevrigOutdated(null, "0.101"))
         assertFalse(isDevrigOutdated("0.100", null))

@@ -8,6 +8,7 @@ import com.intellij.execution.process.ProcessListener
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
@@ -17,6 +18,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.util.concurrency.AppExecutorUtil
+import com.intellij.util.io.HttpRequests
+import com.jonnyzzz.mcpSteroid.getBuildVersion
+import com.jonnyzzz.mcpSteroid.devrig.UpdateCoordination
+import com.jonnyzzz.mcpSteroid.devrig.UpdateStateInfo
+import com.jonnyzzz.mcpSteroid.devrig.devrigInstallerUrl
+import com.jonnyzzz.mcpSteroid.devrig.installerCommands
 import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
@@ -27,12 +34,18 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
 
-const val INSTALL_SH_URL = "https://devrig.dev/install.sh"
-const val INSTALL_PS1_URL = "https://devrig.dev/install.ps1"
+/** devrig's home, the one both halves of the product agree on. */
+fun devrigHome(userHome: Path): Path = userHome.resolve(".mcp-steroid")
 
 /** The stable devrig launcher path for this OS. */
 fun devrigBinPath(userHome: Path, windows: Boolean): Path =
-    userHome.resolve(".mcp-steroid").resolve("bin").resolve(if (windows) "devrig.cmd" else "devrig")
+    devrigHome(userHome).resolve("bin").resolve(if (windows) "devrig.cmd" else "devrig")
+
+/**
+ * devrig's update-coordination directory (`HomePaths.updateDir`). The IDE participates in the same
+ * scheme rather than inventing its own: see [DevrigSetupRunner].
+ */
+fun devrigUpdateDir(userHome: Path): Path = devrigHome(userHome).resolve("update")
 
 /**
  * Marker the claude-plugin's own install wrapper writes on failure (`bin/install-devrig`), read by its
@@ -46,10 +59,30 @@ fun devrigInstallFailedMarker(userHome: Path): Path =
 private fun devrigBinariesDir(userHome: Path): Path =
     userHome.resolve(".mcp-steroid").resolve("binaries")
 
-/** Argv that runs the canonical devrig installer for this OS (the same one-liner the docs publish). */
-fun installerArgv(windows: Boolean): List<String> =
-    if (windows) listOf("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm $INSTALL_PS1_URL | iex")
-    else listOf("/bin/sh", "-c", "curl -fsSL $INSTALL_SH_URL | sh")
+/**
+ * Download the published installer for this OS. Returns the script file, or null on any failure —
+ * the caller reports it; there is no retry here (the notification offers one).
+ *
+ * Fetching the script and running the file is devrig's own shape (`AutoUpdater`), not `curl … | sh`:
+ * it needs no `curl`, and it lets the run fall back across PowerShell hosts on Windows
+ * ([installerCommands]) instead of depending on one being on PATH.
+ */
+fun downloadInstaller(target: Path, windows: Boolean): Path? {
+    val url = devrigInstallerUrl(windows)
+    return try {
+        // Cache-buster, as in devrig's updater: a retry must see a server-side fix, not a cached copy.
+        val body = HttpRequests.request("$url?_=${System.currentTimeMillis()}")
+            .connectTimeout(10_000)
+            .readTimeout(60_000)
+            .readString()
+        Files.createDirectories(target.parent)
+        Files.writeString(target, body)
+        target
+    } catch (e: Exception) {
+        Logger.getInstance("com.jonnyzzz.mcpSteroid.onboarding.DevrigSetup").warn("could not download $url", e)
+        null
+    }
+}
 
 /**
  * Installs devrig from the IDE, in a cancellable background progress task.
@@ -105,14 +138,76 @@ class DevrigSetupRunner {
         })
     }
 
-    /** Runs the canonical installer with live progress. Returns true when devrig is installed afterwards. */
+    /**
+     * Runs the canonical installer with live progress. Returns true when devrig is installed afterwards.
+     *
+     * Takes part in devrig's own update coordination (`~/.mcp-steroid/update`, [UpdateCoordination])
+     * rather than running blind. devrig self-updates by running the very same installer, so without
+     * this an IDE and a devrig session could each start a ~611 MB download of the same thing: the
+     * installer tolerates that (staging files are per-pid and the promote is atomic) but does not
+     * dedupe it, so both would download in full. Concretely: yield while another process holds a live
+     * marker, announce our own while we run, and leave an `updated-<version>` record so a running
+     * devrig tells its user to restart the session onto the new build.
+     */
     private fun installDevrig(
         project: Project?,
         indicator: ProgressIndicator,
         userHome: Path,
         windows: Boolean,
     ): Boolean {
+        val coordination = UpdateCoordination(devrigUpdateDir(userHome))
+        if (coordination.anyLiveInProgressMarker()) {
+            // Not a failure, and not something the user did wrong — devrig got there first.
+            notify(
+                project, NotificationType.INFORMATION, "devrig is already being installed",
+                "Another process is installing devrig right now. It will be ready shortly.",
+            )
+            log.info("devrig install skipped: another process holds a live update marker")
+            return false
+        }
+
         indicator.isIndeterminate = true
+        indicator.text = "Downloading the devrig installer…"
+        val script = downloadInstaller(coordination.scriptFile(windows), windows)
+        if (script == null) {
+            writeFailureMarker(userHome, "could not download ${devrigInstallerUrl(windows)}")
+            notifyFailure(project, "Could not download the devrig installer from ${devrigInstallerUrl(windows)}.")
+            return false
+        }
+
+        // The release ships the plugin and devrig from one VERSION, so our own build version names the
+        // devrig we are about to install — no extra request just to fill in the marker.
+        val target = getBuildVersion().value
+        val info = UpdateStateInfo(
+            pid = coordination.ownPid,
+            currentVersion = installedDevrigVersion(readLauncherText(userHome, windows)) ?: "none",
+            targetVersion = target,
+            startedAt = System.currentTimeMillis(),
+            scriptUrl = devrigInstallerUrl(windows),
+        )
+        coordination.writeInProgressMarker(target, info)
+        try {
+            return runInstaller(project, indicator, userHome, windows, script, coordination, target, info)
+        } finally {
+            coordination.deleteInProgressMarker(target)
+            try {
+                Files.deleteIfExists(script)
+            } catch (e: Exception) {
+                log.warn("could not delete the downloaded install script $script", e)
+            }
+        }
+    }
+
+    private fun runInstaller(
+        project: Project?,
+        indicator: ProgressIndicator,
+        userHome: Path,
+        windows: Boolean,
+        script: Path,
+        coordination: UpdateCoordination,
+        target: String,
+        info: UpdateStateInfo,
+    ): Boolean {
         indicator.text = "Installing devrig…"
         val lastError = StringBuilder()
         val total = AtomicLong(0)
@@ -120,7 +215,7 @@ class DevrigSetupRunner {
 
         val poller = startDownloadPoller(userHome, indicator, total)
         val result = try {
-            runCommandStreaming(installerArgv(windows), indicator, timeoutMs = 30 * 60 * 1000) { line ->
+            runCommandStreaming(installerCommands(script, windows), indicator, timeoutMs = 30 * 60 * 1000) { line ->
                 val step = parseInstallerLine(line) ?: return@runCommandStreaming
                 if (step.isError) {
                     lastError.appendLine(step.text)
@@ -151,6 +246,8 @@ class DevrigSetupRunner {
         )
         if (ok) {
             clearFailureMarker(userHome)
+            // What a running devrig reads to tell its user "restart the session onto the new build".
+            coordination.writeUpdatedMarker(target, info.copy(completedAt = System.currentTimeMillis()))
             return true
         }
         // Cancelling is a choice, not a failure: the user already knows what happened and why, so saying
@@ -230,12 +327,38 @@ class DevrigSetupRunner {
      * blocking `waitFor(timeout)` would ignore the indicator for up to 30 minutes.
      */
     private fun runCommandStreaming(
-        argv: List<String>,
+        commands: List<List<String>>,
         indicator: ProgressIndicator,
         timeoutMs: Int,
         onLine: (String) -> Unit,
     ): CommandResult {
-        val handler = OSProcessHandler(GeneralCommandLine(argv))
+        // Most reliable host first; a host that cannot even start is not a failed install.
+        var handler: OSProcessHandler? = null
+        var spawnError: Exception? = null
+        for (argv in commands) {
+            try {
+                handler = OSProcessHandler(GeneralCommandLine(argv))
+                break
+            } catch (e: Exception) {
+                spawnError = e
+                log.warn("installer host '${argv.firstOrNull()}' failed to start: ${e.message}")
+            }
+        }
+        if (handler == null) {
+            throw IllegalStateException(
+                "no installer host could be started (tried ${commands.joinToString { it.firstOrNull().orEmpty() }})",
+                spawnError,
+            )
+        }
+        return streamProcess(handler, indicator, timeoutMs, onLine)
+    }
+
+    private fun streamProcess(
+        handler: OSProcessHandler,
+        indicator: ProgressIndicator,
+        timeoutMs: Int,
+        onLine: (String) -> Unit,
+    ): CommandResult {
         val captured = StringBuilder()
         val pending = StringBuilder()
 
@@ -284,6 +407,15 @@ class DevrigSetupRunner {
             )
         }
         return CommandResult(exitCode = handler.exitCode ?: -1, stdout = "", stderr = output, isTimeout = false)
+    }
+
+    /** Text of the stable launcher, for reading the installed version. Null when it is not there. */
+    private fun readLauncherText(userHome: Path, windows: Boolean): String? = try {
+        val launcher = devrigBinPath(userHome, windows)
+        if (Files.isRegularFile(launcher)) Files.readString(launcher) else null
+    } catch (e: Exception) {
+        log.debug("cannot read the devrig launcher: ${e.message}")
+        null
     }
 
     private fun writeFailureMarker(userHome: Path, reason: String) {

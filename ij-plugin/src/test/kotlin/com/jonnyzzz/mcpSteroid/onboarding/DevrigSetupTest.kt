@@ -7,16 +7,9 @@ import java.nio.file.Path
 
 class DevrigSetupTest {
     @Test
-    fun `installer argv is per-OS and pipes the canonical installer`() {
-        assertEquals(
-            listOf("/bin/sh", "-c", "curl -fsSL https://devrig.dev/install.sh | sh"),
-            installerArgv(windows = false),
-        )
-        assertEquals(
-            listOf("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                "irm https://devrig.dev/install.ps1 | iex"),
-            installerArgv(windows = true),
-        )
+    fun `the update directory is devrig's own, so both halves see the same markers`() {
+        val home = Path.of("/home/u")
+        assertEquals(Path.of("/home/u/.mcp-steroid/update"), devrigUpdateDir(home))
     }
 
     @Test

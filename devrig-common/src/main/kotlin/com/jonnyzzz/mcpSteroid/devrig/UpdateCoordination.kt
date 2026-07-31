@@ -18,6 +18,11 @@ import kotlin.time.Duration.Companion.hours
  * No lock: each process announces with its own `update-<pid>-version-<v>` file, cleans up files of
  * dead processes, and yields to live ones. Coordination reads only filenames and mtime; file
  * contents are write-only debugging JSON.
+ *
+ * Lives in `:devrig-common` rather than with devrig's updater because the IDE plugin installs devrig too
+ * (`ij-plugin` `onboarding/DevrigSetup.kt`). Both halves must see the same markers, or a devrig
+ * session and an IDE could each start a ~611 MB install of the same thing at the same time. Nothing
+ * here is IDE- or CLI-specific: file names, pids and mtimes.
  */
 class UpdateCoordination(
     val updateDir: Path,

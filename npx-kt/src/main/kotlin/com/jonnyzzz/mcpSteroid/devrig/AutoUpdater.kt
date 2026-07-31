@@ -86,7 +86,7 @@ class AutoUpdater(
         // scheduled tick (3–8 h), forever. Diagnosis lives in stderr + the per-attempt log files.
 
         // step 7 — announce ourselves (the "I am updating" record others yield to; not a lock)
-        val scriptUrl = if (isWin) "https://devrig.dev/install.ps1" else "https://devrig.dev/install.sh"
+        val scriptUrl = devrigInstallerUrl(isWin)
         val logFile = logFileFor(target)
         val info = UpdateStateInfo(
             pid = coordination.ownPid,
@@ -215,17 +215,6 @@ suspend fun runAutoUpdateFlow(
 /** Opens every installer attempt in the per-pid log file; the timestamp follows. */
 const val INSTALLER_ATTEMPT_SEPARATOR_PREFIX = "===== [mcp-steroid] installer attempt at "
 
-/** Most reliable first: absolute System32 PowerShell (agents often carry stripped PATHs), then PATH lookups. */
-fun windowsInstallerHostCandidates(systemRoot: String? = System.getenv("SystemRoot")): List<String> {
-    val root = systemRoot?.takeIf { it.isNotBlank() } ?: "C:\\Windows"
-    val system32 = Path.of(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-    return buildList {
-        if (system32.exists()) add(system32.toString())
-        add("powershell")
-        add("pwsh")
-    }
-}
-
 /**
  * Run the install script detached (own stdio, survives devrig's death; stays in devrig's process
  * group — shielding it is platform-branch territory, see the design doc) and supervise it: exit
@@ -238,13 +227,7 @@ suspend fun superviseInstallerProcess(
     isWin: Boolean,
     timeout: Duration = 1.hours,
 ): Int? {
-    val hostCandidates = if (isWin) {
-        windowsInstallerHostCandidates().map {
-            listOf(it, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script.toString())
-        }
-    } else {
-        listOf(listOf("/bin/sh", script.toString()))
-    }
+    val hostCandidates = installerCommands(script, isWin)
 
     Files.createDirectories(logFile.parent)
     Files.writeString(
