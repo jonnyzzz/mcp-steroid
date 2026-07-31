@@ -9,6 +9,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpAddStdioInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpListInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpRemoveInvocation
+import java.io.IOException
 import java.io.PrintStream
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
@@ -165,7 +166,7 @@ fun runInstallCommand(
     out: PrintStream,
     err: PrintStream,
     runner: AiAgentCliRunner,
-): Int {
+): Int = withFriendlyMissingCliError(command.agent, err) {
     val agent = command.agent
     val renderedCommand = "${mcpCommand.command} ${mcpCommand.args.joinToString(" ")}"
 
@@ -243,6 +244,25 @@ fun runInstallCommand(
     return 0
 }
 
+/**
+ * jonnyzzz/mcp-steroid#342: when the agent CLI is not installed (or not spawnable — e.g. a Windows
+ * .cmd npm shim), ProcessBuilder throws IOException ("Cannot run program \"claude\": error=2").
+ * That must read as guidance, never a raw stacktrace. Inline so the wrapped bodies keep their
+ * non-local returns.
+ */
+private inline fun withFriendlyMissingCliError(agent: AiAgentCli, err: PrintStream, body: () -> Int): Int =
+    try {
+        body()
+    } catch (e: IOException) {
+        err.println()
+        err.println("ERROR: could not run the '${agent.binary}' CLI: ${e.message}")
+        err.println(
+            "Is the ${agent.displayName} CLI installed and on PATH? Install it first, then re-run " +
+                "'devrig install ${agent.binary}'.",
+        )
+        64
+    }
+
 private fun emitAgentOutput(result: AiAgentCliResult, err: PrintStream) {
     if (result.output.isNotBlank()) {
         err.print(result.output)
@@ -314,7 +334,7 @@ fun runInstallCheckCommand(
     ideReachability: () -> IdeReachabilityReport,
     /** Non-null = the devrig launcher does not exist yet at this path (reported as a diagnostic). */
     missingLauncherPath: Path? = null,
-): Int {
+): Int = withFriendlyMissingCliError(command.agent, err) {
     val agent = command.agent
     val renderedCommand = "${mcpCommand.command} ${mcpCommand.args.joinToString(" ")}"
 

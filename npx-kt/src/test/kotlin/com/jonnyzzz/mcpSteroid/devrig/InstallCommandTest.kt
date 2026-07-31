@@ -380,6 +380,48 @@ class InstallCommandTest {
         val stderr: String,
     )
 
+    // jonnyzzz/mcp-steroid#342: a missing agent CLI (ProcessBuilder throws IOException,
+    // "Cannot run program \"claude\": error=2") must produce guidance, never a raw stacktrace.
+    private val missingCliRunner = AiAgentCliRunner {
+        throw java.io.IOException("Cannot run program \"claude\": error=2, No such file or directory")
+    }
+
+    @Test
+    fun `install with a missing agent CLI prints a friendly error - not a stacktrace`() {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val exitCode = runInstallCommand(
+            command = DevrigCommand.DevrigCommandInstall(AiAgentCli.CLAUDE),
+            mcpCommand = mcpCommand,
+            out = PrintStream(stdout, true, Charsets.UTF_8),
+            err = PrintStream(stderr, true, Charsets.UTF_8),
+            runner = missingCliRunner,
+        )
+        assertEquals(64, exitCode)
+        val err = stderr.toString(Charsets.UTF_8)
+        assertContains(err, "could not run the 'claude' CLI")
+        assertContains(err, "Is the Claude CLI installed and on PATH?")
+        assertFalse(err.contains("\tat "), "stacktrace leaked to stderr:\n$err")
+    }
+
+    @Test
+    fun `check with a missing agent CLI prints a friendly error - not a stacktrace`() {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val exitCode = runInstallCheckCommand(
+            command = DevrigCommand.DevrigCommandInstall(AiAgentCli.CLAUDE, check = true),
+            mcpCommand = mcpCommand,
+            out = PrintStream(stdout, true, Charsets.UTF_8),
+            err = PrintStream(stderr, true, Charsets.UTF_8),
+            runner = missingCliRunner,
+            ideReachability = { IdeReachabilityReport(reachable = 0, discovered = 0) },
+        )
+        assertEquals(64, exitCode)
+        val err = stderr.toString(Charsets.UTF_8)
+        assertContains(err, "could not run the 'claude' CLI")
+        assertFalse(err.contains("\tat "), "stacktrace leaked to stderr:\n$err")
+    }
+
     private fun runInstall(agent: AiAgentCli, runner: RecordingRunner): InstallRunResult {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
