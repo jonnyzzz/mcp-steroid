@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.aiAgents.AgentCliNotLaunchableException
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliResult
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCliRunner
@@ -9,7 +10,6 @@ import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpAddStdioInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpListInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpRemoveInvocation
-import java.io.IOException
 import java.io.PrintStream
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
@@ -246,16 +246,17 @@ fun runInstallCommand(
 
 /**
  * jonnyzzz/mcp-steroid#342: when the agent CLI is not installed (or not spawnable — e.g. a Windows
- * .cmd npm shim), ProcessBuilder throws IOException ("Cannot run program \"claude\": error=2").
- * That must read as guidance, never a raw stacktrace. Inline so the wrapped bodies keep their
- * non-local returns.
+ * .cmd npm shim), the runner throws [AgentCliNotLaunchableException]. That must read as guidance,
+ * never a raw stacktrace. Only the typed launch failure is translated — other IOExceptions (temp
+ * files, output reads) are infrastructure errors and keep propagating. Inline so the wrapped
+ * bodies keep their non-local returns.
  */
 private inline fun withFriendlyMissingCliError(agent: AiAgentCli, err: PrintStream, body: () -> Int): Int =
     try {
         body()
-    } catch (e: IOException) {
+    } catch (e: AgentCliNotLaunchableException) {
         err.println()
-        err.println("ERROR: could not run the '${agent.binary}' CLI: ${e.message}")
+        err.println("ERROR: could not run the '${agent.binary}' CLI: ${e.cause?.message ?: e.message}")
         err.println(
             "Is the ${agent.displayName} CLI installed and on PATH? Install it first, then re-run " +
                 "'devrig install ${agent.binary}'.",

@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.cancelChildren
@@ -16,7 +16,7 @@ class ParentDeathWatchdogTest {
     fun `fires once after the configured number of consecutive dead readings`() = runTest {
         val fired = AtomicInteger()
         ParentDeathWatchdog(
-            parentAlive = { false },
+            ancestorsAlive = listOf({ false }),
             onParentDeath = { fired.incrementAndGet() },
             pollInterval = 5.seconds,
             confirmations = 2,
@@ -32,10 +32,10 @@ class ParentDeathWatchdogTest {
     }
 
     @Test
-    fun `never fires while the parent stays alive`() = runTest {
+    fun `never fires while every watched ancestor stays alive`() = runTest {
         val fired = AtomicInteger()
         ParentDeathWatchdog(
-            parentAlive = { true },
+            ancestorsAlive = listOf({ true }, { true }),
             onParentDeath = { fired.incrementAndGet() },
             pollInterval = 5.seconds,
         ).launchIn(this)
@@ -46,11 +46,32 @@ class ParentDeathWatchdogTest {
     }
 
     @Test
+    fun `a dead grandparent fires even while the wrapper parent stays alive`() = runTest {
+        // The Windows launcher shape (#132): agent -> cmd.exe wrapper -> this JVM. taskkill /F on
+        // the agent leaves cmd.exe alive waiting on us — the grandparent probe must still fire.
+        val fired = AtomicInteger()
+        var agentAlive = true
+        ParentDeathWatchdog(
+            ancestorsAlive = listOf({ true }, { agentAlive }),
+            onParentDeath = { fired.incrementAndGet() },
+            pollInterval = 5.seconds,
+            confirmations = 2,
+        ).launchIn(this)
+
+        advanceTimeBy(100.seconds)
+        assertEquals(0, fired.get())
+        agentAlive = false
+        advanceTimeBy(11.seconds)
+        assertEquals(1, fired.get(), "a dead agent behind a live cmd.exe wrapper must fire")
+        coroutineContext.cancelChildren()
+    }
+
+    @Test
     fun `a transient dead reading resets on the next alive reading`() = runTest {
         val fired = AtomicInteger()
         var alive = false
         ParentDeathWatchdog(
-            parentAlive = { alive },
+            ancestorsAlive = listOf({ alive }),
             onParentDeath = { fired.incrementAndGet() },
             pollInterval = 5.seconds,
             confirmations = 2,
@@ -68,25 +89,35 @@ class ParentDeathWatchdogTest {
     }
 
     @Test
-    fun `disabled when the parent process is unknown`() = runTest {
+    fun `disabled when the ancestry is unknown`() = runTest {
         val fired = AtomicInteger()
         ParentDeathWatchdog(
-            parentAlive = null,
+            ancestorsAlive = emptyList(),
             onParentDeath = { fired.incrementAndGet() },
             pollInterval = 5.seconds,
         ).launchIn(this)
 
         advanceTimeBy(10_000.seconds)
-        assertEquals(0, fired.get(), "no parent handle → watchdog must stay silent, never false-positive")
+        assertEquals(0, fired.get(), "no ancestry → watchdog must stay silent, never false-positive")
         coroutineContext.cancelChildren()
     }
 
     @Test
-    fun `currentParentLiveness sees this test JVM's real parent as alive`() {
+    fun `watchedAncestorLiveness sees this test JVM's real ancestors as alive`() {
         // The gradle test worker always has a live parent (the daemon); exercises the real
         // ProcessHandle path that production wires in.
-        val probe = currentParentLiveness()
-        assertNotNull(probe, "a gradle worker JVM must have a resolvable parent")
-        assertTrue(probe(), "the gradle daemon parent must be alive while the test runs")
+        val probes = watchedAncestorLiveness()
+        assertTrue(probes.isNotEmpty(), "a gradle worker JVM must have a resolvable parent")
+        probes.forEach { probe -> assertTrue(probe(), "every watched ancestor must be alive while the test runs") }
+    }
+
+    @Test
+    fun `isCmdExe matches the Windows wrapper shape only`() {
+        assertTrue(isCmdExe("""C:\Windows\System32\cmd.exe"""))
+        assertTrue(isCmdExe("CMD.EXE"))
+        assertFalse(isCmdExe("/bin/zsh"))
+        assertFalse(isCmdExe("""C:\Program Files\PowerShell\7\pwsh.exe"""))
+        assertFalse(isCmdExe("""C:\tools\notcmd.exe"""))
+        assertFalse(isCmdExe(""))
     }
 }

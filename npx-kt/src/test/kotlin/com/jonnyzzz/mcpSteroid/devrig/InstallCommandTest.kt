@@ -380,10 +380,35 @@ class InstallCommandTest {
         val stderr: String,
     )
 
-    // jonnyzzz/mcp-steroid#342: a missing agent CLI (ProcessBuilder throws IOException,
-    // "Cannot run program \"claude\": error=2") must produce guidance, never a raw stacktrace.
+    // jonnyzzz/mcp-steroid#342: a missing agent CLI (ProcessAiAgentCliRunner wraps the spawn
+    // IOException into AgentCliNotLaunchableException) must produce guidance, never a raw
+    // stacktrace — while OTHER IOExceptions (temp files, output reads) keep propagating.
     private val missingCliRunner = AiAgentCliRunner {
-        throw java.io.IOException("Cannot run program \"claude\": error=2, No such file or directory")
+        throw com.jonnyzzz.mcpSteroid.aiAgents.AgentCliNotLaunchableException(
+            "claude",
+            java.io.IOException("Cannot run program \"claude\": error=2, No such file or directory"),
+        )
+    }
+
+    @Test
+    fun `an infrastructure IOException is NOT masked as a missing CLI`() {
+        val runner = AiAgentCliRunner { throw java.io.IOException("temp file creation failed") }
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val thrown = try {
+            runInstallCommand(
+                command = DevrigCommand.DevrigCommandInstall(AiAgentCli.CLAUDE),
+                mcpCommand = mcpCommand,
+                out = PrintStream(stdout, true, Charsets.UTF_8),
+                err = PrintStream(stderr, true, Charsets.UTF_8),
+                runner = runner,
+            )
+            null
+        } catch (e: java.io.IOException) {
+            e
+        }
+        assertTrue(thrown != null, "a plain IOException must propagate, not become 'install the CLI'")
+        assertFalse(stderr.toString(Charsets.UTF_8).contains("installed and on PATH"))
     }
 
     @Test

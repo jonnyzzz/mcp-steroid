@@ -135,7 +135,7 @@ suspend fun DevrigServices.mainImpl2(
         // agent leaves this JVM alive forever. exitProcess (not scope cancellation) because the read
         // loop is parked in a blocking stream read that cancellation cannot interrupt.
         ParentDeathWatchdog(
-            parentAlive = currentParentLiveness(),
+            ancestorsAlive = watchedAncestorLiveness(),
             onParentDeath = {
                 val message = "parent process died without closing stdin — exiting orphaned 'devrig mcp'"
                 System.err.println("[mcp-steroid] $message")
