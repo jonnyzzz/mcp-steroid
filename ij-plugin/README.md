@@ -82,6 +82,21 @@ automatically, the reporting has to change with it.
 Plugin updates are a separate group (`jonnyzzz.mcp.steroid.updates`, "MCP Steroid plugin update
 available").
 
+### How the install runs
+
+It is the published installer, fetched and run the way devrig's own updater runs it: download
+`install.sh` / `install.ps1` to `~/.mcp-steroid/update/`, then execute the file. Not `curl … | sh` — that
+needs `curl` present and gives no way to fall back when the shell is not on PATH. Running a file lets
+Windows try absolute System32 PowerShell first, then `powershell`, then `pwsh` (`installerCommands`,
+shared from `:mcp-core`).
+
+**It also takes part in devrig's update coordination** (`~/.mcp-steroid/update`, `UpdateCoordination`).
+devrig self-updates by running this same installer, so without a shared view an IDE and a devrig session
+could each start their own ~611 MB download of the same build. So: yield while another process holds a
+live marker (the user is told devrig is already being installed, which is not an error), announce our own
+while running, and on success leave an `updated-<version>` record — which is how a running devrig learns
+to tell its user to restart the session onto the new build.
+
 ### Install progress
 
 The install is a ~611 MB download, so the installer's own output drives the IDE's progress bar instead of a
@@ -116,3 +131,4 @@ failure too. A successful install clears it.
 | Status-bar widget + popup, and the registry key gating both surfaces | `onboarding/DevrigStatusBarWidget.kt`, `onboarding/DevrigWidgetPopupContent.kt` |
 | Notifications | `onboarding/DevrigOnboardingService.kt` |
 | Installer run, progress, markers | `onboarding/DevrigSetup.kt`, `onboarding/InstallerProgress.kt` |
+| Shared with devrig's updater: coordination markers, installer hosts, version comparison | `:mcp-core` `devrig/UpdateCoordination.kt`, `devrig/InstallerHost.kt`, `util/text/DevrigVersion.kt` |
