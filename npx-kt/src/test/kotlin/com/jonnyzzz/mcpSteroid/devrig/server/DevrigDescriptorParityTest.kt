@@ -97,12 +97,9 @@ class DevrigDescriptorParityTest {
                         mcpStdout = PrintStream(ByteArrayOutputStream(), true, Charsets.UTF_8),
                     )
                 )
-                tools.registerAll(server)
-                // Mirror the devrig StubStdioMcpServer callsite: the multi-backend surface registers
-                // its own open_project spec advertising the required backend_name routing param.
-                server.toolRegistry.registerTool(
-                    OpenProjectToolSpec(includeBackendName = true) { tools.handler<OpenProjectToolHandler>() }
-                )
+                // Mirror the devrig StubStdioMcpServer callsite: the canonical devrigToolSpecs() list,
+                // whose open_project advertises the required backend_name routing param.
+                tools.devrigToolSpecs().forEach { server.toolRegistry.registerTool(it) }
             }
         } finally {
             lifetime.closeAllStacks()

@@ -9,8 +9,6 @@ import com.jonnyzzz.mcpSteroid.mcp.ServerInfo
 import com.jonnyzzz.mcpSteroid.mcp.ToolsCapability
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.devrig.DevrigVersionMetadata
-import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
-import com.jonnyzzz.mcpSteroid.server.OpenProjectToolSpec
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -18,10 +16,11 @@ import kotlinx.serialization.json.JsonObject
  *
  * Wiring:
  *  - [McpServerCore] declares server identity and advertised capabilities.
- *  - [StubMcpSteroidTools.registerAll] registers every steroid_* tool spec onto
- *    the core. The handlers themselves are not yet implemented in devrig — see
- *    [StubMcpSteroidTools] — so calling a tool returns an error, but
- *    `tools/list` / `prompts/list` / `resources/list` describe the full surface.
+ *  - [StubMcpSteroidTools.devrigToolSpecs] is the canonical devrig tool list; every
+ *    spec from it is registered onto the core. The handlers themselves are not yet
+ *    implemented in devrig — see [StubMcpSteroidTools] — so calling a tool returns
+ *    an error, but `tools/list` / `prompts/list` / `resources/list` describe the
+ *    full surface.
  *  - [McpStdioServer] runs the transport on [DevrigServices.mcpStdin] /
  *    [DevrigServices.mcpStdout] (NDJSON or framed, auto-detected from the first
  *    inbound frame).
@@ -65,13 +64,11 @@ suspend fun runStubStdioMcpServer(
     onServerReady(server)
 
     val tools = StubMcpSteroidTools(services)
-    tools.registerAll(server)
-    // devrig routes to one of several discovered IDEs, so its steroid_open_project advertises the
-    // required `backend_name` routing param (includeBackendName = true). registerAll() no longer
-    // registers open_project; each surface registers its own spec.
-    server.toolRegistry.registerTool(
-        OpenProjectToolSpec(includeBackendName = true) { tools.handler<OpenProjectToolHandler>() }
-    )
+    // devrigToolSpecs() is the canonical devrig tool list — the common tools plus devrig's own
+    // steroid_open_project, which advertises the required `backend_name` routing param
+    // (includeBackendName = true) so calls route to one of the discovered IDE backends. The generated
+    // CLI consumes the same list, so registering from it keeps the two surfaces drift-free.
+    tools.devrigToolSpecs().forEach { server.toolRegistry.registerTool(it) }
 
     McpStdioServer(server, input = services.mcpStdin, output = services.mcpStdout).run()
 }
