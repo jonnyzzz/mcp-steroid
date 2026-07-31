@@ -37,7 +37,7 @@ data class McpConnectionInfo(
         appendLine()
         appendLine("## Feedback")
         appendLine()
-        appendLine("Report issues, Join Slack & Community: $feedbackUrl")
+        appendLine("Report issues, join the Discord community: $feedbackUrl")
         appendLine()
     }
 

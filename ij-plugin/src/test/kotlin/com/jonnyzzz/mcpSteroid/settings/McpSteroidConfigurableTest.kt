@@ -5,6 +5,7 @@ import com.intellij.openapi.options.Configurable
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.awt.Component
 import java.awt.Container
+import javax.swing.AbstractButton
 import javax.swing.JLabel
 import javax.swing.text.JTextComponent
 
@@ -17,6 +18,10 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
 
         assertEquals("tools", ep.parentId)
         assertEquals(McpSteroidConfigurable.DISPLAY_NAME, ep.displayName)
+        assertTrue(
+            "Settings tab name must lead with the Devrig product name; got '${McpSteroidConfigurable.DISPLAY_NAME}'",
+            McpSteroidConfigurable.DISPLAY_NAME.startsWith("Devrig"),
+        )
 
         val configurable = ep.createConfigurable()
         assertNotNull("ConfigurableEP must instantiate the settings page", configurable)
@@ -37,6 +42,11 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // The intro leads with the "AI Agents" framing and promotes devrig as the recommended path.
             assertContainsText(texts, "AI Agents")
             assertContainsText(texts, "Devrig")
+
+            // The feedback link references the actual community channels (GitHub issues + Discord,
+            // both linked from devrig.dev). There is no Slack workspace.
+            assertContainsText(texts, "Discord")
+            assertFalse("No Slack workspace exists — the label must not mention Slack", joined.contains("Slack"))
 
             // devrig install is implemented: the panel shows the copyable one-liners for both
             // macOS/Linux (curl … | sh) and Windows (irm … | iex), plus the agent-registration hint.
@@ -82,6 +92,8 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // Icon-only labels (e.g. the warning sign) have null text — skip them.
             is JTextComponent -> component.text?.let { out.add(it) }
             is JLabel -> component.text?.let { out.add(it) }
+            // browserLink(...) renders as an ActionLink (a JButton subclass).
+            is AbstractButton -> component.text?.let { out.add(it) }
         }
         if (component is Container) {
             for (child in component.components) {

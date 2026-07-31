@@ -22,7 +22,7 @@ import javax.swing.text.AttributeSet
 import javax.swing.text.DocumentFilter
 
 /**
- * Application-level settings page: Settings | Tools | MCP Steroid — devrig.
+ * Application-level settings page: Settings | Tools | Devrig — MCP Steroid.
  *
  * Purely informational — no persistent state, no mutable options. The page exists so users
  * can confirm the plugin is installed and connect an AI agent:
@@ -47,8 +47,10 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         val server = ApplicationManager.getApplication().getServiceIfCreated(SteroidsMcpServer::class.java)
         val port = server?.port ?: 0
         val info = if (server != null && port > 0) McpConnectionInfo.build(server.mcpUrl) else null
-        // Prose references only the actual bound port ($port), so every message matches the Status
-        // block. No hard-coded default here — 6315 lives solely in the registry config.
+        // Prose references only the actual bound port, so every message matches the Status block;
+        // with no bound port (server not running) it degrades to a generic phrase instead of "port 0".
+        // No hard-coded default here — 6315 lives solely in the registry config.
+        val portPhrase = if (port > 0) "on port <b>$port</b>" else "on its HTTP port"
 
         return panel {
             row {
@@ -61,7 +63,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 )
             }
             row {
-                browserLink("Report issues, Join Slack & Community", FEEDBACK_URL)
+                browserLink("Report issues, join the Discord community", FEEDBACK_URL)
             }.topGap(TopGap.SMALL)
 
             group("Status") {
@@ -97,8 +99,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 }
                 row {
                     text(
-                        "The direct HTTP server below also works, but it is tied to <b>this</b> IDE on port " +
-                            "<b>$port</b> — that can change when the IDE restarts or the port is taken, and every " +
+                        "The direct HTTP server below also works, but it is tied to <b>this</b> IDE " +
+                            "$portPhrase — that can change when the IDE restarts or the port is taken, and every " +
                             "agent must be wired up by hand. Devrig handles all of that for you, so it is the way " +
                             "we recommend connecting."
                     )
@@ -127,8 +129,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 row {
                     icon(AllIcons.General.Warning)
                     text(
-                        "<b>Not recommended.</b> These manual HTTP commands point at <b>this</b> IDE on port " +
-                            "<b>$port</b> — they stop working when the IDE restarts or that port is reassigned, " +
+                        "<b>Not recommended.</b> These manual HTTP commands point at <b>this</b> IDE " +
+                            "$portPhrase — they stop working when the IDE restarts or that port is reassigned, " +
                             "and every agent must be set up by hand. Use devrig instead: it reaches every running " +
                             "IDE automatically and keeps working across restarts and port changes."
                     )
@@ -202,7 +204,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         const val CONFIGURABLE_ID = "com.jonnyzzz.mcp-steroid.settings"
 
         /** Must match the displayName attribute of the applicationConfigurable EP in plugin.xml. */
-        const val DISPLAY_NAME = "MCP Steroid — devrig"
+        const val DISPLAY_NAME = "Devrig — MCP Steroid"
 
         const val DEVRIG_DOCS_URL = "https://devrig.dev/docs/devrig/"
 
