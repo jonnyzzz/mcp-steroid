@@ -28,9 +28,11 @@ $Version      = '@@VERSION@@'
 $DevrigUrl    = '@@DEVRIG_URL@@'
 $DevrigSha256 = '@@DEVRIG_SHA256@@'
 $DevrigFormat = '@@DEVRIG_FORMAT@@'
-# devrig-dist archive byte length - used (with the per-platform JDK size) for the pre-download
+# devrig-dist archive byte length, and the byte length of the tree it unpacks to (both computed by the
+# generator from the real archive) - used with the per-platform JDK numbers for the pre-download
 # disk-space check, so a full disk fails early and clearly instead of mid-stream.
 $DevrigSize   = @@DEVRIG_SIZE@@
+$DevrigUnpackedSize = @@DEVRIG_UNPACKED_SIZE@@
 # Download resilience (#228): re-download a failed OR corrupted (sha-mismatch) artifact this many times.
 $DlAttempts   = 3
 # The devrig launcher subpath INSIDE the unpacked dist (computed + asserted by the generator from the
@@ -108,9 +110,11 @@ Get-ChildItem -Path $BinariesDir -Filter '.tmp.*' -ErrorAction SilentlyContinue 
 
 # -- preflight: disk space (#228) --
 # Fail early + clearly if the volume backing ~\.mcp-steroid cannot hold the download + unpack, rather
-# than dying mid-stream. Estimate the need as (devrig + jdk) archive bytes x3 (archive + unpacked tree
-# + slack).
-$needBytes = ([long]$DevrigSize + [long]$p.JdkSize) * 3
+# than dying mid-stream. The four numbers are EXACT (the generator sums the real archive entries), so the
+# requirement is archive + unpacked tree for each artifact, plus 10% for filesystem overhead - not a
+# multiple-of-archive guess. Same formula as install.sh.
+# (PowerShell integer division yields a double when it does not divide evenly - cast back to [long].)
+$needBytes = [long]((([long]$DevrigSize + [long]$DevrigUnpackedSize + [long]$p.JdkSize + [long]$p.JdkUnpackedSize) * 11) / 10)
 $driveRoot = [System.IO.Path]::GetPathRoot((Resolve-Path $BinariesDir).Path)
 $availBytes = (New-Object System.IO.DriveInfo($driveRoot)).AvailableFreeSpace
 if ($availBytes -lt $needBytes) {

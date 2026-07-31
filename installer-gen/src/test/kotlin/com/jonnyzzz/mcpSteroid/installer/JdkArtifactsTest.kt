@@ -1,7 +1,15 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.installer
 
+import org.apache.commons.compress.archivers.ArchiveInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.io.ByteArrayInputStream
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -42,6 +50,49 @@ class JdkArtifactsTest {
             )
         )
         assertEquals("jdk-25", findJavaHome(bytes, ArchiveType.TAR_GZ))
+    }
+
+    // ── archiveUnpackedSize: the disk-space number the installers bake in (#228) ─────────────────
+
+    /**
+     * The computed number must equal what REALLY lands on disk. Both archives are extracted for real and
+     * the resulting files measured — so this checks against extraction, not against the same entry
+     * metadata the computation reads.
+     */
+    @Test
+    fun `archiveUnpackedSize equals the byte total of a real extraction`(@TempDir dir: Path) {
+        val files = linkedMapOf(
+            "jdk-25/bin/java" to ByteArray(4_096) { 1 },
+            "jdk-25/lib/modules" to ByteArray(1_048_576) { 2 },
+            "jdk-25/release" to "JAVA_VERSION=25".encodeToByteArray(),
+        )
+        val expected = files.values.sumOf { it.size.toLong() }
+
+        for ((archive, bytes) in listOf(ArchiveType.TAR_GZ to tarGz(files), ArchiveType.ZIP to zip(files))) {
+            val computed = archiveUnpackedSize(bytes, archive)
+            val onDisk = extractAndMeasure(bytes, archive, dir.resolve(archive.name))
+            println("[$archive] computed=$computed extracted=$onDisk expected=$expected (archive itself=${bytes.size})")
+            assertEquals(expected, computed, "$archive: computed unpacked size")
+            assertEquals(expected, onDisk, "$archive: bytes actually written by an extraction")
+        }
+    }
+
+    /** Extract [bytes] into [into] for real and return the total byte length of the files written. */
+    private fun extractAndMeasure(bytes: ByteArray, archive: ArchiveType, into: Path): Long {
+        val input: ArchiveInputStream<*> = when (archive) {
+            ArchiveType.TAR_GZ -> TarArchiveInputStream(GzipCompressorInputStream(ByteArrayInputStream(bytes)))
+            ArchiveType.ZIP -> ZipArchiveInputStream(ByteArrayInputStream(bytes))
+        }
+        input.use { ais ->
+            generateSequence { ais.nextEntry }.filterNot { it.isDirectory }.forEach { entry ->
+                val target = into.resolve(entry.name)
+                Files.createDirectories(target.parent)
+                Files.newOutputStream(target).use { ais.copyTo(it) }
+            }
+        }
+        return Files.walk(into).use { paths ->
+            paths.filter { Files.isRegularFile(it) }.mapToLong { Files.size(it) }.sum()
+        }
     }
 
     // ── resolveAllJdks: full model assembly, hermetic (synthetic archives + fake HTTP) ───────────

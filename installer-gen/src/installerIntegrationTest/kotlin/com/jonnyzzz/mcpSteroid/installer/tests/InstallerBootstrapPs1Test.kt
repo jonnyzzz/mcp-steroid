@@ -2,6 +2,8 @@
 package com.jonnyzzz.mcpSteroid.installer.tests
 
 import com.jonnyzzz.mcpSteroid.installer.ALL_PLATFORMS
+import com.jonnyzzz.mcpSteroid.installer.ArchiveType
+import com.jonnyzzz.mcpSteroid.installer.archiveUnpackedSize
 import com.jonnyzzz.mcpSteroid.installer.DevrigEntry
 import com.jonnyzzz.mcpSteroid.installer.JdkScriptEntry
 import com.jonnyzzz.mcpSteroid.installer.writeInstallerScripts
@@ -74,8 +76,8 @@ class InstallerBootstrapPs1Test {
         //       javaHome="jdk" pointing at the top dir of the fixture zip. Non-Windows entries are
         //       required by validateScriptTable (all 5 platforms) but the ps1 script only reads its own
         //       $Platforms hashtable, which contains only windows-x64 + windows-arm64. ──
-        val jdkEntryWin = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "zip", "jdk", jdkZip.length())
-        val jdkEntryPosix = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "tar.gz", "jdk", jdkZip.length())
+        val jdkEntryWin = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "zip", "jdk", jdkZip.length(), archiveUnpackedSize(jdkZip.readBytes(), ArchiveType.ZIP))
+        val jdkEntryPosix = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "tar.gz", "jdk", jdkZip.length(), archiveUnpackedSize(jdkZip.readBytes(), ArchiveType.ZIP))
         val table = ALL_PLATFORMS.associateWith { key ->
             if (key.startsWith("windows-")) jdkEntryWin else jdkEntryPosix
         }
@@ -83,7 +85,7 @@ class InstallerBootstrapPs1Test {
         val devrig = DevrigEntry(
             url = "http://$nginxIp/devrig.zip", sha256 = devrigSha,
             launcherPosix = "devrig-$version/bin/devrig", launcherWindows = "devrig-$version/bin/devrig.bat",
-            size = devrigZip.length(),
+            size = devrigZip.length(), unpackedSize = archiveUnpackedSize(devrigZip.readBytes(), ArchiveType.ZIP),
         )
         val genDir = createInstallerWorkDir("installer-ps1-gen-out")
         writeInstallerScripts(genDir.toPath(), table, devrig, version)
@@ -180,13 +182,13 @@ class InstallerBootstrapPs1Test {
             )
             val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
 
-            val jdkEntryWin = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "zip", "jdk", jdkZip.length())
-            val jdkEntryPosix = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "tar.gz", "jdk", jdkZip.length())
+            val jdkEntryWin = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "zip", "jdk", jdkZip.length(), archiveUnpackedSize(jdkZip.readBytes(), ArchiveType.ZIP))
+            val jdkEntryPosix = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "tar.gz", "jdk", jdkZip.length(), archiveUnpackedSize(jdkZip.readBytes(), ArchiveType.ZIP))
             val table = ALL_PLATFORMS.associateWith { key -> if (key.startsWith("windows-")) jdkEntryWin else jdkEntryPosix }
             val devrig = DevrigEntry(
                 url = "http://$nginxIp/devrig.zip", sha256 = devrigSha,
                 launcherPosix = "devrig-$version/bin/devrig", launcherWindows = "devrig-$version/bin/devrig.bat",
-                size = devrigZip.length(),
+                size = devrigZip.length(), unpackedSize = archiveUnpackedSize(devrigZip.readBytes(), ArchiveType.ZIP),
             )
             val genDir = createInstallerWorkDir("installer-ps1-arch-gen")
             writeInstallerScripts(genDir.toPath(), table, devrig, version)
@@ -246,13 +248,13 @@ class InstallerBootstrapPs1Test {
             )
             val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
 
-            val jdkEntryWin = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "zip", "jdk", jdkZip.length())
-            val jdkEntryPosix = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "tar.gz", "jdk", jdkZip.length())
+            val jdkEntryWin = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "zip", "jdk", jdkZip.length(), archiveUnpackedSize(jdkZip.readBytes(), ArchiveType.ZIP))
+            val jdkEntryPosix = JdkScriptEntry("http://$nginxIp/jdk.zip", jdkSha, "tar.gz", "jdk", jdkZip.length(), archiveUnpackedSize(jdkZip.readBytes(), ArchiveType.ZIP))
             val table = ALL_PLATFORMS.associateWith { key -> if (key.startsWith("windows-")) jdkEntryWin else jdkEntryPosix }
             val devrig = DevrigEntry(
                 url = "http://$nginxIp/devrig.zip", sha256 = devrigSha,
                 launcherPosix = "devrig-$version/bin/devrig", launcherWindows = "devrig-$version/bin/devrig.bat",
-                size = devrigZip.length(),
+                size = devrigZip.length(), unpackedSize = archiveUnpackedSize(devrigZip.readBytes(), ArchiveType.ZIP),
             )
             val genDir = createInstallerWorkDir("installer-ps1-stdin-gen")
             writeInstallerScripts(genDir.toPath(), table, devrig, version)

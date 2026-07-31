@@ -18,9 +18,11 @@ VERSION='@@VERSION@@'
 DEVRIG_URL='@@DEVRIG_URL@@'
 DEVRIG_SHA256='@@DEVRIG_SHA256@@'
 DEVRIG_FORMAT='@@DEVRIG_FORMAT@@'
-# devrig-dist archive byte length -- used (with the per-platform JDK size) for the pre-download
+# devrig-dist archive byte length, and the byte length of the tree it unpacks to (both computed by the
+# generator from the real archive) -- used with the per-platform JDK numbers for the pre-download
 # disk-space check, so a full disk fails early and clearly instead of mid-stream.
 DEVRIG_SIZE='@@DEVRIG_SIZE@@'
+DEVRIG_UNPACKED_SIZE='@@DEVRIG_UNPACKED_SIZE@@'
 # The devrig launcher subpath INSIDE the unpacked dist (computed + asserted by the generator from the
 # real zip - `devrig-<version>-<hash>/bin/devrig`). The script runs this launcher and lets devrig itself
 # register `~/.mcp-steroid/bin` + PATH (`devrig install devrig`), so the script never writes the wrapper.
@@ -52,7 +54,10 @@ promote_tree() {
 
 # install_artifact <kind> <url> <sha256> <format> <size_bytes>  -> prints the target dir on stdout
 install_artifact() {
-  ia_kind="$1"; ia_url="$2"; ia_sha="$3"; ia_fmt="$4"; ia_size="${5:-0}"
+  # No defaults: every argument is supplied by the two call sites in main(), and the generator asserts
+  # every baked value is present and positive. Under `set -u` a missing argument fails loudly here,
+  # rather than silently logging "~0 MB".
+  ia_kind="$1"; ia_url="$2"; ia_sha="$3"; ia_fmt="$4"; ia_size="$5"
   ia_sha12=$(printf '%s' "$ia_sha" | cut -c1-12)
   ia_target="$BINARIES_DIR/${ia_kind}-${key}-${VERSION}-${ia_sha12}"
   if [ -d "$ia_target" ]; then
@@ -134,7 +139,7 @@ main() {
   fi
 
   # -- BAKED-IN per-platform JDK table (devrig coordinates are universal, set above) --
-  jdk_url=''; jdk_sha256=''; jdk_format=''; jdk_javahome=''; jdk_size=''
+  jdk_url=''; jdk_sha256=''; jdk_format=''; jdk_javahome=''; jdk_size=''; jdk_unpacked_size=''
   case "$key" in
 @@PLATFORM_CASE_SH@@
     macos-x64) fail "Intel macOS (x86_64) is not supported - MCP Steroid ships an Apple-silicon (arm64) JDK only. Use an arm64 Mac." ;;
@@ -191,10 +196,10 @@ main() {
 
   # -- preflight: disk space (#228) --
   # Fail early + clearly if the volume backing ~/.mcp-steroid cannot hold the download + unpack, rather
-  # than dying mid-stream. Estimate the need as (devrig + jdk) archive bytes x3 (archive + unpacked tree
-  # + slack). `df -Pk` reports POSIX 1024-byte-block availability; compare in KiB to avoid byte overflow.
-  # If df output is unparseable we do NOT block the install (only fail when we positively know it won't fit).
-  need_kib=$(( (DEVRIG_SIZE + jdk_size) * 3 / 1024 ))
+  # than dying mid-stream. The four numbers are EXACT (the generator sums the real archive entries), so
+  # the requirement is archive + unpacked tree for each artifact, plus 10% for filesystem extras.
+  # The devrig archive is deleted before the JDK download starts, so both archives never coexist.
+  need_kib=$(( ((DEVRIG_SIZE + DEVRIG_UNPACKED_SIZE + jdk_size + jdk_unpacked_size) / 1024) * 11 / 10 ))
   avail_kib=$(df -Pk "$BINARIES_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
   if [ -n "$avail_kib" ] && [ "$avail_kib" -lt "$need_kib" ]; then
     fail "insufficient disk space in $BINARIES_DIR: need ~$((need_kib / 1024)) MB (download + unpack), have ~$((avail_kib / 1024)) MB free -- free up space and re-run"

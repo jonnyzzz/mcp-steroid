@@ -28,7 +28,7 @@ class InstallerGeneratorTest {
     private fun art(platform: JdkPlatform, archive: ArchiveType, javaHome: String) = JdkArtifact(
         platform = platform, vendor = "v", version = "25.0.3.9.1", featureVersion = 25, archive = archive,
         url = "https://example.com/jdk.${archive.extension}", fileName = "jdk.${archive.extension}",
-        size = 1, sha256 = "a".repeat(64), javaHome = javaHome,
+        size = 1, unpackedSize = 2, sha256 = "a".repeat(64), javaHome = javaHome,
     )
 
     private fun fullModel() = JdkModel(
@@ -55,18 +55,26 @@ class InstallerGeneratorTest {
 
     @Test
     fun `validateScriptTable rejects a non-hex sha256 and an absolute javaHome`() {
-        val badSha = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "ZZZ", "zip", "h", 1L) }.toTypedArray())
+        val badSha = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "ZZZ", "zip", "h", 1L, 2L) }.toTypedArray())
         assertFailsWith<IllegalArgumentException> { validateScriptTable(badSha) }
-        val absHome = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "a".repeat(64), "zip", "/abs", 1L) }.toTypedArray())
+        val absHome = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "a".repeat(64), "zip", "/abs", 1L, 2L) }.toTypedArray())
         assertFailsWith<IllegalArgumentException> { validateScriptTable(absHome) }
     }
 
     @Test
     fun `validateScriptTable rejects a non-positive size`() {
         // size feeds the pre-download disk-space check (#228); a 0/negative size would make it meaningless.
-        val zeroSize = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "a".repeat(64), "zip", "h", 0L) }.toTypedArray())
+        val zeroSize = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "a".repeat(64), "zip", "h", 0L, 2L) }.toTypedArray())
         val ex = assertFailsWith<IllegalArgumentException> { validateScriptTable(zeroSize) }
         assertTrue(ex.message!!.contains("size must be a positive byte count"), ex.message!!)
+    }
+
+    @Test
+    fun `validateScriptTable rejects a non-positive unpackedSize`() {
+        // unpackedSize is the other half of the disk-space check — an exact number, not a guess.
+        val zero = mapOf(*ALL_PLATFORMS.map { it to JdkScriptEntry("https://x", "a".repeat(64), "zip", "h", 1L, 0L) }.toTypedArray())
+        val ex = assertFailsWith<IllegalArgumentException> { validateScriptTable(zero) }
+        assertTrue(ex.message!!.contains("unpackedSize must be a positive byte count"), ex.message!!)
     }
 
     // ── render pipeline: scripts bake the table + carry the musl guard, no leftover placeholders ─
@@ -75,7 +83,7 @@ class InstallerGeneratorTest {
     private val devrig = DevrigEntry(
         url = "https://example.com/devrig-1.0.zip", sha256 = "b".repeat(64),
         launcherPosix = "devrig-1.0-abc1234/bin/devrig", launcherWindows = "devrig-1.0-abc1234/bin/devrig.bat",
-        size = 233_000_000L,
+        size = 233_000_000L, unpackedSize = 470_000_000L,
     )
 
     @Test
@@ -256,8 +264,15 @@ class InstallerGeneratorTest {
         // -- install.sh --
         // sizes threaded through for the disk check
         assertTrue(scripts.sh.contains("DEVRIG_SIZE='233000000'"), "install.sh missing baked DEVRIG_SIZE")
+        assertTrue(scripts.sh.contains("DEVRIG_UNPACKED_SIZE='470000000'"), "install.sh missing baked DEVRIG_UNPACKED_SIZE")
         assertTrue(scripts.sh.contains("jdk_size='1'"), "install.sh missing per-platform jdk_size")
-        // disk precheck: computes need vs df availability and fails with a clear message
+        assertTrue(scripts.sh.contains("jdk_unpacked_size='2'"), "install.sh missing per-platform jdk_unpacked_size")
+        // disk precheck: computes need vs df availability and fails with a clear message. The requirement
+        // is the EXACT archive + unpacked bytes (generator-computed) + 10% slack, never a guessed multiple.
+        assertTrue(
+            scripts.sh.contains("need_kib=\$(( ((DEVRIG_SIZE + DEVRIG_UNPACKED_SIZE + jdk_size + jdk_unpacked_size) / 1024) * 11 / 10 ))"),
+            "install.sh disk check must use the exact archive+unpacked sizes",
+        )
         assertTrue(scripts.sh.contains("df -Pk"), "install.sh missing df-based disk check")
         assertTrue(scripts.sh.contains("insufficient disk space"), "install.sh missing clear disk-space error")
         // retry loop + growing backoff + final give-up
@@ -273,7 +288,13 @@ class InstallerGeneratorTest {
 
         // -- install.ps1 (ASCII-only) --
         assertTrue(scripts.ps.contains("\$DevrigSize   = 233000000"), "install.ps1 missing baked DevrigSize")
+        assertTrue(scripts.ps.contains("\$DevrigUnpackedSize = 470000000"), "install.ps1 missing baked DevrigUnpackedSize")
         assertTrue(scripts.ps.contains("JdkSize = 1"), "install.ps1 missing per-platform JdkSize")
+        assertTrue(scripts.ps.contains("JdkUnpackedSize = 2"), "install.ps1 missing per-platform JdkUnpackedSize")
+        assertTrue(
+            scripts.ps.contains("[long]\$DevrigSize + [long]\$DevrigUnpackedSize + [long]\$p.JdkSize + [long]\$p.JdkUnpackedSize"),
+            "install.ps1 disk check must use the exact archive+unpacked sizes",
+        )
         assertTrue(scripts.ps.contains("AvailableFreeSpace"), "install.ps1 missing DriveInfo disk check")
         assertTrue(scripts.ps.contains("insufficient disk space"), "install.ps1 missing clear disk-space error")
         assertTrue(scripts.ps.contains("\$DlAttempts   = 3"), "install.ps1 missing retry-attempts config")
@@ -329,6 +350,10 @@ class InstallerGeneratorTest {
         assertEquals("https://example.com/devrig-1.0.zip", devrig.url)
         assertEquals(sha256Hex(Files.readAllBytes(zip)), devrig.sha256)
         assertEquals(Files.readAllBytes(zip).size.toLong(), devrig.size) // size computed from the bytes (#228)
+        // Unpacked size is summed from the real entries ("#!/bin/sh" + "@echo off" = 9 + 9). Note the zip
+        // is written by java.util.zip.ZipOutputStream, which records sizes in a trailing data descriptor —
+        // reading the central directory (not streaming) is what makes this number correct rather than -1.
+        assertEquals(18L, devrig.unpackedSize)
         // Computed + asserted from the real zip (NOT assumed devrig-<version>).
         assertEquals("devrig-1.0-abc1234/bin/devrig", devrig.launcherPosix)
         assertEquals("devrig-1.0-abc1234/bin/devrig.bat", devrig.launcherWindows)
@@ -401,7 +426,7 @@ class InstallerGeneratorTest {
         assertFailsWith<IllegalArgumentException> {
             validateDevrig(DevrigEntry(
                 url = "https://example.com/PLACEHOLDER.zip", sha256 = "b".repeat(64),
-                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat", size = 1L,
+                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat", size = 1L, unpackedSize = 2L,
             ))
         }
     }
@@ -411,9 +436,20 @@ class InstallerGeneratorTest {
         val ex = assertFailsWith<IllegalArgumentException> {
             validateDevrig(DevrigEntry(
                 url = "https://example.com/devrig-1.0.zip", sha256 = "b".repeat(64),
-                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat", size = 0L,
+                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat", size = 0L, unpackedSize = 2L,
             ))
         }
         assertTrue(ex.message!!.contains("size must be a positive byte count"), ex.message!!)
+    }
+
+    @Test
+    fun `validateDevrig rejects a non-positive unpackedSize`() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            validateDevrig(DevrigEntry(
+                url = "https://example.com/devrig-1.0.zip", sha256 = "b".repeat(64),
+                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat", size = 1L, unpackedSize = 0L,
+            ))
+        }
+        assertTrue(ex.message!!.contains("unpackedSize must be a positive byte count"), ex.message!!)
     }
 }

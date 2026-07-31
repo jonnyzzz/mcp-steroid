@@ -3,8 +3,9 @@ package com.jonnyzzz.mcpSteroid.installer
 
 import kotlinx.serialization.Serializable
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
+import org.apache.commons.compress.archivers.zip.ZipFile
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
 import java.io.ByteArrayInputStream
 
 /**
@@ -37,6 +38,9 @@ data class JdkPlatform(val os: JdkOs, val arch: JdkArch)
  *                       followed to its versioned resource).
  *  - [fileName]       — the archive's file name (the [url] basename), e.g. for `curl -o <fileName>`.
  *  - [size]           — the byte length of the downloaded archive.
+ *  - [unpackedSize]   — the byte length of the archive's contents once extracted, summed from the real
+ *                       entries (see [archiveUnpackedSize]). Together with [size] it gives the installers
+ *                       an exact pre-download disk-space requirement instead of a multiple-of-archive guess.
  *  - [sha256]         — lowercase hex over the downloaded bytes (Azul also cross-checks the published hash).
  *  - [javaHome]       — the path to `JAVA_HOME` (the directory whose `bin/` holds `java`), discovered by
  *                       scanning the archive entries, so macOS's `…/Contents/Home` and the Linux/Windows
@@ -54,6 +58,7 @@ data class JdkArtifact(
     val url: String,
     val fileName: String,
     val size: Long,
+    val unpackedSize: Long,
     val sha256: String,
     val javaHome: String,
 )
@@ -67,15 +72,48 @@ internal fun fileNameOf(url: String): String = url.substringAfterLast('/').subst
 
 // ── archive scanning: compute JAVA_HOME (shared by the vendor resolvers) ─────────────────────────
 
-internal fun archiveEntryNames(bytes: ByteArray, archive: ArchiveType): List<String> = when (archive) {
+/**
+ * One archive entry: its `/`-separated [name] and the UNPACKED byte length of its content
+ * ([unpackedSize]; 0 for directories, symlinks and other non-regular entries).
+ */
+data class ArchiveEntry(val name: String, val unpackedSize: Long)
+
+/**
+ * Every entry of [bytes], with its unpacked length. ZIPs are read through [ZipFile] (the CENTRAL
+ * DIRECTORY) rather than streamed: a streaming reader reports size `-1` for entries whose sizes live in
+ * a trailing data descriptor, which is exactly how `java.util.zip.ZipOutputStream` writes them.
+ */
+fun archiveEntries(bytes: ByteArray, archive: ArchiveType): List<ArchiveEntry> = when (archive) {
     ArchiveType.TAR_GZ ->
         TarArchiveInputStream(GzipCompressorInputStream(ByteArrayInputStream(bytes))).use { tis ->
-            generateSequence { tis.nextEntry }.map { it.name }.toList()
+            generateSequence { tis.nextEntry }.map { ArchiveEntry(it.name, it.size) }.toList()
         }
     ArchiveType.ZIP ->
-        ZipArchiveInputStream(ByteArrayInputStream(bytes)).use { zis ->
-            generateSequence { zis.nextEntry }.map { it.name }.toList()
+        ZipFile.builder().setSeekableByteChannel(SeekableInMemoryByteChannel(bytes)).get().use { zf ->
+            zf.entries.asSequence().map { ArchiveEntry(it.name, it.size) }.toList()
         }
+}
+
+internal fun archiveEntryNames(bytes: ByteArray, archive: ArchiveType): List<String> =
+    archiveEntries(bytes, archive).map { it.name }
+
+/**
+ * The REAL byte length of [bytes] once unpacked — the sum of every entry's content length. Bakes an exact
+ * number into the installers' pre-download disk-space check instead of the old `archive x 3` guess (#228):
+ * an already-compressed JDK unpacks to well under 2x its archive, a text-heavy one to well over it.
+ *
+ * Sizes must be KNOWN (never `-1`): both readers above are central-directory / header based, so a missing
+ * size means a malformed archive — fail generation rather than bake a too-small disk requirement.
+ */
+fun archiveUnpackedSize(bytes: ByteArray, archive: ArchiveType): Long {
+    val entries = archiveEntries(bytes, archive)
+    val unsized = entries.filter { it.unpackedSize < 0 }
+    require(unsized.isEmpty()) {
+        "archive has entries with an unknown unpacked size: ${unsized.take(5).map { it.name }}"
+    }
+    val total = entries.sumOf { it.unpackedSize }
+    require(total > 0) { "archive unpacks to 0 bytes (${entries.size} entries) - refusing to bake it" }
+    return total
 }
 
 /**

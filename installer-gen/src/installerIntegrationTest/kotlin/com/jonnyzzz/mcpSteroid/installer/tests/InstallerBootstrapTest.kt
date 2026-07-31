@@ -2,6 +2,8 @@
 package com.jonnyzzz.mcpSteroid.installer.tests
 
 import com.jonnyzzz.mcpSteroid.installer.ALL_PLATFORMS
+import com.jonnyzzz.mcpSteroid.installer.ArchiveType
+import com.jonnyzzz.mcpSteroid.installer.archiveUnpackedSize
 import com.jonnyzzz.mcpSteroid.installer.DevrigEntry
 import com.jonnyzzz.mcpSteroid.installer.JdkScriptEntry
 import com.jonnyzzz.mcpSteroid.installer.writeInstallerScripts
@@ -52,10 +54,10 @@ class InstallerBootstrapTest {
     fun `generated install_sh refuses musl (alpine)`() = runWithCloseableStack { lifetime ->
         val genDir = createInstallerWorkDir("installer-musl-gen")
         // A minimal valid model (nothing is downloaded on the musl-reject path) → renders a real install.sh.
-        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("https://example.com/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", 1L) }
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("https://example.com/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", 1L, 2L) }
         writeInstallerScripts(
             genDir.toPath(), table,
-            DevrigEntry("https://example.com/devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", 1L),
+            DevrigEntry("https://example.com/devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", 1L, 2L),
             version,
         )
         makeWorldReadable(genDir)
@@ -110,12 +112,12 @@ class InstallerBootstrapTest {
         // ── 3. render install.sh from a synthetic model: all 5 platforms point at the one fake jdk.tar.gz
         //       (javaHome="jdk"), served by the side-car. This is the new seam — no real JDK download. ──
         val genDir = createInstallerWorkDir("installer-gen-out")
-        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/jdk.tar.gz", jdkSha, "tar.gz", "jdk", jdkTarGz.length()) }
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/jdk.tar.gz", jdkSha, "tar.gz", "jdk", jdkTarGz.length(), archiveUnpackedSize(jdkTarGz.readBytes(), ArchiveType.TAR_GZ)) }
         // The fixture zip unpacks to devrig-<version>/, so that's the computed+asserted launcher subpath.
         val devrig = DevrigEntry(
             url = "http://$nginxIp/devrig.zip", sha256 = devrigSha,
             launcherPosix = "devrig-$version/bin/devrig", launcherWindows = "devrig-$version/bin/devrig.bat",
-            size = devrigZip.length(),
+            size = devrigZip.length(), unpackedSize = archiveUnpackedSize(devrigZip.readBytes(), ArchiveType.ZIP),
         )
         writeInstallerScripts(genDir.toPath(), table, devrig, version)
         require(File(genDir, "install.sh").isFile) { "did not produce install.sh in $genDir" }
@@ -185,11 +187,11 @@ class InstallerBootstrapTest {
     @Timeout(value = 10, unit = TimeUnit.MINUTES)
     fun `generated install_sh fails clearly when disk space is insufficient`() = runWithCloseableStack { lifetime ->
         val genDir = createInstallerWorkDir("installer-disk-gen")
-        val huge = 10_000_000_000_000L // 10 TB each -> required (x3) dwarfs any CI disk
-        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://192.0.2.1/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", huge) }
+        val huge = 10_000_000_000_000L // 10 TB per number -> the required total dwarfs any CI disk
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://192.0.2.1/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", huge, huge) }
         writeInstallerScripts(
             genDir.toPath(), table,
-            DevrigEntry("http://192.0.2.1/devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", huge),
+            DevrigEntry("http://192.0.2.1/devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", huge, huge),
             version,
         )
         makeWorldReadable(genDir)
@@ -239,10 +241,10 @@ class InstallerBootstrapTest {
         val nginxIp = nginx.queryContainerIp() ?: error("nginx side-car has no bridge IP")
 
         val genDir = createInstallerWorkDir("installer-404-gen")
-        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/missing-jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", 1L) }
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/missing-jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk", 1L, 2L) }
         writeInstallerScripts(
             genDir.toPath(), table,
-            DevrigEntry("http://$nginxIp/missing-devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", 1L),
+            DevrigEntry("http://$nginxIp/missing-devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat", 1L, 2L),
             version,
         )
         makeWorldReadable(genDir)

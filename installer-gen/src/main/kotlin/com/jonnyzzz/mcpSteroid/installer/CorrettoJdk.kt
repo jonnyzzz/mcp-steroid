@@ -61,6 +61,7 @@ private fun resolveCorretto(
         url = versionedUrl,
         fileName = fileNameOf(versionedUrl),
         size = bytes.size.toLong(),
+        unpackedSize = archiveUnpackedSize(bytes, spec.archive),
         sha256 = sha256Hex(bytes),
         javaHome = findJavaHome(bytes, spec.archive),
     )

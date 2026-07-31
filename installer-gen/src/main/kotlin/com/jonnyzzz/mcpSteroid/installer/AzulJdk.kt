@@ -77,6 +77,7 @@ internal fun resolveAzulJdk(cache: Cache, http: HttpFetcher, keyFingerprint: Str
         url = detail.downloadUrl,
         fileName = fileNameOf(detail.downloadUrl),
         size = bytes.size.toLong(),
+        unpackedSize = archiveUnpackedSize(bytes, ArchiveType.ZIP),
         sha256 = detail.sha256Hash.lowercase(),
         javaHome = findJavaHome(bytes, ArchiveType.ZIP),
     )
