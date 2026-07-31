@@ -118,8 +118,16 @@ private fun installedBackendRowOrNull(
     val parsed = parseConcreteBackendDirectoryNameOrNull(dir.name) ?: return null
     val descriptorFile = descriptorPath(dir)
     if (!Files.isRegularFile(descriptorFile) || !Files.isReadable(descriptorFile)) return null
-    readDescriptorOrNull(descriptorFile) ?: return null
-    val alivePid = liveManagedBackendPidOrNull(homePaths.pidFile(parsed.id), processInspector)
+    val descriptor = readDescriptorOrNull(descriptorFile) ?: return null
+    if (descriptor.id != parsed.id || descriptor.productKey != parsed.product.id || descriptor.version != parsed.version) {
+        return null
+    }
+    val alivePid = liveManagedBackendPidOrNull(
+        pidFile = homePaths.pidFile(parsed.id),
+        backendDir = dir,
+        descriptor = descriptor,
+        processInspector = processInspector,
+    )
     return InstalledBackendListRow(
         id = parsed.id,
         productKey = parsed.product.id,
@@ -139,7 +147,12 @@ private fun runningBackendRowOrNull(
 ): RunningBackendListRow? {
     val id = pidFile.name.removeSuffix(".pid")
     val parsed = parseConcreteBackendDirectoryNameOrNull(id) ?: return null
-    val pid = liveManagedBackendPidOrNull(pidFile, processInspector) ?: return null
+    val backendDir = homePaths.backendDir(parsed.id)
+    val descriptor = readDescriptorOrNull(descriptorPath(backendDir)) ?: return null
+    if (descriptor.id != parsed.id || descriptor.productKey != parsed.product.id || descriptor.version != parsed.version) {
+        return null
+    }
+    val pid = liveManagedBackendPidOrNull(pidFile, backendDir, descriptor, processInspector) ?: return null
     return RunningBackendListRow(
         id = parsed.id,
         pid = pid,
@@ -150,13 +163,58 @@ private fun runningBackendRowOrNull(
 
 private fun liveManagedBackendPidOrNull(
     pidFile: Path,
+    backendDir: Path,
+    descriptor: BackendDescriptor,
     processInspector: ManagedProcessInspector,
 ): Long? {
     val processState = readManagedBackendProcessState(pidFile) ?: return null
     if (!processInspector.isAlive(processState.pid)) return null
-    if (processState.startInstant == null) return processState.pid
-    return processState.pid.takeIf {
-        processState.matchesProcessSnapshot(processInspector.snapshot(processState.pid))
+    val snapshot = processInspector.snapshot(processState.pid) ?: return null
+    if (processState.startInstant != null) {
+        return processState.pid.takeIf { processState.matchesProcessSnapshot(snapshot) }
+    }
+    return processState.pid.takeIf { legacyProcessSnapshotMatchesBackend(snapshot, backendDir, descriptor) }
+}
+
+private fun legacyProcessSnapshotMatchesBackend(
+    snapshot: ProcessSnapshot,
+    backendDir: Path,
+    descriptor: BackendDescriptor,
+): Boolean {
+    val bundleDir = backendDir.resolve(descriptor.bundleDirName).toAbsolutePath().normalize()
+    val expectedLaunchers = setOf(
+        bundleDir.resolve(descriptor.launcherPath).normalize(),
+        bundleDir.resolve("bin/remote-dev-server").normalize(),
+        bundleDir.resolve("Contents/bin/remote-dev-server").normalize(),
+    )
+    val command = parseAbsoluteLegacyProcessPath(snapshot.command)
+    if (command in expectedLaunchers) return true
+    val managedRuntimeRoots = listOf(
+        bundleDir.resolve("jbr").normalize(),
+        bundleDir.resolve("Contents/jbr").normalize(),
+    )
+    if (command != null && managedRuntimeRoots.any(command::startsWith)) return true
+
+    val interpreter = command?.fileName?.toString()?.lowercase()
+    if (interpreter !in setOf("sh", "bash", "dash", "zsh", "ksh", "cmd", "cmd.exe")) return false
+    val launcherArgument = when (interpreter) {
+        "cmd", "cmd.exe" -> {
+            if (!snapshot.arguments.getOrNull(0).equals("/c", ignoreCase = true)) return false
+            snapshot.arguments.getOrNull(1)
+        }
+
+        else -> snapshot.arguments.firstOrNull()
+    }
+    return parseAbsoluteLegacyProcessPath(launcherArgument) in expectedLaunchers
+}
+
+private fun parseAbsoluteLegacyProcessPath(raw: String?): Path? {
+    if (raw.isNullOrBlank()) return null
+    return try {
+        Path.of(raw).takeIf { it.isAbsolute }?.toAbsolutePath()?.normalize()
+    } catch (e: Exception) {
+        System.err.println("WARN: ignored an invalid legacy managed-backend process path: ${e.javaClass.simpleName}")
+        null
     }
 }
 

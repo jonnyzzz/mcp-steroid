@@ -31,7 +31,7 @@ class BackendCommandStartListTest {
         Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "12345\n")
         Files.writeString(homePaths.pidFile("pycharm-community-2025.3.3"), "54321\n")
 
-        val rows = collectInstalledBackendListRows(homePaths, FakeProcessInspector(alivePids = setOf(12345L)))
+        val rows = collectInstalledBackendListRows(homePaths, ownedLegacyProcessInspector(homePaths, "idea-community-2025.3.3"))
         val text = renderStartText(rows)
 
         assertTrue(text.startsWith("Installed backends:"), text)
@@ -80,7 +80,9 @@ class BackendCommandStartListTest {
         Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "12345\n")
         Files.writeString(homePaths.pidFile("pycharm-community-2025.3.3"), "54321\n")
 
-        val root = renderStartJson(collectInstalledBackendListRows(homePaths, FakeProcessInspector(alivePids = setOf(12345L))))
+        val root = renderStartJson(
+            collectInstalledBackendListRows(homePaths, ownedLegacyProcessInspector(homePaths, "idea-community-2025.3.3")),
+        )
 
         assertEquals(setOf("tool", "installed"), root.keys)
         val installed = root["installed"]!!.jsonArray.map { it.jsonObject }
@@ -119,6 +121,31 @@ class BackendCommandStartListTest {
                     pid = 12345L,
                     command = "/usr/bin/java",
                     startInstant = Instant.parse("2026-07-31T09:00:00Z"),
+                ),
+            ),
+        )
+
+        val row = collectInstalledBackendListRows(homePaths, processInspector).single()
+
+        assertEquals(LocalBackendState.INSTALLED, row.state)
+        assertNull(row.pid)
+    }
+
+    @Test
+    fun `legacy pid-only state rejects a launcher in a non-executable shell argument`(@TempDir tempDir: Path) {
+        val homePaths = HomePaths(tempDir)
+        homePaths.mkdirsAll()
+        val id = "idea-community-2025.3.3"
+        backendFixture(homePaths, id, productKey = "idea-community", productCode = "IC", version = "2025.3.3")
+        Files.writeString(homePaths.pidFile(id), "12345\n")
+        val launcher = homePaths.backendDir(id).resolve("bundle-$id/bin/idea.sh").toString()
+        val processInspector = FakeProcessInspector(
+            alivePids = setOf(12345L),
+            snapshots = mapOf(
+                12345L to ProcessSnapshot(
+                    pid = 12345L,
+                    command = "/bin/bash",
+                    arguments = listOf("/tmp/unrelated-script", launcher),
                 ),
             ),
         )
@@ -206,4 +233,15 @@ class BackendCommandStartListTest {
             releaseDate = "2026-04-23",
         ),
     )
+
+    private fun ownedLegacyProcessInspector(homePaths: HomePaths, id: String): FakeProcessInspector =
+        FakeProcessInspector(
+            alivePids = setOf(12345L),
+            snapshots = mapOf(
+                12345L to ProcessSnapshot(
+                    pid = 12345L,
+                    command = homePaths.backendDir(id).resolve("bundle-$id/bin/idea.sh").toString(),
+                ),
+            ),
+        )
 }

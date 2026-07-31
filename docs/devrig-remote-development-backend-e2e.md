@@ -266,8 +266,9 @@ than merely mentioning it.
 
 ### 2026-07-31 — final verification
 
-- After the final PID-identity iteration, `BackendManagerStartStopTest` passed 36/36. On the rebased
-  branch the complete `:npx-kt:test` suite discovered 1,439 tests: 1,435 executed and passed, with four
+- After the final PID-identity and operation-lock iteration, the four focused backend regression
+  classes passed 58/58. On the rebased branch the complete `:npx-kt:test` suite discovered 1,444 tests:
+  1,440 executed and passed, with four
   pre-existing platform-guarded skips and no failures or errors.
 - The pure agent-output parser/workflow contracts passed 9/9, and the volume-isolation/log-stream
   infrastructure contracts passed 5/5. All `:test-experiments` and `:test-integration` invocations
@@ -276,8 +277,10 @@ than merely mentioning it.
   absent from one `ProcessHandle` snapshot. `terminateFailedBackendStart` now repeats bounded process
   discovery until three consecutive scans are quiet, so a failed start cannot leave a launcher or
   backend process behind.
-- Direct IntelliJ inspections ran on all 25 modified Kotlin production/test files before and after the
-  rebase with no failed tools and no remaining diagnostics.
+- Direct IntelliJ inspections ran on all 25 modified Kotlin production/test files with no failed tools.
+  The post-quorum sweep found four `BlockingMethodInNonBlockingContext` findings after `stopLocked`
+  became suspendable; keeping its blocking body non-suspending under the caller's `Dispatchers.IO`
+  context removed all four, and the terminal inspection was clean.
 - Claude passed from a fresh Docker home, used the installed
   `/home/agent/.mcp-steroid/bin/devrig`, registered the user-scope MCP server, downloaded and started
   IU `2026.2.0.1`, opened Keycloak, and returned 70 subtypes in both the independently parsed tool
@@ -294,16 +297,22 @@ than merely mentioning it.
   paths stopped IU and left no Docker containers or managed backend processes.
 - Both preserved `managed-backend-idea.log` artifacts were sanitized and rechecked: neither contains
   an unredacted Bearer credential.
+- A post-quorum Docker rerun reached the fresh-home fixture but could not launch Claude because this
+  shell had none of `ANTHROPIC_API_KEY`, `CLAUDE_EVAL_API_KEY`, or `~/.anthropic`; the test failed hard
+  as designed and no skip was added. A separate Docker process-scan probe then proved the new teardown
+  matcher detects an exact managed-bundle launcher argv while rejecting an unrelated shell whose
+  command merely contains the same path. The earlier credentialed Claude/Codex Docker passes remain the
+  end-to-end evidence.
 
 ### 2026-07-31 — complete `steroid_execute_code` call audit
 
-- The terminal audit froze after `eid_20260731T092845-devrig-remote-backend-post-rebase` and deduplicated
-  inherited fork history by `call_id` across 21 root/sub-agent rollout logs. It found 1,065 unique calls:
-  1,028 successful, 37 failed, and 4,697.498 aggregate tool-seconds. The earlier 464-call number was a
+- The terminal audit froze after `eid_20260731T100732-devrig-remote-backend-final-verification` and
+  deduplicated 5,355 raw events by `call_id` across 22 root/sub-agent rollout logs. It found 1,080 unique
+  calls: 1,042 successful, 38 failed, and 5,172.326 aggregate tool-seconds. The earlier 464-call number was a
   narrower snapshot of the single primary rollout, not the complete multi-agent corpus.
-- The 37 errors were 20 caller-script compilation errors, 12 caller-script runtime errors, four
-  transient route-disappearance errors, and one dropped `/tools/call/stream` result. Three calls ran at
-  least 60 seconds and all succeeded; no script timeout occurred. The corpus contained 342 scripts that
+- The 38 errors were 21 caller-script compilation errors, 12 caller-script runtime errors, four
+  transient route-disappearance errors, and one dropped `/tools/call/stream` result. Seven calls ran at
+  least 60 seconds and all succeeded; no script timeout occurred. The corpus contained 352 scripts that
   used `RunContentManager`.
 - Four non-duplicate problems were filed:
   - [#402](https://github.com/jonnyzzz/mcp-steroid/issues/402) — IU 262 Gradle recipes can lose test
@@ -322,6 +331,10 @@ than merely mentioning it.
   indices [#280](https://github.com/jonnyzzz/mcp-steroid/issues/280). The seven-case correction was also
   added to #404. Timeout dump work remains [#215](https://github.com/jonnyzzz/mcp-steroid/issues/215),
   but this corpus did not reproduce it.
+- The final independent re-audit added terminal evidence to #20, #91, #207, and #403. The last new
+  caller compile failure duplicated its type-mismatch diagnostics and then falsely suggested EDT; that
+  belongs to #91 rather than a new issue. No genuinely untracked defect remained, so no duplicate issue
+  was created.
 
 ## Review log
 

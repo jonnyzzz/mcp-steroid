@@ -304,6 +304,54 @@ class SingleInstanceLockTest {
         }
     }
 
+    @Test
+    fun `download and stop refuse while start holds the global operation lock`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val id = "idea-community-2025.3.3"
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, id = id)
+        val firstScanEntered = CompletableDeferred<Unit>()
+        val releaseFirstScan = CompletableDeferred<Unit>()
+        val firstManager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(
+                bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test"),
+            ),
+            ideUserHome = tempDir.resolve("user-home"),
+            processInspector = BlockingFirstScanInspector(firstScanEntered, releaseFirstScan),
+        )
+        val secondManager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(
+                bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test"),
+            ),
+            ideUserHome = tempDir.resolve("user-home"),
+        )
+
+        val starting = async(Dispatchers.Default) { firstManager.start(parseBackendId(id)) }
+        withTimeout(5.seconds) { firstScanEntered.await() }
+        val downloadAttempt = runCatching { secondManager.download(parseBackendId(id)) }
+        val stopAttempt = runCatching { secondManager.stop(parseBackendId(id)) }
+        releaseFirstScan.complete(Unit)
+        val started = withTimeout(5.seconds) { starting.await() }
+        try {
+            assertEquals(
+                "another devrig backend operation is in progress; retry shortly",
+                (downloadAttempt.exceptionOrNull() as? ManagedBackendLockException)?.message,
+            )
+            assertEquals(
+                "another devrig backend operation is in progress; retry shortly",
+                (stopAttempt.exceptionOrNull() as? ManagedBackendLockException)?.message,
+            )
+        } finally {
+            firstManager.stop(parseBackendId(id))
+        }
+        assertFalse(ProcessHandle.of(started.pid).map { it.isAlive }.orElse(false))
+    }
+
     private fun captureCli(block: (PrintStream) -> Int): CliCapture {
         val originalOut = System.out
         val originalErr = System.err

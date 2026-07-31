@@ -96,7 +96,7 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                     stopAndAssertNoBackendSurvives(container)
                 }
             } finally {
-                sanitizePreservedBackendLog(container.runDir)
+                sanitizePreservedBackendLogs(container.runDir)
             }
         }
     }
@@ -267,8 +267,16 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                 failed_invariant="initialize Remote Development backend verification"
                 preserve_sanitized_backend_log() {
                   local source_log="$1"
-                  sed -E 's|Bearer[[:space:]]+[$$BEARER_TOKEN_CHARACTERS]+|<redacted>|g' \
-                    "$source_log" > /mcp-run-dir/managed-backend-idea.log
+                  local target_log="$2"
+                  sed -E \
+                    -e 's|Bearer[[:space:]]+[$$BEARER_TOKEN_CHARACTERS]+|<redacted>|g' \
+                    -e 's|([?&]_ijt=)[^&"[:space:]]+|\1<redacted>|g' \
+                    -e 's|("x-ijt"[[:space:]]*:[[:space:]]*")[^"]*(")|\1<redacted>\2|g' \
+                    "$source_log" > "$target_log"
+                }
+                backend_log_contains_credentials() {
+                  local artifact="$1"
+                  grep -Eq 'Bearer[[:space:]]+[$$BEARER_TOKEN_CHARACTERS]+|([?&]_ijt=|"x-ijt"[[:space:]]*:[[:space:]]*")[$$MARKER_CREDENTIAL_VALUE_CHARACTERS]+' "$artifact"
                 }
                 preserve_backend_log_after_failure() {
                   if [ -z "${cache:-}" ] || [ ! -d "$cache/logs" ]; then
@@ -278,10 +286,14 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                   failed_idea_log="$(find "$cache/logs" -type f -name 'idea.log' -print -quit)"
                   if [ -z "$failed_idea_log" ]; then
                     printf 'MANAGED_BACKEND_LOG_PRESERVE_SKIPPED: no idea.log under %s\n' "$cache/logs" >&2
-                    return 0
-                  fi
-                  if ! preserve_sanitized_backend_log "$failed_idea_log"; then
+                  elif ! preserve_sanitized_backend_log "$failed_idea_log" /mcp-run-dir/managed-backend-idea.log; then
                     printf 'MANAGED_BACKEND_LOG_PRESERVE_FAILED: %s\n' "$failed_idea_log" >&2
+                  fi
+                  local failed_launcher_log="$cache/logs/managed.log"
+                  if [ ! -f "$failed_launcher_log" ]; then
+                    printf 'MANAGED_BACKEND_LOG_PRESERVE_SKIPPED: no launcher log at %s\n' "$failed_launcher_log" >&2
+                  elif ! preserve_sanitized_backend_log "$failed_launcher_log" /mcp-run-dir/managed-backend-launcher.log; then
+                    printf 'MANAGED_BACKEND_LOG_PRESERVE_FAILED: %s\n' "$failed_launcher_log" >&2
                   fi
                 }
                 report_failed_invariant() {
@@ -345,14 +357,19 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                 idea_log="$(find "$cache/logs" -type f -name 'idea.log' -print -quit)"
                 test -n "$idea_log"
                 failed_invariant="managed backend idea.log is preserved in run artifacts"
-                preserve_sanitized_backend_log "$idea_log"
-                failed_invariant="preserved managed backend idea.log contains no Bearer credential"
-                if grep -Eq 'Bearer[[:space:]]+[$$BEARER_TOKEN_CHARACTERS]+' /mcp-run-dir/managed-backend-idea.log; then
-                  printf 'preserved managed backend idea.log contains an unredacted Bearer credential\n' >&2
+                preserve_sanitized_backend_log "$idea_log" /mcp-run-dir/managed-backend-idea.log
+                failed_invariant="preserved managed backend idea.log contains no marker credential"
+                if backend_log_contains_credentials /mcp-run-dir/managed-backend-idea.log; then
+                  printf 'preserved managed backend idea.log contains an unredacted marker credential\n' >&2
                   false
                 fi
                 failed_invariant="managed backend launcher log is preserved in run artifacts"
-                cp "$cache/logs/managed.log" /mcp-run-dir/managed-backend-launcher.log
+                preserve_sanitized_backend_log "$cache/logs/managed.log" /mcp-run-dir/managed-backend-launcher.log
+                failed_invariant="preserved managed backend launcher log contains no marker credential"
+                if backend_log_contains_credentials /mcp-run-dir/managed-backend-launcher.log; then
+                  printf 'preserved managed backend launcher log contains an unredacted marker credential\n' >&2
+                  false
+                fi
                 failed_invariant="backend JVM uses the managed plugin cache"
                 grep -F -- "-Didea.plugins.path=$cache/plugins" "$idea_log" >/dev/null
 
@@ -402,19 +419,34 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                 .quietly()
         }.awaitForProcessFinish().exitCode == 0
 
-    private fun sanitizePreservedBackendLog(runDir: File) {
-        val artifact = runDir.resolve("managed-backend-idea.log")
-        if (!artifact.isFile) return
-        artifact.writeText(redactBearerCredentials(artifact.readText()))
-    }
-
     private fun stopAndAssertNoBackendSurvives(container: DevrigContainer) {
         container.execAndAssertWithConsoleStream(
             description = "stop IU 262 and prove no managed backend process survives",
             timeoutSeconds = 180,
             script = $$"""
                 set -euo pipefail
-                mapfile -t managed_pids < <(find /home/agent/.mcp-steroid/state -maxdepth 1 -type f -name 'idea-ultimate-*.pid' -exec jq -r '.pid' {} \; 2>/dev/null || true)
+                backend_root="/home/agent/.mcp-steroid/backends/idea-ultimate-$$IDE_VERSION"
+                find_managed_backend_processes() {
+                  local proc_dir arg found
+                  for proc_dir in /proc/[0-9]*; do
+                    [ -r "$proc_dir/cmdline" ] || continue
+                    found=false
+                    while IFS= read -r -d '' arg; do
+                      case "$arg" in
+                        "$backend_root"/*) found=true ;;
+                      esac
+                    done < "$proc_dir/cmdline" 2>/dev/null || continue
+                    if $found; then
+                      printf '%s\n' "${proc_dir##*/}"
+                    fi
+                  done
+                }
+                mapfile -t managed_pids < <(
+                  {
+                    find /home/agent/.mcp-steroid/state -maxdepth 1 -type f -name 'idea-ultimate-*.pid' -exec jq -r '.pid' {} \; 2>/dev/null || true
+                    find_managed_backend_processes
+                  } | sort -nu
+                )
                 "$$INSTALLED_DEVRIG" backend stop idea-ultimate --version "$$IDE_VERSION"
                 deadline=$((SECONDS + 60))
                 for pid in "${managed_pids[@]}"; do
@@ -423,6 +455,19 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                     ps -fp "$pid" >&2 || true
                     exit 1
                   fi
+                done
+                while true; do
+                  mapfile -t surviving_managed_pids < <(find_managed_backend_processes | sort -nu)
+                  if [ "${#surviving_managed_pids[@]}" -eq 0 ]; then
+                    break
+                  fi
+                  if [ "$SECONDS" -ge "$deadline" ]; then
+                    printf 'managed launcher/backend processes survived teardown: %s\n' \
+                      "${surviving_managed_pids[*]}" >&2
+                    for pid in "${surviving_managed_pids[@]}"; do ps -fp "$pid" >&2 || true; done
+                    exit 1
+                  fi
+                  sleep 1
                 done
                 test -z "$(find /home/agent/.mcp-steroid/state -maxdepth 1 -type f -name 'idea-ultimate-*.pid' -print -quit)"
             """.trimIndent(),
@@ -454,12 +499,30 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
         private const val IDE_DESCRIPTOR_BUILD = "262.8665.337"
         private const val IDE_BUILD = "IU-262.8665.337"
         const val BEARER_TOKEN_CHARACTERS = "A-Za-z0-9._~+/=-"
+        const val MARKER_CREDENTIAL_VALUE_CHARACTERS = "A-Za-z0-9._~+/%=-"
         private val BEARER_CREDENTIAL = Regex("Bearer\\s+[$BEARER_TOKEN_CHARACTERS]+")
+        private val IJT_QUERY_CREDENTIAL = Regex("([?&]_ijt=)[^&\"\\s]+")
+        private val IJT_HEADER_CREDENTIAL = Regex("(\"x-ijt\"\\s*:\\s*\")[^\"]*(\")")
         val DEEP_SEARCH_ARGUMENT = Regex(
             "ClassInheritorsSearch\\s*\\.\\s*search\\s*\\(\\s*[^,]+,\\s*[^,]+," +
                 "\\s*(?:checkDeep\\s*=\\s*)?true\\s*\\)",
         )
 
-        fun redactBearerCredentials(text: String): String = BEARER_CREDENTIAL.replace(text, "<redacted>")
+        fun redactMarkerCredentials(text: String): String {
+            val withoutBearer = BEARER_CREDENTIAL.replace(text, "<redacted>")
+            val withoutIjtQuery = IJT_QUERY_CREDENTIAL.replace(withoutBearer) { match ->
+                match.groupValues[1] + "<redacted>"
+            }
+            return IJT_HEADER_CREDENTIAL.replace(withoutIjtQuery) { match ->
+                match.groupValues[1] + "<redacted>" + match.groupValues[2]
+            }
+        }
+
+        fun sanitizePreservedBackendLogs(runDir: File) {
+            listOf("managed-backend-idea.log", "managed-backend-launcher.log").forEach { artifactName ->
+                val artifact = runDir.resolve(artifactName)
+                if (artifact.isFile) artifact.writeText(redactMarkerCredentials(artifact.readText()))
+            }
+        }
     }
 }

@@ -339,9 +339,21 @@ class BackendManager(
 
     override suspend fun download(id: BackendId): DownloadResult = withContext(Dispatchers.IO) {
         homePaths.mkdirsAll()
+        withGlobalBackendOperationLock {
+            downloadLocked(id)
+        }
+    }
+
+    private suspend fun downloadLocked(id: BackendId): DownloadResult {
         val resolution = downloader.resolve(id)
         requirePluginCompatibleBuild(resolution.product, resolution.version, resolution.build)
         val resolved = ResolvedBackendId(resolution.product, resolution.version)
+        val running = scanRunningManagedProcesses().firstOrNull { it.backendId == resolved.id }
+        if (running != null) {
+            throw ManagedBackendLockException(
+                "managed backend ${resolved.id} is running (pid ${running.pid}); stop it before downloading that backend",
+            )
+        }
         val backendDir = homePaths.backendDir(resolved.id)
         val descriptorPath = descriptorPath(backendDir)
         val existingDescriptor = readDescriptorOrNull(descriptorPath)
@@ -452,7 +464,7 @@ class BackendManager(
         )
         writeDescriptor(descriptorPath, descriptor)
         deployMcpSteroidPlugin(resolved.id)
-        DownloadResult(resolved.id, descriptor, backendDir, vmOptionsPath)
+        return DownloadResult(resolved.id, descriptor, backendDir, vmOptionsPath)
     }
 
     /**
@@ -548,8 +560,15 @@ class BackendManager(
         if (other != null) {
             throw ManagedBackendLockException(lockConflictMessage(other))
         }
-        val existing = running.firstOrNull { it.backendId == resolved.id }
+        val existing = running.firstOrNull { it.backendId == resolved.id && it.ready }
+            ?: running.firstOrNull { it.backendId == resolved.id }
         if (existing != null) {
+            if (!existing.ready) {
+                throw ManagedBackendLockException(
+                    "error: managed backend ${existing.backendId} (pid ${existing.pid}) is not ready; " +
+                        "wait for its MCP Steroid Remote Development marker or stop it before starting again",
+                )
+            }
             if (existing.untracked) {
                 val startInstant = existing.startInstant ?: throw ManagedBackendLockException(lockConflictMessage(existing))
                 writePidFile(pidFile, existing.pid, startInstant)
@@ -583,7 +602,7 @@ class BackendManager(
 
         val managedLog = logDir.resolve("managed.log")
         val expectedPluginHome = cacheDir.resolve("plugins/mcp-steroid")
-        val preLaunchPids = processInspector.allProcesses().mapTo(mutableSetOf()) { it.pid }
+        val preLaunchProcesses = processInspector.allProcesses().associateBy { it.pid }
         var launcherPid: Long? = null
         var backendPid: Long? = null
         try {
@@ -604,7 +623,7 @@ class BackendManager(
                     expectedIdeHome = launchSpec.workingDirectory,
                     expectedPluginHome = expectedPluginHome,
                     launcherPid = spawnedPid,
-                    excludedPids = preLaunchPids,
+                    preLaunchProcesses = preLaunchProcesses,
                 ).pid
             } else {
                 spawnedPid
@@ -632,7 +651,7 @@ class BackendManager(
                         launcherPid = launcherPid,
                         knownBackendPid = backendPid,
                         pidFile = pidFile,
-                        excludedPids = preLaunchPids,
+                        preLaunchProcesses = preLaunchProcesses,
                     )
                 } catch (cleanupError: Exception) {
                     System.err.println(
@@ -682,7 +701,7 @@ class BackendManager(
         expectedIdeHome: Path,
         expectedPluginHome: Path,
         launcherPid: Long,
-        excludedPids: Set<Long>,
+        preLaunchProcesses: Map<Long, ProcessSnapshot>,
     ): PidMarker {
         val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(remoteDevelopmentStartupTimeoutMillis)
         val warnedMarkers = mutableSetOf<Path>()
@@ -692,7 +711,7 @@ class BackendManager(
                 expectedIdeHome,
                 expectedPluginHome,
                 warnedMarkers,
-                excludedPids,
+                preLaunchProcesses,
             )?.let { return it }
             delay(100.milliseconds)
         }
@@ -703,7 +722,7 @@ class BackendManager(
             expectedIdeHome,
             expectedPluginHome,
             warnedMarkers,
-            excludedPids,
+            preLaunchProcesses,
         )?.let { return it }
         val launcherAlive = processInspector.isAlive(launcherPid)
         throw ManagedBackendValidationException(
@@ -719,7 +738,7 @@ class BackendManager(
         expectedIdeHome: Path,
         expectedPluginHome: Path,
         warnedMarkers: MutableSet<Path>,
-        excludedPids: Set<Long>,
+        preLaunchProcesses: Map<Long, ProcessSnapshot>,
     ): PidMarker? {
         val markerDir = PidMarker.markerDirectory(ideUserHome)
         if (!Files.isDirectory(markerDir)) return null
@@ -739,10 +758,10 @@ class BackendManager(
                         return@mapNotNull null
                     }
                     if (marker.pid != markerPid) return@mapNotNull null
-                    if (marker.pid in excludedPids) return@mapNotNull null
                     if (!processInspector.isAlive(marker.pid)) return@mapNotNull null
-                    val processStartInstant = processInspector.snapshot(marker.pid)?.startInstant
-                        ?: return@mapNotNull null
+                    val processSnapshot = processInspector.snapshot(marker.pid) ?: return@mapNotNull null
+                    val processStartInstant = processSnapshot.startInstant ?: return@mapNotNull null
+                    if (wasPresentBeforeLaunch(processSnapshot, preLaunchProcesses)) return@mapNotNull null
                     if (!markerWasCreatedForProcess(marker, processStartInstant, markerPath, warnedMarkers)) {
                         return@mapNotNull null
                     }
@@ -816,7 +835,7 @@ class BackendManager(
         launcherPid: Long?,
         knownBackendPid: Long?,
         pidFile: Path,
-        excludedPids: Set<Long>,
+        preLaunchProcesses: Map<Long, ProcessSnapshot>,
     ) {
         val candidatePids = linkedSetOf<Long>()
         launcherPid?.let(candidatePids::add)
@@ -831,11 +850,13 @@ class BackendManager(
                 expectedIdeHome,
                 expectedPluginHome,
                 warnedMarkers,
-                excludedPids,
+                preLaunchProcesses,
             )?.pid?.let(candidatePids::add)
             val currentProcesses = processInspector.allProcesses()
             for (process in currentProcesses) {
-                if (process.pid !in excludedPids && processSnapshotMatchesManagedLauncher(process, descriptor)) {
+                if (!wasPresentBeforeLaunch(process, preLaunchProcesses) &&
+                    processSnapshotMatchesManagedLauncher(process, descriptor)
+                ) {
                     candidatePids += process.pid
                 }
             }
@@ -883,6 +904,15 @@ class BackendManager(
         deleteRecursively(pidFile)
     }
 
+    private fun wasPresentBeforeLaunch(
+        current: ProcessSnapshot,
+        preLaunchProcesses: Map<Long, ProcessSnapshot>,
+    ): Boolean {
+        val previousStart = preLaunchProcesses[current.pid]?.startInstant ?: return false
+        val currentStart = current.startInstant ?: return false
+        return previousStart == currentStart
+    }
+
     private fun writePidFile(pidFile: Path, pid: Long, startInstant: Instant) {
         Files.createDirectories(pidFile.parent)
         val state = ManagedBackendProcessState(pid = pid, startInstant = startInstant.toString())
@@ -908,12 +938,18 @@ class BackendManager(
     }
 
     override suspend fun stop(id: BackendId): StopResult = withContext(Dispatchers.IO) {
-        val resolved = resolveConcreteId(id)
+        homePaths.mkdirsAll()
+        withGlobalBackendOperationLock {
+            stopLocked(resolveConcreteId(id))
+        }
+    }
+
+    private fun stopLocked(resolved: ResolvedBackendId): StopResult {
         val pidFile = homePaths.pidFile(resolved.id)
         val processState = readManagedBackendProcessState(pidFile)
         if (processState == null) {
             Files.deleteIfExists(pidFile)
-            return@withContext StopResult(resolved.id, pid = null, outcome = "not running")
+            return StopResult(resolved.id, pid = null, outcome = "not running")
         }
         val pid = processState.pid
         val descriptor = loadDescriptor(resolved)
@@ -922,11 +958,11 @@ class BackendManager(
         if (handle == null || !handle.isAlive) {
             deleteMcpMarker(pid)
             Files.deleteIfExists(pidFile)
-            return@withContext StopResult(resolved.id, pid = pid, outcome = "already stopped")
+            return StopResult(resolved.id, pid = pid, outcome = "already stopped")
         }
         if (!isManagedBackendProcess(handle, descriptor, processState)) {
             Files.deleteIfExists(pidFile)
-            return@withContext StopResult(
+            return StopResult(
                 id = resolved.id,
                 pid = null,
                 outcome = "stale",
@@ -950,7 +986,7 @@ class BackendManager(
         }
         deleteMcpMarker(pid)
         Files.deleteIfExists(pidFile)
-        StopResult(resolved.id, pid = pid, outcome = outcome)
+        return StopResult(resolved.id, pid = pid, outcome = outcome)
     }
 
     private fun isManagedBackendProcess(
@@ -1168,6 +1204,7 @@ class BackendManager(
                                 pid = processState.pid,
                                 startInstant = processState.parsedStartInstant(),
                                 untracked = false,
+                                ready = true,
                             )
                         } else {
                             Files.deleteIfExists(pidFile)
@@ -1184,11 +1221,13 @@ class BackendManager(
                 val launcherMatches = processSnapshotMatchesManagedLauncher(process, descriptor)
                 val markerMatches = pidMarkerMatchesDescriptor(process.pid, descriptor, process.startInstant)
                 if (!launcherMatches && !markerMatches) continue
+                val ready = markerMatches || !backendLauncherResolver.usesRemoteDevelopment(descriptor)
                 byId += RunningManagedProcess(
                     backendId = backendId,
                     pid = process.pid,
                     startInstant = process.startInstant,
                     untracked = true,
+                    ready = ready,
                 )
                 break
             }
@@ -1253,6 +1292,7 @@ private data class RunningManagedProcess(
     val pid: Long,
     val startInstant: Instant?,
     val untracked: Boolean,
+    val ready: Boolean,
 )
 
 fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirName: String): Path {

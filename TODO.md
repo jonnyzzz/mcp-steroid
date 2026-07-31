@@ -101,8 +101,10 @@
     retaining `http_proxy` / `https_proxy` / `no_proxy` variants needed by IDE networking.
   - Replace hardcoded `/usr/bin/setsid` / `/bin/setsid` lookup with a portable executable search so
     detached managed launches work on non-FHS systems such as NixOS.
-  - Snapshot PID + start identity before launch instead of excluding raw PIDs, and make failed-start
-    cleanup diagnostics distinguish a deliberate identity-change refusal from a termination failure.
+  - [x] Snapshot PID + start identity before launch instead of excluding raw PIDs; serialize
+    download/start/stop with one operation lock and refuse to rewrite the plugin of a live target.
+  - Make failed-start cleanup diagnostics distinguish a deliberate identity-change refusal from a
+    termination failure.
   - Revalidate the native Remote Development launcher for baseline 263+, using cold-CI telemetry to
     tune the 180-second readiness bound and the caller-cancellation behavior before widening support.
   - Put the pure Remote Development NDJSON parser/workflow contracts on a normal CI-backed task; the

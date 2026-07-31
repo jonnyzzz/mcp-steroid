@@ -430,6 +430,105 @@ class BackendManagerStartStopTest {
     }
 
     @Test
+    fun `remote development start accepts a ready process that reused a pre-launch pid`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val id = "idea-ultimate-2026.2.0.1"
+        val build = "IU-262.8665.337"
+        val reusedPid = 4242L
+        val oldStart = Instant.parse("2026-07-31T08:00:00Z")
+        val newStart = Instant.parse("2026-07-31T09:00:00Z")
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val userHome = tempDir.resolve("user-home")
+        val markerDirectory = PidMarker.markerDirectory(userHome)
+        val bundleDir = homePaths.backendDir(id).resolve("idea-$build")
+        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
+        installStubBackend(
+            homePaths = homePaths,
+            id = id,
+            productKey = "idea-ultimate",
+            productCode = "IU",
+            buildNumber = build,
+            launcherBody = gracefulLauncher(),
+            remoteDevelopmentLauncherBody = fixedPidMarkerLauncher(
+                markerPid = reusedPid,
+                markerDirectory = markerDirectory,
+                ideHome = bundleDir,
+                pluginHome = pluginHome,
+            ),
+        )
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(
+                bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test"),
+            ),
+            processInspector = ReusedPreLaunchPidInspector(reusedPid, oldStart, newStart),
+            ideUserHome = userHome,
+            remoteDevelopmentStartupTimeoutMillis = 1_000,
+        )
+
+        try {
+            val started = manager.start(parseBackendId(id))
+
+            assertEquals(reusedPid, started.pid)
+            assertEquals(
+                newStart.toString(),
+                requireNotNull(readManagedBackendProcessState(homePaths.pidFile(id))).startInstant,
+            )
+        } finally {
+            Files.deleteIfExists(homePaths.pidFile(id))
+            Files.deleteIfExists(markerDirectory.resolve(PidMarker.markerFileNameFor(reusedPid)))
+        }
+    }
+
+    @Test
+    fun `remote development start refuses to adopt an untracked launcher without a ready marker`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val id = "idea-ultimate-2026.2.0.1"
+        val build = "IU-262.8665.337"
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(
+            homePaths = homePaths,
+            id = id,
+            productKey = "idea-ultimate",
+            productCode = "IU",
+            buildNumber = build,
+            launcherBody = gracefulLauncher(),
+            remoteDevelopmentLauncherBody = gracefulLauncher(),
+        )
+        val remoteLauncher = homePaths.backendDir(id).resolve("idea-$build/bin/remote-dev-server")
+        val processStartedAt = Instant.parse("2026-07-31T10:00:00Z")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(
+                bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test"),
+            ),
+            processInspector = FakeProcessInspector(
+                alivePids = setOf(4242L),
+                snapshots = mapOf(
+                    4242L to ProcessSnapshot(
+                        pid = 4242L,
+                        command = remoteLauncher.toString(),
+                        startInstant = processStartedAt,
+                    ),
+                ),
+            ),
+            ideUserHome = tempDir.resolve("user-home"),
+        )
+
+        val error = assertFailsWith<ManagedBackendLockException> {
+            manager.start(parseBackendId(id))
+        }
+
+        assertTrue(error.message!!.contains("not ready"), error.message)
+        assertTrue(error.message!!.contains("pid 4242"), error.message)
+        assertFalse(homePaths.pidFile(id).exists(), "an unready untracked launcher must not become durable state")
+    }
+
+    @Test
     fun `remote development start rejects a stale marker written for the current launcher pid`(
         @TempDir tempDir: Path,
     ) = kotlinx.coroutines.runBlocking {
@@ -1326,6 +1425,35 @@ class BackendManagerStartStopTest {
     }
 
     @Test
+    fun `download refuses to rewrite the plugin of a running backend`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val id = "idea-community-2025.3.3"
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, launcherBody = gracefulLauncher())
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            bundledPluginResolver = FixedBundledPluginResolver(
+                bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), "test"),
+            ),
+            ideUserHome = tempDir.resolve("user-home"),
+        )
+
+        val started = manager.start(parseBackendId(id))
+        try {
+            val error = assertFailsWith<ManagedBackendLockException> {
+                manager.download(parseBackendId(id))
+            }
+
+            assertTrue(error.message!!.contains("$id is running"), error.message)
+            assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
+        } finally {
+            manager.stop(parseBackendId(id))
+        }
+    }
+
+    @Test
     fun `durable pid identity does not decode an unrelated marker`(
         @TempDir tempDir: Path,
     ) = kotlinx.coroutines.runBlocking {
@@ -1468,7 +1596,7 @@ class BackendManagerStartStopTest {
         markerDirectory: Path,
         ideHome: Path,
         pluginHome: Path,
-        markerCreatedAt: String = Instant.now().plusSeconds(1).toString(),
+        markerCreatedAt: String = FUTURE_MARKER_CREATED_AT,
     ): String {
         val shellPid = '$' + "pid"
         val markerJson = readyMarkerJson(0, ideHome, pluginHome, markerCreatedAt)
@@ -1480,6 +1608,24 @@ class BackendManagerStartStopTest {
         printf '%s\n' "$#" "$@" "$REMOTE_DEV_JDK_DETECTION" "$REMOTE_DEV_NON_INTERACTIVE" "$REMOTE_DEV_TRUST_PROJECTS" > '$$argumentsFile'
         mkdir -p '$$markerDirectory'
         cat > '$$markerDirectory/'"$pid"'.mcp-steroid' <<EOF
+        $$markerJson
+        EOF
+        trap 'exit 0' TERM
+        while true; do sleep 1; done
+        """.trimIndent() + "\n"
+    }
+
+    private fun fixedPidMarkerLauncher(
+        markerPid: Long,
+        markerDirectory: Path,
+        ideHome: Path,
+        pluginHome: Path,
+    ): String {
+        val markerJson = readyMarkerJson(markerPid, ideHome, pluginHome).replace("\n", "")
+        return $$"""
+        #!/usr/bin/env sh
+        mkdir -p '$$markerDirectory'
+        cat > '$$markerDirectory/$$markerPid.mcp-steroid' <<EOF
         $$markerJson
         EOF
         trap 'exit 0' TERM
@@ -1586,7 +1732,7 @@ class BackendManagerStartStopTest {
         ideHome: Path,
         pluginHome: Path,
         build: String = "IC-253.1",
-        createdAt: String = Instant.now().plusSeconds(1).toString(),
+        createdAt: String = FUTURE_MARKER_CREATED_AT,
     ): String =
         PidMarkerJson.encode(
             PidMarker(
@@ -1611,7 +1757,7 @@ class BackendManagerStartStopTest {
         pid: Long,
         ideHome: Path,
         pluginHome: Path? = null,
-        createdAt: String = Instant.now().plusSeconds(1).toString(),
+        createdAt: String = FUTURE_MARKER_CREATED_AT,
     ): String =
         PidMarkerJson.encode(
             PidMarker(
@@ -1762,5 +1908,37 @@ class BackendManagerStartStopTest {
             targetWasHidden = true
             return snapshots.filterNot { it.pid == targetPid }
         }
+    }
+
+    private class ReusedPreLaunchPidInspector(
+        private val reusedPid: Long,
+        private val oldStart: Instant,
+        private val newStart: Instant,
+    ) : ManagedProcessInspector {
+        private var processListingCount = 0
+
+        override fun isAlive(pid: Long): Boolean =
+            pid == reusedPid || DefaultManagedProcessInspector.isAlive(pid)
+
+        override fun snapshot(pid: Long): ProcessSnapshot? =
+            if (pid == reusedPid) {
+                ProcessSnapshot(pid = reusedPid, command = "/managed/backend", startInstant = newStart)
+            } else {
+                DefaultManagedProcessInspector.snapshot(pid)
+            }
+
+        override fun allProcesses(): List<ProcessSnapshot> {
+            processListingCount++
+            return when (processListingCount) {
+                1 -> emptyList()
+                2 -> listOf(ProcessSnapshot(pid = reusedPid, command = "/old/process", startInstant = oldStart))
+                else -> DefaultManagedProcessInspector.allProcesses().filterNot { it.pid == reusedPid } +
+                    requireNotNull(snapshot(reusedPid))
+            }
+        }
+    }
+
+    private companion object {
+        const val FUTURE_MARKER_CREATED_AT = "9999-12-31T23:59:59Z"
     }
 }
