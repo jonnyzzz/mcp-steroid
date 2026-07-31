@@ -339,9 +339,9 @@ than merely mentioning it.
   but this corpus did not reproduce it.
 - The final independent re-audit added terminal evidence to #20, #91, #207, #280, #402, #403, and
   #405. The last new caller runtime failure was an inspection-loop `IndexOutOfBoundsException`; its
-  duplicated diagnostics and generic hint belong to #91 rather than a new issue. Two independent
-  auditors agreed exactly on the terminal census and mapping. No genuinely untracked defect remained,
-  so no duplicate issue was created.
+  duplicated diagnostics and generic hint belong to #91 rather than a new issue. Four independent
+  auditors ultimately agreed exactly on the terminal census and mapping. No genuinely untracked defect
+  remained, so no duplicate issue was created.
 
 ## Review log
 
@@ -389,8 +389,10 @@ acceptance surface and produced the persisted PASS verdicts above.
 
 ### Complete execute-code audit review — PASS
 
-Three independent execute-code auditors rechecked the corpus and every proposed issue against existing
+Four independent execute-code auditors rechecked the corpus and every proposed issue against existing
 GitHub ownership. The terminal two-agent reconciliation agreed exactly on 1,108 calls, the 39-error
-taxonomy, timing, and counters. They agreed that #402–#405 are distinct defects and that every remaining
-observation belongs to #20, #66, #91, #207, #215, or #280. The final audit verdict was PASS with no
-untracked finding.
+taxonomy, timing, and counters. A fourth post-delivery auditor independently recomputed the same census
+from the frozen 5,962-event raw artifact and its `call_id`-deduplicated form, including all eleven
+successful calls lasting at least 60 seconds. The auditors agreed that #402–#405 are distinct defects
+and that every remaining observation belongs to #20, #66, #91, #207, #215, or #280. The final audit
+verdict was PASS with no untracked finding.
