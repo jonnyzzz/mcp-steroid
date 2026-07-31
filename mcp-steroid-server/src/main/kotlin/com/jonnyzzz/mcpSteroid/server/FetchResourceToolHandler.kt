@@ -33,7 +33,7 @@ class FetchResourceToolHandler(
     private val handler: () -> PromptsContextHandler,
 ) : McpToolBase() {
 
-    private val log by lazy { thisLogger() }
+    private val log = thisLogger()
 
     override val name = "steroid_fetch_resource"
 
