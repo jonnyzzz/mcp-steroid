@@ -307,8 +307,14 @@ class McpScriptContextImpl(
                 withContext(Dispatchers.EDT) {
                     PsiDocumentManager.getInstance(project).commitAllDocuments()
                     FileDocumentManager.getInstance().saveAllDocuments()
-                    project.vfsRefreshService.awaitRefresh()
                 }
+                // #318: the recursive refresh must be awaited OUTSIDE the EDT context. Despite
+                // RefreshQueue's suspend overload being documented as background, the captured
+                // 31s freeze stack shows the directory scan executing on AWT-EventQueue-0 when
+                // awaited from Dispatchers.EDT. Awaiting here (the execution's background
+                // dispatcher) keeps the UI responsive with the same consistency contract — we
+                // still suspend until the refresh completes before returning.
+                project.vfsRefreshService.awaitRefresh()
             }
         } catch (_: TimeoutCancellationException) {
             captureThreadDump("syncDocuments-timeout")

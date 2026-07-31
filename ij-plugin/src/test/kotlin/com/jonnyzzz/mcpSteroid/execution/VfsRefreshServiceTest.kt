@@ -1,10 +1,13 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.execution
 
+import com.intellij.openapi.application.EDT
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlin.system.measureTimeMillis
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Contract for [VfsRefreshService]. These tests pin the two guarantees the
@@ -63,6 +66,23 @@ class VfsRefreshServiceTest : BasePlatformTestCase() {
         service.scheduleAsyncRefresh()
         service.scheduleAsyncRefresh()
         // If we got here without an exception, the contract holds.
+    }
+
+    fun testAwaitRefreshFromTheEdtFailsFast(): Unit = timeoutRunBlocking(30.seconds) {
+        // jonnyzzz/mcp-steroid#318: awaiting the recursive refresh from the EDT ran the
+        // RefreshWorker directory scan ON AWT-EventQueue-0 (31s captured freeze). The guard must
+        // fail fast — long before any traversal — so no caller can reintroduce the freeze.
+        val service = project.vfsRefreshService
+        val failure = try {
+            withContext(Dispatchers.EDT) { service.awaitRefresh() }
+            null
+        } catch (e: IllegalStateException) {
+            e
+        }
+        assertTrue(
+            "awaitRefresh from the EDT must throw IllegalStateException, got: $failure",
+            failure is IllegalStateException && failure.message!!.contains("#318"),
+        )
     }
 
     fun testAwaitRefreshWithNoProjectBasePathIsNoOp(): Unit = timeoutRunBlocking(5.seconds) {

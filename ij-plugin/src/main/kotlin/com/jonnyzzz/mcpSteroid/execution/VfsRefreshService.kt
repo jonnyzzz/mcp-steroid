@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.execution
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -94,6 +95,14 @@ class VfsRefreshService(
      * pathological refresh cannot hang compilation forever.
      */
     suspend fun awaitRefresh() {
+        // #318: a recursive project-root scan awaited from the EDT monopolizes it — a 31s
+        // PerformanceWatcher freeze attributed to this plugin was captured with the RefreshWorker
+        // traversal on AWT-EventQueue-0. Fail fast so no caller can reintroduce that: every await
+        // must happen on a background dispatcher (syncDocuments awaits AFTER its EDT commit/save
+        // block; CodeEvalManager's pre-compile path is background already).
+        check(!ApplicationManager.getApplication().isDispatchThread) {
+            "awaitRefresh must not be awaited from the EDT — the recursive VFS scan would freeze the UI (#318)"
+        }
         val base = projectBaseVf() ?: return
         // Use the platform's coroutine-native [RefreshQueue.refresh] (suspend
         // overload). The callback-based variant uses an EDT-side
