@@ -51,6 +51,13 @@ to install from Marketplace via `/api/installPlugin`. It is unaffected by anythi
 
 ## What actually follows from the decision
 
+> **Superseded in part (2026-08-01).** The gaps below were addressed, but not all in the shape proposed
+> here. The offer moved to the **settings page** rather than being made louder — a balloon has no room to
+> justify a 611 MB download, and a status-bar widget is not ours to take uninvited (both it and the
+> startup notification are now behind `mcp.steroid.devrig.widget.enabled`, off by default). The install
+> also no longer runs `devrig connect claude`: registering an agent is a separate, explicit step. See
+> `ij-plugin/README.md` for what ships. The measurements above stand.
+
 The plugin is a **migrator**. Mechanism-wise that already exists on the `claude-plugin` branch:
 
 - `DevrigSetup.kt:26-28` — `installerArgv()` builds exactly the canonical one-liner
