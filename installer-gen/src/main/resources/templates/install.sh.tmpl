@@ -185,8 +185,10 @@ main() {
   #    explicit user step. --
   log "devrig binary is ready."
   log ""
-  log "To register devrig with your agents (Claude, Codex, Gemini), run:"
-  log "    devrig install"
+  log "To register devrig with your agent, run one of:"
+  log "    devrig install claude"
+  log "    devrig install codex"
+  log "    devrig install gemini"
 }
 
 main "$@"

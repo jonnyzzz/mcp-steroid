@@ -158,10 +158,17 @@ if ($LASTEXITCODE -ne 0) { Fail "'devrig install devrig' failed (exit $LASTEXITC
 
 # -- done. We do NOT auto-register devrig with agents - that edits agent configs, so it is an
 #    explicit user step. --
+# `devrig install devrig` registers $BinDir on the persistent user PATH (HKCU\Environment), which only
+# reaches NEW shells - but `irm | iex` runs in the caller's session and the guidance below tells the
+# user to run `devrig install <agent>` right away. Prepend $BinDir in THIS session so that works.
+# ';' + case-insensitive -notcontains are Windows PATH semantics (the pwsh-on-Linux run is smoke only).
+if (($env:PATH -split ';') -notcontains $BinDir) { $env:PATH = "$BinDir;$env:PATH" }
 Write-Log "devrig binary is ready."
 Write-Log ""
-Write-Log "To register devrig with your agents (Claude, Codex, Gemini), run:"
-Write-Log "    devrig install"
+Write-Log "To register devrig with your agent, run one of:"
+Write-Log "    devrig install claude"
+Write-Log "    devrig install codex"
+Write-Log "    devrig install gemini"
 }
 finally {
   # Restore the caller's progress preference so `irm | iex` leaves the session as it found it.

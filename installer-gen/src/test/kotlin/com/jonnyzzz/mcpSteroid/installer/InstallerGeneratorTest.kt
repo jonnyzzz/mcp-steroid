@@ -116,6 +116,35 @@ class InstallerGeneratorTest {
     }
 
     @Test
+    fun `final guidance recommends agent-qualified install commands, never bare devrig install`() {
+        // jonnyzzz/mcp-steroid#320: `devrig install` has a required <agent> argument, so the old
+        // "run: devrig install" next-step guidance errored on every fresh install. Both scripts must
+        // print agent-qualified commands instead.
+        val scripts = renderInstallerScripts(jdkScriptTable(fullModel()), devrig, "1.2.3")
+
+        listOf("devrig install claude", "devrig install codex", "devrig install gemini").forEach {
+            assertTrue(scripts.sh.contains(it), "install.sh guidance missing '$it'")
+            assertTrue(scripts.ps.contains(it), "install.ps1 guidance missing '$it'")
+        }
+        // A bare `devrig install` right before the closing quote is the broken recommendation.
+        assertTrue(!scripts.sh.contains("devrig install\""), "install.sh must not recommend bare 'devrig install'")
+        assertTrue(!scripts.ps.contains("devrig install\""), "install.ps1 must not recommend bare 'devrig install'")
+    }
+
+    @Test
+    fun `install_ps1 prepends BinDir to the current session PATH after the devrig handoff`() {
+        // jonnyzzz/mcp-steroid#275: `devrig install devrig` registers the bin dir persistently
+        // (HKCU\Environment), which only reaches NEW shells — but `irm | iex` runs in the caller's
+        // session and the script tells the user to run `devrig install <agent>` immediately. The
+        // template must make devrig resolvable in the calling session itself.
+        val scripts = renderInstallerScripts(jdkScriptTable(fullModel()), devrig, "1.2.3")
+        assertTrue(
+            scripts.ps.contains("\$env:PATH = \"\$BinDir;\$env:PATH\""),
+            "install.ps1 must prepend \$BinDir to the current session \$env:PATH",
+        )
+    }
+
+    @Test
     fun `install dirs are named by each artifact's own version - jdk folder carries the JDK version`() {
         // jonnyzzz/mcp-steroid#362: the JDK used to unpack into jdk-<key>-<DEVRIG VERSION>-<sha12>. Both
         // scripts must thread a per-artifact version into the install-dir name: $VERSION for devrig, the
