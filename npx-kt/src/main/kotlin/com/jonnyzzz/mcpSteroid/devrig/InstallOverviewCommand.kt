@@ -32,10 +32,15 @@ fun renderInstallOverview(detected: Map<AiAgentCli, Path?>): String = buildStrin
 }
 
 /**
- * Resolve [binary] against a PATH-style environment value, mirroring what the OS shell would launch.
+ * Resolve [binary] against a PATH-style environment value, mirroring what the OS SHELL would launch.
  * Pure lookup for testability: PATH content and platform behavior arrive as parameters. On Windows a
  * bare name launches `<name>.exe|.cmd|.bat` ([windowsExtensions]); executability is only checked where
  * the OS reports it (Files.isExecutable is always true on Windows).
+ *
+ * Caveat: shell semantics, not ProcessBuilder semantics. A `.cmd`/`.bat` npm shim found here is real
+ * (the user's shell runs it via PATHEXT), but ProcessAiAgentCliRunner spawns the bare name and
+ * CreateProcess cannot execute batch files - those need `cmd.exe /d /c` (see DevrigUserLauncher).
+ * Routing the runner's batch-shim launches through cmd.exe is tracked in jonnyzzz/mcp-steroid#342.
  */
 fun findCliOnPath(
     binary: String,
