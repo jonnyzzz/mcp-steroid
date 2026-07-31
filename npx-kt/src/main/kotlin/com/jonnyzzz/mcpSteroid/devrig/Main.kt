@@ -131,6 +131,18 @@ suspend fun DevrigServices.mainImpl2(
     }
 
     if (command is DevrigCommand.MCP) {
+        // Orphan back-stop (#132): stdin EOF only reaps a parent that CLOSES the pipe; a SIGKILL'd
+        // agent leaves this JVM alive forever. exitProcess (not scope cancellation) because the read
+        // loop is parked in a blocking stream read that cancellation cannot interrupt.
+        ParentDeathWatchdog(
+            parentAlive = currentParentLiveness(),
+            onParentDeath = {
+                val message = "parent process died without closing stdin — exiting orphaned 'devrig mcp'"
+                System.err.println("[mcp-steroid] $message")
+                logger<ParentDeathWatchdog>().warn(message)
+                exitProcess(0)
+            },
+        ).launchIn(backgroundScope)
         beacon.runHeartbeat()
         try {
             mainImplMcp(onServerReady = { mcpServerReady.complete(it) })
