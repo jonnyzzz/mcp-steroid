@@ -166,7 +166,7 @@ fun runInstallCommand(
     out: PrintStream,
     err: PrintStream,
     runner: AiAgentCliRunner,
-): Int = withFriendlyMissingCliError(command.agent, err) {
+): Int {
     val agent = command.agent
     val renderedCommand = "${mcpCommand.command} ${mcpCommand.args.joinToString(" ")}"
 
@@ -247,22 +247,21 @@ fun runInstallCommand(
 /**
  * jonnyzzz/mcp-steroid#342: when the agent CLI is not installed (or not spawnable — e.g. a Windows
  * .cmd npm shim), the runner throws [AgentCliNotLaunchableException]. That must read as guidance,
- * never a raw stacktrace. Only the typed launch failure is translated — other IOExceptions (temp
- * files, output reads) are infrastructure errors and keep propagating. Inline so the wrapped
- * bodies keep their non-local returns.
+ * never a raw stacktrace. Handled centrally in [runCli]'s typed-exception catches — the same
+ * pattern as ManagedBackend*Exception — so every command that spawns an agent CLI gets the same
+ * treatment. Only the typed launch failure is translated; other IOExceptions (temp files, output
+ * reads) are infrastructure errors and keep propagating to the generic handler.
  */
-private inline fun withFriendlyMissingCliError(agent: AiAgentCli, err: PrintStream, body: () -> Int): Int =
-    try {
-        body()
-    } catch (e: AgentCliNotLaunchableException) {
-        err.println()
-        err.println("ERROR: could not run the '${agent.binary}' CLI: ${e.cause?.message ?: e.message}")
-        err.println(
-            "Is the ${agent.displayName} CLI installed and on PATH? Install it first, then re-run " +
-                "'devrig install ${agent.binary}'.",
-        )
-        64
-    }
+fun reportAgentCliNotLaunchable(e: AgentCliNotLaunchableException, err: PrintStream): Int {
+    val displayName = AiAgentCli.parse(e.binary)?.displayName ?: e.binary
+    err.println()
+    err.println("ERROR: could not run the '${e.binary}' CLI: ${e.cause?.message ?: e.message}")
+    err.println(
+        "Is the $displayName CLI installed and on PATH? Install it first, then re-run " +
+            "'devrig install ${e.binary}'.",
+    )
+    return 64
+}
 
 private fun emitAgentOutput(result: AiAgentCliResult, err: PrintStream) {
     if (result.output.isNotBlank()) {
@@ -335,7 +334,7 @@ fun runInstallCheckCommand(
     ideReachability: () -> IdeReachabilityReport,
     /** Non-null = the devrig launcher does not exist yet at this path (reported as a diagnostic). */
     missingLauncherPath: Path? = null,
-): Int = withFriendlyMissingCliError(command.agent, err) {
+): Int {
     val agent = command.agent
     val renderedCommand = "${mcpCommand.command} ${mcpCommand.args.joinToString(" ")}"
 

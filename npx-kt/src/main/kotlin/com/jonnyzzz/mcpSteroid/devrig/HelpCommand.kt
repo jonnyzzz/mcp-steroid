@@ -24,13 +24,12 @@ fun printHelp(out: PrintStream) : Int {
                                          `--json` emits a single machine-readable
                                          object on stdout; default is human text.
 
-          devrig install                 list install targets and which agent
-                                         CLIs are present on PATH
-
-          devrig install claude|codex|gemini [--check]
+          devrig install [claude|codex|gemini] [--check]
                                          register this devrig binary as the
                                          mcp-steroid stdio MCP server in the
-                                         selected coding agent. `--check` is a
+                                         selected coding agent. With no agent:
+                                         list the install targets and which agent
+                                         CLIs are present on PATH. `--check` is a
                                          read-only dry-run: it reports the current
                                          registration, the changes install would
                                          apply, and how many IDE backends with the

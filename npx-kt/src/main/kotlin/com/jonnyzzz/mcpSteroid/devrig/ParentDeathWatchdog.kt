@@ -29,6 +29,8 @@ class ParentDeathWatchdog(
     /** Consecutive dead readings required before firing — one transient platform hiccup must not kill the server. */
     private val confirmations: Int = 2,
 ) {
+    private val log = logger<ParentDeathWatchdog>()
+
     fun launchIn(scope: CoroutineScope) {
         if (ancestorsAlive.isEmpty()) {
             log.info("parent process unknown — parent-death watchdog disabled")
@@ -47,9 +49,6 @@ class ParentDeathWatchdog(
         }
     }
 
-    companion object {
-        private val log = logger<ParentDeathWatchdog>()
-    }
 }
 
 /**

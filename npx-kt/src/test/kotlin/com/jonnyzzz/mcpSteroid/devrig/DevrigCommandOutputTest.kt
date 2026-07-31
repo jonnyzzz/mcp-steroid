@@ -86,7 +86,8 @@ class DevrigCommandOutputTest {
         assertFalse(out.contains("devrig mpc"), "help must NOT advertise the hidden mpc alias; got:\n$out")
         assertTrue(out.contains("--version"), "help should advertise --version; got:\n$out")
         assertTrue(out.contains("--help"), "help should advertise --help itself; got:\n$out")
-        assertTrue(out.contains("devrig install claude|codex|gemini"), "help should advertise agent install; got:\n$out")
+        // ONE merged install entry (PR #397 review): the bare and agent-qualified forms share it.
+        assertTrue(out.contains("devrig install [claude|codex|gemini] [--check]"), "help should advertise agent install; got:\n$out")
         assertTrue(out.contains("devrig install config"), "help should advertise the manual-config printer; got:\n$out")
         assertTrue(out.contains("backend download [<id>] [--version <v>] [--json]"), "help should advertise download version override; got:\n$out")
         assertTrue(out.contains("no id → list IDEs available for download"), "help should explain download without id; got:\n$out")

@@ -10,6 +10,7 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.optional
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
+import com.jonnyzzz.mcpSteroid.aiAgents.AgentCliNotLaunchableException
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
@@ -425,6 +426,9 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandInstallConfig -> runInstallConfigCommand()
             is DevrigCommand.DevrigCommandInstallPlugin -> runInstallPluginCommand(command)
         }
+    } catch (e: AgentCliNotLaunchableException) {
+        // #342: a missing/unspawnable agent CLI must read as guidance, not a raw stacktrace.
+        reportAgentCliNotLaunchable(e, System.err)
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)
         64
