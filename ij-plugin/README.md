@@ -15,7 +15,7 @@ installer.
 
 ### Settings page
 
-**Settings | Tools | MCP Steroid — devrig** is where the plugin offers anything. It leads with the live
+**Settings | Tools | Devrig — MCP Steroid** is where the plugin offers anything. It leads with the live
 server status, then two tabs — **Devrig — recommended** and **Direct HTTP** — in the order we recommend
 them. They used to be stacked sections, which read as two halves of one setup instead of a choice.
 
@@ -69,7 +69,7 @@ install the user started, and appear whether or not the key is set.
 |---|---|---|---|
 | devrig missing (startup, key on) | Install devrig to connect an AI agent | devrig bridges Claude Code, Codex or Gemini to this IDE — so an agent can run, debug, refactor and inspect it. | **Install devrig**, **Later** |
 | installed devrig is stale (startup, key on) | Update devrig | devrig 0.100 is behind 0.101. Updating keeps the IDE bridge — and the plugin it carries — current. | **Update**, **Later** |
-| the install succeeded | devrig is installed | Register your agent with it to bridge this IDE — see Settings \| Tools \| MCP Steroid — devrig. | — |
+| the install succeeded | devrig is installed | Register your agent with it to bridge this IDE — see Settings \| Tools \| Devrig — MCP Steroid. | — |
 | the install failed | devrig install failed | *&lt;the installer's own reason&gt;*. See the IDE log for details. | **Retry** |
 
 `Later` only dismisses the current balloon; there is no "don't ask again". Cancelling an install produces
