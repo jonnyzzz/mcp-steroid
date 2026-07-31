@@ -107,6 +107,19 @@
   so it is not screenshot-only) and must implement `--wait` as a `list_windows` poll until the project
   reports initialized. Without those two, both flags silently vanish from the CLI.
 
+- [ ] **Harden the CLI tool-spec metadata layer (#284 follow-up)**: three review findings deferred from
+  PR #356. (1) `CliToolSpec.schema` exposes the mutable `ToolSchema` — any consumer can call
+  `register()` after registration and change the advertised `inputSchema`; expose a read-only view
+  (interface with `asMcpJson()`/`asCliParams()` only). (2) No declaration-time flag-collision
+  validation: a parameter flag, its `cliFileSource` flag, and a tool-level `CliExtraOption` flag can
+  collide — builder checks are order-dependent (`.cliFileSource("--x").cliFlag("--x")` passes) and a
+  bare `--` is accepted as a flag; validate per-tool flag/alias uniqueness at registration or pin it
+  with a `devrigToolSpecs()`-wide test. (3) Wire bounds declared via the `extra {}` closure
+  (`success_rating` 0..1) are invisible to `asCliParams()`, while `timeout` carries a CLI-only
+  `cliMinimum` — the generated CLI cannot enforce the wire bound without parsing `asMcpJson()`; also
+  `cliSynopsis` hardcodes "(default 600)" where the MCP description interpolates the constant, so the
+  two can silently diverge.
+
 - [ ] **red-code reporter false-positives on Kotlin files**: `reportProjectRedCode` (PSI reference scan,
   `mcp-steroid-import.kt`) reports Kotlin stdlib/operator references (`mutableMapOf`, `runCatching`,
   `trim()`, `!!`, `=`) as UNRESOLVED — 95/646 on the stock Gradle test-project's `SsrRunCatchingDemo.kt`
