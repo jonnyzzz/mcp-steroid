@@ -633,15 +633,12 @@ val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
     val marketplaceFile = rootProject.projectDir.resolve(".claude-plugin/marketplace.json")
     // Claude keys a marketplace by the `name` DECLARED here (see ~/.claude/plugins/known_marketplaces.json),
     // so `devrig connect claude` and the IDE's onboarding check must use the same name — otherwise they
-    // write / look for `devrig@<wrong-marketplace>`, which names no real plugin. Both constants are
-    // cross-checked below.
+    // write / look for `devrig@<wrong-marketplace>`, which names no real plugin. devrig owns the only
+    // copy of that name; the plugin key is derived from it in code, so it cannot drift on its own.
     val connectSource = rootProject.projectDir
         .resolve("npx-kt/src/main/kotlin/com/jonnyzzz/mcpSteroid/devrig/ClaudePluginConnect.kt")
-    val onboardingSource = rootProject.projectDir
-        .resolve("ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/onboarding/OnboardingDecision.kt")
     inputs.file(marketplaceFile)
     inputs.file(connectSource)
-    inputs.file(onboardingSource)
 
     doLast {
         @Suppress("UNCHECKED_CAST")
@@ -659,7 +656,6 @@ val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
         }
 
         val marketplaceName = json["name"].toString()
-        val pluginKey = "devrig@$marketplaceName"
 
         fun assertConstant(file: java.io.File, constant: String, expected: String) {
             val text = file.readText()
@@ -674,7 +670,6 @@ val validateMarketplaceJson = tasks.register("validateMarketplaceJson") {
             }
         }
         assertConstant(connectSource, "CLAUDE_MARKETPLACE_NAME", marketplaceName)
-        assertConstant(onboardingSource, "CLAUDE_DEVRIG_PLUGIN_KEY", pluginKey)
     }
 }
 
