@@ -69,7 +69,11 @@ class KeycloakTypeHierarchyTest {
             val agentDurationMs = System.currentTimeMillis() - startedAt
             val combined = result.stdout + "\n" + result.stderr
 
-            val score = scoreTypeHierarchy(combined, REQUIRED_TRANSITIVE, MIN_TOTAL)
+            val score = scoreTypeHierarchy(
+                combined,
+                KeycloakTypeHierarchyScenario.requiredTransitive,
+                KeycloakTypeHierarchyScenario.MIN_TOTAL,
+            )
             println("[TEST] keycloak type-hierarchy [$agentName+$modeLabel] complete=${score.complete} " +
                     "reported=${score.reportedCount} missing=${score.missingRequired}")
 
@@ -98,48 +102,17 @@ class KeycloakTypeHierarchyTest {
     private fun withMcpPrompt(): String = buildString {
         appendLine("The Keycloak project is open in IntelliJ IDEA — a large multi-module Java project.")
         appendLine()
-        appendLine("Task: list EVERY class that implements the interface `$INTERFACE_FQN`,")
-        appendLine("INCLUDING transitive/indirect implementors (a class that extends an abstract base which")
-        appendLine("implements the interface still counts). Be exhaustive.")
-        appendLine()
-        appendLine("Use IntelliJ's PSI inheritance search via `steroid_execute_code`. BEFORE your first attempt,")
-        appendLine("fetch `mcp-steroid://lsp/find-references` / the type-hierarchy recipe, then use")
-        appendLine("`ClassInheritorsSearch.search(psiClass, GlobalSearchScope.allScope(project), /*checkDeep=*/ true)`")
-        appendLine("to walk the FULL transitive hierarchy. Do not rely on text search.")
-        appendLine()
-        appendLine("Output (markers on their own lines):")
-        appendLine("SUBTYPES_FOUND: <total count>")
-        appendLine("SUBTYPE: <fully.qualified.ClassName>   ← one line per implementor, including transitive ones")
-        appendLine("TOOL_EVIDENCE: <copy the line starting with execution_id: ...>")
+        append(KeycloakTypeHierarchyScenario.mcpTaskInstructions())
     }
 
     private fun baselinePrompt(): String = buildString {
         appendLine("The Keycloak project is checked out (a large multi-module Java project).")
         appendLine("IntelliJ MCP tools are unavailable in this run — use shell commands only (grep/rg/find).")
         appendLine()
-        appendLine("Task: list EVERY class that implements the interface `$INTERFACE_FQN`,")
-        appendLine("INCLUDING transitive/indirect implementors (a class that extends an abstract base which")
-        appendLine("implements the interface still counts). Be exhaustive.")
-        appendLine()
-        appendLine("Output (markers on their own lines):")
-        appendLine("SUBTYPES_FOUND: <total count>")
-        appendLine("SUBTYPE: <fully.qualified.ClassName>   ← one line per implementor, including transitive ones")
+        append(KeycloakTypeHierarchyScenario.baselineTaskInstructions())
     }
 
     companion object {
         private const val SCENARIO = "keycloak__type_hierarchy"
-        private const val INTERFACE_FQN = "org.keycloak.authentication.Authenticator"
-
-        // Transitive (indirect) implementors a naive `grep "implements Authenticator"` MISSES — they
-        // extend an abstract base that implements the interface. Verified against the Keycloak source.
-        private val REQUIRED_TRANSITIVE = setOf(
-            "org.keycloak.authentication.authenticators.browser.UsernamePasswordForm",
-            "org.keycloak.authentication.authenticators.browser.OTPFormAuthenticator",
-            "org.keycloak.authentication.authenticators.broker.IdpConfirmLinkAuthenticator",
-        )
-
-        // Keycloak has ~60 Authenticator implementors; require a healthy fraction so a near-empty
-        // (or only-direct) answer scores incomplete.
-        private const val MIN_TOTAL = 40
     }
 }

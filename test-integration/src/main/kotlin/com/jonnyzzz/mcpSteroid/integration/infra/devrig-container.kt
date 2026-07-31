@@ -11,6 +11,12 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import java.io.File
+import java.nio.channels.Channels
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipFile
@@ -39,6 +45,12 @@ data class DevrigContainerOpts(
      * [com.jonnyzzz.mcpSteroid.testHelper.git.GitDriver.cloneFromCachedBare] instead of a full network fetch.
      */
     val mountRepoCache: Boolean = false,
+    /**
+     * Persist Maven and Gradle dependency caches across containers. This mounts only `/home/agent/.m2` and
+     * `/home/agent/.gradle`; devrig's backend markers and configuration under [DEVRIG_GUEST_HOME] remain
+     * container-local so every scenario still starts with clean devrig state.
+     */
+    val mountDependencyCaches: Boolean = false,
 )
 
 class DevrigContainer(
@@ -149,14 +161,27 @@ class DevrigContainer(
  * (so interleaved output from multiple devrig processes stays attributable).
  */
 fun streamDevrigLogsToConsole(lifetime: CloseableStack, hostLogsDir: File, console: ConsoleDriver) {
+    val realLogsRoot = hostLogsDir.toPath().toRealPath()
+    require(Files.isDirectory(realLogsRoot, LinkOption.NOFOLLOW_LINKS)) {
+        "devrig log root is not a real directory: $realLogsRoot"
+    }
     val stopped = java.util.concurrent.atomic.AtomicBoolean(false)
     val followed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    val followers = java.util.concurrent.ConcurrentHashMap.newKeySet<Thread>()
+    val warnedUnsafe = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     val logName = Regex("""devrig-.*\.log""")
 
-    fun follow(file: File) {
-        thread(start = true, isDaemon = true, name = "devrig-log-tee-${file.name}") {
+    fun warnUnsafe(path: Path, reason: String) {
+        if (warnedUnsafe.add(path.toString())) {
+            System.err.println("devrig log scanner rejected $path: $reason")
+        }
+    }
+
+    fun follow(file: Path) {
+        val follower = thread(start = false, isDaemon = true, name = "devrig-log-tee-${file.fileName}") {
             try {
-                file.bufferedReader().use { reader ->
+                Files.newByteChannel(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { channel ->
+                    val reader = Channels.newReader(channel, StandardCharsets.UTF_8).buffered()
                     while (!stopped.get()) {
                         val line = reader.readLine()
                         if (line == null) {
@@ -168,28 +193,114 @@ fun streamDevrigLogsToConsole(lifetime: CloseableStack, hostLogsDir: File, conso
                         }
                     }
                 }
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                System.err.println("devrig log tee for ${file.fileName} was interrupted (teardown=${stopped.get()})")
             } catch (e: Exception) {
-                if (!stopped.get()) System.err.println("devrig log tee for ${file.name} stopped: ${e.message}")
+                System.err.println("devrig log tee for ${file.fileName} stopped (teardown=${stopped.get()}): ${e.message}")
             }
         }
+        followers += follower
+        follower.start()
     }
 
     val scanner = thread(start = true, isDaemon = true, name = "devrig-log-tee-scan") {
-        while (!stopped.get()) {
-            try {
-                hostLogsDir.listFiles { f -> f.isFile && logName.matches(f.name) }?.forEach { f ->
-                    if (followed.add(f.absolutePath)) follow(f)
+        try {
+            while (!stopped.get()) {
+                try {
+                    Files.list(realLogsRoot).use { paths ->
+                        paths.forEach { candidate ->
+                            if (!logName.matches(candidate.fileName.toString())) return@forEach
+                            try {
+                                val normalized = candidate.toAbsolutePath().normalize()
+                                if (normalized.parent != realLogsRoot) {
+                                    warnUnsafe(candidate, "path escapes the real log root")
+                                    return@forEach
+                                }
+                                if (!Files.isRegularFile(normalized, LinkOption.NOFOLLOW_LINKS)) {
+                                    warnUnsafe(candidate, "not a no-follow regular file")
+                                    return@forEach
+                                }
+                                val resolved = normalized.toRealPath(LinkOption.NOFOLLOW_LINKS)
+                                if (resolved.parent != realLogsRoot || !resolved.startsWith(realLogsRoot)) {
+                                    warnUnsafe(candidate, "resolved path escapes the real log root")
+                                    return@forEach
+                                }
+                                if (followed.add(resolved.toString())) follow(resolved)
+                            } catch (e: Exception) {
+                                System.err.println("devrig log scanner failed to inspect $candidate: ${e.message}")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    System.err.println("devrig log scan iteration failed and will retry: ${e.message}")
                 }
-            } catch (e: Exception) {
-                System.err.println("devrig log scan error: ${e.message}")
+                Thread.sleep(1_000)
             }
-            Thread.sleep(1_000)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            System.err.println("devrig log scan was interrupted (teardown=${stopped.get()})")
+        } catch (e: Exception) {
+            System.err.println("devrig log scan error: ${e.message}")
         }
     }
     lifetime.registerCleanupAction {
         stopped.set(true)
-        scanner.interrupt()
+        joinDevrigLogThread(scanner, 2_500)
+        followers.toList().forEach { follower -> joinDevrigLogThread(follower, 1_500) }
     }
+}
+
+private fun joinDevrigLogThread(thread: Thread, timeoutMillis: Long) {
+    try {
+        thread.join(timeoutMillis)
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        System.err.println("interrupted while joining ${thread.name} during devrig log teardown: ${e.message}")
+        throw IllegalStateException("interrupted while joining ${thread.name}", e)
+    }
+    check(!thread.isAlive) { "devrig log thread did not stop within ${timeoutMillis}ms: ${thread.name}" }
+}
+
+fun devrigContainerVolumes(runDir: File, opts: DevrigContainerOpts): List<ContainerVolume> = buildList {
+    add(ContainerVolume(runDir, "/mcp-run-dir", "rw"))
+    if (opts.mountRepoCache) {
+        // repoCacheDir mkdirs()-es itself and errors if `test.integration.repo.cache.dir` is unset,
+        // so the mount source always exists (no silent skip on a missing dir).
+        add(ContainerVolume(IdeTestFolders.repoCacheDir, "/repo-cache", "ro"))
+    }
+    if (opts.mountDependencyCaches) {
+        addAll(IdeTestFolders.dependencyCacheVolumes())
+    }
+
+    // ALWAYS bind-mount ONLY devrig's logs dir out to THIS RUN's folder (`<runDir>/devrig-logs`) — never
+    // to the host's real `~/.mcp-steroid` (would trigger a macOS trust prompt and pollute the user's
+    // home), and never the whole home (the multi-GB downloaded IDE + caches would make a bind mount far
+    // too slow). The JVM-side monitor ([streamDevrigLogsToConsole]) tails these files directly.
+    val hostLogs = File(runDir, "devrig-logs").also {
+        it.mkdirs()
+        // a+rwx so the in-container `agent` (uid 1000) can write log files through the bind mount
+        // on Linux CI (no UID remap); macOS virtiofs maps the uid transparently.
+        it.setReadable(true, false); it.setWritable(true, false); it.setExecutable(true, false)
+    }
+    add(ContainerVolume(hostLogs, DEVRIG_GUEST_LOGS_DIR, "rw"))
+
+    // Bind-mount the shared host IDE-archive cache ([IdeTestFolders.ideDownloadDir], the same dir the
+    // IDE-image download uses) RW at devrig's downloads dir. The first managed-backend run downloads the
+    // ~1.5GB IDE archive into it; subsequent runs (and the IDE-image build) reuse it via IdeDownloader's
+    // skip-if-exists. RW so the cache self-populates. IdeDownloader names archives `<hash>-<filename>`
+    // (hash of URL + checksum), so Community and Ultimate — which BOTH ship as `idea-<version>.tar.gz` —
+    // never collide in this shared dir.
+    val ideDownloadsCache = IdeTestFolders.ideDownloadDir.also {
+        it.mkdirs()
+        // a+rwx (same as devrig-logs above) so the in-container `agent` (uid 1000) can create the
+        // `.tmp` download file through the bind mount on Linux CI (no UID remap). Must run even when
+        // the dir pre-exists: the host-side IDE-image download creates it first with default 0755
+        // (intelliJ-download.kt), which leaves it read-only for uid 1000 -> devrig's backend download
+        // fails with FileNotFoundException (Permission denied) and exit code 64.
+        it.setReadable(true, false); it.setWritable(true, false); it.setExecutable(true, false)
+    }
+    add(ContainerVolume(ideDownloadsCache, DEVRIG_GUEST_DOWNLOADS_DIR, "rw"))
 }
 
 fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigContainerOpts) : DevrigContainer {
@@ -205,44 +316,9 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
 
     val containerMountedPath = "/mcp-run-dir"
 
-    val volumes = buildList {
-        add(ContainerVolume(runDir, containerMountedPath, "rw"))
-        if (opts.mountRepoCache) {
-            // repoCacheDir mkdirs()-es itself and errors if `test.integration.repo.cache.dir` is unset,
-            // so the mount source always exists (no silent skip on a missing dir).
-            add(ContainerVolume(IdeTestFolders.repoCacheDir, "/repo-cache", "ro"))
-        }
-        // ALWAYS bind-mount ONLY devrig's logs dir out to THIS RUN's folder (`<runDir>/devrig-logs`) — never
-        // to the host's real `~/.mcp-steroid` (would trigger a macOS trust prompt and pollute the user's
-        // home), and never the whole home (the multi-GB downloaded IDE + caches would make a bind mount far
-        // too slow). The JVM-side monitor ([streamDevrigLogsToConsole]) tails these files directly.
-        val hostLogs = File(runDir, "devrig-logs").also {
-            it.mkdirs()
-            // a+rwx so the in-container `agent` (uid 1000) can write log files through the bind mount
-            // on Linux CI (no UID remap); macOS virtiofs maps the uid transparently.
-            it.setReadable(true, false); it.setWritable(true, false); it.setExecutable(true, false)
-        }
-        add(ContainerVolume(hostLogs, DEVRIG_GUEST_LOGS_DIR, "rw"))
+    val volumes = devrigContainerVolumes(runDir, opts)
 
-        // Bind-mount the shared host IDE-archive cache ([IdeTestFolders.ideDownloadDir], the same dir the
-        // IDE-image download uses) RW at devrig's downloads dir. The first managed-backend run downloads the
-        // ~1.5GB IDE archive into it; subsequent runs (and the IDE-image build) reuse it via IdeDownloader's
-        // skip-if-exists. RW so the cache self-populates. IdeDownloader names archives `<hash>-<filename>`
-        // (hash of URL + checksum), so Community and Ultimate — which BOTH ship as `idea-<version>.tar.gz` —
-        // never collide in this shared dir.
-        val ideDownloadsCache = IdeTestFolders.ideDownloadDir.also {
-            it.mkdirs()
-            // a+rwx (same as devrig-logs above) so the in-container `agent` (uid 1000) can create the
-            // `.tmp` download file through the bind mount on Linux CI (no UID remap). Must run even when
-            // the dir pre-exists: the host-side IDE-image download creates it first with default 0755
-            // (intelliJ-download.kt), which leaves it read-only for uid 1000 -> devrig's backend download
-            // fails with FileNotFoundException (Permission denied) and exit code 64.
-            it.setReadable(true, false); it.setWritable(true, false); it.setExecutable(true, false)
-        }
-        add(ContainerVolume(ideDownloadsCache, DEVRIG_GUEST_DOWNLOADS_DIR, "rw"))
-    }
-
-    val containerEnv = buildMap<String, String> {
+    val containerEnv = buildMap {
         // Every devrig process in this container is debuggable: DEVRIG_DEBUG makes the devrig start script
         // pick a FREE, PID-seeded JDWP port from the published 23900-23999 range, so the concurrent devrig
         // processes a managed-backend test spawns (mpc + backend download/start + the agent's CLI calls)

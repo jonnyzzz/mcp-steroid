@@ -36,7 +36,7 @@ class DevrigManagedBackendGuiIntegrationTest {
 
         val id = container.execAndAssert(
             description = "resolve managed backend id",
-            script = $$"""
+            script = """
                 set -euo pipefail
                 basename "$(find /home/agent/.mcp-steroid/backends -mindepth 1 -maxdepth 1 -type d -name 'idea-community-*' | sort | head -1)"
             """.trimIndent(),
@@ -112,7 +112,7 @@ class DevrigManagedBackendGuiIntegrationTest {
             script = $$"""
                 set -euo pipefail
                 test -f "/home/agent/.mcp-steroid/state/$$id.pid"
-                test "$(cat "/home/agent/.mcp-steroid/state/$$id.pid")" = "$$pid"
+                test "$(jq -r '.pid' "/home/agent/.mcp-steroid/state/$$id.pid")" = "$$pid"
                 kill -0 "$$pid"
                 grep -F -- "experimental.ui.onboarding.proposed.version" "/home/agent/.mcp-steroid/caches/$$id/config/options/other.xml"
                 grep -F -- "switched.from.classic.to.islands" "/home/agent/.mcp-steroid/caches/$$id/config/early-access-registry.txt"
@@ -131,12 +131,15 @@ class DevrigManagedBackendGuiIntegrationTest {
             timeoutSeconds = 180,
             script = $$"""
                 set -euo pipefail
+                print_safe_marker() {
+                  jq '{schema, pid, ideHome, ide, plugin, createdAt}' "$1"
+                }
                 marker="/home/agent/.mcp-steroid/markers/$$pid.mcp-steroid"
                 deadline=$((SECONDS + 180))
                 found=0
                 while [ "$SECONDS" -lt "$deadline" ]; do
-                  if [ -f "$marker" ] && jq -e --argjson pid "$$pid" '.pid == $pid and (.mcpSteroidServer.mcpUrl | startswith("http://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "$marker" >/dev/null; then
-                    cat "$marker"
+                  if [ -f "$marker" ] && jq -e --argjson pid "$$pid" '.pid == $pid and (.mcpSteroidServer.mcpUrl | startswith("http" + "://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "$marker" >/dev/null; then
+                    print_safe_marker "$marker"
                     found=1
                     break
                   fi
@@ -146,7 +149,10 @@ class DevrigManagedBackendGuiIntegrationTest {
                   :
                 else
                 echo "MCP Steroid marker did not appear at $marker" >&2
-                find /home/agent/.mcp-steroid/markers -maxdepth 1 -name '*.mcp-steroid' -print -exec cat {} \; >&2 || true
+                while IFS= read -r candidate_marker; do
+                  printf '%s\n' "$candidate_marker" >&2
+                  print_safe_marker "$candidate_marker" >&2 || true
+                done < <(find /home/agent/.mcp-steroid/markers -maxdepth 1 -name '*.mcp-steroid' -print)
                 exit 1
                 fi
             """.trimIndent(),
