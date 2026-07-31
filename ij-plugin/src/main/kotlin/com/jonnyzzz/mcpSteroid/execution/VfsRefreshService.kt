@@ -99,9 +99,12 @@ class VfsRefreshService(
         // PerformanceWatcher freeze attributed to this plugin was captured with the RefreshWorker
         // traversal on AWT-EventQueue-0. Fail fast so no caller can reintroduce that: every await
         // must happen on a background dispatcher (syncDocuments awaits AFTER its EDT commit/save
-        // block; CodeEvalManager's pre-compile path is background already).
-        check(!ApplicationManager.getApplication().isDispatchThread) {
-            "awaitRefresh must not be awaited from the EDT — the recursive VFS scan would freeze the UI (#318)"
+        // block; CodeEvalManager's pre-compile path is background already). Plain if+throw on
+        // purpose — this guard is unconditional, fixed behavior, never elidable.
+        if (ApplicationManager.getApplication().isDispatchThread) {
+            throw IllegalStateException(
+                "awaitRefresh must not be awaited from the EDT — the recursive VFS scan would freeze the UI (#318)",
+            )
         }
         val base = projectBaseVf() ?: return
         // Use the platform's coroutine-native [RefreshQueue.refresh] (suspend
