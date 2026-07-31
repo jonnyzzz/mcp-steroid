@@ -105,6 +105,8 @@
     download/start/stop with one operation lock and refuse to rewrite the plugin of a live target.
   - Make failed-start cleanup diagnostics distinguish a deliberate identity-change refusal from a
     termination failure.
+  - Move legacy archive migration under the global backend-operation lock, or prove the current
+    idempotent moves safe when two fresh `BackendManager` instances initialize concurrently.
   - Revalidate the native Remote Development launcher for baseline 263+, using cold-CI telemetry to
     tune the 180-second readiness bound and the caller-cancellation behavior before widening support.
   - Put the pure Remote Development NDJSON parser/workflow contracts on a normal CI-backed task; the

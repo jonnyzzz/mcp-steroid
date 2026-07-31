@@ -185,7 +185,7 @@ than merely mentioning it.
 - [x] Read root, `docs`, `test-experiments`, and shared `test-integration` guides.
 - [x] Research the 262 native Remote Development entry point, VM-options precedence, lifecycle, and
   marker timing in IntelliJ sources.
-- [ ] Obtain final independent reviews from Claude Fable 5, Claude Opus 5, and a third
+- [x] Obtain final independent reviews from Claude Fable 5, Claude Opus 5, and a third
   reviewer; record decisions below.
 - [x] Add failing unit tests for native launcher resolution, required distribution contents, ordered
   launch arguments, Windows quoting, and PID/process recognition.
@@ -200,7 +200,7 @@ than merely mentioning it.
 - [x] Run Claude E2E and Codex E2E separately. Apply the one-minute hang rule and capture live dumps
   before terminating any stuck run.
 - [x] Inspect relevant source diagnostics and runtime logs; fix every warning/error in scope.
-- [ ] Run final three-reviewer quorum, iterate on blockers, and repeat affected tests.
+- [x] Run final three-reviewer quorum, iterate on blockers, and repeat affected tests.
 - [ ] Record final evidence, update TODOs, commit atomically, push, and open a PR.
 
 ## Risks and explicit non-goals
@@ -266,21 +266,23 @@ than merely mentioning it.
 
 ### 2026-07-31 — final verification
 
-- After the final PID-identity and operation-lock iteration, the four focused backend regression
-  classes passed 58/58. On the rebased branch the complete `:npx-kt:test` suite discovered 1,444 tests:
-  1,440 executed and passed, with four
-  pre-existing platform-guarded skips and no failures or errors.
-- The pure agent-output parser/workflow contracts passed 9/9, and the volume-isolation/log-stream
+- After the final readiness, PID-identity, shell-ownership, and operation-lock iterations, the focused
+  lifecycle/list classes passed 50/50. On the rebased branch the terminal `:npx-kt:test` suite discovered
+  1,445 tests: 1,441 executed and passed, with four pre-existing Windows-only skips and no failures or
+  errors.
+- The terminal Remote Development workflow contracts passed 4/4, the wider pure agent-output
+  parser/workflow contracts passed 9/9, and the volume-isolation/log-stream
   infrastructure contracts passed 5/5. All `:test-experiments` and `:test-integration` invocations
   were serialized.
 - A deterministic regression reproduced an unsuccessful Remote Development launch whose launcher was
   absent from one `ProcessHandle` snapshot. `terminateFailedBackendStart` now repeats bounded process
   discovery until three consecutive scans are quiet, so a failed start cannot leave a launcher or
   backend process behind.
-- Direct IntelliJ inspections ran on all 25 modified Kotlin production/test files with no failed tools.
+- Direct IntelliJ inspections ran on every modified Kotlin production/test file with no failed tools.
   The post-quorum sweep found four `BlockingMethodInNonBlockingContext` findings after `stopLocked`
   became suspendable; keeping its blocking body non-suspending under the caller's `Dispatchers.IO`
-  context removed all four, and the terminal inspection was clean.
+  context removed all four. The terminal eight-file inspection was clean with zero findings and zero
+  failed tools.
 - Claude passed from a fresh Docker home, used the installed
   `/home/agent/.mcp-steroid/bin/devrig`, registered the user-scope MCP server, downloaded and started
   IU `2026.2.0.1`, opened Keycloak, and returned 70 subtypes in both the independently parsed tool
@@ -295,8 +297,10 @@ than merely mentioning it.
 - Both runs crossed the one-minute threshold while making progress, so live screenshots and
   in-container JVM thread dumps were captured before they were allowed to continue. Both teardown
   paths stopped IU and left no Docker containers or managed backend processes.
-- Both preserved `managed-backend-idea.log` artifacts were sanitized and rechecked: neither contains
-  an unredacted Bearer credential.
+- Both preserved idea and launcher logs are sanitized for Bearer headers, IntelliJ `_ijt` URL tokens,
+  and `x-ijt` JSON header values while retaining safe diagnostics. The four artifacts from both passing
+  Docker runs were re-sanitized locally and verify at zero marker-credential matches. Production full-
+  marker logging remains tracked by [#405](https://github.com/jonnyzzz/mcp-steroid/issues/405).
 - A post-quorum Docker rerun reached the fresh-home fixture but could not launch Claude because this
   shell had none of `ANTHROPIC_API_KEY`, `CLAUDE_EVAL_API_KEY`, or `~/.anthropic`; the test failed hard
   as designed and no skip was added. A separate Docker process-scan probe then proved the new teardown
@@ -306,14 +310,15 @@ than merely mentioning it.
 
 ### 2026-07-31 — complete `steroid_execute_code` call audit
 
-- The terminal audit froze after `eid_20260731T100732-devrig-remote-backend-final-verification` and
-  deduplicated 5,355 raw events by `call_id` across 22 root/sub-agent rollout logs. It found 1,080 unique
-  calls: 1,042 successful, 38 failed, and 5,172.326 aggregate tool-seconds. The earlier 464-call number was a
-  narrower snapshot of the single primary rollout, not the complete multi-agent corpus.
-- The 38 errors were 21 caller-script compilation errors, 12 caller-script runtime errors, four
-  transient route-disappearance errors, and one dropped `/tools/call/stream` result. Seven calls ran at
-  least 60 seconds and all succeeded; no script timeout occurred. The corpus contained 352 scripts that
-  used `RunContentManager`.
+- The terminal audit froze after
+  `eid_20260731T103836-eid_20260731T100732-devrig-remote-backend-final-verification` and deduplicated
+  5,962 raw events by `call_id` across 23 root/sub-agent rollout logs. It found 1,108 unique calls:
+  1,069 successful, 39 failed, and 5,794.748 aggregate tool-seconds. The earlier 464- and 1,080-call
+  numbers were narrower snapshots, not the complete terminal corpus.
+- The 39 errors were 21 caller-script compilation errors, 13 caller-script runtime errors, four
+  transient route-disappearance errors, and one dropped `/tools/call/stream` result. Eleven calls ran
+  at least 60 seconds and all succeeded; no script timeout occurred. The corpus contained 362 scripts
+  that used `RunContentManager`.
 - Four non-duplicate problems were filed:
   - [#402](https://github.com/jonnyzzz/mcp-steroid/issues/402) — IU 262 Gradle recipes can lose test
     results and pre-test failure output.
@@ -321,8 +326,8 @@ than merely mentioning it.
     about client, script, transport, and orchestration timeouts.
   - [#404](https://github.com/jonnyzzz/mcp-steroid/issues/404) — the no-output hint falsely diagnoses
     legitimate conditional zero-result scripts as missing `println`.
-  - [#405](https://github.com/jonnyzzz/mcp-steroid/issues/405) — production marker logging exposes MCP
-    Authorization headers.
+  - [#405](https://github.com/jonnyzzz/mcp-steroid/issues/405) — production marker logging exposes all
+    marker credentials: Authorization headers, `_ijt` URL tokens, and `x-ijt` header values.
 - Existing owners received complete-corpus evidence instead of duplicate issues: process completion
   polling [#20](https://github.com/jonnyzzz/mcp-steroid/issues/20), recurring FilenameIndex directory
   crashes [#66](https://github.com/jonnyzzz/mcp-steroid/issues/66) (reopened), route resilience and
@@ -331,10 +336,11 @@ than merely mentioning it.
   indices [#280](https://github.com/jonnyzzz/mcp-steroid/issues/280). The seven-case correction was also
   added to #404. Timeout dump work remains [#215](https://github.com/jonnyzzz/mcp-steroid/issues/215),
   but this corpus did not reproduce it.
-- The final independent re-audit added terminal evidence to #20, #91, #207, and #403. The last new
-  caller compile failure duplicated its type-mismatch diagnostics and then falsely suggested EDT; that
-  belongs to #91 rather than a new issue. No genuinely untracked defect remained, so no duplicate issue
-  was created.
+- The final independent re-audit added terminal evidence to #20, #91, #207, #280, #402, #403, and
+  #405. The last new caller runtime failure was an inspection-loop `IndexOutOfBoundsException`; its
+  duplicated diagnostics and generic hint belong to #91 rather than a new issue. Two independent
+  auditors agreed exactly on the terminal census and mapping. No genuinely untracked defect remained,
+  so no duplicate issue was created.
 
 ## Review log
 
@@ -348,10 +354,6 @@ Codex-137 decision until all evidence passes, validates effective managed proper
 removes the mirror, reports the effective launcher, and gives every shell invariant a named failure
 diagnostic.
 
-Final Fable 5, Opus 5, and independent-review verdicts remain pending. Each final entry must identify
-its persisted run, state `PASS` or `BLOCKER`, and list any resulting changes. Reviewers inspect the
-current branch read-only and do not run Docker integration tests.
-
 ### Final static sub-agent review — PASS after iteration
 
 The final static reviewer identified launcher/interpreter false ownership, list commands that trusted a
@@ -362,9 +364,32 @@ rebased cleanly onto `origin/main` while preserving all upstream `TODO.md` addit
 iteration also made marker validation lazy for durable JSON PID identity and falls back to direct PID
 inspection when one process listing transiently omits a live tracked process.
 
+The next Codex quorum caught a newly advanced `origin/main` commit whose
+`TODO-TC-COVERAGE-AUDIT.md` appeared deleted in the branch diff. The verified iteration was committed
+and rebased again; the branch is now zero commits behind `origin/main`, four commits ahead, and
+preserves that upstream audit file.
+
+### Final three-model quorum — PASS
+
+- Claude Fable 5: `run_20260731-175744-47024`, PASS. It verified all six bounded acceptance claims
+  and reported only two already tracked deferrals: applying the environment allowlist to standard
+  managed launches and revalidating native Remote Development for baseline 263+.
+- Claude Opus 5: `run_20260731-180448-50119`, PASS. It verified all six claims and reported five
+  non-blocking observations. The unstaged evidence doc is committed during delivery; readiness
+  liveness/timing and legacy-migration locking are recorded in `TODO.md`; the remaining scoring and
+  broken-install-list observations are pre-existing or expected behavior.
+- Codex: `run_20260731-175744-47025`, PASS with no findings. Its preceding full review
+  (`run_20260731-173936-39114`) correctly blocked because `origin/main` had advanced with
+  `TODO-TC-COVERAGE-AUDIT.md`; rebasing preserved that file and the bounded rerun passed.
+
+The first full Fable attempt failed with repeated 529 capacity errors and the first full Opus attempt
+hit the 900-second runner wall without a review. Both were rerun independently against the same bounded
+acceptance surface and produced the persisted PASS verdicts above.
+
 ### Complete execute-code audit review — PASS
 
-Three independent execute-code auditors rechecked the frozen corpus and every proposed issue against
-existing GitHub ownership. They agreed that #402–#405 are distinct defects and that every remaining
+Three independent execute-code auditors rechecked the corpus and every proposed issue against existing
+GitHub ownership. The terminal two-agent reconciliation agreed exactly on 1,108 calls, the 39-error
+taxonomy, timing, and counters. They agreed that #402–#405 are distinct defects and that every remaining
 observation belongs to #20, #66, #91, #207, #215, or #280. The final audit verdict was PASS with no
 untracked finding.
