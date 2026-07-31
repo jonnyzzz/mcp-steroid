@@ -18,31 +18,25 @@ class DevrigWidgetPopupContentTest {
         installed: Boolean = true,
         version: String? = "0.101",
         latest: String? = "0.101",
-        claude: Boolean = true,
-        pluginEnabled: Boolean = true,
     ) = DevrigConnectionState(
         devrigInstalled = installed,
         installedVersion = version,
         latestBaseVersion = latest,
-        claudePresent = claude,
-        claudePluginEnabled = pluginEnabled,
     )
 
     private val allStates = listOf(
-        null,
         state(installed = false, version = null, latest = null),
         state(version = "0.100", latest = "0.101"),
         state(),
-        state(claude = false),
-        state(pluginEnabled = false),
+        state(latest = null),
     )
 
     @Test
-    fun `not connected offers the install`() {
+    fun `a missing devrig offers the install`() {
         val content = devrigWidgetPopupContent(state(installed = false, version = null, latest = null))
         assertEquals(DevrigWidgetAction.INSTALL, content.action)
-        assertTrue(content.title, content.title.contains("not connected"))
-        assertTrue(content.actionLabel, content.actionLabel.contains("Download", ignoreCase = true))
+        assertTrue(content.title, content.title.contains("not installed"))
+        assertTrue(content.actionLabel, content.actionLabel.contains("Install", ignoreCase = true))
     }
 
     @Test
@@ -55,27 +49,20 @@ class DevrigWidgetPopupContentTest {
     }
 
     @Test
-    fun `connected state is informational and opens the settings`() {
+    fun `a ready devrig is informational and opens the settings`() {
         val content = devrigWidgetPopupContent(state())
         assertEquals(DevrigWidgetAction.OPEN_SETTINGS, content.action)
-        assertTrue(content.title, content.title.contains("connected"))
+        assertTrue(content.title, content.title.contains("ready"))
         assertTrue(content.message, content.message.contains("0.101"))
     }
 
     @Test
-    fun `no agent sends the user to the docs`() {
-        val content = devrigWidgetPopupContent(state(claude = false))
-        assertEquals(DevrigWidgetAction.LEARN_HOW, content.action)
-        assertTrue(content.message, content.message.contains("Claude Code"))
-    }
-
-    @Test
-    fun `clicking before the first refresh still offers the install instead of a dead popup`() {
-        // current() is null until the background refresh finishes; the click must not become a no-op.
-        val content = devrigWidgetPopupContent(null)
-        assertEquals(DevrigWidgetAction.INSTALL, content.action)
-        assertTrue(content.actionLabel.isNotBlank())
-        assertTrue(content.message.isNotBlank())
+    fun `the popup promises nothing about agents being wired up`() {
+        // Installing devrig does not register any agent, so no state may claim an agent can drive the IDE.
+        for (s in allStates) {
+            val text = devrigWidgetPopupContent(s).let { it.title + " " + it.message }
+            assertTrue("must not name a single agent for $s: $text", !text.contains("Claude"))
+        }
     }
 
     @Test

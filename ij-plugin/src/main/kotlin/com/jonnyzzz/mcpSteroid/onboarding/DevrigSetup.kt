@@ -5,7 +5,7 @@ import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.OSProcessHandler
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
-import com.intellij.execution.util.ExecUtil
+import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.thisLogger
@@ -17,6 +17,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.util.concurrency.AppExecutorUtil
+import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
 import java.nio.file.Files
@@ -50,74 +51,55 @@ fun installerArgv(windows: Boolean): List<String> =
     if (windows) listOf("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm $INSTALL_PS1_URL | iex")
     else listOf("/bin/sh", "-c", "curl -fsSL $INSTALL_SH_URL | sh")
 
-/** Argv that enables the Claude marketplace plugin via the Plan-1 devrig verb. */
-fun connectClaudeArgv(devrigBin: Path): List<String> =
-    listOf(devrigBin.toString(), "connect", "claude")
-
 /**
- * Runs the IDE-first migration in a background progress task: install devrig (or update a stale one),
- * then `devrig connect claude`, then report the outcome via the onboarding notification group.
+ * Installs devrig from the IDE, in a cancellable background progress task.
+ *
+ * **It installs the bridge and stops there.** Pointing an agent at devrig is a separate, explicit act:
+ * doing it here would mean the IDE edits another product's configuration on the strength of a click that
+ * said "install devrig", and there is more than one agent to choose from anyway.
  *
  * The installer's own output drives the progress indicator — it is a ~611 MB download, so a static
  * "Downloading…" label for up to 30 minutes is indistinguishable from a hang. Its `[mcp-steroid] ` lines
  * become the phase text ([parseInstallerLine]) and the size it announces becomes the denominator for a
  * real fraction, measured from the staging files it writes under `~/.mcp-steroid/binaries`.
+ *
+ * **Every notification below reports something the user asked for by pressing a button.** Nothing here
+ * runs on its own, so there is no path by which someone is told that an operation they never started has
+ * failed. Keep it that way: if this is ever triggered automatically, the reporting has to change with it.
  */
 class DevrigSetupRunner {
     private val log = thisLogger()
 
-    fun runEnable(project: Project) {
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Setting up devrig…", true) {
+    /**
+     * Install devrig, or re-run the installer to move a stale one onto the current release.
+     *
+     * [project] only anchors the progress bar and the notifications; it may be null when the call comes
+     * from an application-level surface such as the settings page with no project open.
+     */
+    fun runInstall(project: Project?) {
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Installing devrig…", true) {
             override fun run(indicator: ProgressIndicator) {
                 val userHome = Path.of(System.getProperty("user.home"))
                 val windows = SystemInfo.isWindows
                 try {
-                    val devrig = devrigBinPath(userHome, windows)
-                    // Re-running the installer is also how an UPDATE happens: the one-liner re-fetches
-                    // install.sh, which always points at the current release.
-                    val outdated = DevrigConnectionStateService.getInstance().current()?.outdated == true
-                    if (!devrigInstalled(userHome, windows) || outdated) {
-                        if (!installDevrig(project, indicator, userHome, windows)) return
-                    }
-
-                    indicator.isIndeterminate = true
-                    indicator.text = "Connecting Claude Code to this IDE…"
-                    indicator.text2 = ""
-                    val started = System.nanoTime()
-                    val connect = runCommand(connectClaudeArgv(devrig), timeoutMs = 60 * 1000)
-                    analyticsBeacon.capture(
-                        "devrig_connect_claude_finished", project,
-                        mapOf(
-                            "ok" to (!connect.isTimeout && connect.exitCode == 0),
-                            "exit_code" to connect.exitCode,
-                            "timeout" to connect.isTimeout,
-                            "duration_ms" to elapsedMs(started),
-                        ),
+                    if (!installDevrig(project, indicator, userHome, windows)) return
+                    notify(
+                        project, NotificationType.INFORMATION, "devrig is installed",
+                        "Register your agent with it to bridge this IDE — see Settings | Tools | " +
+                            "${McpSteroidConfigurable.DISPLAY_NAME}.",
                     )
-                    if (connect.isTimeout || connect.exitCode != 0) {
-                        val content = if (connect.isTimeout)
-                            "`devrig connect claude` timed out. See the IDE log for details."
-                        else
-                            "`devrig connect claude` exited with code ${connect.exitCode}. See the IDE log for details."
-                        notify(project, NotificationType.ERROR, "Could not connect Claude Code", content)
-                        log.warn("devrig connect claude failed: ${connect.stderr.ifBlank { connect.stdout }}")
-                        return
-                    }
-
-                    notify(project, NotificationType.INFORMATION, "Claude Code connected to this IDE",
-                        "Restart Claude Code (or start a new session) to drive this IDE with devrig.")
                 } catch (e: ProcessCanceledException) {
                     throw e
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    log.warn("devrig setup failed", e)
-                    writeFailureMarker(userHome, "devrig setup failed: ${e.message ?: e.javaClass.simpleName}")
-                    notify(project, NotificationType.ERROR, "devrig setup failed",
-                        "Setting up devrig failed: ${e.message ?: e.javaClass.simpleName}. See the IDE log for details.")
+                    log.warn("devrig install failed", e)
+                    val reason = e.message ?: e.javaClass.simpleName
+                    writeFailureMarker(userHome, "devrig install failed: $reason")
+                    notifyFailure(project, "Installing devrig failed: $reason.")
                 } finally {
                     // Whatever happened, the widget must reflect reality afterwards.
-                    DevrigConnectionStateService.getInstance().refreshAsync()
+                    DevrigConnectionStateService.getInstance().refreshWidgets()
                 }
             }
         })
@@ -125,7 +107,7 @@ class DevrigSetupRunner {
 
     /** Runs the canonical installer with live progress. Returns true when devrig is installed afterwards. */
     private fun installDevrig(
-        project: Project,
+        project: Project?,
         indicator: ProgressIndicator,
         userHome: Path,
         windows: Boolean,
@@ -138,7 +120,7 @@ class DevrigSetupRunner {
 
         val poller = startDownloadPoller(userHome, indicator, total)
         val result = try {
-            runCommandStreaming(installerArgv(windows), timeoutMs = 30 * 60 * 1000) { line ->
+            runCommandStreaming(installerArgv(windows), indicator, timeoutMs = 30 * 60 * 1000) { line ->
                 val step = parseInstallerLine(line) ?: return@runCommandStreaming
                 if (step.isError) {
                     lastError.appendLine(step.text)
@@ -156,19 +138,26 @@ class DevrigSetupRunner {
         }
 
         val installed = devrigInstalled(userHome, windows)
-        val ok = !result.isTimeout && result.exitCode == 0 && installed
+        val ok = !result.isTimeout && !result.isCancelled && result.exitCode == 0 && installed
         analyticsBeacon.capture(
             "devrig_install_finished", project,
             mapOf(
                 "ok" to ok,
                 "exit_code" to result.exitCode,
                 "timeout" to result.isTimeout,
+                "cancelled" to result.isCancelled,
                 "duration_ms" to elapsedMs(started),
             ),
         )
         if (ok) {
             clearFailureMarker(userHome)
             return true
+        }
+        // Cancelling is a choice, not a failure: the user already knows what happened and why, so saying
+        // it back to them in an error balloon would be noise.
+        if (result.isCancelled) {
+            log.info("devrig install cancelled by the user")
+            return false
         }
 
         val reason = when {
@@ -178,8 +167,7 @@ class DevrigSetupRunner {
             else -> "the installer finished but devrig was not found at ${devrigBinPath(userHome, windows)}"
         }
         writeFailureMarker(userHome, reason)
-        // The reason is a sentence of its own — keep the follow-up on the next line so they do not merge.
-        notify(project, NotificationType.ERROR, "devrig install failed", "$reason.<br>See the IDE log for details.")
+        notifyFailure(project, "$reason.")
         log.warn("devrig install failed: $reason\n${result.output.takeLast(4000)}")
         return false
     }
@@ -228,23 +216,22 @@ class DevrigSetupRunner {
         val stdout: String,
         val stderr: String,
         val isTimeout: Boolean,
+        val isCancelled: Boolean = false,
     ) {
         val output: String get() = stderr.ifBlank { stdout }
     }
 
-    private fun runCommand(argv: List<String>, timeoutMs: Int): CommandResult {
-        val cmd = GeneralCommandLine(argv)
-        val out = ExecUtil.execAndGetOutput(cmd, timeoutMs)
-        return CommandResult(out.exitCode, out.stdout, out.stderr, out.isTimeout)
-    }
-
     /**
-     * Like [runCommand], but hands every completed output line to [onLine] as it arrives instead of
-     * buffering everything until exit — that buffering is why the old implementation could only show a
-     * static label for the whole download.
+     * Runs the installer, handing every completed output line to [onLine] as it arrives rather than
+     * buffering until exit — that buffering is why an earlier version could only show a static label for
+     * the whole download.
+     *
+     * Waits in short slices so pressing Cancel on the progress bar actually stops the installer: a single
+     * blocking `waitFor(timeout)` would ignore the indicator for up to 30 minutes.
      */
     private fun runCommandStreaming(
         argv: List<String>,
+        indicator: ProgressIndicator,
         timeoutMs: Int,
         onLine: (String) -> Unit,
     ): CommandResult {
@@ -276,11 +263,25 @@ class DevrigSetupRunner {
         })
 
         handler.startNotify()
-        val finished = handler.waitFor(timeoutMs.toLong())
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+        var cancelled = false
+        var timedOut = false
+        while (!handler.waitFor(CANCEL_POLL_MS)) {
+            if (indicator.isCanceled) {
+                cancelled = true
+                break
+            }
+            if (System.nanoTime() >= deadline) {
+                timedOut = true
+                break
+            }
+        }
         val output = synchronized(captured) { captured.toString() }
-        if (!finished) {
+        if (cancelled || timedOut) {
             handler.destroyProcess()
-            return CommandResult(exitCode = -1, stdout = "", stderr = output, isTimeout = true)
+            return CommandResult(
+                exitCode = -1, stdout = "", stderr = output, isTimeout = timedOut, isCancelled = cancelled,
+            )
         }
         return CommandResult(exitCode = handler.exitCode ?: -1, stdout = "", stderr = output, isTimeout = false)
     }
@@ -305,14 +306,32 @@ class DevrigSetupRunner {
 
     private fun elapsedMs(startNanos: Long): Long = (System.nanoTime() - startNanos) / 1_000_000
 
-    private fun notify(project: Project, type: NotificationType, title: String, content: String) {
+    private fun notify(project: Project?, type: NotificationType, title: String, content: String) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup("jonnyzzz.mcp.steroid.onboarding")
             .createNotification(title, content, type)
             .notify(project)
     }
 
+    /**
+     * Report a failed install. The reason comes from the installer itself (`ERROR: …` — a sha mismatch, a
+     * dead mirror, no space), which is the only wording that tells the user whether retrying is worth it,
+     * so it leads. Retry is offered right here because most of these are transient and the alternative is
+     * making the user find the button again.
+     */
+    private fun notifyFailure(project: Project?, reason: String) {
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup("jonnyzzz.mcp.steroid.onboarding")
+            // The reason is a sentence of its own — keep the follow-up on its own line so they do not merge.
+            .createNotification("devrig install failed", "$reason<br>See the IDE log for details.", NotificationType.ERROR)
+            .addAction(NotificationAction.createSimpleExpiring("Retry") { runInstall(project) })
+            .notify(project)
+    }
+
     private companion object {
         const val MIB = 1024L * 1024L
+
+        /** How long a single wait slice is; also the worst-case delay before Cancel takes effect. */
+        const val CANCEL_POLL_MS = 200L
     }
 }

@@ -3,17 +3,14 @@ package com.jonnyzzz.mcpSteroid.onboarding
 
 /** What the widget's popup button does when pressed. */
 enum class DevrigWidgetAction {
-    /** Install devrig (the canonical installer) and connect Claude Code. */
+    /** Install devrig by running the canonical installer. Registering an agent is a separate step. */
     INSTALL,
 
     /** Re-run the installer to move a stale devrig onto the current release. */
     UPDATE,
 
-    /** Nothing to install — show where the connection is described. */
+    /** Nothing to install — show where connecting an agent is described. */
     OPEN_SETTINGS,
-
-    /** No agent CLI on this machine — send the user to the docs. */
-    LEARN_HOW,
 }
 
 /**
@@ -37,39 +34,29 @@ data class DevrigWidgetPopupContent(
     val message: String get() = lines.joinToString(" ")
 }
 
-fun devrigWidgetPopupContent(state: DevrigConnectionState?): DevrigWidgetPopupContent {
-    // State not computed yet (the widget was clicked before the first refresh finished): offer the
-    // install anyway — it is the action the user came for, and the flow re-checks the state itself.
-    val decision = state?.decision ?: OnboardingDecision.OFFER_ENABLE
-    return when (decision) {
-        OnboardingDecision.OFFER_ENABLE -> DevrigWidgetPopupContent(
-            title = "devrig is not connected",
-            lines = listOf("Let Claude Code run, debug and refactor in this IDE."),
-            actionLabel = "Download and connect",
+fun devrigWidgetPopupContent(state: DevrigConnectionState): DevrigWidgetPopupContent =
+    when (state.decision) {
+        OnboardingDecision.OFFER_INSTALL -> DevrigWidgetPopupContent(
+            title = "devrig is not installed",
+            lines = listOf("It lets an AI agent run, debug and refactor in this IDE."),
+            actionLabel = "Install devrig",
             action = DevrigWidgetAction.INSTALL,
         )
         OnboardingDecision.OFFER_UPDATE -> DevrigWidgetPopupContent(
             title = "devrig update available",
             lines = listOf(
-                "Installed ${state?.installedVersion ?: "build"}, current " +
-                    "${state?.latestBaseVersion ?: "release is newer"}.",
+                "Installed ${state.installedVersion ?: "build"}, current " +
+                    "${state.latestBaseVersion ?: "release is newer"}.",
             ),
             actionLabel = "Update devrig",
             action = DevrigWidgetAction.UPDATE,
         )
-        OnboardingDecision.ALREADY_CONNECTED -> DevrigWidgetPopupContent(
-            title = "devrig is connected",
+        OnboardingDecision.DEVRIG_READY -> DevrigWidgetPopupContent(
+            title = "devrig is ready",
             lines = listOf(
-                ("Claude Code can drive this IDE through devrig ${state?.installedVersion ?: ""}").trim() + ".",
+                ("devrig ${state.installedVersion ?: ""} can bridge your agent to this IDE").trim() + ".",
             ),
             actionLabel = "Open settings",
             action = DevrigWidgetAction.OPEN_SETTINGS,
         )
-        OnboardingDecision.OFFER_GET_AGENT -> DevrigWidgetPopupContent(
-            title = "No AI agent found",
-            lines = listOf("Install Claude Code — devrig bridges it to this IDE."),
-            actionLabel = "How to get one",
-            action = DevrigWidgetAction.LEARN_HOW,
-        )
     }
-}

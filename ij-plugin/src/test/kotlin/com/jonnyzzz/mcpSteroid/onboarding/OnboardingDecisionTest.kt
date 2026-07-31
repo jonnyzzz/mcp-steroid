@@ -13,41 +13,23 @@ class OnboardingDecisionTest {
 
     @Test
     fun `decision truth table`() {
-        // No agent CLI -> always offer to get one, regardless of the rest.
-        assertEquals(OnboardingDecision.OFFER_GET_AGENT, decideOnboarding(devrigInstalled = true, claudePresent = false, claudePluginEnabled = true))
-        assertEquals(OnboardingDecision.OFFER_GET_AGENT, decideOnboarding(devrigInstalled = false, claudePresent = false, claudePluginEnabled = false))
-        // Agent present, fully wired -> nothing to do.
-        assertEquals(OnboardingDecision.ALREADY_CONNECTED, decideOnboarding(devrigInstalled = true, claudePresent = true, claudePluginEnabled = true))
-        // Agent present but plugin not enabled -> offer enable.
-        assertEquals(OnboardingDecision.OFFER_ENABLE, decideOnboarding(devrigInstalled = true, claudePresent = true, claudePluginEnabled = false))
-        // Agent present, plugin key set but devrig missing -> still offer enable (install devrig).
-        assertEquals(OnboardingDecision.OFFER_ENABLE, decideOnboarding(devrigInstalled = false, claudePresent = true, claudePluginEnabled = true))
-        // Remaining combinations of the 8 (devrigInstalled x claudePresent x claudePluginEnabled) truth table.
-        assertEquals(OnboardingDecision.OFFER_GET_AGENT, decideOnboarding(devrigInstalled = false, claudePresent = false, claudePluginEnabled = true))
-        assertEquals(OnboardingDecision.OFFER_ENABLE, decideOnboarding(devrigInstalled = false, claudePresent = true, claudePluginEnabled = false))
-        assertEquals(OnboardingDecision.OFFER_GET_AGENT, decideOnboarding(devrigInstalled = true, claudePresent = false, claudePluginEnabled = false))
+        // Nothing installed -> offer the install.
+        assertEquals(OnboardingDecision.OFFER_INSTALL, decideOnboarding(devrigInstalled = false))
+        // Installed and current -> nothing to say.
+        assertEquals(OnboardingDecision.DEVRIG_READY, decideOnboarding(devrigInstalled = true))
     }
 
     @Test
-    fun `a stale devrig on a wired machine is offered as an update, not treated as done`() {
-        // The plugin's job is migration onto a CURRENT devrig, so "installed" alone is not success.
+    fun `a stale devrig is offered as an update, not treated as done`() {
+        // The plugin's job is getting the user onto a CURRENT devrig, so "installed" alone is not success.
         assertEquals(
             OnboardingDecision.OFFER_UPDATE,
-            decideOnboarding(devrigInstalled = true, claudePresent = true, claudePluginEnabled = true, devrigOutdated = true),
+            decideOnboarding(devrigInstalled = true, devrigOutdated = true),
         )
-        // Outdated is irrelevant while something more fundamental is missing — that is still OFFER_ENABLE…
+        // "Outdated" cannot outrank "missing": there is nothing to update yet.
         assertEquals(
-            OnboardingDecision.OFFER_ENABLE,
-            decideOnboarding(devrigInstalled = false, claudePresent = true, claudePluginEnabled = true, devrigOutdated = true),
-        )
-        assertEquals(
-            OnboardingDecision.OFFER_ENABLE,
-            decideOnboarding(devrigInstalled = true, claudePresent = true, claudePluginEnabled = false, devrigOutdated = true),
-        )
-        // …and no agent still wins over everything.
-        assertEquals(
-            OnboardingDecision.OFFER_GET_AGENT,
-            decideOnboarding(devrigInstalled = true, claudePresent = false, claudePluginEnabled = true, devrigOutdated = true),
+            OnboardingDecision.OFFER_INSTALL,
+            decideOnboarding(devrigInstalled = false, devrigOutdated = true),
         )
     }
 
@@ -112,52 +94,5 @@ class OnboardingDecisionTest {
         assertFalse(devrigInstalled(home, windows = true))
         Files.createFile(bin.resolve("devrig.cmd"))
         assertTrue(devrigInstalled(home, windows = true))
-    }
-
-    @Test
-    fun `findClaudeBinary scans PATH then the local-bin fallback`() {
-        val home = Files.createTempDirectory("home")
-        assertNull(findClaudeBinary(pathEnv = null, userHome = home, windows = false))
-
-        // On PATH.
-        val pdir = Files.createTempDirectory("p")
-        val claude = Files.createFile(pdir.resolve("claude"))
-        assertEquals(claude, findClaudeBinary(pathEnv = pdir.toString(), userHome = home, windows = false))
-
-        // Fallback ~/.local/bin/claude when not on PATH.
-        val localBin = Files.createDirectories(home.resolve(".local").resolve("bin"))
-        val fallback = Files.createFile(localBin.resolve("claude"))
-        assertEquals(fallback, findClaudeBinary(pathEnv = "", userHome = home, windows = false))
-    }
-
-    @Test
-    fun `findClaudeBinary splits a semicolon-separated PATH on windows`() {
-        val home = Files.createTempDirectory("home-win")
-        val dir1 = Files.createTempDirectory("p1-win")
-        val dir2 = Files.createTempDirectory("p2-win")
-        val claudeExe = Files.createFile(dir2.resolve("claude.exe"))
-
-        // If ':' were used as the separator (runtime-OS default), this would be parsed as a single
-        // malformed entry and claude.exe would never be found.
-        assertEquals(
-            claudeExe,
-            findClaudeBinary(pathEnv = "${dir1};${dir2}", userHome = home, windows = true),
-        )
-    }
-
-    @Test
-    fun `isClaudePluginEnabled reads the enabledPlugins boolean strictly`() {
-        assertFalse(isClaudePluginEnabled(null))
-        assertFalse(isClaudePluginEnabled("{}"))
-        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"other@mp":true}}"""))
-        // The key is `devrig@<marketplace name from .claude-plugin/marketplace.json>` — pinned as a
-        // literal on purpose so renaming the marketplace without updating the constant fails here.
-        assertTrue(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@jonnyzzz":true}}"""))
-        // The stale pre-fix key must NOT count as enabled.
-        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@mcp-steroid":true}}"""))
-        // A quoted string "true" is NOT the JSON boolean true.
-        assertFalse(isClaudePluginEnabled("""{"enabledPlugins":{"devrig@jonnyzzz":"true"}}"""))
-        // Malformed JSON -> treated as not enabled, no crash.
-        assertFalse(isClaudePluginEnabled("{ not json"))
     }
 }

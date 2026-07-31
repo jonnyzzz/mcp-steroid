@@ -5,6 +5,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.wm.StatusBar
 import com.intellij.openapi.wm.StatusBarWidget
@@ -26,34 +27,37 @@ import javax.swing.JPanel
 /** Widget id — also the key [StatusBar.updateWidget] refreshes (see [DevrigConnectionStateService]). */
 const val DEVRIG_STATUS_WIDGET_ID: String = "jonnyzzz.mcp.steroid.devrig"
 
-/**
- * Whether the widget should occupy status-bar space at all.
- *
- * A plugin should not claim status-bar space permanently, so this widget is a transient onboarding aid
- * rather than a fixture: it exists only while there is something to act on, and removes itself once the
- * migration onto devrig is finished. If the situation regresses — devrig deleted, the Claude plugin
- * disabled, a new release published — it comes back, see [DevrigConnectionStateService.refreshLocalAsync].
- *
- * An unknown state (before the first check has finished) reports `true`, i.e. show it. This looks like the
- * cautious choice reversed, and it is on purpose: the status bar decides what to create very early, while
- * the state is still unknown, and it only reconsiders when explicitly told to. Reporting `false` there made
- * the platform drop the widget at startup and left its existence depending entirely on a later
- * `updateWidget` call arriving at the right moment — when that call was missed the widget never appeared at
- * all, even with devrig uninstalled. Showing it while the answer is unknown means the widget is created,
- * its `install` triggers the first check, and the check then removes it if the IDE turns out to be
- * connected. A brief widget on a connected IDE is a much smaller failure than never showing one.
- */
-fun shouldShowDevrigWidget(state: DevrigConnectionState?): Boolean =
-    state == null || state.decision != OnboardingDecision.ALREADY_CONNECTED
+/** Registry key that turns the status-bar widget and the startup offer on. Off by default — see below. */
+const val DEVRIG_WIDGET_REGISTRY_KEY: String = "mcp.steroid.devrig.widget.enabled"
 
 /**
- * The calm counterpart to the startup offer: the notification is one balloon among many at the noisiest
- * moment of the session and is easy to miss, so the same state also sits in the status bar — until the
- * migration is done, at which point [isAvailable] takes the widget away again.
+ * Whether the widget and the startup notification exist at all.
  *
- * The user can also remove it at any time: [isConfigurable] and [isEnabledByDefault] are left at their
- * platform defaults (both `true`), so right-clicking the status bar offers to hide this widget and the
- * choice is persisted by the platform. We deliberately do not reimplement that in our own popup.
+ * Off by default. Status-bar space and startup balloons are the IDE's scarcest attention budget, and a
+ * plugin taking either without being asked is exactly the kind of thing that gets flagged. The settings
+ * page carries the same offer with room to explain itself, so nothing is lost by staying quiet here. The
+ * key exists so we can run with it on ourselves and judge the idea before it reaches anyone else.
+ */
+fun devrigWidgetEnabled(): Boolean = Registry.`is`(DEVRIG_WIDGET_REGISTRY_KEY, false)
+
+/**
+ * Whether the widget should occupy status-bar space, given the current state.
+ *
+ * Even switched on it is a transient onboarding aid, not a fixture: it exists only while there is
+ * something to act on and removes itself once devrig is installed and current. If that regresses — devrig
+ * deleted, a newer release published — it comes back, see [DevrigFocusRefreshListener].
+ *
+ * There is no "unknown" case to get wrong any more: the state is two file reads, computed on the spot.
+ */
+fun shouldShowDevrigWidget(state: DevrigConnectionState): Boolean =
+    state.decision != OnboardingDecision.DEVRIG_READY
+
+/**
+ * A calm, always-visible alternative to the startup balloon, for the sessions where it is switched on.
+ *
+ * The user can also remove it at any time: [isConfigurable] is left at the platform default (`true`), so
+ * right-clicking the status bar offers to hide this widget and the choice is persisted by the platform.
+ * We deliberately do not reimplement that in our own popup.
  */
 class DevrigStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getId(): String = DEVRIG_STATUS_WIDGET_ID
@@ -61,19 +65,15 @@ class DevrigStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getDisplayName(): String = "devrig"
 
     /**
-     * On unless the user turns it off. This is the platform default too, stated explicitly because the
-     * whole migration path depends on it: a user who never opens the status-bar settings must still be
-     * offered the bridge. A choice the user *has* made is stored separately and wins over this.
-     */
-    override fun isEnabledByDefault(): Boolean = true
-
-    /**
      * Availability is re-read only when the platform creates widgets or when
      * [com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager.updateWidget] is called — the
-     * status bar never polls. [DevrigConnectionStateService] makes that call on every state publish.
+     * status bar never polls, hence [DevrigFocusRefreshListener].
+     *
+     * Cheap on purpose: a `stat` and a small file read, so it can answer here on the EDT without a cached
+     * copy behind it.
      */
     override fun isAvailable(project: Project): Boolean =
-        shouldShowDevrigWidget(DevrigConnectionStateService.getInstance().current())
+        devrigWidgetEnabled() && shouldShowDevrigWidget(DevrigConnectionStateService.getInstance().state())
 
     override fun createWidget(project: Project): StatusBarWidget = DevrigStatusBarWidget(project)
 }
@@ -91,26 +91,17 @@ class DevrigStatusBarWidgetFactory : StatusBarWidgetFactory {
 private class DevrigStatusBarWidget(private val project: Project) : StatusBarWidget {
     override fun ID(): String = DEVRIG_STATUS_WIDGET_ID
 
-    override fun install(statusBar: StatusBar) {
-        // Normally unreachable: the factory reports unavailable while the state is unknown, so the widget
-        // is only created after a refresh. Kept as a safety net — if some other path ever creates it
-        // early, this stops the widget sitting on "devrig: …" forever.
-        if (DevrigConnectionStateService.getInstance().current() == null) {
-            DevrigConnectionStateService.getInstance().refreshAsync()
-        }
-    }
+    override fun install(statusBar: StatusBar) = Unit
 
     override fun dispose() = Unit
 
     override fun getPresentation(): StatusBarWidget.WidgetPresentation = Presentation()
 
     private inner class Presentation : StatusBarWidget.TextPresentation {
-        override fun getText(): String = when (state()?.decision) {
-            null -> "devrig: …"
-            OnboardingDecision.ALREADY_CONNECTED -> "devrig: connected"
+        override fun getText(): String = when (state().decision) {
+            OnboardingDecision.DEVRIG_READY -> "devrig: ready"
             OnboardingDecision.OFFER_UPDATE -> "devrig: update available"
-            OnboardingDecision.OFFER_ENABLE -> "devrig: not connected"
-            OnboardingDecision.OFFER_GET_AGENT -> "devrig: no agent"
+            OnboardingDecision.OFFER_INSTALL -> "devrig: not installed"
         }
 
         override fun getAlignment(): Float = Component.CENTER_ALIGNMENT
@@ -118,18 +109,16 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
         // The tooltip states the situation; the click opens the popup that explains it and offers the
         // action — so every branch ends with the same "click for details" promise the click keeps.
         override fun getTooltipText(): String {
-            val state = state() ?: return "Checking whether this IDE is connected to an AI agent — click for details"
+            val state = state()
             return when (state.decision) {
-                OnboardingDecision.ALREADY_CONNECTED ->
-                    "Claude Code can drive this IDE through devrig" +
-                        (state.installedVersion?.let { " ($it)" } ?: "") + " — click for details"
+                OnboardingDecision.DEVRIG_READY ->
+                    "devrig" + (state.installedVersion?.let { " $it" } ?: "") +
+                        " bridges your AI agent to this IDE — click for details"
                 OnboardingDecision.OFFER_UPDATE ->
                     "devrig ${state.installedVersion ?: ""} is behind " +
                         "${state.latestBaseVersion ?: "the current release"} — click for details"
-                OnboardingDecision.OFFER_ENABLE ->
-                    "This IDE is not bridged to Claude Code yet — click for details"
-                OnboardingDecision.OFFER_GET_AGENT ->
-                    "No Claude Code CLI found on this machine — click for details"
+                OnboardingDecision.OFFER_INSTALL ->
+                    "devrig is not installed, so no agent can reach this IDE — click for details"
             }
         }
 
@@ -140,11 +129,11 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
         override fun getClickConsumer(): com.intellij.util.Consumer<MouseEvent> =
             com.intellij.util.Consumer { event -> showPopup(event) }
 
-        private fun state() = DevrigConnectionStateService.getInstance().current()
+        private fun state() = DevrigConnectionStateService.getInstance().state()
     }
 
     private fun showPopup(event: MouseEvent) {
-        val content = devrigWidgetPopupContent(DevrigConnectionStateService.getInstance().current())
+        val content = devrigWidgetPopupContent(DevrigConnectionStateService.getInstance().state())
         val panel = JPanel(BorderLayout(0, JBUI.scale(8))).apply {
             border = JBUI.Borders.empty(12)
         }
@@ -198,10 +187,9 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
             mapOf("action" to "widget", "widget_action" to action.name),
         )
         when (action) {
-            DevrigWidgetAction.INSTALL, DevrigWidgetAction.UPDATE -> DevrigSetupRunner().runEnable(project)
+            DevrigWidgetAction.INSTALL, DevrigWidgetAction.UPDATE -> DevrigSetupRunner().runInstall(project)
             DevrigWidgetAction.OPEN_SETTINGS ->
                 ShowSettingsUtil.getInstance().showSettingsDialog(project, McpSteroidConfigurable::class.java)
-            DevrigWidgetAction.LEARN_HOW -> BrowserUtil.browse(McpSteroidConfigurable.DEVRIG_DOCS_URL)
         }
     }
 }

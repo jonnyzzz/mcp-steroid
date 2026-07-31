@@ -6,146 +6,111 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
-import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.wm.IdeFrame
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import com.jonnyzzz.mcpSteroid.updates.UpdateChecker
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The facts the onboarding notification and the status-bar widget both reason about, so the two can
- * never disagree. Everything here is derived from cheap local state plus the published `version-base`.
+ * The facts every surface reasons about: is the bridge installed, which version, and what the current
+ * release is. Derived from two file reads plus — only where it is actually wanted — one HTTP call.
  */
 data class DevrigConnectionState(
     val devrigInstalled: Boolean,
     /** Version read out of the stable launcher, or null when unknown (see [installedDevrigVersion]). */
     val installedVersion: String?,
-    /** `version-base` from version.json, or null when it could not be fetched yet. */
+    /** `version-base` from version.json, or null when it was not fetched (or could not be). */
     val latestBaseVersion: String?,
-    val claudePresent: Boolean,
-    val claudePluginEnabled: Boolean,
 ) {
     val outdated: Boolean get() = isDevrigOutdated(installedVersion, latestBaseVersion)
 
     val decision: OnboardingDecision
-        get() = decideOnboarding(
-            devrigInstalled = devrigInstalled,
-            claudePresent = claudePresent,
-            claudePluginEnabled = claudePluginEnabled,
-            devrigOutdated = outdated,
-        )
+        get() = decideOnboarding(devrigInstalled = devrigInstalled, devrigOutdated = outdated)
 }
 
 /**
- * Application service that computes [DevrigConnectionState] and pushes the result to the status-bar
- * widget. Single source of truth: the startup offer ([DevrigOnboardingService]) and the widget
- * ([DevrigStatusBarWidgetFactory]) both read the cache instead of probing the filesystem themselves.
+ * Computes [DevrigConnectionState] on demand. **Nothing is cached** — deliberately.
  *
- * Nothing here blocks: [current] returns the last computed state (null before the first refresh) and
- * [refreshAsync] recomputes off the EDT. The state is refreshed at startup, and again after an install
- * or update finishes.
+ * The local half is a `Files.isRegularFile` plus reading a launcher script of a few hundred bytes, which
+ * is cheaper than any scheme for keeping a cached copy honest would be. An earlier version did cache it,
+ * and the cost was not the memory: it was a debounce clock, a "carry the last known remote version
+ * forward" parameter, and a self-healing publish path that existed purely so a missed invalidation could
+ * not strand the UI. All of that is gone.
+ *
+ * The remote half ([stateWithVersionCheck]) is a single HTTP GET of `version.json` and is not stored
+ * either. Callers that need it ask at the moment they need it; callers that do not — the settings page,
+ * the widget's existence check — never pay for it.
  */
 @Service(Service.Level.APP)
 class DevrigConnectionStateService(private val scope: CoroutineScope) {
     private val log = thisLogger()
 
-    @Volatile
-    private var cached: DevrigConnectionState? = null
+    /**
+     * Is the stable launcher there? One `stat`, no parsing — this is what the widget's existence hangs
+     * on, so it is kept separate from [localState] and cheap enough to answer on the EDT.
+     */
+    fun devrigIsInstalled(): Boolean =
+        devrigInstalled(Path.of(System.getProperty("user.home")), SystemInfo.isWindows)
 
-    /** Debounce clock for [refreshLocalAsync]; see [LOCAL_RECHECK_INTERVAL_MS]. */
-    private val lastLocalCheck = AtomicLong(0)
-
-    /** The last computed state, or null if the first refresh has not finished yet. */
-    fun current(): DevrigConnectionState? = cached
-
-    /** Recompute in the background, then refresh the status-bar widget of every open project. */
-    fun refreshAsync() {
-        scope.launch {
-            try {
-                refresh()
-            } catch (e: ProcessCanceledException) {
-                throw e
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.warn("devrig connection-state refresh failed", e)
-            }
-        }
+    /**
+     * Local facts only: installed, and which version. No network — [DevrigConnectionState.outdated] is
+     * therefore false, which is the safe direction (we never claim "stale" without having checked).
+     */
+    fun localState(): DevrigConnectionState {
+        val userHome = Path.of(System.getProperty("user.home"))
+        val windows = SystemInfo.isWindows
+        val installed = devrigInstalled(userHome, windows)
+        val launcherText = if (installed) readTextOrNull(devrigBinPath(userHome, windows)) else null
+        return DevrigConnectionState(
+            devrigInstalled = installed,
+            installedVersion = installedDevrigVersion(launcherText),
+            latestBaseVersion = null,
+        )
     }
 
     /**
-     * Recompute the state, cache it, and update the widgets. Returns the fresh state.
+     * The last `version-base` we fetched, for rendering only.
      *
-     * Published in two steps, local facts first. The version lookup is a network round-trip, and the widget
-     * is visible while the state is unknown, so publishing only at the end would leave a connected IDE
-     * showing a widget for the whole fetch. The local half already decides "connected or not", which is what
-     * the widget's existence hangs on; the fetch only refines it to "connected but outdated".
+     * This is **not** a cache: it never causes a fetch to be skipped — [stateWithVersionCheck] always
+     * goes to the network. It exists because the status bar renders synchronously and cannot await an
+     * HTTP call, so the answer has to be somewhere by the time `getText()` is asked. Null until the
+     * first successful fetch, which reads as "not outdated" — we never claim stale without knowing.
      */
-    suspend fun refresh(): DevrigConnectionState {
-        val local = publish(withContext(Dispatchers.IO) { computeLocal(cached?.latestBaseVersion) })
-        // "outdated" is meaningless without an installed devrig, and that case is already an offer.
+    @Volatile
+    private var lastFetchedBaseVersion: String? = null
+
+    /** [localState] plus whatever the last version check found. Synchronous; safe to call for painting. */
+    fun state(): DevrigConnectionState = localState().copy(latestBaseVersion = lastFetchedBaseVersion)
+
+    /** [localState] plus a **fresh** `version-base`, so the result can say "outdated". Always refetches. */
+    suspend fun stateWithVersionCheck(): DevrigConnectionState {
+        val local = withContext(Dispatchers.IO) { localState() }
+        // "Outdated" is meaningless without an installed devrig, and that case is already an offer.
         if (!local.devrigInstalled) return local
         val latest = UpdateChecker.getInstance().fetchLatestBaseVersion()
-        return publish(local.copy(latestBaseVersion = latest))
+        lastFetchedBaseVersion = latest
+        return local.copy(latestBaseVersion = latest)
     }
 
     /**
-     * Re-check only the cheap local facts and publish the result. Runs when the IDE window regains focus
-     * (see [DevrigFocusRefreshListener]), which is what brings the widget back inside the same session
-     * after devrig is deleted or the Claude plugin is switched off outside the IDE — the widget cannot
-     * notice that itself once [shouldShowDevrigWidget] has taken it away.
+     * Bring every open project's status bar in line with the current state.
      *
-     * No network: the published `version-base` is carried over from the last full [refresh], so this stays
-     * a couple of file reads. Focus events fire often, hence the [LOCAL_RECHECK_INTERVAL_MS] debounce.
+     * [StatusBarWidgetsManager.updateWidget] is idempotent — it creates the widget when it should exist,
+     * disposes it when it should not, and returns early when it is already correct — so calling it
+     * unconditionally is self-healing. It also honours a widget the user hid (the manager consults
+     * `StatusBarWidgetSettings` first), so this never resurrects one by force. The repaint afterwards is
+     * what picks up a changed label on a widget that stays.
      */
-    fun refreshLocalAsync() {
-        val now = System.currentTimeMillis()
-        val previous = lastLocalCheck.get()
-        if (now - previous < LOCAL_RECHECK_INTERVAL_MS) return
-        if (!lastLocalCheck.compareAndSet(previous, now)) return   // another focus event won the race
-        scope.launch {
-            try {
-                publish(withContext(Dispatchers.IO) { computeLocal(cached?.latestBaseVersion) })
-            } catch (e: ProcessCanceledException) {
-                throw e
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.warn("devrig connection-state local re-check failed", e)
-            }
-        }
-    }
-
-    /**
-     * Cache the state and bring every open project's status bar in line with it.
-     *
-     * [StatusBarWidgetsManager.updateWidget] is called unconditionally, and that is deliberate: it is
-     * idempotent (it creates the widget when it should exist, disposes it when it should not, and returns
-     * early when it is already correct), so every publish is self-healing. An earlier version only called
-     * it when the visibility *changed* and was unrecoverable — if the creating call was ever missed, e.g.
-     * because it arrived before the status bar finished initializing and was dropped by the manager's
-     * "not initialized yet" guard, every later re-check saw no change and did nothing but repaint a widget
-     * that did not exist.
-     *
-     * The repaint afterwards is still needed: `updateWidget` returns early for an already-created widget,
-     * so it is `updateWidget(id)` that picks up a changed label on a widget that stays.
-     *
-     * Both calls honour a widget the user hid — the manager checks [StatusBarWidgetSettings] first — so
-     * this never resurrects one by force.
-     */
-    private suspend fun publish(state: DevrigConnectionState): DevrigConnectionState {
-        cached = state
-        withContext(Dispatchers.EDT) {
+    fun refreshWidgets() {
+        scope.launch(Dispatchers.EDT) {
             for (project in ProjectManager.getInstance().openProjects) {
                 if (project.isDisposed) continue
                 project.service<StatusBarWidgetsManager>()
@@ -153,29 +118,6 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
                 WindowManager.getInstance().getStatusBar(project)?.updateWidget(DEVRIG_STATUS_WIDGET_ID)
             }
         }
-        return state
-    }
-
-    /**
-     * The local half of the state: file reads only, no network. [knownLatestBaseVersion] is threaded
-     * through so a local re-check keeps the last fetched `version-base` instead of losing the "outdated"
-     * signal (a null there would silently read as up-to-date).
-     */
-    private fun computeLocal(knownLatestBaseVersion: String?): DevrigConnectionState {
-        val userHome = Path.of(System.getProperty("user.home"))
-        val windows = SystemInfo.isWindows
-        val installed = devrigInstalled(userHome, windows)
-        val launcher = devrigBinPath(userHome, windows)
-        val installedVersion = if (installed) installedDevrigVersion(readTextOrNull(launcher)) else null
-        val settings = userHome.resolve(".claude").resolve("settings.json")
-
-        return DevrigConnectionState(
-            devrigInstalled = installed,
-            installedVersion = installedVersion,
-            latestBaseVersion = if (installed) knownLatestBaseVersion else null,
-            claudePresent = findClaudeBinary(System.getenv("PATH"), userHome, windows) != null,
-            claudePluginEnabled = isClaudePluginEnabled(readTextOrNull(settings)),
-        )
     }
 
     private fun readTextOrNull(path: Path): String? = try {
@@ -186,28 +128,22 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
     }
 
     companion object {
-        /**
-         * Shortest gap between two focus-triggered local re-checks. Alt-tabbing fires activation events
-         * in bursts and each check touches the filesystem, so a burst must cost one check, not one per
-         * event. Long enough to be free, short enough that coming back to the IDE after fixing something
-         * outside it reflects almost immediately.
-         */
-        const val LOCAL_RECHECK_INTERVAL_MS: Long = 10_000
-
         fun getInstance(): DevrigConnectionStateService = service()
     }
 }
 
 /**
- * Re-checks the local devrig state when the IDE window regains focus.
+ * Re-checks the widget when the IDE window regains focus.
  *
- * This is what lets the status-bar widget reappear within a session: once the migration looked finished
- * the widget removed itself, and a removed widget cannot notice that devrig was later deleted or that the
- * Claude plugin was switched off. Window focus is the cheap, event-driven moment to look again — the user
- * has just come back to the IDE, very possibly from doing exactly that.
+ * The status bar never polls: it consults [DevrigStatusBarWidgetFactory.isAvailable] when it creates
+ * widgets and when someone calls `updateWidget`. So a widget that removed itself cannot notice that
+ * devrig was later deleted, and one that is showing cannot notice that devrig has arrived. Window focus
+ * is the cheap, event-driven moment to look again — the user has just come back to the IDE, very
+ * possibly from doing exactly that in a terminal.
  */
 class DevrigFocusRefreshListener : ApplicationActivationListener {
     override fun applicationActivated(ideFrame: IdeFrame) {
-        DevrigConnectionStateService.getInstance().refreshLocalAsync()
+        if (!devrigWidgetEnabled()) return
+        DevrigConnectionStateService.getInstance().refreshWidgets()
     }
 }

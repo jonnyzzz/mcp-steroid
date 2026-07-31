@@ -20,12 +20,6 @@ class DevrigSetupTest {
     }
 
     @Test
-    fun `connect claude argv targets the devrig launcher`() {
-        val bin = Path.of("/home/u/.mcp-steroid/bin/devrig")
-        assertEquals(listOf("/home/u/.mcp-steroid/bin/devrig", "connect", "claude"), connectClaudeArgv(bin))
-    }
-
-    @Test
     fun `devrig bin path is per-OS`() {
         val home = Path.of("/home/u")
         assertEquals(Path.of("/home/u/.mcp-steroid/bin/devrig"), devrigBinPath(home, windows = false))
