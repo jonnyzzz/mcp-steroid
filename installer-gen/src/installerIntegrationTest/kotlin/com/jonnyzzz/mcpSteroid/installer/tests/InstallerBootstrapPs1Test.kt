@@ -34,9 +34,12 @@ import java.util.concurrent.TimeUnit
  * POSIX sibling covers.
  *
  * Windows-native runs of `install.ps1` need a Windows Docker host, which this repo's CI does not
- * provision; running pwsh under Linux instead exercises the same script (`Invoke-WebRequest`,
- * `Expand-Archive`, `Get-FileHash`, `Move-Item`, and — critically for jonnyzzz/mcp-steroid#274 —
- * `$ProgressPreference = 'SilentlyContinue'` at the top). The template already accepts a `bin/java`
+ * provision; running pwsh under Linux instead exercises the same script (`Expand-Archive`,
+ * `Get-FileHash`, `Move-Item`, and — critically for jonnyzzz/mcp-steroid#274 —
+ * `$ProgressPreference = 'SilentlyContinue'` at the top). The container installs `curl` before the
+ * script runs (step 4 below), so `Invoke-Download` takes its PRIMARY `curl` branch here — the same one
+ * real Windows takes via `curl.exe`, stall timeouts included — rather than the Invoke-WebRequest
+ * fallback. The template already accepts a `bin/java`
  * stub in place of `bin/java.exe` "so pwsh-on-Linux test runs without java.exe" — the design
  * anticipates this exact test.
  */

@@ -58,6 +58,39 @@ function Remove-Staging {
 }
 function Fail([string]$m) { Remove-Staging; Write-Log "ERROR: $m"; exit 1 }
 
+# -- the downloader (#228) --
+# curl.exe is the PRIMARY path. It ships with Windows 10 1803+ / Server 2019+, and gives the same STALL
+# detection install.sh relies on: --speed-limit/--speed-time abort a transfer whose average rate stays
+# under 1 KB/s for 30s (a dead connection, a proxy that accepted and went silent, a suspended laptop),
+# while a legitimately slow but PROGRESSING ~600 MB download runs to completion. That is what lets the
+# retry loop below actually fire instead of hanging forever.
+#
+# Invoke-WebRequest has no stall-only timeout. Its -TimeoutSec bounds the WHOLE operation on PowerShell 7
+# (HttpClient) but only the request initiation on Windows PowerShell 5.1 (WebRequest.Timeout) - so the
+# same script behaves differently per host, and any ceiling short enough to catch a dead connection also
+# kills a slow-but-working download. The retry then restarts it from byte 0 and it can never finish.
+#
+# -CommandType Application matters: in Windows PowerShell 5.1 `curl` is an ALIAS for Invoke-WebRequest,
+# and this filters to real executables. Bare `curl` is listed second so the pwsh-on-Linux test containers
+# exercise the same code path Windows takes.
+$CurlExe = Get-Command curl.exe, curl -CommandType Application -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+
+function Invoke-Download([string]$url, [string]$outFile) {
+  if ($CurlExe) {
+    # Same flags as install.sh, deliberately.
+    & $CurlExe.Source -fL --progress-bar -S --connect-timeout 30 --speed-limit 1024 --speed-time 30 -o $outFile $url
+    # PowerShell 7.4+ already throws on a non-zero native exit ($PSNativeCommandUseErrorActionPreference);
+    # 5.1 does not, so check explicitly and let the caller's catch turn it into a retry.
+    if ($LASTEXITCODE -ne 0) { throw "curl.exe exited with code $LASTEXITCODE" }
+    return
+  }
+  # No curl.exe (pre-1803 Windows). -TimeoutSec here is a last-resort HANG guard, not a stall detector,
+  # so it is deliberately generous: it bounds the entire transfer, and ~600 MB in 2h is ~0.7 Mbit/s.
+  # Anything tighter would abort working downloads on slow links.
+  Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -TimeoutSec 7200
+}
+
 # Home resolution: USERPROFILE -> HOME -> GetFolderPath (so pwsh-on-Linux tests can locate it too).
 $InstallRoot = $env:USERPROFILE
 if (-not $InstallRoot) { $InstallRoot = $env:HOME }
@@ -138,15 +171,14 @@ function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fm
   # fraction while it installs devrig for the user (InstallerProgress.parseInstallerLine).
   Write-Log ("downloading {0} (~{1} MB) from {2} ..." -f $kind, [long]($size / 1MB), $url)
   # Retry download+verify as a unit (transient network failure OR sha mismatch both re-download), with
-  # growing backoff; only the final failure is fatal. -TimeoutSec is a generous hard ceiling: PowerShell
-  # has no stall-only timeout (unlike curl's --speed-time), so a very slow link relies on this ceiling.
-  # install.sh is the primary macOS/Linux path.
+  # growing backoff; only the final failure is fatal. Invoke-Download carries the connect + stall
+  # timeouts (see above) so a dead connection fails - and thus retries - instead of hanging forever.
   $attempt = 1
   $backoff = 2
   while ($true) {
     $err = $null
     try {
-      Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing -TimeoutSec 1800
+      Invoke-Download $url $tmpZip
       $actual = (Get-FileHash -Algorithm SHA256 -Path $tmpZip).Hash.ToLowerInvariant()
       if ($actual -eq $sha) { Write-Log "SHA-256 verified: $sha"; break }
       $err = "SHA-256 mismatch for ${kind}: expected $sha, got $actual"

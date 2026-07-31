@@ -298,7 +298,25 @@ class InstallerGeneratorTest {
         assertTrue(scripts.ps.contains("AvailableFreeSpace"), "install.ps1 missing DriveInfo disk check")
         assertTrue(scripts.ps.contains("insufficient disk space"), "install.ps1 missing clear disk-space error")
         assertTrue(scripts.ps.contains("\$DlAttempts   = 3"), "install.ps1 missing retry-attempts config")
-        assertTrue(scripts.ps.contains("-TimeoutSec 1800"), "install.ps1 missing request timeout")
+        // Windows downloads go through curl.exe, which has the SAME stall detection as install.sh's curl.
+        // Invoke-WebRequest has no stall-only timeout, so it is only the fallback for hosts without
+        // curl.exe (pre-1803 Windows) and its -TimeoutSec is a generous hang guard, not a stall detector.
+        assertTrue(
+            scripts.ps.contains("--connect-timeout 30 --speed-limit 1024 --speed-time 30"),
+            "install.ps1 curl.exe missing connect timeout + stall detection",
+        )
+        assertTrue(
+            scripts.ps.contains("Get-Command curl.exe, curl -CommandType Application"),
+            "install.ps1 must resolve curl.exe as an Application (5.1 aliases `curl` to Invoke-WebRequest)",
+        )
+        assertTrue(
+            scripts.ps.contains("Invoke-WebRequest -Uri \$url -OutFile \$outFile -UseBasicParsing -TimeoutSec 7200"),
+            "install.ps1 missing the no-curl.exe fallback",
+        )
+        assertTrue(
+            scripts.ps.contains("if (\$LASTEXITCODE -ne 0) { throw"),
+            "install.ps1 must turn a non-zero curl.exe exit into a retry (5.1 does not throw on its own)",
+        )
         assertTrue(scripts.ps.contains("after \$DlAttempts attempts"), "install.ps1 missing final give-up message")
         assertTrue(scripts.ps.contains("function Remove-Staging"), "install.ps1 missing staging cleanup")
     }
