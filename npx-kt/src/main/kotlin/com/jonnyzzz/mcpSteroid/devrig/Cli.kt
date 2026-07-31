@@ -69,6 +69,17 @@ sealed interface DevrigCommand {
     ) : DevrigCommand
 
     /**
+     * Bare `devrig install` — no target given. Lists the valid install targets (with per-agent CLI
+     * detection) and exits 0 instead of failing with a missing-argument usage error: the bootstrap
+     * installers historically recommended the bare command, so it must guide, not error
+     * (jonnyzzz/mcp-steroid#277). Informational like `help`; ignores --json.
+     */
+    data class DevrigCommandInstallOverview(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
+    /**
      * `devrig install devrig` — register devrig's OWN `~/.mcp-steroid/bin` launcher + PATH (NOT an agent).
      * The install scripts call this with every non-trivial parameter explicit: [installScript] (the
      * install-tree launcher the wrapper execs) and [jdkHome] (pinned as `DEVRIG_JAVA_HOME`).
@@ -236,7 +247,7 @@ private class InstallCommand(
     selected: SelectedDevrigCommand,
     parent: DevrigCliktCommand,
 ) : DevrigCliktCommand("install", selected, parent) {
-    private val agent by argument("agent")
+    private val agent by argument("agent").optional()
     // Only meaningful for `install devrig` (the install scripts pass them); rejected for agents below.
     private val installScript: String? by option("--install-script")
     private val jdkHome: String? by option("--jdk-home")
@@ -248,6 +259,15 @@ private class InstallCommand(
 
     override fun run() {
         val options = options()
+        val agent = agent ?: run {
+            // Bare `devrig install`: overview mode (#277). Target-specific flags still need a target —
+            // silently ignoring them would hide a typo like `devrig install --check claude` gone wrong.
+            if (checkFlag || installScript != null || jdkHome != null) {
+                throw UsageError("--check / --install-script / --jdk-home require an install target (claude / codex / gemini / plugin / devrig)")
+            }
+            select(DevrigCommand.DevrigCommandInstallOverview(debug = options.debug, json = options.json))
+            return
+        }
         if (agent == "devrig") {
             if (checkFlag) throw UsageError("--check is only valid for an agent install (claude / codex / gemini) or 'devrig install plugin'")
             select(DevrigCommand.DevrigCommandInstallDevrig(
@@ -378,6 +398,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandBackendProvision -> runBackendProvisionCommand(command)
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
             is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
+            is DevrigCommand.DevrigCommandInstallOverview -> runInstallOverviewCommand()
             is DevrigCommand.DevrigCommandInstallDevrig -> runInstallDevrigCommand(command)
             is DevrigCommand.DevrigCommandInstallPlugin -> runInstallPluginCommand(command)
         }

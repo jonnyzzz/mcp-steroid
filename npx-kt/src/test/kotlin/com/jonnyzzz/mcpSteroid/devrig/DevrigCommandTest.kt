@@ -106,6 +106,20 @@ class DevrigCommandTest {
     }
 
     @Test
+    fun `bare install selects the overview listing - flags still require a target`() {
+        // jonnyzzz/mcp-steroid#277: the bootstrap installers historically recommended a bare
+        // `devrig install`, so it must guide (list targets + detected CLIs), not error.
+        assertIs<DevrigCommand.DevrigCommandInstallOverview>(command("install"))
+        val overview = assertIs<DevrigCommand.DevrigCommandInstallOverview>(command("--debug", "install", "--json"))
+        assertTrue(overview.debug)
+        assertTrue(overview.json)
+        // Target-specific flags without a target stay an error, not a silent overview.
+        assertIs<DevrigCommand.DevrigCommandParseError>(command("install", "--check"))
+        assertIs<DevrigCommand.DevrigCommandParseError>(command("install", "--install-script=/x"))
+        assertIs<DevrigCommand.DevrigCommandParseError>(command("install", "--jdk-home=/x"))
+    }
+
+    @Test
     fun `install --check selects the read-only check for an agent and is rejected for devrig`() {
         // --check sets the read-only flag on an agent install…
         val checked = assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "claude", "--check"))

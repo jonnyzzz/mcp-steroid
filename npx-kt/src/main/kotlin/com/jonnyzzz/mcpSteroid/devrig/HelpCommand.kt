@@ -24,6 +24,9 @@ fun printHelp(out: PrintStream) : Int {
                                          `--json` emits a single machine-readable
                                          object on stdout; default is human text.
 
+          devrig install                 list install targets and which agent
+                                         CLIs are present on PATH
+
           devrig install claude|codex|gemini [--check]
                                          register this devrig binary as the
                                          mcp-steroid stdio MCP server in the
