@@ -15,6 +15,8 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DISABLED_EXIT_CODE
+import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DRIFT_EXIT_CODE
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +33,19 @@ import java.nio.file.Path
  * the machine, and the failure the press would produce ("claude: command not found") explains far less
  * than not offering the button in the first place.
  */
-enum class AgentRegistrationState { CHECKING, REGISTERED, NOT_REGISTERED, CLI_MISSING, CHECK_FAILED }
+enum class AgentRegistrationState {
+    CHECKING,
+    REGISTERED,
+
+    /**
+     * Registered correctly, and switched off in the agent's own config — a state no `mcp list` reports,
+     * so without this the page would say "Registered" about a bridge the agent will never use.
+     */
+    DISABLED,
+    NOT_REGISTERED,
+    CLI_MISSING,
+    CHECK_FAILED,
+}
 
 /**
  * `devrig install <agent>`, or its read-only dry-run. The IDE never re-implements the registration: it
@@ -69,15 +83,20 @@ fun findOnPath(binary: String, pathEnv: String?, windows: Boolean): Path? {
 /**
  * Map `devrig install <agent> --check`'s outcome onto a row state.
  *
- * Exit 0 means the registration is already canonical; [com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DRIFT_EXIT_CODE]
- * (1) means install would change something — no entry, a stale command, duplicates, a custom name. Both
- * are answers. Anything else, including a timeout, is us failing to find out, which is not the same as
- * "not registered" and must not be reported as one.
+ * Exit 0 means the registration is already canonical; [INSTALL_CHECK_DRIFT_EXIT_CODE] (1) means install
+ * would change something — no entry, a stale command, duplicates, a custom name; and
+ * [INSTALL_CHECK_DISABLED_EXIT_CODE] (2) means it is registered but switched off in the agent's own
+ * config. All three are answers. Anything else, including a timeout, is us failing to find out, which is
+ * not the same as "not registered" and must not be reported as one.
+ *
+ * A devrig older than the disabled check never returns 2; it reports a disabled registration as canonical
+ * (0), which is what the page showed before this existed. Wrong, but not newly wrong.
  */
 fun agentStateFromCheck(exitCode: Int, timedOut: Boolean): AgentRegistrationState = when {
     timedOut -> AgentRegistrationState.CHECK_FAILED
     exitCode == 0 -> AgentRegistrationState.REGISTERED
-    exitCode == 1 -> AgentRegistrationState.NOT_REGISTERED
+    exitCode == INSTALL_CHECK_DRIFT_EXIT_CODE -> AgentRegistrationState.NOT_REGISTERED
+    exitCode == INSTALL_CHECK_DISABLED_EXIT_CODE -> AgentRegistrationState.DISABLED
     else -> AgentRegistrationState.CHECK_FAILED
 }
 
@@ -127,7 +146,7 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
         }
         val argv = devrigInstallAgentArgv(devrigBinPath(userHome, windows), agent, check = true)
         val output = ExecUtil.execAndGetOutput(GeneralCommandLine(argv), CHECK_TIMEOUT_MS)
-        if (output.isTimeout || output.exitCode > 1) {
+        if (output.isTimeout || output.exitCode > INSTALL_CHECK_DISABLED_EXIT_CODE) {
             log.warn("`${argv.joinToString(" ")}` exited with ${output.exitCode}: ${output.stderr.take(2000)}")
         }
         return agentStateFromCheck(output.exitCode, output.isTimeout)

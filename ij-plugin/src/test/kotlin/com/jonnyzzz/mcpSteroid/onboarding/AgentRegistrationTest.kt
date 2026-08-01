@@ -2,6 +2,8 @@
 package com.jonnyzzz.mcpSteroid.onboarding
 
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DISABLED_EXIT_CODE
+import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DRIFT_EXIT_CODE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -30,7 +32,16 @@ class AgentRegistrationTest {
     @Test
     fun `check outcomes map to states, and an unknown outcome is never reported as unregistered`() {
         assertEquals(AgentRegistrationState.REGISTERED, agentStateFromCheck(0, timedOut = false))
-        assertEquals(AgentRegistrationState.NOT_REGISTERED, agentStateFromCheck(1, timedOut = false))
+        assertEquals(
+            AgentRegistrationState.NOT_REGISTERED,
+            agentStateFromCheck(INSTALL_CHECK_DRIFT_EXIT_CODE, timedOut = false),
+        )
+        // Registered but switched off in the agent's own config — its own state, because "Registered"
+        // would be a lie about a bridge the agent will never use.
+        assertEquals(
+            AgentRegistrationState.DISABLED,
+            agentStateFromCheck(INSTALL_CHECK_DISABLED_EXIT_CODE, timedOut = false),
+        )
         // Anything else is us failing to find out — a different fact from "not registered".
         assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheck(64, timedOut = false))
         assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheck(-1, timedOut = false))

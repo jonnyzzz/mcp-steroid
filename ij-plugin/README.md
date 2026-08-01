@@ -34,10 +34,24 @@ then re-reads the row. Four states, and they are not interchangeable:
 | Row shows | Means | Button |
 |---|---|---|
 | Checking… | `devrig install <agent> --check` is running | — |
-| Registered | the registration is already canonical (`--check` exit 0) | none — a button on a finished step reads as an unfinished setup |
-| **Register** | devrig would change something: no entry, a stale command, duplicates, a custom name (`--check` exit 1) | runs it |
+| Registered | the registration is already canonical and switched on (`--check` exit 0) | none — a button on a finished step reads as an unfinished setup |
+| **Register** | devrig would change something: no entry, a stale command, duplicates, a custom name (exit 1) | runs it |
+| registered, but switched off — **Enable** | the entry is canonical and disabled in the agent's own config (exit 2) | runs the same verb; only the word changes |
 | no `<agent>` on your PATH | the agent's CLI is not on this machine | none — the press could only fail |
 | could not read the current state | the check itself failed or timed out | offered anyway; this is not the same fact as "not registered" |
+
+**Registered is not the same as in use.** Every agent can keep an MCP server configured and switched off,
+and **none of them reports that in `mcp list`** — `claude mcp list` and even `claude mcp get <name>` show a
+server disabled for the current project as `✔ Connected`. That makes it the worst state to be in: every
+visible answer says "all good" while the bridge does nothing. devrig therefore reads each agent's own
+config for it, and `devrig install <agent>` clears it — which is the only way to undo it, since none of the
+three CLIs has an enable verb.
+
+| Agent | Off means | File |
+|---|---|---|
+| Claude Code | the name is in `projects.<path>.disabledMcpServers` — **per project** | `~/.claude.json` |
+| Codex | `enabled = false` in the `[mcp_servers.<name>]` table | `~/.codex/config.toml` |
+| Gemini | the name is in `mcp.excluded`, or `mcp.allowed` exists without it | `~/.gemini/settings.json` |
 
 Agents whose CLI is absent are answered from a PATH lookup alone, so opening the page starts one process
 per **installed** agent, not one per agent we support. Success is quiet — the row flipping to *Registered*
@@ -155,4 +169,5 @@ failure too. A successful install clears it.
 | Notifications | `onboarding/DevrigOnboardingService.kt` |
 | Installer run, progress, markers | `onboarding/DevrigSetup.kt`, `onboarding/InstallerProgress.kt` |
 | Per-agent registration (`devrig install <agent>`, `--check` states) | `onboarding/AgentRegistration.kt` |
+| Detecting and clearing a switched-off registration (devrig side) | `:npx-kt` `devrig/AgentMcpEnablement.kt`; exit codes in `:mcp-core` `devrig/InstallCheckExitCodes.kt` |
 | Shared with devrig's updater: coordination markers, installer hosts, version comparison | `:mcp-core` `devrig/UpdateCoordination.kt`, `devrig/InstallerHost.kt`, `util/text/DevrigVersion.kt` |

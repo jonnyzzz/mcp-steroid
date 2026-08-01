@@ -18,6 +18,7 @@ import com.intellij.ui.components.fields.ExtendableTextField
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.Placeholder
+import com.intellij.ui.dsl.builder.Row
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.panel
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
@@ -263,28 +264,38 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 AgentRegistrationState.CHECKING -> label("Checking…")
                 AgentRegistrationState.REGISTERED -> label("Registered")
                 AgentRegistrationState.NOT_REGISTERED -> {
-                    button("Register") {
-                        placeholder.component = agentRow(agent, AgentRegistrationState.CHECKING, placeholder)
-                        DevrigAgentRegistrationService.getInstance()
-                            .register(agent, ProjectManager.getInstance().openProjects.firstOrNull()) { result ->
-                                updateAgentRow(placeholder, agent, result)
-                            }
-                    }
+                    registerButton(agent, "Register", placeholder)
                     comment("runs <code>devrig install ${agent.binary}</code>")
+                }
+                // Registered and switched off in the agent's own config. Same fix, different word: the
+                // user is not missing a registration, theirs is turned off — and no `mcp list` mentions
+                // it, which is why saying "Registered" here would be actively misleading.
+                AgentRegistrationState.DISABLED -> {
+                    registerButton(agent, "Enable", placeholder)
+                    comment("registered, but switched off for this agent")
                 }
                 AgentRegistrationState.CLI_MISSING ->
                     comment("no <code>${agent.binary}</code> on your PATH — install the agent first")
                 AgentRegistrationState.CHECK_FAILED -> {
-                    button("Register") {
-                        placeholder.component = agentRow(agent, AgentRegistrationState.CHECKING, placeholder)
-                        DevrigAgentRegistrationService.getInstance()
-                            .register(agent, ProjectManager.getInstance().openProjects.firstOrNull()) { result ->
-                                updateAgentRow(placeholder, agent, result)
-                            }
-                    }
+                    registerButton(agent, "Register", placeholder)
                     comment("could not read the current state — see the IDE log")
                 }
             }
+        }
+    }
+
+    /**
+     * The button behind every actionable state. One verb does all of them — `devrig install <agent>`
+     * registers, repairs a stale entry, and switches a disabled one back on — so the label changes with
+     * the situation while the action stays single.
+     */
+    private fun Row.registerButton(agent: AiAgentCli, label: String, placeholder: Placeholder) {
+        button(label) {
+            placeholder.component = agentRow(agent, AgentRegistrationState.CHECKING, placeholder)
+            DevrigAgentRegistrationService.getInstance()
+                .register(agent, ProjectManager.getInstance().openProjects.firstOrNull()) { result ->
+                    updateAgentRow(placeholder, agent, result)
+                }
         }
     }
 

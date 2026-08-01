@@ -14,8 +14,11 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 data class McpServerRef(val name: String, val commandLine: String)
 
+/** The name devrig registers itself under. Mirrors `InstallCommand`'s private constant. */
+const val CANONICAL_DEVRIG_SERVER_NAME = "mcp-steroid"
+
 /** Server names devrig owns. `mcp-steroid` is canonical; `devrig` is a legacy/alternative spelling. */
-val DEVRIG_SERVER_NAMES: Set<String> = setOf("mcp-steroid", "devrig")
+val DEVRIG_SERVER_NAMES: Set<String> = setOf(CANONICAL_DEVRIG_SERVER_NAME, "devrig")
 
 /** True when the server's registered name is one devrig owns. */
 fun McpServerRef.matchesDevrigName(): Boolean = name.lowercase() in DEVRIG_SERVER_NAMES
