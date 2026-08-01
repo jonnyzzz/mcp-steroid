@@ -25,7 +25,23 @@ The devrig tab shows **exactly one of two states**, because only one of them is 
 | devrig | What the tab shows |
 |---|---|
 | missing | "devrig is not installed yet", an **Install devrig** button, and in plain words what pressing it does: downloads about 611 MB (a pinned JDK plus devrig) into `~/.mcp-steroid`, puts `devrig` on PATH, and **registers nothing with any agent** |
-| installed | the version, then the next step — one copyable `devrig install <agent>` row per agent (Claude Code, Codex, Gemini) |
+| installed | the version, then the next step — one row per agent (Claude, Codex, Gemini), each showing where that agent stands and a **Register** button only where pressing one would change something |
+
+The agent rows are the second half of that: **Register** runs `devrig install <agent>` — the same verb the
+docs publish, so there is one implementation of what a canonical registration is — in a background task,
+then re-reads the row. Four states, and they are not interchangeable:
+
+| Row shows | Means | Button |
+|---|---|---|
+| Checking… | `devrig install <agent> --check` is running | — |
+| Registered | the registration is already canonical (`--check` exit 0) | none — a button on a finished step reads as an unfinished setup |
+| **Register** | devrig would change something: no entry, a stale command, duplicates, a custom name (`--check` exit 1) | runs it |
+| no `<agent>` on your PATH | the agent's CLI is not on this machine | none — the press could only fail |
+| could not read the current state | the check itself failed or timed out | offered anyway; this is not the same fact as "not registered" |
+
+Agents whose CLI is absent are answered from a PATH lookup alone, so opening the page starts one process
+per **installed** agent, not one per agent we support. Success is quiet — the row flipping to *Registered*
+is the confirmation; only a failure gets a balloon, carrying devrig's own first line.
 
 Everything else on the tab is one row each: a one-line pitch, a **What is devrig?** link, and a collapsed
 **Install or update devrig by hand** group holding the same one-liners the button runs. The state block is
@@ -138,4 +154,5 @@ failure too. A successful install clears it.
 | Status-bar widget + popup, and the registry key gating both surfaces | `onboarding/DevrigStatusBarWidget.kt`, `onboarding/DevrigWidgetPopupContent.kt` |
 | Notifications | `onboarding/DevrigOnboardingService.kt` |
 | Installer run, progress, markers | `onboarding/DevrigSetup.kt`, `onboarding/InstallerProgress.kt` |
+| Per-agent registration (`devrig install <agent>`, `--check` states) | `onboarding/AgentRegistration.kt` |
 | Shared with devrig's updater: coordination markers, installer hosts, version comparison | `:mcp-core` `devrig/UpdateCoordination.kt`, `devrig/InstallerHost.kt`, `util/text/DevrigVersion.kt` |

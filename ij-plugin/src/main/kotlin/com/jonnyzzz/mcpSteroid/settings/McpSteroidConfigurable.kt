@@ -19,8 +19,11 @@ import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.Placeholder
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.panel
+import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
+import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
 import com.jonnyzzz.mcpSteroid.onboarding.DEVRIG_STATE_CHANGED
+import com.jonnyzzz.mcpSteroid.onboarding.DevrigAgentRegistrationService
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionState
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
@@ -179,7 +182,11 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 cell(copyableTextField(DEVRIG_INSTALL_PS1)).align(AlignX.FILL)
             }
             row {
-                comment("Exactly what the button runs. Re-running either one is also how you update devrig.")
+                comment(
+                    "Exactly what the button runs. Re-running either one is also how you update devrig. " +
+                        "The agent rows above are equivalent to <code>devrig install claude</code> " +
+                        "(or <code>codex</code> / <code>gemini</code>) in a terminal."
+                )
             }
         }.topGap(TopGap.SMALL)
     }
@@ -199,15 +206,21 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             row {
                 text("<b>Point an agent at it</b> — once per machine, not once per project:")
             }.topGap(TopGap.SMALL)
-            for ((agent, command) in AGENT_REGISTRATION) {
-                row("$agent:") {
-                    cell(copyableTextField(command)).align(AlignX.FILL)
+            for (agent in AiAgentCli.entries) {
+                row("${agent.displayName}:") {
+                    val placeholder = placeholder()
+                    placeholder.component = agentRow(agent, AgentRegistrationState.CHECKING, placeholder)
+                    // Answered in the background: the check runs the agent's own CLI, which is not
+                    // instant, and a settings page must not wait on it.
+                    DevrigAgentRegistrationService.getInstance().checkAsync(agent) { state ->
+                        updateAgentRow(placeholder, agent, state)
+                    }
                 }
             }
             row {
                 comment(
-                    "Registrations point at the stable launcher, so they survive devrig updates — run " +
-                        "each one once. Already registered agents are left alone."
+                    "Registrations point at the stable launcher, so they survive devrig updates. Restart a " +
+                        "running agent session to pick one up."
                 )
             }
         } else {
@@ -228,6 +241,58 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                         "that is the next step, and it appears here once devrig is in place."
                 )
             }
+        }
+    }
+
+    /**
+     * One agent's cell: what we know, and a button only where pressing one would achieve something.
+     *
+     * The states are not interchangeable. "Register" is offered when devrig would actually change
+     * something; an already-registered agent gets no button, because a button on a finished step reads as
+     * an unfinished setup. A missing CLI says so instead of offering a press that could only fail, and a
+     * check we could not complete says *that* — reporting it as "not registered" would be a guess.
+     */
+    private fun agentRow(
+        agent: AiAgentCli,
+        state: AgentRegistrationState,
+        placeholder: Placeholder,
+    ): DialogPanel = panel {
+        row {
+            when (state) {
+                AgentRegistrationState.CHECKING -> label("Checking…")
+                AgentRegistrationState.REGISTERED -> label("Registered")
+                AgentRegistrationState.NOT_REGISTERED -> {
+                    button("Register") {
+                        placeholder.component = agentRow(agent, AgentRegistrationState.CHECKING, placeholder)
+                        DevrigAgentRegistrationService.getInstance()
+                            .register(agent, ProjectManager.getInstance().openProjects.firstOrNull()) { result ->
+                                updateAgentRow(placeholder, agent, result)
+                            }
+                    }
+                    comment("runs <code>devrig install ${agent.binary}</code>")
+                }
+                AgentRegistrationState.CLI_MISSING ->
+                    comment("no <code>${agent.binary}</code> on your PATH — install the agent first")
+                AgentRegistrationState.CHECK_FAILED -> {
+                    button("Register") {
+                        placeholder.component = agentRow(agent, AgentRegistrationState.CHECKING, placeholder)
+                        DevrigAgentRegistrationService.getInstance()
+                            .register(agent, ProjectManager.getInstance().openProjects.firstOrNull()) { result ->
+                                updateAgentRow(placeholder, agent, result)
+                            }
+                    }
+                    comment("could not read the current state — see the IDE log")
+                }
+            }
+        }
+    }
+
+    /** Replace one agent's cell with [state], on the EDT, unless this dialog is already gone. */
+    private fun updateAgentRow(placeholder: Placeholder, agent: AiAgentCli, state: AgentRegistrationState) {
+        val disposable = uiDisposable ?: return
+        ApplicationManager.getApplication().invokeLater {
+            if (Disposer.isDisposed(disposable)) return@invokeLater
+            placeholder.component = agentRow(agent, state, placeholder)
         }
     }
 
@@ -329,14 +394,5 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
         const val FEEDBACK_URL = "https://github.com/jonnyzzz/mcp-steroid/issues"
 
-        /**
-         * The next step after installing devrig, one row per agent. Every agent devrig can register gets
-         * a line: naming only Claude is how this product kept looking Claude-only.
-         */
-        val AGENT_REGISTRATION: List<Pair<String, String>> = listOf(
-            "Claude Code" to "devrig install claude",
-            "Codex" to "devrig install codex",
-            "Gemini" to "devrig install gemini",
-        )
     }
 }

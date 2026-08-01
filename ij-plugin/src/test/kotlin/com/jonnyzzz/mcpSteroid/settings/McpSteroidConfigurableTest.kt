@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.settings
 
 import com.intellij.openapi.options.Configurable
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
 import java.awt.Component
 import java.awt.Container
@@ -66,8 +67,9 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // someone who does not. Asserted against the real state so this holds on any machine.
             val installed = DevrigConnectionStateService.getInstance().localState().devrigInstalled
             if (installed) {
-                for ((_, command) in McpSteroidConfigurable.AGENT_REGISTRATION) {
-                    assertContainsText(texts, command)
+                // One row per agent devrig can register — never just Claude.
+                for (agent in AiAgentCli.entries) {
+                    assertContainsText(texts, agent.displayName)
                 }
                 assertFalse(
                     "devrig is installed — the panel must not offer to install it again; found:\n$joined",
@@ -78,7 +80,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 assertContainsText(texts, "Install devrig")
                 assertFalse(
                     "devrig is missing — registering an agent is not yet the next step; found:\n$joined",
-                    joined.contains("devrig install claude"),
+                    joined.contains("Point an agent at it"),
                 )
             }
 
