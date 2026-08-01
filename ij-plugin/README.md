@@ -15,15 +15,22 @@ installer.
 
 ### Settings page
 
-**Settings | Tools | Devrig — MCP Steroid** is where the plugin offers anything. It leads with the live
-server status, then two tabs — **Devrig — recommended** and **Direct HTTP** — in the order we recommend
-them. They used to be stacked sections, which read as two halves of one setup instead of a choice.
+**Settings | Tools | Devrig — MCP Steroid** is where the plugin offers anything. One line of framing, the
+live server status, then two tabs — **Devrig — recommended** and **Direct HTTP** — in the order we
+recommend them. They used to be stacked sections, which read as two halves of one setup instead of a
+choice.
 
-The devrig tab explains what devrig is, and shows an **Install devrig** button *only when devrig is
-missing*. Next to it, in plain words: the install downloads about 611 MB (a pinned JDK plus devrig) into
-`~/.mcp-steroid`, puts `devrig` on your PATH, and **registers nothing with any agent** — that is the
-separate `devrig install claude` (or `codex` / `gemini`) step, whose one-liners the tab also lists for
-anyone who would rather run them by hand.
+The devrig tab shows **exactly one of two states**, because only one of them is ever actionable:
+
+| devrig | What the tab shows |
+|---|---|
+| missing | "devrig is not installed yet", an **Install devrig** button, and in plain words what pressing it does: downloads about 611 MB (a pinned JDK plus devrig) into `~/.mcp-steroid`, puts `devrig` on PATH, and **registers nothing with any agent** |
+| installed | the version, then the next step — one copyable `devrig install <agent>` row per agent (Claude Code, Codex, Gemini) |
+
+Everything else on the tab is one row each: a one-line pitch, a **What is devrig?** link, and a collapsed
+**Install or update devrig by hand** group holding the same one-liners the button runs. The state block is
+the only part rebuilt while the page is open — an install finishes in the background and the page follows
+it (`DEVRIG_STATE_CHANGED`), instead of going on offering to install what is already there.
 
 This page is the offer's home on purpose. It is the one surface with room to say why installing a separate
 binary is worth it, and a user who opens it is asking.
