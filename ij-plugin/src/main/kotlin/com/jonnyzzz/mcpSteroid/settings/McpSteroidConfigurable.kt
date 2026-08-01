@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.settings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.ProjectManager
@@ -289,11 +290,26 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
     /** Replace one agent's cell with [state], on the EDT, unless this dialog is already gone. */
     private fun updateAgentRow(placeholder: Placeholder, agent: AiAgentCli, state: AgentRegistrationState) {
+        onEdtEvenUnderThisDialog { placeholder.component = agentRow(agent, state, placeholder) }
+    }
+
+    /**
+     * Run a UI update on the EDT **while the Settings dialog is still up**, and skip it if this page is
+     * already gone.
+     *
+     * `ModalityState.any()` is the whole point. A plain `invokeLater` from a background thread inherits
+     * `ModalityState.nonModal()`, so the platform holds the runnable until every modal dialog closes —
+     * and Settings is modal. That is what left every agent row on "Checking…" forever: the check had
+     * finished, its result simply could not reach the screen until the user closed the dialog. `any()` is
+     * sanctioned for exactly this (updating UI that must refresh regardless of modality) as long as the
+     * runnable touches nothing but its own components, which is all these do.
+     */
+    private fun onEdtEvenUnderThisDialog(update: () -> Unit) {
         val disposable = uiDisposable ?: return
-        ApplicationManager.getApplication().invokeLater {
+        ApplicationManager.getApplication().invokeLater({
             if (Disposer.isDisposed(disposable)) return@invokeLater
-            placeholder.component = agentRow(agent, state, placeholder)
-        }
+            update()
+        }, ModalityState.any())
     }
 
     /**
@@ -303,8 +319,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      */
     private fun refreshInstallStatus() {
         val placeholder = installStatus ?: return
-        ApplicationManager.getApplication().invokeLater {
-            if (installStatus !== placeholder) return@invokeLater   // panel rebuilt meanwhile
+        onEdtEvenUnderThisDialog {
+            if (installStatus !== placeholder) return@onEdtEvenUnderThisDialog   // panel rebuilt meanwhile
             placeholder.component = installStatusPanel(DevrigConnectionStateService.getInstance().localState())
         }
     }

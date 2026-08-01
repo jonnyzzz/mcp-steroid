@@ -111,6 +111,9 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
                 log.warn("could not check the ${agent.displayName} registration", e)
                 AgentRegistrationState.CHECK_FAILED
             }
+            // One line per agent per page opening: cheap, and the only thing that tells us afterwards
+            // whether a row stuck on "Checking…" never got an answer or never got it to the screen.
+            log.info("${agent.displayName} registration state: $state")
             onResult(state)
         }
     }

@@ -4,6 +4,8 @@ package com.jonnyzzz.mcpSteroid.onboarding
 import com.intellij.openapi.application.ApplicationActivationListener
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -138,7 +140,9 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
      * what picks up a changed label on a widget that stays.
      */
     fun refreshWidgets() {
-        scope.launch(Dispatchers.EDT) {
+        // ModalityState.any(): a plain EDT dispatch is withheld while a modal dialog is up, so an install
+        // started from the (modal) Settings dialog would not reach the status bar until it closed.
+        scope.launch(Dispatchers.EDT + ModalityState.any().asContextElement()) {
             for (project in ProjectManager.getInstance().openProjects) {
                 if (project.isDisposed) continue
                 project.service<StatusBarWidgetsManager>()
