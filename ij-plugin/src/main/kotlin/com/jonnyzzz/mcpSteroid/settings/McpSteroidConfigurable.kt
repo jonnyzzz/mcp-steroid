@@ -2,11 +2,13 @@
 package com.jonnyzzz.mcpSteroid.settings
 
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.openapi.util.Disposer
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.components.JBTextArea
@@ -14,12 +16,15 @@ import com.intellij.ui.components.fields.ExtendableTextComponent
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.Placeholder
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.panel
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
+import com.jonnyzzz.mcpSteroid.onboarding.DEVRIG_STATE_CHANGED
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionState
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
+import com.jonnyzzz.mcpSteroid.onboarding.DevrigStateListener
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import java.awt.datatransfer.StringSelection
 import javax.swing.text.AbstractDocument
@@ -48,6 +53,19 @@ import javax.swing.text.DocumentFilter
  */
 class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
+    /** The one block that is rebuilt while the page is open; see [refreshInstallStatus]. */
+    private var installStatus: Placeholder? = null
+
+    /** Scopes the [DEVRIG_STATE_CHANGED] subscription to one opening of the dialog. */
+    private var uiDisposable: Disposable? = null
+
+    override fun disposeUIResources() {
+        installStatus = null
+        uiDisposable?.let { Disposer.dispose(it) }
+        uiDisposable = null
+        super.disposeUIResources()
+    }
+
     override fun createPanel(): DialogPanel {
         // Cheap reads only: port comes from an AtomicReference inside the app service.
         // getServiceIfCreated makes the panel structurally incapable of triggering service
@@ -64,6 +82,14 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // rather than cached, because the panel is built once per dialog opening and a stale answer on
         // this page is worse than a stat.
         val devrigState = DevrigConnectionStateService.getInstance().localState()
+
+        // An install runs in the background and finishes while this page is open, so the page listens
+        // instead of staying a snapshot. Scoped to this opening of the dialog.
+        val disposable = Disposer.newDisposable("McpSteroidConfigurable")
+        uiDisposable?.let { Disposer.dispose(it) }
+        uiDisposable = disposable
+        ApplicationManager.getApplication().messageBus.connect(disposable)
+            .subscribe(DEVRIG_STATE_CHANGED, DevrigStateListener { refreshInstallStatus() })
 
         return panel {
             row {
@@ -140,29 +166,13 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             )
         }
 
-        if (state.devrigInstalled) {
-            row("devrig:") {
-                label("Installed" + (state.installedVersion?.let { " — version $it" } ?: ""))
-            }.topGap(TopGap.SMALL)
-        } else {
-            row {
-                text("<b>devrig is not installed yet.</b>")
-            }.topGap(TopGap.SMALL)
-            row {
-                button("Install devrig") {
-                    // Application-level page: any open project just anchors the progress bar, and none
-                    // is fine too (the task then runs at IDE level).
-                    DevrigSetupRunner().runInstall(ProjectManager.getInstance().openProjects.firstOrNull())
-                }
-            }
-            row {
-                comment(
-                    "Downloads about 611 MB (a pinned JDK plus devrig) into <code>~/.mcp-steroid</code> and " +
-                        "puts <code>devrig</code> on your PATH. It registers nothing with your agents — " +
-                        "that is the separate step below."
-                )
-            }
-        }
+        // A placeholder, not a plain row: an install takes minutes and finishes while this page is open,
+        // so the block that says "not installed / here is a button" has to be replaceable in place.
+        // Rebuilt from DEVRIG_STATE_CHANGED — see [installStatus].
+        row {
+            installStatus = placeholder()
+        }.topGap(TopGap.SMALL)
+        installStatus?.component = installStatusPanel(state)
 
         row {
             text("Prefer to run it yourself? These are the same installers:")
@@ -182,6 +192,49 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         row {
             browserLink("Read the Devrig documentation to get started", DEVRIG_DOCS_URL)
         }.topGap(TopGap.SMALL)
+    }
+
+    /**
+     * "devrig is not installed" + the button, or "installed, version N" — the one part of this page that
+     * changes while it is open.
+     */
+    private fun installStatusPanel(state: DevrigConnectionState): DialogPanel = panel {
+        if (state.devrigInstalled) {
+            row("devrig:") {
+                label("Installed" + (state.installedVersion?.let { " — version $it" } ?: ""))
+            }
+        } else {
+            row {
+                text("<b>devrig is not installed yet.</b>")
+            }
+            row {
+                button("Install devrig") {
+                    // Application-level page: any open project just anchors the progress bar, and none
+                    // is fine too (the task then runs at IDE level).
+                    DevrigSetupRunner().runInstall(ProjectManager.getInstance().openProjects.firstOrNull())
+                }
+            }
+            row {
+                comment(
+                    "Downloads about 611 MB (a pinned JDK plus devrig) into <code>~/.mcp-steroid</code> and " +
+                        "puts <code>devrig</code> on your PATH. It registers nothing with your agents — " +
+                        "that is the separate step below."
+                )
+            }
+        }
+    }
+
+    /**
+     * Swap the install block for one built from the current state. Called on [DEVRIG_STATE_CHANGED],
+     * which fires when an install finishes — the moment this page would otherwise keep offering to
+     * install something that is already there.
+     */
+    private fun refreshInstallStatus() {
+        val placeholder = installStatus ?: return
+        ApplicationManager.getApplication().invokeLater {
+            if (installStatus !== placeholder) return@invokeLater   // panel rebuilt meanwhile
+            placeholder.component = installStatusPanel(DevrigConnectionStateService.getInstance().localState())
+        }
     }
 
     /** The manual, single-IDE path. Kept intact so pre-devrig setups can still find their config. */

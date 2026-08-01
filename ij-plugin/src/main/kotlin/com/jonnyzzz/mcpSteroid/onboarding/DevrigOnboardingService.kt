@@ -52,7 +52,7 @@ class DevrigOnboardingService(private val scope: CoroutineScope) {
                     OnboardingDecision.OFFER_INSTALL -> offerInstall(project, decision)
                     OnboardingDecision.OFFER_UPDATE -> offerUpdate(project, state, decision)
                 }
-                DevrigConnectionStateService.getInstance().refreshWidgets()
+                DevrigConnectionStateService.getInstance().notifyStateChanged()
             } catch (e: ProcessCanceledException) {
                 throw e
             } catch (e: CancellationException) {

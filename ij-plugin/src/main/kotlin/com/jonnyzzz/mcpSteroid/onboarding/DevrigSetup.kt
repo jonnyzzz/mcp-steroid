@@ -131,8 +131,9 @@ class DevrigSetupRunner {
                     writeFailureMarker(userHome, "devrig install failed: $reason")
                     notifyFailure(project, "Installing devrig failed: $reason.")
                 } finally {
-                    // Whatever happened, the widget must reflect reality afterwards.
-                    DevrigConnectionStateService.getInstance().refreshWidgets()
+                    // Whatever happened, every surface must reflect reality afterwards — including a
+                    // settings page the user is looking at right now.
+                    DevrigConnectionStateService.getInstance().notifyStateChanged()
                 }
             }
         })

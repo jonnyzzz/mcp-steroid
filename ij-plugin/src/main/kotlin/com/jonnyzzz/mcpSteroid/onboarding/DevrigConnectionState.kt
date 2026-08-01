@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.onboarding
 
 import com.intellij.openapi.application.ApplicationActivationListener
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -11,6 +12,7 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.wm.IdeFrame
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
+import com.intellij.util.messages.Topic
 import com.jonnyzzz.mcpSteroid.updates.UpdateChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +20,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
+
+/**
+ * Notified when the devrig install state may have changed — after an install, an update, or a re-check.
+ *
+ * The status bar can be told to re-read [DevrigStatusBarWidgetFactory.isAvailable], but an open settings
+ * page cannot: its panel was built once. Without this, finishing an install left the page still offering
+ * to install.
+ */
+fun interface DevrigStateListener {
+    fun devrigStateChanged()
+}
+
+val DEVRIG_STATE_CHANGED: Topic<DevrigStateListener> =
+    Topic.create("devrig install state changed", DevrigStateListener::class.java)
 
 /**
  * The facts every surface reasons about: is the bridge installed, which version, and what the current
@@ -98,6 +114,18 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
         val latest = UpdateChecker.getInstance().fetchLatestBaseVersion()
         lastFetchedBaseVersion = latest
         return local.copy(latestBaseVersion = latest)
+    }
+
+    /**
+     * Recompute nothing, just tell every surface that the answer may have changed: the widget refresh
+     * below, and anything subscribed to [DEVRIG_STATE_CHANGED] (the settings page). Called after an
+     * install finishes, which is the one moment a page the user is looking at goes stale.
+     */
+    fun notifyStateChanged() {
+        refreshWidgets()
+        ApplicationManager.getApplication().messageBus
+            .syncPublisher(DEVRIG_STATE_CHANGED)
+            .devrigStateChanged()
     }
 
     /**
