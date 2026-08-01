@@ -92,18 +92,19 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             .subscribe(DEVRIG_STATE_CHANGED, DevrigStateListener { refreshInstallStatus() })
 
         return panel {
+            // One line. The five-line version of this pitch used to be the most prominent thing on a
+            // settings page, above every actual control — which is backwards for a page you open to do
+            // something. What it says lives on the website; the link is one row down.
             row {
                 text(
-                    "<b>AI Agents work inside your IDE — not just over your files.</b> Claude, Codex, Gemini, " +
-                        "and any MCP-compatible agent connect to MCP Steroid and drive the full IntelliJ " +
-                        "Platform: they run Kotlin against the live IDE, navigate the PSI, run inspections, " +
-                        "refactorings, the debugger and tests — and even <i>see</i> the IDE through screenshots. " +
-                        "Your agent gets the whole IntelliJ, not just the text."
+                    "<b>AI Agents work inside your IDE — not just over your files.</b> Claude, Codex, " +
+                        "Gemini and any MCP-compatible agent drive the full IntelliJ Platform through " +
+                        "MCP Steroid."
                 )
             }
             row {
                 browserLink("Report issues on GitHub", FEEDBACK_URL)
-            }.topGap(TopGap.SMALL)
+            }
 
             group("Status") {
                 if (info != null) {
@@ -132,7 +133,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             row {
                 cell(
                     JBTabbedPane().apply {
-                        addTab("Devrig — recommended", devrigTab(devrigState, portPhrase))
+                        addTab("Devrig — recommended", devrigTab(devrigState))
                         addTab("Direct HTTP", httpTab(portPhrase, info))
                     }
                 ).align(Align.FILL)
@@ -148,60 +149,66 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * The button appears only when devrig is missing — there is nothing to offer someone who already has
      * it, and a permanently present "install" button on a settings page reads as an unfinished setup.
      */
-    private fun devrigTab(state: DevrigConnectionState, portPhrase: String): DialogPanel = panel {
+    private fun devrigTab(state: DevrigConnectionState): DialogPanel = panel {
+        // One line, then a link. The long version of this pitch is what made the page unreadable: by the
+        // time a user got to something clickable they had read a dozen lines of prose.
         row {
             text(
-                "<b>Devrig</b> is one small command-line bridge between your AI Agent and your IDEs. " +
-                    "Point your agent at it once and it reaches <b>every</b> IntelliJ-family IDE you " +
-                    "have open — across projects — and routes each call to the right one. It keeps " +
-                    "working when the IDE restarts or the port changes, and it can even download and " +
-                    "start an IDE on demand for headless and CI runs."
+                "One bridge between your agent and <b>every</b> IntelliJ IDE you have open. It survives " +
+                    "IDE restarts and port changes, and can even start an IDE on demand for headless runs."
             )
         }
         row {
-            text(
-                "Direct HTTP (the other tab) also works, but it is tied to <b>this</b> IDE " +
-                    "$portPhrase — that changes when the IDE restarts or the port is taken, and every " +
-                    "agent must be wired up by hand. Devrig handles all of that for you."
-            )
+            browserLink("What is devrig?", DEVRIG_DOCS_URL)
         }
 
         // A placeholder, not a plain row: an install takes minutes and finishes while this page is open,
-        // so the block that says "not installed / here is a button" has to be replaceable in place.
-        // Rebuilt from DEVRIG_STATE_CHANGED — see [installStatus].
+        // so the block has to be replaceable in place. Rebuilt from DEVRIG_STATE_CHANGED.
         row {
             installStatus = placeholder()
         }.topGap(TopGap.SMALL)
         installStatus?.component = installStatusPanel(state)
 
-        row {
-            text("Prefer to run it yourself? These are the same installers:")
-        }.topGap(TopGap.SMALL)
-        row("macOS / Linux:") {
-            cell(copyableTextField(DEVRIG_INSTALL_SH)).align(AlignX.FILL)
-        }
-        row("Windows (PowerShell):") {
-            cell(copyableTextField(DEVRIG_INSTALL_PS1)).align(AlignX.FILL)
-        }
-        row {
-            comment(
-                "Then point your agent at it: <code>devrig install claude</code> " +
-                    "(or <code>codex</code> / <code>gemini</code>)."
-            )
-        }
-        row {
-            browserLink("Read the Devrig documentation to get started", DEVRIG_DOCS_URL)
+        // Collapsed: everyone who wanted the button already pressed it, and the one-liners are for the
+        // minority who would rather paste them into a terminal (or update a devrig the button cannot see).
+        collapsibleGroup("Install or update devrig by hand") {
+            row("macOS / Linux:") {
+                cell(copyableTextField(DEVRIG_INSTALL_SH)).align(AlignX.FILL)
+            }
+            row("Windows (PowerShell):") {
+                cell(copyableTextField(DEVRIG_INSTALL_PS1)).align(AlignX.FILL)
+            }
+            row {
+                comment("Exactly what the button runs. Re-running either one is also how you update devrig.")
+            }
         }.topGap(TopGap.SMALL)
     }
 
     /**
-     * "devrig is not installed" + the button, or "installed, version N" — the one part of this page that
-     * changes while it is open.
+     * The only state-dependent block, and the only one rebuilt while the page is open: either the offer
+     * to install devrig, or — once it is there — the next step, which is registering an agent with it.
+     *
+     * Showing exactly one of the two is the point. The button has nothing to offer someone who already
+     * has devrig, and the registration commands mean nothing to someone who does not.
      */
     private fun installStatusPanel(state: DevrigConnectionState): DialogPanel = panel {
         if (state.devrigInstalled) {
             row("devrig:") {
                 label("Installed" + (state.installedVersion?.let { " — version $it" } ?: ""))
+            }
+            row {
+                text("<b>Point an agent at it</b> — once per machine, not once per project:")
+            }.topGap(TopGap.SMALL)
+            for ((agent, command) in AGENT_REGISTRATION) {
+                row("$agent:") {
+                    cell(copyableTextField(command)).align(AlignX.FILL)
+                }
+            }
+            row {
+                comment(
+                    "Registrations point at the stable launcher, so they survive devrig updates — run " +
+                        "each one once. Already registered agents are left alone."
+                )
             }
         } else {
             row {
@@ -218,7 +225,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 comment(
                     "Downloads about 611 MB (a pinned JDK plus devrig) into <code>~/.mcp-steroid</code> and " +
                         "puts <code>devrig</code> on your PATH. It registers nothing with your agents — " +
-                        "that is the separate step below."
+                        "that is the next step, and it appears here once devrig is in place."
                 )
             }
         }
@@ -257,7 +264,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     cell(copyableTextField(command)).align(AlignX.FILL)
                 }
             }
-            group("JSON Config") {
+            collapsibleGroup("JSON Config") {
                 val json = info.jsonConfig.trim()
                 row {
                     // Size the area to the content so the whole block is visible without
@@ -321,5 +328,15 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         const val DEVRIG_INSTALL_PS1 = "irm https://devrig.dev/install.ps1 | iex"
 
         const val FEEDBACK_URL = "https://github.com/jonnyzzz/mcp-steroid/issues"
+
+        /**
+         * The next step after installing devrig, one row per agent. Every agent devrig can register gets
+         * a line: naming only Claude is how this product kept looking Claude-only.
+         */
+        val AGENT_REGISTRATION: List<Pair<String, String>> = listOf(
+            "Claude Code" to "devrig install claude",
+            "Codex" to "devrig install codex",
+            "Gemini" to "devrig install gemini",
+        )
     }
 }

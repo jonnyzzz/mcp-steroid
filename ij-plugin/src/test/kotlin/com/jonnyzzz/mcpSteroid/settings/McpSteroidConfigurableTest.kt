@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.settings
 
 import com.intellij.openapi.options.Configurable
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
 import java.awt.Component
 import java.awt.Container
 import javax.swing.AbstractButton
@@ -60,7 +61,26 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 "Windows installer must be a copyable irm|iex one-liner; found:\n$joined",
                 joined.contains("install.ps1") && joined.contains("| iex"),
             )
-            assertContainsText(texts, "devrig install claude")
+            // Exactly one of the two state-dependent blocks, never both: the install button has nothing
+            // to offer someone who already has devrig, and the registration commands mean nothing to
+            // someone who does not. Asserted against the real state so this holds on any machine.
+            val installed = DevrigConnectionStateService.getInstance().localState().devrigInstalled
+            if (installed) {
+                for ((_, command) in McpSteroidConfigurable.AGENT_REGISTRATION) {
+                    assertContainsText(texts, command)
+                }
+                assertFalse(
+                    "devrig is installed — the panel must not offer to install it again; found:\n$joined",
+                    joined.contains("devrig is not installed"),
+                )
+            } else {
+                assertContainsText(texts, "devrig is not installed")
+                assertContainsText(texts, "Install devrig")
+                assertFalse(
+                    "devrig is missing — registering an agent is not yet the next step; found:\n$joined",
+                    joined.contains("devrig install claude"),
+                )
+            }
 
             // The panel still links to the devrig documentation.
             assertEquals("https://devrig.dev/docs/devrig/", McpSteroidConfigurable.DEVRIG_DOCS_URL)
