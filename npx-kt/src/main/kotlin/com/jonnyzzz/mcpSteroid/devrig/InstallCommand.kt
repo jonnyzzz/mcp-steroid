@@ -413,7 +413,12 @@ fun runInstallCheckCommand(
 
     // Registered correctly is not the same as in use: every agent can keep a server configured and
     // switched off, and none of them mentions that in `mcp list` — see AgentMcpEnablement.kt.
-    val disabled = disabledRegistration()
+    //
+    // Only asked once the registration is otherwise canonical, and deliberately so: with a missing or
+    // stale entry, "switched off" is not the headline — the entry is what needs fixing first. Install
+    // repairs both in one run either way, so the only thing at stake is which word the user is told, and
+    // drift is the more actionable one.
+    val disabled = if (canonical) disabledRegistration() else null
     if (disabled != null) {
         out.println("But it is switched OFF: ${disabled.description}.")
         out.println()

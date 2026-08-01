@@ -1,9 +1,13 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -170,5 +174,48 @@ class AgentMcpEnablementTest {
     fun `enabling gemini twice changes nothing the second time`() {
         val once = enableGeminiMcp("""{"mcp":{"excluded":["mcp-steroid"]}}""")
         assertEquals(once, enableGeminiMcp(once))
+    }
+
+    // ---------- the file-level wiring, over a temp home ----------
+
+    @Test
+    fun `disabled state is read from - and cleared in - each agent's own config file`() {
+        val home = Files.createTempDirectory("home")
+        // Nothing on disk: nothing disabled, and nothing to clear.
+        for (agent in AiAgentCli.entries) {
+            assertNull(disabledRegistrationFor(agent, home))
+            assertFalse(enableRegistrationFor(agent, home))
+        }
+
+        Files.writeString(home.resolve(".claude.json"), claudeJson)
+        Files.createDirectories(home.resolve(".codex"))
+        Files.writeString(
+            home.resolve(".codex").resolve("config.toml"),
+            "[mcp_servers.mcp-steroid]\ncommand = \"devrig\"\nenabled = false\n",
+        )
+        Files.createDirectories(home.resolve(".gemini"))
+        Files.writeString(home.resolve(".gemini").resolve("settings.json"), """{"mcp":{"excluded":["mcp-steroid"]}}""")
+
+        for (agent in AiAgentCli.entries) {
+            val disabled = disabledRegistrationFor(agent, home)
+            assertNotNull(disabled, "${agent.displayName} must be reported as switched off")
+            // The message has to name the file, or nobody can act on it without us.
+            assertTrue(disabled.description.contains(home.toString()), disabled.description)
+
+            assertTrue(enableRegistrationFor(agent, home), "${agent.displayName} must be switched on")
+            assertNull(disabledRegistrationFor(agent, home), "${agent.displayName} must stay on")
+            // Idempotent: a second run has nothing left to write.
+            assertFalse(enableRegistrationFor(agent, home))
+        }
+    }
+
+    @Test
+    fun `the claude message names every project it is switched off in`() {
+        val home = Files.createTempDirectory("home-claude")
+        Files.writeString(home.resolve(".claude.json"), claudeJson)
+        val description = assertNotNull(disabledRegistrationFor(AiAgentCli.CLAUDE, home)).description
+        assertTrue(description.contains("/home/u/work/a"), description)
+        assertTrue(description.contains("/home/u/work/c"), description)
+        assertTrue(description.contains("2 project(s)"), description)
     }
 }

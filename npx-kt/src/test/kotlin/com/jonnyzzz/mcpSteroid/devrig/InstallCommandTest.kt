@@ -226,6 +226,35 @@ class InstallCommandTest {
     }
 
     @Test
+    fun `check reports a canonical but switched-off registration with its own exit code`() {
+        // The state no `mcp list` reveals: the entry is perfect and the agent will not use it.
+        val r = runCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, claudeCanonicalList)),
+            disabledRegistration = DisabledRegistration("disabled for 1 project(s) in ~/.claude.json: /w/a"),
+        )
+        assertEquals(INSTALL_CHECK_DISABLED_EXIT_CODE, r.exitCode)
+        assertContains(r.stdout, "switched OFF")
+        assertContains(r.stdout, "/w/a")
+        assertContains(r.stdout, "Registered but disabled")
+        // Still read-only: finding it switched off must not turn --check into a repair.
+        assertEquals(1, r.invocations.size)
+    }
+
+    @Test
+    fun `a missing entry outranks a switched-off one - drift is the actionable word`() {
+        val r = runCheck(
+            AiAgentCli.CLAUDE,
+            RecordingRunner(listResult = AiAgentCliResult(0, "")),
+            disabledRegistration = DisabledRegistration("disabled somewhere"),
+        )
+        assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
+        assertContains(r.stdout, "Drift detected")
+        // One repair run fixes both, so the user is told about the entry, not about the switch.
+        assertFalse(r.stdout.contains("switched OFF"))
+    }
+
+    @Test
     fun `check never mutates for ANY agent - only 'mcp list' is ever invoked (canonical and drift)`() {
         // The no-mutate guarantee is the most safety-critical property of --check, and parseMcpServerList
         // takes a DIFFERENT code path per agent (codex = JSON, claude/gemini = line) — so assert it for all
@@ -354,6 +383,9 @@ class InstallCommandTest {
         reachability: IdeReachabilityReport = IdeReachabilityReport(reachable = 0, discovered = 0),
         reachabilityThrows: Boolean = false,
         missingLauncherPath: Path? = null,
+        // Stubbed by default: the real probe reads the developer's own ~/.claude.json, which would make
+        // every exit-code assertion here depend on whether they happen to have devrig disabled somewhere.
+        disabledRegistration: DisabledRegistration? = null,
     ): CheckRunResult {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
@@ -365,6 +397,7 @@ class InstallCommandTest {
             runner = runner,
             ideReachability = { if (reachabilityThrows) error("probe boom") else reachability },
             missingLauncherPath = missingLauncherPath,
+            disabledRegistration = { disabledRegistration },
         )
         return CheckRunResult(
             exitCode = exitCode,
