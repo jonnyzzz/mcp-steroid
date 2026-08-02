@@ -77,6 +77,9 @@ fun resolveAndroidStudioCanaryArchiveFromHtml(
         channel = IdeChannel.STABLE,
         version = resolvedVersion,
         build = baseline?.toString() ?: resolvedVersion,
+        // The preview page only exposes the marketing version, so the build is the platform baseline
+        // (`262`) while the installed artifact reports the full `262.8665.258.2621.14049965`.
+        buildIsBaseline = baseline != null,
         url = url,
         downloadKey = url.substringAfterLast('/'),
     )

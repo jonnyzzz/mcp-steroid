@@ -33,6 +33,8 @@ class AndroidStudioCanaryReleasesTest {
         val archive = resolveAndroidStudioCanaryArchiveFromHtml(html, HostOs.MAC, HostArchitecture.ARM64)
         assertEquals("2026.1.2.3", archive.version)
         assertEquals("261", archive.build)
+        // The preview page gives no full build, so the install reports 261.x — baseline comparison only.
+        assertTrue(archive.buildIsBaseline)
         assertEquals(
             "https://edgedl.me.gvt1.com/android/studio/install/2026.1.2.3/android-studio-quail2-canary3-mac_arm.dmg",
             archive.url,

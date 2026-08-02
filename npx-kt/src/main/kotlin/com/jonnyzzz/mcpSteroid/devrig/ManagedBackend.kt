@@ -98,6 +98,8 @@ data class BackendDownloadResolution(
     val product: IdeProduct,
     val version: String,
     val build: String,
+    /** @see com.jonnyzzz.mcpSteroid.ideDownloader.IdeArchiveResolution.buildIsBaseline */
+    val buildIsBaseline: Boolean = false,
     val url: String,
     val checksumUrl: String? = null,
     val expectedSha256: String? = null,
@@ -226,6 +228,7 @@ class DefaultManagedBackendDownloader(
             product = archive.product,
             version = archive.version,
             build = archive.build,
+            buildIsBaseline = archive.buildIsBaseline,
             url = archive.url,
             checksumUrl = archive.checksumUrl,
             expectedSha256 = archive.expectedSha256,
@@ -316,6 +319,16 @@ class BackendManager(
                 bundleDir = bundleDir,
                 descriptorPath = descriptorPath,
             )
+            validateInstalledBuildNumber(
+                product = resolution.product,
+                expectedBuild = resolution.build,
+                expectedBuildIsBaseline = resolution.buildIsBaseline,
+                actualBuildNumber = launcher.buildNumber,
+                downloadedUrl = resolution.url,
+                archivePath = artifact.archivePath,
+                bundleDir = bundleDir,
+                descriptorPath = descriptorPath,
+            )
             PreparedBackendInstall(
                 bundleDirName = bundleDir.fileName.toString(),
                 launcher = launcher,
@@ -334,6 +347,16 @@ class BackendManager(
                 validateInstalledProductCode(
                     product = resolution.product,
                     actualProductCode = launcher.productCode,
+                    downloadedUrl = resolution.url,
+                    archivePath = artifact.archivePath,
+                    bundleDir = partialBundleDir,
+                    descriptorPath = descriptorPath(partialDir),
+                )
+                validateInstalledBuildNumber(
+                    product = resolution.product,
+                    expectedBuild = resolution.build,
+                    expectedBuildIsBaseline = resolution.buildIsBaseline,
+                    actualBuildNumber = launcher.buildNumber,
                     downloadedUrl = resolution.url,
                     archivePath = artifact.archivePath,
                     bundleDir = partialBundleDir,
@@ -574,7 +597,13 @@ class BackendManager(
             return false
         }
         val expectedBuild = descriptor.buildNumber ?: return false
-        return marker.pid == pid && marker.ide.build == expectedBuild
+        // Marker builds carry the product-code prefix (`IC-262.8665.258`) that product-info.json
+        // omits, and a descriptor written from a baseline-only resolution holds just `262`.
+        return marker.pid == pid && ideBuildMatches(
+            actual = marker.ide.build,
+            expected = expectedBuild,
+            expectedIsBaseline = isPlatformBaselineOnly(expectedBuild),
+        )
     }
 
     private fun deleteMcpMarker(pid: Long) {
@@ -789,6 +818,50 @@ fun validateInstalledProductCode(
             append("Managed backend product validation failed for ${product.id} (${product.code}). ")
             append("Expected product-info.json productCode '$expectedProductCode', ")
             append("actual '${actualProductCode ?: "<missing>"}'. ")
+            append("Downloaded URL: $downloadedUrl. ")
+            append("Archive path: ${archivePath?.toString() ?: "<not downloaded in this invocation>"}. ")
+            append("Unpacked path: $bundleDir. ")
+            append("Removed unpacked bundle and descriptor: $descriptorPath")
+        }
+    )
+}
+
+/**
+ * Refuses an install whose `product-info.json` build is not the build that was resolved — a wrong or
+ * swapped artifact under the requested id.
+ *
+ * Feeds differ in what they can tell us: `data.services.jetbrains.com` returns the exact build
+ * (`262.8665.337`), while GitHub Community releases and the Android Studio canary page only give the
+ * platform baseline (`262`). A baseline resolution therefore matches any `262.*` install — comparing
+ * it for equality with the real `262.8665.258` would reject every Community download.
+ *
+ * A missing `buildNumber` is not a failure: there is nothing to compare, and
+ * [validateInstalledProductCode] already covers artifact identity.
+ */
+fun validateInstalledBuildNumber(
+    product: IdeProduct,
+    expectedBuild: String,
+    expectedBuildIsBaseline: Boolean,
+    actualBuildNumber: String?,
+    downloadedUrl: String,
+    archivePath: Path?,
+    bundleDir: Path,
+    descriptorPath: Path,
+) {
+    if (actualBuildNumber == null) return
+    if (ideBuildMatches(actualBuildNumber, expectedBuild, expectedBuildIsBaseline)) return
+
+    deleteRecursively(bundleDir)
+    Files.deleteIfExists(descriptorPath)
+    throw ManagedBackendValidationException(
+        buildString {
+            append("Managed backend build validation failed for ${product.id} (${product.code}). ")
+            if (expectedBuildIsBaseline) {
+                append("Expected a product-info.json build on platform baseline '$expectedBuild', ")
+            } else {
+                append("Expected product-info.json build '$expectedBuild', ")
+            }
+            append("actual '$actualBuildNumber'. ")
             append("Downloaded URL: $downloadedUrl. ")
             append("Archive path: ${archivePath?.toString() ?: "<not downloaded in this invocation>"}. ")
             append("Unpacked path: $bundleDir. ")

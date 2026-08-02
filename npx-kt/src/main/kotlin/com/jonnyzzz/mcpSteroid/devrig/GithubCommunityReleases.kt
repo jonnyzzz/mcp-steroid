@@ -113,6 +113,9 @@ fun resolveGithubCommunityArchiveFromReleasesJson(
         channel = IdeChannel.STABLE,
         version = chosen.version,
         build = baseline.toString(),
+        // GitHub releases carry no full build number, so this is the baseline only: the artifact
+        // itself reports `262.8665.258` for baseline `262`.
+        buildIsBaseline = true,
         url = url,
         downloadKey = name,
         releaseDate = chosen.publishedAt,

@@ -20,6 +20,13 @@ data class IdeArchiveResolution(
     val channel: IdeChannel,
     val version: String,
     val build: String,
+    /**
+     * True when [build] is only the platform baseline (`262`) because the feed does not publish the
+     * full build number — GitHub Community releases and the Android Studio canary page both resolve
+     * that way, while the downloaded artifact reports `262.8665.258`. Consumers must compare such a
+     * build as a baseline instead of for exact equality.
+     */
+    val buildIsBaseline: Boolean = false,
     val url: String,
     val downloadKey: String,
     val releaseDate: String? = null,

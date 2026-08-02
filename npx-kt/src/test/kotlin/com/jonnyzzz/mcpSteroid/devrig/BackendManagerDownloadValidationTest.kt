@@ -85,6 +85,87 @@ class BackendManagerDownloadValidationTest {
     }
 
     @Test
+    fun `download accepts a full build under a baseline-only resolution`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        // #423: GitHub Community releases resolve to baseline "262" while the downloaded artifact
+        // reports "262.8665.258". Comparing those for equality failed every idea-community download.
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val archivePath = fakeArchive(tempDir, "idea-2026.2-aarch64.tar.gz")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = InstallingDownloader(
+                productCode = "IC",
+                archivePath = archivePath,
+                resolvedBuild = "262",
+                buildIsBaseline = true,
+                installedBuild = "262.8665.258",
+            ),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
+        )
+
+        val result = manager.download(parseBackendId("idea-community-2026.2"))
+
+        assertEquals("262.8665.258", result.descriptor.buildNumber)
+        assertTrue(result.backendDir.resolve(result.descriptor.bundleDirName).resolve("product-info.json").exists())
+    }
+
+    @Test
+    fun `download rejects a build from another baseline and cleans partial install`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val backendId = "idea-community-2026.2"
+        val archivePath = fakeArchive(tempDir, "idea-2026.2-aarch64.tar.gz")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = InstallingDownloader(
+                productCode = "IC",
+                archivePath = archivePath,
+                resolvedBuild = "262",
+                buildIsBaseline = true,
+                installedBuild = "261.24374.151",
+            ),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
+        )
+
+        val error = assertFailsWith<ManagedBackendValidationException> {
+            manager.download(parseBackendId(backendId))
+        }
+
+        assertFalse(homePaths.backendsDir.resolve("$backendId.partial").exists(), "partial dir must be removed")
+        assertTrue(error.message!!.contains("platform baseline '262'"), error.message)
+        assertTrue(error.message!!.contains("actual '261.24374.151'"), error.message)
+    }
+
+    @Test
+    fun `download rejects a product-info build that is not the resolved build`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val backendId = "idea-community-2025.3.3"
+        val archivePath = fakeArchive(tempDir, "ideaIC-2025.3.3.tar.gz")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = InstallingDownloader(
+                productCode = "IC",
+                archivePath = archivePath,
+                resolvedBuild = "253.28294.334",
+                installedBuild = "253.28294.999",
+            ),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
+        )
+
+        val error = assertFailsWith<ManagedBackendValidationException> {
+            manager.download(parseBackendId(backendId))
+        }
+
+        assertFalse(homePaths.backendsDir.resolve("$backendId.partial").exists(), "partial dir must be removed")
+        assertTrue(error.message!!.contains("Expected product-info.json build '253.28294.334'"), error.message)
+        assertTrue(error.message!!.contains("actual '253.28294.999'"), error.message)
+    }
+
+    @Test
     fun `failed partial extraction is cleaned before retry succeeds`(
         @TempDir tempDir: Path,
     ) = runBlocking {
@@ -242,12 +323,18 @@ class BackendManagerDownloadValidationTest {
     private class InstallingDownloader(
         private val productCode: String,
         private val archivePath: Path,
+        /** What the release feed resolved to — a full build, or a baseline when [buildIsBaseline]. */
+        private val resolvedBuild: String = "$productCode-253.1",
+        private val buildIsBaseline: Boolean = false,
+        /** What the unpacked `product-info.json` reports. */
+        private val installedBuild: String = "$productCode-253.1",
     ) : ManagedBackendDownloader {
         override suspend fun resolve(id: BackendId): BackendDownloadResolution =
             BackendDownloadResolution(
                 product = IdeProduct.IntelliJIdeaCommunity,
                 version = id.version ?: "2025.3.3",
-                build = "$productCode-253.1",
+                build = resolvedBuild,
+                buildIsBaseline = buildIsBaseline,
                 url = "https://download.jetbrains.com/idea/${archivePath.fileName}",
             )
 
@@ -273,7 +360,7 @@ class BackendManagerDownloadValidationTest {
             """
             {
               "productCode": "$productCode",
-              "buildNumber": "$productCode-253.1",
+              "buildNumber": "$installedBuild",
               "launch": [
                 { "os": "Linux", "launcherPath": "bin/idea.sh" },
                 { "os": "macOS", "launcherPath": "bin/idea.sh" },

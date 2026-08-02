@@ -50,6 +50,9 @@ class GithubCommunityReleasesTest {
         // 2026.2 is a prerelease and 2025.3.5 is older, so 2026.1.2 wins.
         assertEquals("2026.1.2", archive.version)
         assertEquals("261", archive.build)
+        // GitHub releases publish no full build number, so the resolution must say so — the artifact
+        // reports 261.x and an exact comparison would reject every Community download.
+        assertTrue(archive.buildIsBaseline)
         assertEquals("2026-05-15", archive.releaseDate)
         assertEquals("https://gh/idea-2026.1.2-aarch64.dmg", archive.url)
     }
