@@ -3,6 +3,7 @@ import com.jonnyzzz.mcpSteroid.gradle.VerifyClassFileVersionTask
 import com.jonnyzzz.mcpSteroid.gradle.configurePathingJarClasspath
 import org.gradle.api.attributes.Usage
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.time.Duration
 import java.util.SortedSet
 
 plugins {
@@ -262,13 +263,49 @@ distributions {
     }
 }
 
+// Tests that intentionally call public vendor feeds (data.services.jetbrains.com, the
+// intellij-community releases API, developer.android.com). `live-network` resolves only;
+// `live-download` additionally pulls whole IDE archives. Both are opt-in tasks below.
+val liveNetworkTag = "live-network"
+val liveDownloadTag = "live-download"
+
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags(liveNetworkTag, liveDownloadTag)
+    }
     // Hand the build's project.version through to DevrigVersionMetadataTest so it can
     // end-to-end-assert the generated runtime value.
     systemProperty("devrig.expected.version", version.toString())
     // Unit tests must never reach PostHog over the network (DevrigBeacon).
     systemProperty("devrig.beacon.disabled", "true")
+}
+
+/** Shares the default `test` wiring with a different tag filter. */
+fun Test.configureLikeUnitTests(tag: String) {
+    useJUnitPlatform {
+        includeTags(tag)
+    }
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    systemProperty("devrig.expected.version", version.toString())
+    systemProperty("devrig.beacon.disabled", "true")
+    shouldRunAfter(tasks.test)
+    // A vendor feed changing under us is the very thing these assert; never serve a cached verdict.
+    outputs.upToDateWhen { false }
+}
+
+tasks.register<Test>("liveNetworkTest") {
+    description = "Resolves every supported IDE against the live vendor feeds (no archive download)."
+    group = "verification"
+    configureLikeUnitTests(liveNetworkTag)
+}
+
+tasks.register<Test>("liveDownloadSmokeTest") {
+    description = "Downloads and validates real IDE archives (idea-community, android-studio). Multi-GB."
+    group = "verification"
+    configureLikeUnitTests(liveDownloadTag)
+    // A single IDE archive plus its unpacked bundle needs far longer than a unit test.
+    timeout.set(Duration.ofMinutes(60))
 }
 
 kotlin {

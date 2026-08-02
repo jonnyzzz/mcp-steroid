@@ -4,11 +4,9 @@ package com.jonnyzzz.mcpSteroid.devrig
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
-import com.jonnyzzz.mcpSteroid.ideDownloader.IdeChannel
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeDistribution
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveAndDownload
-import com.jonnyzzz.mcpSteroid.ideDownloader.resolveArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.unpackIdeArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.writeIdeStartupConfigFiles
@@ -217,13 +215,7 @@ class DefaultManagedBackendDownloader(
     private val os: HostOs = resolveHostOs(),
 ) : ManagedBackendDownloader {
     override suspend fun resolve(id: BackendId): BackendDownloadResolution = withContext(Dispatchers.IO) {
-        // Android Studio's compatible (261) build is on the canary channel; true Community editions
-        // live on GitHub (the products API stops at 253); everything else from data.services.jetbrains.com.
-        val archive = when {
-            id.product === IdeProduct.AndroidStudio -> resolveAndroidStudioCanaryArchive(os = os, version = id.version)
-            isGithubCommunityProduct(id.product) -> resolveGithubCommunityArchive(product = id.product, os = os, version = id.version)
-            else -> resolveArchive(product = id.product, channel = IdeChannel.STABLE, os = os, version = id.version)
-        }
+        val archive = resolveBackendArchive(product = id.product, os = os, version = id.version)
         BackendDownloadResolution(
             product = archive.product,
             version = archive.version,

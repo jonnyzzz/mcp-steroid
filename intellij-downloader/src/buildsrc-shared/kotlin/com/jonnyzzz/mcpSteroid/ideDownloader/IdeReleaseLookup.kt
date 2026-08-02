@@ -118,7 +118,12 @@ private fun resolveArchiveWithUrlReader(
     )
 }
 
-internal fun resolveArchiveFromProductsApiPayload(
+/**
+ * Resolves an archive from a raw `data.services.jetbrains.com/products` payload — pure, no I/O, so
+ * callers can exercise the products-API feed from a fixture. The sibling feeds expose the same seam
+ * (`resolveGithubCommunityArchiveFromReleasesJson`, `resolveAndroidStudioCanaryArchiveFromHtml`).
+ */
+fun resolveArchiveFromProductsApiPayload(
     product: IdeProduct,
     channel: IdeChannel,
     os: HostOs,

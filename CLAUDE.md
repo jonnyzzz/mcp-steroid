@@ -229,6 +229,17 @@ Root `build.gradle.kts` defines `ci`-prefixed aggregator tasks for TeamCity and 
 `:test-integration:test` and `:test-experiments:test` have an `onlyIf` guard — plain root `./gradlew test`
 silently skips both. Direct `./gradlew :test-integration:test --tests '...'` still works.
 
+**Vendor-feed tests are opt-in**, so a Google/JetBrains/GitHub outage can never redden a normal build:
+
+| Task | Covers | Cost |
+|------|--------|------|
+| `:npx-kt:liveNetworkTest` | every supported IDE resolves off its live feed with a plugin-compatible build (`live-network` tag) | ~1 min, no archive download |
+| `:npx-kt:liveDownloadSmokeTest` | `idea-community` + `android-studio` really download, unpack and pass `product-info.json` validation (`live-download` tag) | multi-GB per case |
+| `:intellij-downloader:liveNetworkTest` | products-API filename tokens still match (JUnit4 `LiveNetwork` category) | seconds |
+
+The offline equivalent runs by default: `AllIdeProductsDownloadTest` walks all nine products through
+recorded payloads of all three feeds.
+
 **TeamCity DSL** lives in a separate repo (`~/Work/mcp-steroid-teamcity`). See its own `CLAUDE.md` for the
 generate→edit→regenerate→commit workflow. The TC VCS root pulls from `jb`, not `origin` — see "Git remotes" below.
 

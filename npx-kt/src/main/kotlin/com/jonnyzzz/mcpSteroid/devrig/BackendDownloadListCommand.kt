@@ -2,10 +2,8 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
-import com.jonnyzzz.mcpSteroid.ideDownloader.IdeChannel
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import com.jonnyzzz.mcpSteroid.ideDownloader.LicenseTier
-import com.jonnyzzz.mcpSteroid.ideDownloader.resolveArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
 import java.io.PrintStream
 import kotlin.time.Duration
@@ -49,12 +47,7 @@ class ReleaseServiceAvailableBackendVersionResolver(
     private val os: HostOs = resolveHostOs(),
 ) : AvailableBackendVersionResolver {
     override suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease = withContext(Dispatchers.IO) {
-        // Android Studio from the canary channel (261); Community from GitHub (261); rest from products API.
-        val archive = when {
-            product === IdeProduct.AndroidStudio -> resolveAndroidStudioCanaryArchive(os = os, version = null)
-            isGithubCommunityProduct(product) -> resolveGithubCommunityArchive(product = product, os = os, version = null)
-            else -> resolveArchive(product = product, channel = IdeChannel.STABLE, os = os, version = null)
-        }
+        val archive = resolveBackendArchive(product = product, os = os, version = null)
         AvailableBackendRelease(
             version = archive.version,
             releaseDate = archive.releaseDate,
