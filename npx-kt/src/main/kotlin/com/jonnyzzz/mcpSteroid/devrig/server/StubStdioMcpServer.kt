@@ -15,7 +15,8 @@ import kotlinx.serialization.json.JsonObject
  * Boot a real MCP stdio server inside the devrig CLI process.
  *
  * Wiring:
- *  - [McpServerCore] declares server identity and advertised capabilities.
+ *  - [McpServerCore] declares server identity, advertised capabilities, and the
+ *    [DEVRIG_MCP_SERVER_INSTRUCTIONS] capability statement the `initialize` result carries.
  *  - [StubMcpSteroidTools.devrigToolSpecs] is the canonical devrig tool list; every
  *    spec from it is registered onto the core. The handlers themselves are not yet
  *    implemented in devrig — see [StubMcpSteroidTools] — so calling a tool returns
@@ -39,6 +40,10 @@ suspend fun runStubStdioMcpServer(
             name = "devrig",
             version = DevrigVersionMetadata.getDevrigVersion(),
         ),
+        // The capability statement a deferring harness sees WITHOUT loading a tool schema
+        // (#417) — see DEVRIG_MCP_SERVER_INSTRUCTIONS for why this channel and not a tool
+        // description.
+        instructions = DEVRIG_MCP_SERVER_INSTRUCTIONS,
         capabilities = ServerCapabilities(
             tools = ToolsCapability(listChanged = true),
             // Advertise `logging` so clients accept our `notifications/message`
