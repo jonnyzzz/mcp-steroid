@@ -9,6 +9,7 @@ import java.awt.Component
 import java.awt.Container
 import javax.swing.AbstractButton
 import javax.swing.JLabel
+import javax.swing.JTabbedPane
 import javax.swing.text.JTextComponent
 
 class McpSteroidConfigurableTest : BasePlatformTestCase() {
@@ -38,12 +39,21 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
     fun `test panel promotes devrig and shows copyable install one-liners`() {
         val configurable = McpSteroidConfigurable()
         try {
-            val texts = collectTexts(configurable.createComponent())
+            val component = configurable.createComponent() ?: error("createComponent returned null")
+            val texts = collectTexts(component)
             val joined = texts.joinToString("\n")
 
-            // The intro leads with the "AI Agents" framing and promotes devrig as the recommended path.
+            // Two tabs, devrig first — the Kotlin UI DSL's tabbedPaneHeader shows the selected tab's
+            // content only, so the titles are the one place both paths are visible at once.
+            val header = findTabHeader(component)
+            assertEquals(
+                listOf(McpSteroidConfigurable.DEVRIG_TAB_TITLE, McpSteroidConfigurable.HTTP_TAB_TITLE),
+                (0 until header.tabCount).map { header.getTitleAt(it) },
+            )
+            assertEquals("The recommended path must be the tab that opens", 0, header.selectedIndex)
+
+            // The intro leads with the "AI Agents" framing.
             assertContainsText(texts, "AI Agents")
-            assertContainsText(texts, "Devrig")
 
             // The feedback link points at GitHub issues only. There is no Slack workspace —
             // the old label falsely promised one.
@@ -87,19 +97,45 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // The panel still links to the devrig documentation.
             assertEquals("https://devrig.dev/docs/devrig/", McpSteroidConfigurable.DEVRIG_DOCS_URL)
 
+            // Status block sits outside the tabs, so it renders whichever tab is selected.
+            assertContainsText(texts, "MCP server")
+
+            // Switching to the HTTP tab swaps the content in place — and that is also the only way to
+            // reach it, since an unselected tab's panel is not in the component tree at all.
+            header.selectedIndex = 1
+            val httpTexts = collectTexts(component)
+            val httpJoined = httpTexts.joinToString("\n")
+
             // The legacy HTTP examples must carry a "not recommended" warning steering users to devrig.
-            assertContainsText(texts, "Not recommended")
+            assertContainsText(httpTexts, "Not recommended")
 
             // Legacy HTTP section must reference the registry keys so pre-devrig
             // HTTP-based setups can still find their port/host configuration.
-            assertContainsText(texts, "mcp.steroid.server.port")
-            assertContainsText(texts, "mcp.steroid.server.host")
+            assertContainsText(httpTexts, "mcp.steroid.server.port")
+            assertContainsText(httpTexts, "mcp.steroid.server.host")
+            assertContainsText(httpTexts, "MCP server")
 
-            // Status block renders in both server states; the label is always present.
-            assertContainsText(texts, "MCP server")
+            // One tab at a time: the devrig content is gone, which is what makes the strip a tab strip
+            // rather than two stacked groups.
+            assertFalse(
+                "The devrig tab's content must leave the tree when the HTTP tab is selected; found:\n$httpJoined",
+                httpJoined.contains(McpSteroidConfigurable.DEVRIG_INSTALL_SH),
+            )
         } finally {
             configurable.disposeUIResources()
         }
+    }
+
+    /** The DSL tab strip: `Row.tabbedPaneHeader` renders a [JTabbedPane] with no content pages. */
+    private fun findTabHeader(component: Component): JTabbedPane {
+        val found = mutableListOf<JTabbedPane>()
+        fun walk(c: Component) {
+            if (c is JTabbedPane) found.add(c)
+            if (c is Container) c.components.forEach { walk(it) }
+        }
+        walk(component)
+        return found.singleOrNull()
+            ?: error("Expected exactly one tab strip on the settings page, found ${found.size}")
     }
 
     private fun assertContainsText(texts: List<String>, expected: String) {

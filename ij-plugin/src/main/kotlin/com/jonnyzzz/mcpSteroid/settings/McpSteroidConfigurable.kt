@@ -10,8 +10,8 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.util.Disposer
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.fields.ExtendableTextComponent
 import com.intellij.ui.components.fields.ExtendableTextField
@@ -21,6 +21,8 @@ import com.intellij.ui.dsl.builder.Placeholder
 import com.intellij.ui.dsl.builder.Row
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.dsl.builder.tabbedPaneHeader
+import com.intellij.util.ui.JBUI
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
 import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
@@ -135,14 +137,35 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             // Two ways to connect, one per tab, in the order we recommend them. They were stacked
             // groups before, which read as "do both" and buried the recommended path under the one we
             // are steering people away from.
+            //
+            // `tabbedPaneHeader` is the Kotlin UI DSL's own tab strip (the one Search Everywhere uses for
+            // All/Classes/Files). It is a header *only* — no content pages — so the page stays as flat as
+            // the rest of Settings instead of nesting a bordered pane inside it, and the content below is
+            // ours to swap.
+            //
+            // Both panels are built once, before the strip, rather than per switch: [installStatus] points
+            // into the devrig one, so rebuilding it on every tab change would leave DEVRIG_STATE_CHANGED
+            // writing into a panel that is no longer on screen.
+            val devrigPanel = devrigTab(devrigState)
+            val httpPanel = httpTab(portPhrase, info)
+            lateinit var tabContent: Placeholder
             row {
-                cell(
-                    JBTabbedPane().apply {
-                        addTab("Devrig — recommended", devrigTab(devrigState))
-                        addTab("Direct HTTP", httpTab(portPhrase, info))
-                    }
-                ).align(Align.FILL)
-            }.topGap(TopGap.SMALL).resizableRow()
+                // The hairline is part of the strip, not a divider between two blocks: stretched to the
+                // full width and glued to the bottom of the tabs, it reads as a tab underline. A
+                // `separator()` row would put its own gap above and below the line, which is what makes
+                // two things look unrelated — exactly the impression a tab strip must not give.
+                val header = tabbedPaneHeader(listOf(DEVRIG_TAB_TITLE, HTTP_TAB_TITLE))
+                    .align(AlignX.FILL)
+                    .applyToComponent { setBorder(JBUI.Borders.customLineBottom(JBColor.border())) }
+                    .component
+                header.addChangeListener {
+                    tabContent.component = if (header.selectedIndex == 0) devrigPanel else httpPanel
+                }
+            }.topGap(TopGap.SMALL)
+            row {
+                tabContent = placeholder().align(Align.FILL)
+            }.resizableRow()
+            tabContent.component = devrigPanel
         }
     }
 
@@ -412,6 +435,13 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
         /** Must match the displayName attribute of the applicationConfigurable EP in plugin.xml. */
         const val DISPLAY_NAME = "Devrig — MCP Steroid"
+
+        /**
+         * The two tabs, in the order they appear. `tabbedPaneHeader` shows only the selected tab's
+         * content, so a test that wants the other one has to select it — hence the shared titles.
+         */
+        const val DEVRIG_TAB_TITLE = "Devrig — recommended"
+        const val HTTP_TAB_TITLE = "Direct HTTP"
 
         const val DEVRIG_DOCS_URL = "https://devrig.dev/docs/devrig/"
 
