@@ -360,6 +360,28 @@ intellijPlatformTesting {
     }
 }
 
+// Isolate MCP execution storage for every in-process IntelliJ Platform test JVM
+// in this module (`test`, `integrationTest`, and any future Test task). Plugin
+// code persists execution folders via StoragePaths, which defaults to the REAL
+// ~/.mcp-steroid/runs of whoever runs the tests. The "mcp.steroid.storage.path"
+// registry key resolves user-stored values first, then System.getProperty(key),
+// then the bundled default — so one JVM-level system property redirects ALL test
+// classes without per-class setUp code (see RegistryValue.resolveNotRequiredValue).
+// The per-run directory is computed inside an argument provider: fresh on every
+// execution, and NOT fingerprinted as a task input, so it cannot break build
+// caching / up-to-date checks the way a timestamped systemProperty() would.
+// The contract is pinned by ExecutionStorageTaskTest.testExecutionStorageIsIsolatedFromRealUserHome.
+tasks.withType<Test>().configureEach {
+    val taskName = name
+    val testRunsBaseDir = layout.buildDirectory.dir("mcp-steroid-test-runs").get().asFile
+    // `lazy` so the timestamp is minted once per task execution even if Gradle
+    // asks the provider for its arguments more than once while forking the JVM.
+    val runDir by lazy { testRunsBaseDir.resolve("$taskName-${System.currentTimeMillis()}") }
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dmcp.steroid.storage.path=${runDir.absolutePath}")
+    })
+}
+
 tasks {
     test {
         useJUnit()
