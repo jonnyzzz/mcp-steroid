@@ -8,14 +8,14 @@ import kotlinx.serialization.json.put
 
 class DevrigVisionScreenshotToolHandler(
     private val bridge: DevrigToolBridgeClient,
-    private val routing: DevrigProjectRoutingService,
+    private val resolver: DevrigProjectResolver,
 ) : VisionScreenshotToolHandler {
     override suspend fun screenshotWindow(
         projectName: String,
         screenshotParams: ScreenshotParams,
         mcpProgressReporter: McpProgressReporter,
     ): ToolCallResult {
-        val route = routing.requireProject(projectName)
+        val route = resolver.resolve(projectName)
         return bridge.callProjectTool(route, "steroid_take_screenshot", mcpProgressReporter) {
             put("task_id", screenshotParams.taskId)
             put("reason", screenshotParams.reason)

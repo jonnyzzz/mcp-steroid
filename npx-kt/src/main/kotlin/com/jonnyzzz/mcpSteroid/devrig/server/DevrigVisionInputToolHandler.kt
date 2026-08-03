@@ -8,10 +8,10 @@ import kotlinx.serialization.json.put
 
 class DevrigVisionInputToolHandler(
     private val bridge: DevrigToolBridgeClient,
-    private val routing: DevrigProjectRoutingService,
+    private val resolver: DevrigProjectResolver,
 ) : VisionInputToolHandler {
     override suspend fun handleInputSequence(projectName: String, inputParams: InputParams): ToolCallResult {
-        val route = routing.requireProject(projectName)
+        val route = resolver.resolve(projectName)
         val rawSequence = inputParams.rawSequence
             ?: return ToolCallResult.errorResult("Input sequence cannot be forwarded without the original sequence string")
         return bridge.callProjectTool(route, "steroid_input") {

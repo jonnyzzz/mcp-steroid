@@ -23,7 +23,10 @@ import kotlinx.serialization.Serializable
  * - Explanation of the rating
  * - Association with a task_id
  */
-class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : McpToolBase() {
+class ExecuteFeedbackToolSpec(
+    val projectNameRequired: Boolean = true,
+    val handler: () -> ExecuteFeedbackToolHandler,
+) : McpToolBase() {
     override val name = "steroid_execute_feedback"
     override val description = """
             Provide feedback on the result of a steroid_execute_code call and suggestions to improve the service.
@@ -45,7 +48,7 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
             Feedback helps track execution history and identify patterns for improvement.
         """.trimIndent()
 
-    val projectName = CommonToolParams.projectName().registerToSchema()
+    val projectName = CommonToolParams.projectName(projectNameRequired).registerToSchema()
 
     val taskId = CommonToolParams.taskId().registerToSchema()
 
@@ -74,8 +77,8 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
         .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val projectName = context[projectName]
-        if (projectName.isBlank()) {
+        val projectName = context[projectName].orEmpty()
+        if (projectNameRequired && projectName.isBlank()) {
             return ToolCallResult.errorResult("project_name is required (from steroid_list_projects)")
         }
         val taskId = context[taskId]

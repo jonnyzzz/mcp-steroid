@@ -17,7 +17,10 @@ import kotlinx.serialization.Serializable
 /**
  * Handler for the steroid_input MCP tool.
  */
-class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBase() {
+class VisionInputToolSpec(
+    val projectNameRequired: Boolean = true,
+    val handler: () -> VisionInputToolHandler,
+) : McpToolBase() {
     override val name = "steroid_input"
 
     override val description = """
@@ -43,7 +46,7 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
         Click coordinates with the screenshot target (e.g. @120,200) are interpreted relative to the window as reported by steroid_list_windows / steroid_take_screenshot.
     """.trimIndent()
 
-    val projectName = CommonToolParams.projectName().registerToSchema()
+    val projectName = CommonToolParams.projectName(projectNameRequired).registerToSchema()
 
     val taskId = CommonToolParams.taskId().registerToSchema()
 
@@ -60,7 +63,7 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
         .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val projectName = context[projectName]
+        val projectName = context[projectName].orEmpty()
         val taskId = context[taskId]
         val reason = context[reason]
         val windowId = context[windowId]

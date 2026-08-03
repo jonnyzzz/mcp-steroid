@@ -8,11 +8,11 @@ import kotlinx.serialization.json.put
 
 class DevrigExecuteFeedbackToolHandler(
     private val bridge: DevrigToolBridgeClient,
-    private val routing: DevrigProjectRoutingService,
+    private val resolver: DevrigProjectResolver,
     private val beacon: DevrigBeacon,
 ) : ExecuteFeedbackToolHandler {
     override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
-        val route = routing.requireProject(projectName)
+        val route = resolver.resolve(projectName)
         val result = bridge.callProjectTool(route, "steroid_execute_feedback") {
             put("task_id", params.taskId)
             put("success_rating", params.successRating)

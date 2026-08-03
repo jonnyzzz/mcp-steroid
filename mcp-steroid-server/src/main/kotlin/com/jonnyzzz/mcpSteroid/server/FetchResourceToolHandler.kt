@@ -28,6 +28,7 @@ import com.jonnyzzz.mcpSteroid.thisLogger
  * because [project_name] is needed to render IDE-conditional content correctly.
  */
 class FetchResourceToolHandler(
+    val projectNameRequired: Boolean = true,
     private val handler: () -> PromptsContextHandler,
 ) : McpToolBase() {
 
@@ -57,11 +58,11 @@ class FetchResourceToolHandler(
         .required()
         .registerToSchema()
 
-    val projectName = CommonToolParams.projectName().registerToSchema()
+    val projectName = CommonToolParams.projectName(projectNameRequired).registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val uri = context[uri]
-        val projectName = context[projectName]
+        val projectName = context[projectName].orEmpty()
 
         log.info("steroid_fetch_resource: $uri")
 

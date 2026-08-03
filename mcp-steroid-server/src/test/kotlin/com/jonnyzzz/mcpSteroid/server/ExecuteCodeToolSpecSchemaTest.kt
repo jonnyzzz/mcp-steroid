@@ -18,4 +18,12 @@ class ExecuteCodeToolSpecSchemaTest {
         assertIntegerProperty(schema, "timeout")
         assertEnumProperty(schema, "modal", "smart_non_modal", "non_modal", "unleashed")
     }
+
+    @Test
+    fun `project_name is optional when not required`() {
+        val spec = ExecuteCodeToolSpec(projectNameRequired = false) { unreachableHandler() }
+        val schema = spec.inputSchema
+        assertRequiredExactly(schema, "code", "reason", "task_id") // project_name absent
+        assertStringProperty(schema, "project_name")               // still advertised
+    }
 }

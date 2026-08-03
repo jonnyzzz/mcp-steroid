@@ -34,14 +34,14 @@ class StubMcpSteroidTools(
 
     private val promptsContext by lazy {
         DevrigPromptsContextHandler(
-            routing = services.projectRouting
+            resolver = services.projectResolver
         )
     }
 
     private val executeCode by lazy {
         DevrigExecuteCodeToolHandler(
             bridge = bridge,
-            routing = services.projectRouting,
+            resolver = services.projectResolver,
             beacon = services.beacon
         )
     }
@@ -49,7 +49,7 @@ class StubMcpSteroidTools(
     private val executeFeedback by lazy {
         DevrigExecuteFeedbackToolHandler(
             bridge = bridge,
-            routing = services.projectRouting,
+            resolver = services.projectResolver,
             beacon = services.beacon
         )
     }
@@ -57,14 +57,14 @@ class StubMcpSteroidTools(
     private val visionScreenshot by lazy {
         DevrigVisionScreenshotToolHandler(
             bridge = bridge,
-            routing = services.projectRouting
+            resolver = services.projectResolver
         )
     }
 
     private val visionInput by lazy {
         DevrigVisionInputToolHandler(
             bridge = bridge,
-            routing = services.projectRouting,
+            resolver = services.projectResolver,
         )
     }
 

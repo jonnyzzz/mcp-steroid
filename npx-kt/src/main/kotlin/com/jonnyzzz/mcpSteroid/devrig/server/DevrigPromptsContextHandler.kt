@@ -5,10 +5,10 @@ import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
 
 class DevrigPromptsContextHandler(
-    private val routing: DevrigProjectRoutingService,
+    private val resolver: DevrigProjectResolver,
 ) : PromptsContextHandler {
     override suspend fun buildPromptsContext(projectName: String): PromptsContext {
-        val route = routing.requireProject(projectName)
+        val route = resolver.resolve(projectName)
         return promptsContextFromBuild(route.route.ide.build)
     }
 

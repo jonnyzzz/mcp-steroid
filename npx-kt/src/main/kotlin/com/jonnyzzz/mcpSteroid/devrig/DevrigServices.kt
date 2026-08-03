@@ -4,7 +4,11 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.IdePidDiscoveryService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectMonitorService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IntelliJPortDiscovery
 import com.jonnyzzz.mcpSteroid.devrig.server.DevrigBackendService
+import com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectResolver
 import com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService
+import com.jonnyzzz.mcpSteroid.devrig.server.DevrigWorkspaceRoots
+import com.jonnyzzz.mcpSteroid.mcp.McpRootsService
+import com.jonnyzzz.mcpSteroid.mcp.McpSession
 import com.jonnyzzz.mcpSteroid.server.NPX_STREAM_IDLE_TIMEOUT_MILLIS
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import io.ktor.client.HttpClient
@@ -17,6 +21,7 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withTimeoutOrNull
 
 class DevrigServices(
     private val lifetime: CloseableStack,
@@ -88,6 +93,30 @@ class DevrigServices(
         DevrigProjectRoutingService(
             stateProvider = { ideMonitor.stateSnapshot() },
         )
+    }
+
+    /** The single MCP client session for this devrig stdio process; set at initialize. */
+    @Volatile
+    var mcpClientSession: McpSession? = null
+
+    val mcpRootsService: McpRootsService by lazy { McpRootsService() }
+
+    /**
+     * Candidate working directories for `project_name`-less tool calls: the MCP client's advertised
+     * workspace roots (queried with a short timeout so a slow/absent reply degrades to the cwd fallback),
+     * plus the devrig process cwd. See [DevrigWorkspaceRoots] and task #226.
+     */
+    val workspaceRoots: DevrigWorkspaceRoots by lazy {
+        DevrigWorkspaceRoots(
+            rootsProvider = rp@{
+                val session = mcpClientSession ?: return@rp null
+                withTimeoutOrNull(3_000) { mcpRootsService.getRoots(session) }
+            },
+        )
+    }
+
+    val projectResolver: DevrigProjectResolver by lazy {
+        DevrigProjectResolver(routing = projectRouting, workspaceRoots = workspaceRoots)
     }
 
     val portDiscovery: IntelliJPortDiscovery by lazy {

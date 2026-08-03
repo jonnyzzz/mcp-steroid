@@ -13,6 +13,7 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.io.TempDir
 
@@ -134,7 +135,7 @@ class DevrigProjectRoutingServiceTest {
         )
         val route = routing.routes().single()
 
-        val context = DevrigPromptsContextHandler(routing).buildPromptsContext(route.exposedProjectName)
+        val context = DevrigPromptsContextHandler(testProjectResolver(routing)).buildPromptsContext(route.exposedProjectName)
 
         assertEquals("IU", context.productCode)
         assertEquals(261, context.baselineVersion)
@@ -143,7 +144,7 @@ class DevrigProjectRoutingServiceTest {
     @Test
     fun `prompt context for a stale project name surfaces the route-not-found error`() = runTest {
         assertFailsWith<ProjectRouteNotFoundException> {
-            DevrigPromptsContextHandler(routingService()).buildPromptsContext("missing-project-abcdefgh")
+            DevrigPromptsContextHandler(testProjectResolver(routingService())).buildPromptsContext("missing-project-abcdefgh")
         }
     }
 
@@ -185,6 +186,24 @@ class DevrigProjectRoutingServiceTest {
             assertEquals("Generic", context.productCode, build)
             assertEquals(253, context.baselineVersion, build)
         }
+    }
+
+    @Test
+    fun `detectProject matches the project owning the cwd subdirectory`() {
+        val repo = Files.createDirectories(tempDir.resolve("repo"))
+        val sub = Files.createDirectories(repo.resolve("module"))
+        val service = routingService(
+            state(pid = 7, projects = listOf(IdeProjectState("repo", repo.toString())))
+        )
+        val detection = service.detectProject(listOf(sub))
+        assertTrue(detection is ProjectDetection.Unique)
+        assertEquals("repo", detection.route.originalProjectName)
+    }
+
+    @Test
+    fun `detectProject returns NoBackends when nothing is discovered`() {
+        val service = routingService() // no states -> routes() is empty
+        assertEquals(ProjectDetection.NoBackends, service.detectProject(listOf(tempDir)))
     }
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =

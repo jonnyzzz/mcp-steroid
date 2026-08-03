@@ -9,7 +9,10 @@ import kotlinx.serialization.Serializable
 /**
  * Handler for the steroid_take_screenshot MCP tool.
  */
-class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) : McpToolBase() {
+class VisionScreenshotToolSpec(
+    val projectNameRequired: Boolean = true,
+    val handler: () -> VisionScreenshotToolHandler,
+) : McpToolBase() {
     override val name = "steroid_take_screenshot"
 
     override val description = """
@@ -33,7 +36,7 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         After execution, call steroid_execute_feedback to log your feedback.
     """.trimIndent()
 
-    val projectName = CommonToolParams.projectName().registerToSchema()
+    val projectName = CommonToolParams.projectName(projectNameRequired).registerToSchema()
 
     val taskId = CommonToolParams.taskId().registerToSchema()
 
@@ -43,7 +46,7 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val projectName = context[projectName]
+        val projectName = context[projectName].orEmpty()
         val taskId = context[taskId]
         val reason = context[reason]
         val windowId = context[windowId]
