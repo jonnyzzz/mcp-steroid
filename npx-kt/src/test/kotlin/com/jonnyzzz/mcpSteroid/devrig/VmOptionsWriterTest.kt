@@ -35,7 +35,6 @@ class VmOptionsWriterTest {
             "-Xmx2048m",
             "-Dmcp.steroid.idea.description.enabled=false",
             "-Dmcp.steroid.dialog.killer.enabled=true",
-            "-Dmcp.steroid.storage.path=${cacheDir.resolve("execution-storage")}",
             "-Djb.consents.confirmation.enabled=false",
             "-Djb.privacy.policy.text=<!--999.999-->",
             "-Djb.privacy.policy.ai.assistant.text=<!--999.999-->",
@@ -53,10 +52,14 @@ class VmOptionsWriterTest {
         // The managed IDE should behave like a normal install: report analytics and check for updates.
         assertFalse(content.contains("mcp.steroid.updates.enabled"), "must not disable updates in the managed IDE")
         assertFalse(content.contains("mcp.steroid.analytics.enabled"), "must not disable analytics in the managed IDE")
+        assertFalse(content.contains("mcp.steroid.backend.kind"),
+            "backend kind is per-call provenance, not a managed-IDE launch property")
 
-        listOf("config", "system", "logs", "plugins", "execution-storage").forEach { child ->
+        listOf("config", "system", "logs", "plugins").forEach { child ->
             assertTrue(homePaths.cacheDir(id).resolve(child).exists(), "$child cache directory should exist")
         }
+        assertFalse(homePaths.cacheDir(id).resolve("execution-storage").exists(),
+            "managed backends should use the shared ~/.mcp-steroid/runs storage")
         assertFalse(homePaths.backendDir(id).resolve("IntelliJ IDEA CE.app/Contents/bin/idea.vmoptions").exists(),
             "vmoptions must be a sibling to the bundle, not written inside the signed macOS app")
     }

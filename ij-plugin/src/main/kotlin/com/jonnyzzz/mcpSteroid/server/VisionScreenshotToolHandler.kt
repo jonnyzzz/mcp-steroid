@@ -28,7 +28,8 @@ class VisionScreenshotToolHandlerIJ : VisionScreenshotToolHandler {
         val executionId = project.executionStorage.writeToolCall(
             toolName = "steroid_take_screenshot",
             arguments = json.encodeToJsonElement(screenshotParams).jsonObject,
-            taskId = "screenshot-$taskId"
+            taskId = taskId,
+            executionBackend = screenshotParams.executionBackend,
         )
         project.executionStorage.writeCodeExecutionData(executionId, "reason.txt", reason)
 

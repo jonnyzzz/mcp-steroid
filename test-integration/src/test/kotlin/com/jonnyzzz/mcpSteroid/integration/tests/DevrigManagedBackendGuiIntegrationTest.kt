@@ -75,13 +75,16 @@ class DevrigManagedBackendGuiIntegrationTest {
             "-Didea.plugins.path=$cacheBase/plugins",
             "-Dmcp.steroid.idea.description.enabled=false",
             "-Dmcp.steroid.dialog.killer.enabled=true",
-            "-Dmcp.steroid.storage.path=$cacheBase/execution-storage",
             "-Djb.consents.confirmation.enabled=false",
         )
         requiredVmOptions.forEach { expected ->
             assertTrue(expected in vmOptionLines) {
                 "managed backend vmoptions missing line: $expected\n--- $vmOptionsPath ---\n$vmOptions"
             }
+        }
+        assertFalse(vmOptionLines.any { it.startsWith("-Dmcp.steroid.storage.path=") }) {
+            "managed backends must use shared ~/.mcp-steroid/runs storage, not override it\n" +
+                "--- $vmOptionsPath ---\n$vmOptions"
         }
         // A managed backend behaves like a normal install for updates/analytics — devrig production must
         // NOT inject the disabling flags (commit 4f36412e "let managed backends report analytics and check
@@ -169,6 +172,7 @@ class DevrigManagedBackendGuiIntegrationTest {
                 test -d "/home/agent/.mcp-steroid/caches/$$id/system"
                 test -d "/home/agent/.mcp-steroid/caches/$$id/logs"
                 test -d "/home/agent/.mcp-steroid/caches/$$id/plugins"
+                test ! -e "/home/agent/.mcp-steroid/caches/$$id/execution-storage"
                 test "$(find "/home/agent/.mcp-steroid/caches/$$id/logs" -type f | wc -l)" -gt 0
             """.trimIndent(),
         )

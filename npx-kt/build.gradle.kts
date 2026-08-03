@@ -63,10 +63,8 @@ dependencies {
     // Brings :mcp-core and :prompts transitively.
     implementation(project(":mcp-steroid-server"))
 
-    // IDE-free ExecutionStorage core. Lets devrig persist execution
-    // history with the same on-disk layout the IntelliJ plugin uses, so
-    // downstream tooling that reads .idea/mcp-steroid/{eid}/ artefacts
-    // works against both backends without conditional logic.
+    // IDE-free ExecutionStorage core. Keeps the canonical
+    // ~/.mcp-steroid/runs/{eid}/ layout available to devrig-side tooling.
     implementation(project(":execution-storage"))
 
     // Managed backends reuse the existing IntelliJ downloader/unpacker instead

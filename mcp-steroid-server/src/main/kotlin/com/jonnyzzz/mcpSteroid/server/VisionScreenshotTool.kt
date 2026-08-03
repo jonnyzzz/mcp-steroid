@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.get
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Handler for the steroid_take_screenshot MCP tool.
@@ -49,7 +50,16 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         val reason = context[reason]
         val windowId = context[windowId]
 
-        return handler().screenshotWindow(projectName, ScreenshotParams(taskId, reason, windowId), context.mcpProgressReporter)
+        return handler().screenshotWindow(
+            projectName,
+            ScreenshotParams(
+                taskId = taskId,
+                reason = reason,
+                windowId = windowId,
+                executionBackend = context.executionBackendProvenance(),
+            ),
+            context.mcpProgressReporter,
+        )
     }
 }
 
@@ -57,7 +67,8 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
 data class ScreenshotParams(
     val taskId: String,
     val reason: String,
-    val windowId: String? = null
+    val windowId: String? = null,
+    @Transient val executionBackend: ExecutionBackendProvenance? = null,
 )
 
 interface VisionScreenshotToolHandler {
@@ -67,4 +78,3 @@ interface VisionScreenshotToolHandler {
         mcpProgressReporter: McpProgressReporter
     ): ToolCallResult
 }
-

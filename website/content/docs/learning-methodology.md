@@ -17,7 +17,7 @@ refined through data-driven iteration -- a user manual designed specifically for
 
 ## The operating loop
 
-Every agent call is recorded in the `.idea/mcp-steroid` folder. Each invocation includes the caller's stated _reason_
+Every agent call is recorded under `~/.mcp-steroid/runs/`. Each invocation includes the caller's stated _reason_
 for the call, and agents periodically send feedback with a text message and a score.
 
 This telemetry drives continuous improvement. We analyze call patterns, failure modes, and feedback signals
@@ -26,7 +26,7 @@ sophisticated tasks across the full surface of IntelliJ-platform IDEs -- includi
 both private and public.
 
 We are looking for your support:
-- Share your `.idea/mcp-steroid` logs from real plugin usage
+- Share your `~/.mcp-steroid/runs` logs from real plugin usage
 - Submit complete project and task scenarios for benchmarking
 
 Submissions are accepted through [Need Your Experiments and Support](/docs/need-your-experiments-and-support/).

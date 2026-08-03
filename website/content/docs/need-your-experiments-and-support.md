@@ -17,8 +17,8 @@ If your repository works in an IntelliJ-based IDE, it is in scope. Support the p
 ## Usage logs sharing
 
 Beyond full scenario submissions, you can help by sharing your tool call logs.
-The `.idea/mcp-steroid` folder in your project contains a log of every tool call
-your AI agent sent to the plugin. This data helps us fine-tune prompts, skills,
+The `~/.mcp-steroid/runs` folder contains a log of every stored tool call across
+your projects. Each run records its project identity. This data helps us fine-tune prompts, skills,
 and documentation to make agents more effective.
 
 For details on how we process this data, see [Learning Methodology](/docs/learning-methodology/).

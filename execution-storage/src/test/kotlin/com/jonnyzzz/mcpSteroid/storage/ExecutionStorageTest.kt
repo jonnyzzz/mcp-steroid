@@ -2,14 +2,18 @@
 package com.jonnyzzz.mcpSteroid.storage
 
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.ExecutionBackendProvenance
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -19,6 +23,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -38,12 +45,16 @@ class ExecutionStorageTest {
 
     private val projectName = "test-project"
     private val projectPath = "/tmp/test-project"
+    private val backendName = "iu-test1234"
+    private val fixedClock = Clock.fixed(Instant.parse("2026-08-03T00:00:00.123Z"), ZoneOffset.UTC)
 
     @BeforeEach
     fun setUp() {
         storage = ExecutionStorage(
             baseDirProvider = { tempDir },
             projectInfoProvider = { ExecutionProjectInfo(projectName, projectPath) },
+            backendInfoProvider = { ExecutionBackendInfo(kind = 's', name = backendName) },
+            clock = fixedClock,
         )
     }
 
@@ -52,11 +63,13 @@ class ExecutionStorageTest {
         taskId: String = "test-task",
         reason: String = "test",
         timeout: Int = 60,
+        executionBackend: ExecutionBackendProvenance? = null,
     ) = ExecCodeParams(
         taskId = taskId,
         code = code,
         reason = reason,
         timeout = timeout,
+        executionBackend = executionBackend,
     )
 
     private fun runStorageTest(block: suspend () -> Unit) = runBlocking {
@@ -64,11 +77,104 @@ class ExecutionStorageTest {
     }
 
     @Test
-    fun `writeNewExecution returns id with eid_ prefix and task id`() = runStorageTest {
+    fun `writeNewExecution id includes utc time millisecond slot project backend and task`() = runStorageTest {
+        val executionId = storage.writeNewExecution(testExecParams("println(\"Hello\")"))
+        val expectedSlot = Math.floorMod(fixedClock.instant().toEpochMilli(), 997L)
+            .toString()
+            .padStart(3, '0')
+
+        assertEquals(
+            "eid_20260803T000000-$expectedSlot-test-project-s-test-task",
+            executionId.executionId,
+            "ID should contain UTC time, the epoch-millisecond modulo-997 slot, project, backend kind, and task",
+        )
+    }
+
+    @Test
+    fun `writeNewExecution persists full backend name`() = runStorageTest {
         val executionId = storage.writeNewExecution(testExecParams("println(\"Hello\")"))
 
-        assertTrue(executionId.executionId.startsWith("eid_"), "ID should start with eid_")
-        assertTrue(executionId.executionId.contains("test"), "ID should contain task ID")
+        val backendNamePath = tempDir.resolve(executionId.executionId).resolve("backend_name.txt")
+        assertTrue(Files.exists(backendNamePath), "backend_name.txt should exist")
+        assertEquals(backendName, Files.readString(backendNamePath).trim())
+    }
+
+    @Test
+    fun `devrig backend kind is included as one character`() = runStorageTest {
+        val devrigBackendName = "iu-devrig123"
+        val devrigStorage = ExecutionStorage(
+            baseDirProvider = { tempDir },
+            projectInfoProvider = { ExecutionProjectInfo(projectName, projectPath) },
+            backendInfoProvider = { ExecutionBackendInfo(kind = 's', name = backendName) },
+            clock = fixedClock,
+        )
+
+        val executionId = devrigStorage.writeNewExecution(testExecParams(
+            code = "println(1)",
+            executionBackend = ExecutionBackendProvenance(kind = 'd', name = devrigBackendName),
+        ))
+
+        assertTrue(executionId.executionId.contains("-$projectName-d-test-task"), executionId.executionId)
+        assertEquals(devrigBackendName,
+            Files.readString(tempDir.resolve(executionId.executionId).resolve("backend_name.txt")).trim())
+    }
+
+    @Test
+    fun `concurrent unicode and cross-tool calls reserve distinct directories`() = runStorageTest {
+        val secondStorage = ExecutionStorage(
+            baseDirProvider = { tempDir },
+            projectInfoProvider = { ExecutionProjectInfo(projectName, projectPath) },
+            backendInfoProvider = { ExecutionBackendInfo(kind = 's', name = backendName) },
+            clock = fixedClock,
+        )
+        val taskId = "screenshot-同じ-task"
+
+        val executionIds = coroutineScope {
+            (0 until 8).map { index ->
+                async(Dispatchers.Default) {
+                    val target = if (index % 2 == 0) storage else secondStorage
+                    if (index == 0) {
+                        target.writeToolCall(
+                            toolName = "steroid_take_screenshot",
+                            arguments = buildJsonObject { put("task_id", taskId) },
+                            taskId = taskId,
+                        )
+                    } else {
+                        target.writeNewExecution(testExecParams("println($index)", taskId = taskId))
+                    }
+                }
+            }.awaitAll()
+        }
+
+        assertEquals(8, executionIds.map { it.executionId }.toSet().size)
+        executionIds.forEach { executionId ->
+            assertTrue(Files.isDirectory(tempDir.resolve(executionId.executionId)), executionId.executionId)
+        }
+    }
+
+    @Test
+    fun `long project and task names stay within filesystem component limits`() = runStorageTest {
+        val longProjectName = "project-" + "p".repeat(230)
+        val longTaskId = "task-" + "t".repeat(180)
+        val longNameStorage = ExecutionStorage(
+            baseDirProvider = { tempDir },
+            projectInfoProvider = { ExecutionProjectInfo(longProjectName, projectPath) },
+            backendInfoProvider = { ExecutionBackendInfo(kind = 's', name = backendName) },
+            clock = fixedClock,
+        )
+
+        val executionId = longNameStorage.writeNewExecution(
+            testExecParams("println(1)", taskId = longTaskId),
+        )
+
+        assertTrue(executionId.executionId.length <= 240, executionId.executionId)
+        assertTrue(Files.isDirectory(tempDir.resolve(executionId.executionId)), executionId.executionId)
+        val metadata = storage.json.decodeFromString(
+            ToolCallMetadata.serializer(),
+            Files.readString(tempDir.resolve(executionId.executionId).resolve("tool.json")),
+        )
+        assertEquals(longProjectName, metadata.projectName)
+        assertEquals(longTaskId, metadata.taskId)
     }
 
     @Test
@@ -105,6 +211,35 @@ class ExecutionStorageTest {
     }
 
     @Test
+    fun `execution types keep the original task slug and metadata`() = runStorageTest {
+        val taskId = "same-task"
+        val executeId = storage.writeNewExecution(testExecParams("println(1)", taskId = taskId))
+        val screenshotId = storage.writeToolCall(
+            toolName = "steroid_take_screenshot",
+            arguments = buildJsonObject { put("task_id", taskId) },
+            taskId = taskId,
+        )
+        val feedbackId = storage.writeExecutionFeedback(
+            taskId = taskId,
+            element = FeedbackParams(
+                taskId = taskId,
+                successRating = 1.0,
+                explanation = "ok",
+                code = null,
+            ),
+        )
+
+        listOf(executeId, screenshotId, feedbackId).forEach { executionId ->
+            assertTrue(executionId.executionId.endsWith("-same-task"), executionId.executionId)
+            val metadata = storage.json.decodeFromString(
+                ToolCallMetadata.serializer(),
+                Files.readString(tempDir.resolve(executionId.executionId).resolve("tool.json")),
+            )
+            assertEquals(taskId, metadata.taskId)
+        }
+    }
+
+    @Test
     fun `different task ids produce different execution ids`() = runStorageTest {
         val id1 = storage.writeNewExecution(testExecParams("println(\"Hello\")", taskId = "task-1"))
         val id2 = storage.writeNewExecution(testExecParams("println(\"Hello\")", taskId = "task-2"))
@@ -130,6 +265,12 @@ class ExecutionStorageTest {
         assertNull(storage.findExecutionId("../etc/passwd"))
         assertNull(storage.findExecutionId("foo/bar"))
         assertNull(storage.findExecutionId(".."))
+
+        val windowsShapedId = "foo\\bar"
+        val windowsShapedDir = tempDir.resolve(windowsShapedId)
+        Files.createDirectories(windowsShapedDir)
+        Files.writeString(windowsShapedDir.resolve("tool.json"), "{}")
+        assertNull(storage.findExecutionId(windowsShapedId))
     }
 
     /**

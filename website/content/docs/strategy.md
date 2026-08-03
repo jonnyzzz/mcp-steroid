@@ -42,7 +42,7 @@ We run the same task twice -- same model, same repo -- once with the IDE through
 agent, and score every run on machine-checkable evidence rather than on what the agent claims about itself. See the
 [experiment findings](/docs/experiment-findings/) for the verified results, including the runs where the IDE path did not win.
 
-We are collecting scenarios and execution logs from real MCP Steroid sessions (share your `.idea/mcp-steroid` folder with us).
+We are collecting scenarios and execution logs from real MCP Steroid sessions (share your `~/.mcp-steroid/runs` folder with us).
 
 The collected data is analyzed to identify sharp edges in the current implementation and to improve prompts, skills,
 and documentation. AI agents help us craft the better product for AI agents. This is an iterative process; we have

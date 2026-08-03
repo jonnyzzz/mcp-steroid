@@ -179,6 +179,10 @@ data class ToolCallParams(
 
     @Transient
     val rawArguments: JsonObject = buildJsonObject {  },
+
+    /** Transport-owned metadata that cannot be supplied through MCP JSON. */
+    @Transient
+    val trustedArguments: JsonObject = buildJsonObject {  },
 )
 
 @Serializable

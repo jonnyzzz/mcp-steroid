@@ -1,7 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.execution
 
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.components.service
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
@@ -9,6 +11,7 @@ import com.jonnyzzz.mcpSteroid.getExecutionIdFromResult
 import com.jonnyzzz.mcpSteroid.setServerPortProperties
 import com.jonnyzzz.mcpSteroid.testExecParams
 import com.jonnyzzz.mcpSteroid.server.NoOpProgressReporter
+import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.storage.storagePaths
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -27,6 +30,8 @@ class ExecutionStorageTaskTest : BasePlatformTestCase() {
     override fun setUp() {
         setServerPortProperties()
         super.setUp()
+        val isolatedStorage = Path.of(requireNotNull(project.basePath), ".mcp-steroid-test-runs")
+        Registry.get("mcp.steroid.storage.path").setValue(isolatedStorage.toString(), testRootDisposable)
     }
 
     /**
@@ -34,6 +39,12 @@ class ExecutionStorageTaskTest : BasePlatformTestCase() {
      */
     private fun getExecutionDir(executionId: String): Path {
         return project.storagePaths.getGetMcpRunDir().resolve(executionId)
+    }
+
+    fun testDefaultStorageLivesUnderMcpSteroidHome() {
+        Registry.get("mcp.steroid.storage.path").setValue("", testRootDisposable)
+        val expected = Path.of(System.getProperty("user.home"), ".mcp-steroid", "runs")
+        assertEquals(expected, project.storagePaths.getGetMcpRunDir())
     }
 
     fun testSuccessFileAndWrappedScriptCreated(): Unit = timeoutRunBlocking(30.seconds) {
@@ -46,6 +57,14 @@ class ExecutionStorageTaskTest : BasePlatformTestCase() {
         val execDir = getExecutionDir(executionId)
 
         assertTrue("Execution directory should exist: $execDir", execDir.exists())
+        assertTrue("Execution ID should include the project name and direct-plugin backend kind: $executionId",
+            executionId.contains("-${project.name}-s-"))
+
+        val backendName = backendNameForMarker(
+            pid = ProcessHandle.current().pid(),
+            build = ApplicationInfo.getInstance().build.asString(),
+        )
+        assertEquals(backendName, execDir.resolve("backend_name.txt").readText().trim())
 
         val successFile = execDir.resolve("success.txt")
         assertTrue("success.txt should exist", successFile.exists())

@@ -118,7 +118,7 @@
 
         <!-- Storage folder configuration -->
         <registryKey key="mcp.steroid.storage.path" defaultValue=""
-            description="Custom path for MCP execution storage. Empty (default) uses .idea/mcp-steroid/"/>
+            description="Custom path for MCP execution storage. Empty (default) uses ~/.mcp-steroid/runs/"/>
         <registryKey key="mcp.steroid.idea.description.enabled" defaultValue="true"
             description="Generate .idea/mcp-steroid.md description file in projects"/>
 

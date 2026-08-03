@@ -16,6 +16,7 @@ import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
 import com.jonnyzzz.mcpSteroid.mcp.string
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Handler for the steroid_execute_feedback MCP tool.
@@ -115,7 +116,8 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
             taskId = taskId,
             successRating = successRating,
             explanation = explanation,
-            code = code
+            code = code,
+            executionBackend = context.executionBackendProvenance(),
         )
 
         return handler().handleFeedback(projectName, params)
@@ -127,7 +129,8 @@ data class FeedbackParams(
     val taskId: String,
     val successRating: Double,
     val explanation: String?,
-    val code: String?
+    val code: String?,
+    @Transient val executionBackend: ExecutionBackendProvenance? = null,
 )
 
 interface ExecuteFeedbackToolHandler {

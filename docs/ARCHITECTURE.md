@@ -11,7 +11,7 @@ This document is a concise architecture map. For authoritative details, see `AGE
 - Vision tools: screenshot/input tooling with artifact storage.
 - OCR helper: external `ocr-tesseract` app invoked via process client.
 - Kotlinc helper: bundled Kotlin compiler invoked via process client.
-- Storage: execution logs/artifacts (append-only, under `.idea/mcp-steroid/`).
+- Storage: execution logs/artifacts (append-only, under `~/.mcp-steroid/runs/` by default).
 - **devrig CLI** (`npx-kt/`): stateless stdio MCP server + `backend` /
   `project` CLI that discovers IntelliJ instances on the host and
   routes tool calls to them. Project / IDE naming is governed by the

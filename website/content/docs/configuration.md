@@ -25,7 +25,7 @@ MCP Steroid can be configured via IntelliJ's Registry (`Help > Find Action > Reg
 
 | Registry Key | Default | Description |
 |-------------|---------|-------------|
-| `mcp.steroid.storage.path` | (empty) | Custom path for MCP execution storage. Empty uses `.idea/mcp-steroid/`. |
+| `mcp.steroid.storage.path` | (empty) | Custom path for MCP execution storage. Empty uses `~/.mcp-steroid/runs/`. |
 | `mcp.steroid.idea.description.enabled` | `true` | Generate `.idea/mcp-steroid.md` description file in projects. |
 
 ## Demo Mode
@@ -55,7 +55,7 @@ The **Dialog Killer** feature automatically closes modal dialogs before code exe
 When you call `steroid_execute_code`:
 
 1. **Detection**: Checks if a modal dialog is currently open using `ModalityState`
-2. **Screenshot**: Captures a screenshot of the dialog for debugging (saved to `.idea/mcp-steroid/{execution-id}-dialog-killer/`)
+2. **Screenshot**: Captures a screenshot of the dialog for debugging (saved in `~/.mcp-steroid/runs/{execution-id}/`)
 3. **Closure**: Closes all modal dialogs owned by the project frame using `doCancelAction()`
 4. **Logging**: Reports the activity via IDE log and MCP progress messages
 5. **Execution**: Proceeds with your code execution normally
@@ -70,9 +70,9 @@ You might want to disable the dialog killer (`mcp.steroid.dialog.killer.enabled 
 
 ### Screenshot Location
 
-When dialogs are detected and closed, a screenshot is automatically saved to:
+When dialogs are detected and closed, a screenshot is automatically saved to the current execution:
 ```
-.idea/mcp-steroid/{execution-id}-dialog-killer/screenshot.png
+~/.mcp-steroid/runs/{execution-id}/screenshot.png
 ```
 
 This helps you understand what was blocking the IDE and verify the dialog killer is working correctly.

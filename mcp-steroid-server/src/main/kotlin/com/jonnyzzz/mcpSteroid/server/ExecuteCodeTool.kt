@@ -22,6 +22,7 @@ import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeToolDescriptionPromptArticle
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * How `steroid_execute_code` prepares the IDE and handles modal dialogs around the script.
@@ -75,6 +76,8 @@ data class ExecCodeParams(
 
     /** How to treat IDE modality around the script. See [ModalMode]. Default [ModalMode.SMART_NON_MODAL]. */
     val modal: ModalMode = ModalMode.DEFAULT,
+
+    @Transient val executionBackend: ExecutionBackendProvenance? = null,
 )
 
 /**
@@ -171,6 +174,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
             reason = reason,
             timeout = timeout,
             modal = modal,
+            executionBackend = context.executionBackendProvenance(),
         )
 
         return handler().executeCode(projectName, execCodeParams, context.mcpProgressReporter)

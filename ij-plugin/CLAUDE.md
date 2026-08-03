@@ -401,16 +401,13 @@ script.
 Registry keys: `mcp.steroid.server.port`, `.host`, `.execution.timeout`, `.dialog.killer.enabled`,
 `.demo.enabled`, `.storage.path`, `.kotlinc.parameters`, `.kotlinc.home`.
 
-### WSL-hosted project on a Windows IDE — `mcp.steroid.storage.path` workaround ([#78](https://github.com/jonnyzzz/mcp-steroid/issues/78))
+### WSL-hosted projects and `mcp.steroid.storage.path` ([#78](https://github.com/jonnyzzz/mcp-steroid/issues/78))
 
-When a Windows-side IDE opens a project under `\\wsl$\…` / `\\wsl.localhost\…`, every
-`steroid_execute_code` fails: the kotlinc working dir is the per-execution `compiled/` folder under
-`{project}/.idea/mcp-steroid/` (on the WSL filesystem), so the eel/ijent layer derives the WSL
-environment and routes `cmd.exe /c kotlinc.bat …` into the distro, where `cmd.exe` doesn't exist
-(`os error 2`). **Workaround:** set `mcp.steroid.storage.path` (the storage override, empty =
-`.idea/mcp-steroid`) to a native Windows path so the working dir leaves the `\\wsl$` volume and the
-spawn targets Windows. Proper fix (pass an `EelDescriptor`/spawn request targeting the local Windows
-env regardless of the working dir's filesystem) is still open.
+Execution storage defaults to the IDE user's native `~/.mcp-steroid/runs/` directory, not the project.
+That keeps kotlinc's per-execution `compiled/` working directory off `\\wsl$\…` /
+`\\wsl.localhost\…` when a Windows IDE opens a WSL-hosted project. If
+`mcp.steroid.storage.path` is customized in this setup, keep the override on a native Windows volume;
+pointing it back into WSL recreates the eel/ijent environment-routing failure from #78.
 
 ### Kotlinc version-mismatch workaround
 

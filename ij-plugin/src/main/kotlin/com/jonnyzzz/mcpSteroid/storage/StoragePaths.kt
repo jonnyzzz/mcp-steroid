@@ -1,23 +1,21 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.storage
 
-import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.registry.Registry
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 
 /**
  * Central service for managing MCP storage paths.
  *
- * Default storage location: {project}/.idea/mcp-steroid/
+ * Default storage location: ~/.mcp-steroid/runs/
  * Execution folders: {storage}/{execution-id}/
  *
  * Registry keys for customization:
- * - mcp.steroid.storage.path - Override storage folder path (empty = .idea/mcp-steroid)
+ * - mcp.steroid.storage.path - Override storage folder path (empty = ~/.mcp-steroid/runs)
  */
 @Service(Service.Level.PROJECT)
 class StoragePaths(private val project: Project) {
@@ -41,7 +39,7 @@ class StoragePaths(private val project: Project) {
 
     /**
      * The base directory for MCP execution storage.
-     * Default: {project}/.idea/mcp-steroid/
+     * Default: ~/.mcp-steroid/runs/
      *
      * Can be overridden via registry key "mcp.steroid.storage.path".
      */
@@ -52,8 +50,7 @@ class StoragePaths(private val project: Project) {
                 return@run Path.of(customPath)
             }
 
-            val base = resolveDotIdeaFolder(project) ?: PathManager.getTempDir().resolve("mcp-steroid")
-            return@run base.resolve("mcp-steroid")
+            return@run Path.of(System.getProperty("user.home"), ".mcp-steroid", "runs")
         }
 
         Files.createDirectories(path)

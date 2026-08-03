@@ -55,7 +55,7 @@ When reporting a bug, please include:
 - Steps to reproduce the issue
 - Expected vs. actual behavior
 - IDE version, OS, and MCP Steroid version
-- Relevant log snippets (from `.idea/mcp-steroid/` if applicable)
+- Relevant log snippets (from `~/.mcp-steroid/runs/` if applicable)
 
 Feature requests should describe the use case and motivation, not just the desired solution.
 

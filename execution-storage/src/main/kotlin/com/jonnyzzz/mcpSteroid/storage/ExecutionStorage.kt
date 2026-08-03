@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.storage
 
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.ExecutionBackendProvenance
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,12 +12,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import java.time.LocalDateTime
+import java.time.Clock
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.writeText
 
@@ -51,27 +53,43 @@ data class ExecutionProjectInfo(
     val basePath: String?,
 )
 
+/** Backend identity captured at execution time. */
+data class ExecutionBackendInfo(
+    val kind: Char,
+    val name: String,
+) {
+    init {
+        require(kind in 'a'..'z' || kind in 'A'..'Z' || kind in '0'..'9') {
+            "Backend kind must be one ASCII letter or digit: $kind"
+        }
+        require(name.isNotBlank()) { "Backend name must not be blank" }
+    }
+}
+
 /**
  * File-based storage for execution history.
  * APPEND-ONLY: Files are never deleted, only added.
  *
  * Directory structure:
  * {baseDir}/                           - Base folder (host-supplied; on the IDE
- *                                        side it resolves to .idea/mcp-steroid)
+ *                                        side it defaults to ~/.mcp-steroid/runs)
  *   {execution-id}/
+ *     backend_name.txt                 - Full backend_name for this execution
  *     project.txt                      - Project name (line 1) and path (line 2)
  *     tool.json                        - Tool name + arguments metadata
  *     script.kts                       - Original code submitted by LLM
  *     params.json                      - Execution parameters
  *     output.jsonl                     - Output messages (append-only)
  *
- * The two providers are resolved lazily on each call so hosts can react
+ * The providers are resolved lazily on each call so hosts can react
  * to runtime configuration changes (e.g. an IDE Registry key swap) without
  * recreating the storage instance.
  */
 open class ExecutionStorage(
     private val baseDirProvider: () -> Path,
     private val projectInfoProvider: () -> ExecutionProjectInfo,
+    private val backendInfoProvider: () -> ExecutionBackendInfo,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     val json = Json {
         prettyPrint = true
@@ -86,9 +104,21 @@ open class ExecutionStorage(
     private val baseDir: Path
         get() = baseDirProvider()
 
+    companion object {
+        private const val EXECUTION_SLOT_PRIME = 997L
+        private const val MAX_EXECUTION_ID_LENGTH = 240
+        private const val MAX_PROJECT_SLUG_LENGTH = 80
+        private const val MAX_TASK_SLUG_LENGTH = 120
+        private val SAFE_EXECUTION_ID = Regex("[a-zA-Z0-9_-]+")
+        private val INVALID_SLUG_CHARACTERS = Regex("[^a-zA-Z0-9_-]+")
+        private val UTC_SECONDS_FORMATTER = DateTimeFormatter
+            .ofPattern("uuuuMMdd'T'HHmmss")
+            .withZone(ZoneOffset.UTC)
+    }
 
     private val ExecutionId.dir: Path
         get() {
+            require(SAFE_EXECUTION_ID.matches(executionId)) { "Invalid execution ID: $executionId" }
             val dir = baseDir.resolve(executionId)
             Files.createDirectories(dir)
             return dir
@@ -153,7 +183,7 @@ open class ExecutionStorage(
     }
 
     fun findExecutionId(executionId: String) : ExecutionId? {
-        if (executionId.contains("/") || executionId.contains("..")) return null
+        if (!SAFE_EXECUTION_ID.matches(executionId)) return null
 
         // tool.json is the universal sentinel: every writeToolMetadata() call writes it,
         // covering writeNewExecution / writeExecutionFeedback / writeToolCall.
@@ -164,39 +194,79 @@ open class ExecutionStorage(
     }
 
     suspend fun writeExecutionFeedback(taskId: String, element: FeedbackParams) : ExecutionId {
-        val executionId = newExecutionId("feedback-$taskId")
+        val backendInfo = backendInfo(element.executionBackend)
+        val executionId = newExecutionId(taskId, backendInfo)
         writeToolMetadata(executionId, "steroid_execute_feedback", json.encodeToJsonElement(element).jsonObject, taskId)
         writeCodeExecutionData(executionId, "feedback.json", element)
         writeCodeExecutionData(executionId, "execution-id.txt", executionId.executionId)
-        writeProjectInfo(executionId)
+        writeExecutionIdentity(executionId, backendInfo)
         return executionId
     }
 
-    private fun newExecutionId(taskId: String): ExecutionId {
-        val pattern = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss")
-        val timestamp = LocalDateTime.now().format(pattern)
-        val invalidPath = Regex("[^a-zA-Z0-9_-]+", RegexOption.IGNORE_CASE)
-        val id = "eid_" + timestamp + "-" + invalidPath.replace(taskId, "_")
-        return ExecutionId(id)
+    private fun newExecutionId(taskId: String, backendInfo: ExecutionBackendInfo): ExecutionId {
+        val projectSlug = slug(projectInfoProvider().name, "project", MAX_PROJECT_SLUG_LENGTH)
+        val taskSlug = slug(taskId, "task", MAX_TASK_SLUG_LENGTH)
+        var attempt = 0L
+
+        Files.createDirectories(baseDir)
+        while (true) {
+            val now = clock.instant()
+            val timestamp = UTC_SECONDS_FORMATTER.format(now)
+            val millisecondSlot = Math.floorMod(
+                Math.floorMod(now.toEpochMilli(), EXECUTION_SLOT_PRIME) + attempt,
+                EXECUTION_SLOT_PRIME,
+            )
+            val slot = millisecondSlot.toString().padStart(3, '0')
+            val id = "eid_$timestamp-$slot-$projectSlug-${backendInfo.kind}-$taskSlug"
+            check(id.length <= MAX_EXECUTION_ID_LENGTH) { "Execution ID exceeds $MAX_EXECUTION_ID_LENGTH characters" }
+            try {
+                Files.createDirectory(baseDir.resolve(id))
+                return ExecutionId(id)
+            } catch (e: FileAlreadyExistsException) {
+                attempt++
+            }
+        }
     }
 
+    private fun slug(value: String, fallback: String, maxLength: Int): String {
+        val normalized = INVALID_SLUG_CHARACTERS.replace(value, "_")
+            .trim('_')
+            .ifBlank { fallback }
+        if (normalized.length <= maxLength) return normalized
+
+        val hashSuffix = "_" + value.hashCode().toUInt().toString(36)
+        return normalized
+            .take(maxLength - hashSuffix.length)
+            .trimEnd('_') + hashSuffix
+    }
+
+    private fun backendInfo(provenance: ExecutionBackendProvenance?): ExecutionBackendInfo =
+        provenance?.let { ExecutionBackendInfo(kind = it.kind, name = it.name) } ?: backendInfoProvider()
+
     suspend fun writeNewExecution(exec: ExecCodeParams) : ExecutionId {
-        val executionId = newExecutionId(exec.taskId)
+        val backendInfo = backendInfo(exec.executionBackend)
+        val executionId = newExecutionId(exec.taskId, backendInfo)
         writeToolMetadata(executionId, "steroid_execute_code", json.encodeToJsonElement(exec).jsonObject, exec.taskId)
         writeCodeExecutionData(executionId, "reason.txt", exec.reason)
         writeCodeExecutionData(executionId, "script.kts", exec.code)
         writeCodeExecutionData(executionId, "execution-id.txt", executionId.executionId)
-        writeProjectInfo(executionId)
+        writeExecutionIdentity(executionId, backendInfo)
 
         return executionId
     }
 
-    suspend fun writeToolCall(toolName: String, arguments: JsonObject, taskId: String? = null): ExecutionId {
-        val executionId = newExecutionId(taskId ?: "tool-$toolName")
+    suspend fun writeToolCall(
+        toolName: String,
+        arguments: JsonObject,
+        taskId: String? = null,
+        executionBackend: ExecutionBackendProvenance? = null,
+    ): ExecutionId {
+        val backendInfo = backendInfo(executionBackend)
+        val executionId = newExecutionId(taskId ?: "tool-$toolName", backendInfo)
         writeToolMetadata(executionId, toolName, arguments, taskId)
         writeCodeExecutionData(executionId, "params.json", arguments)
         writeCodeExecutionData(executionId, "execution-id.txt", executionId.executionId)
-        writeProjectInfo(executionId)
+        writeExecutionIdentity(executionId, backendInfo)
         return executionId
     }
 
@@ -208,7 +278,7 @@ open class ExecutionStorage(
     ) {
         val metadata = ToolCallMetadata(
             toolName = toolName,
-            timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+            timestamp = clock.instant().toString(),
             projectName = projectInfoProvider().name,
             taskId = taskId,
             arguments = arguments ?: buildJsonObject { }
@@ -223,6 +293,11 @@ open class ExecutionStorage(
             info.basePath?.let { appendLine(it) }
         }
         writeCodeExecutionData(executionId, "project.txt", content)
+    }
+
+    private suspend fun writeExecutionIdentity(executionId: ExecutionId, backendInfo: ExecutionBackendInfo) {
+        writeProjectInfo(executionId)
+        writeCodeExecutionData(executionId, "backend_name.txt", backendInfo.name + "\n")
     }
 
     suspend fun writeWrappedScript(executionId: ExecutionId, code: String) {

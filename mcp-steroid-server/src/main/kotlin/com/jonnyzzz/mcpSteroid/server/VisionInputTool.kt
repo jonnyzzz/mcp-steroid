@@ -15,6 +15,7 @@ import com.jonnyzzz.mcpSteroid.vision.InputSequenceParser
 import com.jonnyzzz.mcpSteroid.vision.InputStep
 import com.jonnyzzz.mcpSteroid.vision.InputTarget
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Handler for the steroid_input MCP tool.
@@ -87,6 +88,7 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
             windowId = windowId,
             sequence = parsed,
             rawSequence = sequence,
+            executionBackend = context.executionBackendProvenance(),
         ))
     }
 }
@@ -98,6 +100,7 @@ data class InputParams(
     val windowId: String,
     val sequence: List<InputStep>,
     val rawSequence: String? = null,
+    @Transient val executionBackend: ExecutionBackendProvenance? = null,
 )
 
 interface VisionInputToolHandler {

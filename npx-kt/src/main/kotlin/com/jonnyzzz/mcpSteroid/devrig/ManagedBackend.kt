@@ -753,7 +753,7 @@ private fun String.pathKey(): String =
 
 fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirName: String): Path {
     val cacheDir = homePaths.cacheDir(id).toAbsolutePath().normalize()
-    listOf("config", "system", "logs", "plugins", "execution-storage").forEach { Files.createDirectories(cacheDir.resolve(it)) }
+    listOf("config", "system", "logs", "plugins").forEach { Files.createDirectories(cacheDir.resolve(it)) }
     Files.createDirectories(homePaths.backendDir(id))
     val path = homePaths.backendDir(id).resolve("$bundleDirName.vmoptions")
     val content = buildString {
@@ -768,7 +768,6 @@ fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirName: Strin
         // disable mcp.steroid updates/analytics here.
         appendLine("-Dmcp.steroid.idea.description.enabled=false")
         appendLine("-Dmcp.steroid.dialog.killer.enabled=true")
-        appendLine("-Dmcp.steroid.storage.path=${cacheDir.resolve("execution-storage")}")
         appendLine("-Djb.consents.confirmation.enabled=false")
         appendLine("-Djb.privacy.policy.text=<!--999.999-->")
         appendLine("-Djb.privacy.policy.ai.assistant.text=<!--999.999-->")

@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.components.service
-import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
@@ -12,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Fixed allowance for delivering the non-delay steps of an input sequence (issue #309). */
 private const val INPUT_DISPATCH_TIMEOUT_MS = 60_000L
@@ -25,7 +25,8 @@ class VisionInputToolHandlerIJ : VisionInputToolHandler {
         val executionId = project.executionStorage.writeToolCall(
             toolName = "steroid_input",
             arguments = json.encodeToJsonElement(inputParams).jsonObject,
-            taskId = "input-${inputParams.taskId}"
+            taskId = inputParams.taskId,
+            executionBackend = inputParams.executionBackend,
         )
         project.executionStorage.writeCodeExecutionData(executionId, "reason.txt", inputParams.reason)
 
@@ -48,14 +49,14 @@ class VisionInputToolHandlerIJ : VisionInputToolHandler {
             log("WARNING: Heavy endpoint. Prefer steroid_execute_code for regular automation.")
             log("Using window_id: $windowId")
 
-            withTimeout(timeoutMs) {
+            withTimeout(timeoutMs.milliseconds) {
                 VisionService.getInstance(project).executeInput(windowId, inputParams.sequence)
             }
             log("Input sequence executed successfully.")
         } catch (e: TimeoutCancellationException) {
             // A domain error the agent must see, not a control-flow signal — caught BEFORE the
             // generic CancellationException rethrow (same pattern as ScriptExecutor.executeCodeBlocks).
-            val message = "Input execution timed out after ${timeoutMs} ms — the input events could not be " +
+            val message = "Input execution timed out after $timeoutMs ms — the input events could not be " +
                     "delivered to window_id $windowId (EDT busy or window not processing events)"
             builder.addTextContent("ERROR: $message").markAsError()
             project.executionStorage.writeCodeErrorEvent(executionId, message)

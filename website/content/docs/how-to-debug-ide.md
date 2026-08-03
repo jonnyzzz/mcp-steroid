@@ -182,7 +182,7 @@ steroid_take_screenshot(
 ```
 
 **Result:**
-- Screenshot saved to `.idea/mcp-steroid/[execution-id]/screenshot.png`
+- Screenshot saved to `~/.mcp-steroid/runs/[execution-id]/screenshot.png`
 - Component tree saved to `screenshot-tree.md`
 - Metadata in `screenshot-meta.json`
 
@@ -552,7 +552,7 @@ screencapture -w /tmp/target-ide-screenshot.png
 
 ```bash
 # Read component tree from screenshot
-cat .idea/mcp-steroid/[execution-id]/screenshot-tree.md
+cat ~/.mcp-steroid/runs/[execution-id]/screenshot-tree.md
 
 # Look for specific components
 grep -i "your-component" screenshot-tree.md

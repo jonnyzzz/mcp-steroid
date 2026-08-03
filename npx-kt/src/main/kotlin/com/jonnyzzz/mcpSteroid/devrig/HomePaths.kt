@@ -12,7 +12,7 @@ class HomePaths(val home: Path) {
     val cachesDir: Path get() = home.resolve("caches")
     val downloadsDir: Path get() = home.resolve("downloads")
     val stateDir: Path get() = home.resolve("state")
-    val executionStorageDir: Path get() = home.resolve("execution-storage")
+    val executionStorageDir: Path get() = home.resolve("runs")
 
     /**
      * Auto-update coordination files (`lock`, `update-<pid>-version-<v>`, `updated-<v>`, counters,

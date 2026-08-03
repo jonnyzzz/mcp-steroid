@@ -10,13 +10,14 @@ import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.HomePaths
 import com.jonnyzzz.mcpSteroid.devrig.InstalledBackend
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
-import com.jonnyzzz.mcpSteroid.devrig.backendNameForPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.startableBackendName
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.EXECUTION_BACKEND_KIND_ARGUMENT
+import com.jonnyzzz.mcpSteroid.server.EXECUTION_BACKEND_NAME_ARGUMENT
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
@@ -25,7 +26,6 @@ import com.jonnyzzz.mcpSteroid.server.NoOpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
-import com.jonnyzzz.mcpSteroid.devrig.server.DevrigBackendService
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -48,6 +48,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
@@ -170,6 +171,8 @@ class DevrigToolBridgeClientTest {
             "original-project",
             json["arguments"]?.jsonObject?.get("project_name")?.jsonPrimitive?.content,
         )
+        assertNull(json["arguments"]?.jsonObject?.get(EXECUTION_BACKEND_KIND_ARGUMENT))
+        assertNull(json["arguments"]?.jsonObject?.get(EXECUTION_BACKEND_NAME_ARGUMENT))
     }
 
     @Test
@@ -210,6 +213,8 @@ class DevrigToolBridgeClientTest {
         assertEquals("verify contract", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals(42, arguments["timeout"]?.jsonPrimitive?.content?.toInt())
         assertEquals("unleashed", arguments["modal"]?.jsonPrimitive?.content)
+        assertNull(arguments[EXECUTION_BACKEND_KIND_ARGUMENT])
+        assertNull(arguments[EXECUTION_BACKEND_NAME_ARGUMENT])
     }
 
     @Test

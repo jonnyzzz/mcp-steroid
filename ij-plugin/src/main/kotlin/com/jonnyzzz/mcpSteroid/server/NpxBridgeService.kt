@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -77,16 +78,7 @@ class NpxBridgeService {
         val session = serverCore.sessionManager.createSession()
         val progressToken = "npx-${UUID.randomUUID()}"
 
-        val argsWithMeta = injectProgressMeta(request.arguments, progressToken)
-        val rawParams = buildJsonObject {
-            put("name", request.name)
-            put("arguments", argsWithMeta)
-        }
-        val params = ToolCallParams(
-            name = request.name,
-            arguments = argsWithMeta,
-            rawArguments = rawParams
-        )
+        val params = buildToolCallParams(request, progressToken)
 
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val emitMutex = Mutex()
@@ -186,6 +178,31 @@ class NpxBridgeService {
         }
     }
 
+    /**
+     * Builds a bridge-owned tool call. [ToolCallParams.trustedArguments] is transient, so neither an
+     * old devrig request nor spoofed JSON arguments can control execution-storage provenance.
+     */
+    fun buildToolCallParams(request: NpxBridgeToolCallRequest, progressToken: String): ToolCallParams {
+        val argsWithMeta = injectProgressMeta(request.arguments, progressToken)
+        val rawParams = buildJsonObject {
+            put("name", request.name)
+            put("arguments", argsWithMeta)
+        }
+        val backendName = backendNameForMarker(
+            ProcessHandle.current().pid(),
+            ApplicationInfo.getInstance().build.asString(),
+        )
+        return ToolCallParams(
+            name = request.name,
+            arguments = argsWithMeta,
+            rawArguments = rawParams,
+            trustedArguments = buildJsonObject {
+                put(EXECUTION_BACKEND_KIND_ARGUMENT, "d")
+                put(EXECUTION_BACKEND_NAME_ARGUMENT, backendName)
+            },
+        )
+    }
+
     private fun injectProgressMeta(arguments: JsonObject?, progressToken: String): JsonObject {
         val args = arguments ?: buildJsonObject { }
         val existingMeta = args["_meta"]?.jsonObject
@@ -209,4 +226,3 @@ class NpxBridgeService {
         fun getInstance(): NpxBridgeService = service()
     }
 }
-
