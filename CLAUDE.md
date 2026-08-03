@@ -237,7 +237,7 @@ silently skips both. Direct `./gradlew :test-integration:test --tests '...'` sti
 | `:npx-kt:liveDownloadSmokeTest` | `idea-community` + `android-studio` really download, unpack and pass `product-info.json` validation (`live-download` tag) | multi-GB per case |
 | `:intellij-downloader:liveNetworkTest` | products-API filename tokens still match (JUnit4 `LiveNetwork` category) | seconds |
 
-The offline equivalent runs by default: `AllIdeProductsDownloadTest` walks all nine products through
+The offline equivalent runs by default: `AllIdeProductsDownloadTest` walks every catalog product through
 recorded payloads of all three feeds.
 
 **TeamCity DSL** lives in a separate repo (`~/Work/mcp-steroid-teamcity`). See its own `CLAUDE.md` for the

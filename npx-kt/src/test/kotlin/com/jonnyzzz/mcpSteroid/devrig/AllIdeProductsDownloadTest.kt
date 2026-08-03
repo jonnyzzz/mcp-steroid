@@ -27,8 +27,8 @@ import kotlin.test.assertTrue
  * `data.services.jetbrains.com` publishes a full build number; the GitHub Community releases and
  * the Android Studio preview page publish just the platform baseline (`262`) while the artifact
  * itself reports `262.8665.258`. Comparing those for equality rejected the install AFTER the full
- * multi-hundred-MB transfer. The fix landed with an idea-community test only, so this walks all
- * nine products — Android Studio included, whose canary resolver derives the build the same way.
+ * multi-hundred-MB transfer. The fix landed with an idea-community test only, so this walks every
+ * catalog product — Android Studio included, whose canary resolver derives the build the same way.
  *
  * Live-feed coverage of the same contract is [AllIdeProductsLiveFeedTest] (tag `live-network`) and
  * real downloads are [BackendDownloadSmokeTest] (tag `live-download`).
@@ -101,6 +101,35 @@ class AllIdeProductsDownloadTest {
             IdeProduct.CLion, BackendDownloadFeed.JETBRAINS_PRODUCTS_API,
             version = "2026.2.0.1", resolvedBuild = "262.8665.321", installedBuild = "262.8665.321",
             fileName = "CLion-2026.2.0.1-aarch64.dmg",
+        ),
+        // The #430 additions, mirroring intellij-downloader's recorded fixtures (products-*.json).
+        ProductFeedCase(
+            IdeProduct.RustRover, BackendDownloadFeed.JETBRAINS_PRODUCTS_API,
+            version = "2026.2", resolvedBuild = "262.8665.323", installedBuild = "262.8665.323",
+            fileName = "RustRover-2026.2-aarch64.dmg",
+        ),
+        ProductFeedCase(
+            IdeProduct.PhpStorm, BackendDownloadFeed.JETBRAINS_PRODUCTS_API,
+            version = "2026.2.0.1", resolvedBuild = "262.8665.325", installedBuild = "262.8665.325",
+            fileName = "PhpStorm-2026.2.0.1-aarch64.dmg",
+        ),
+        ProductFeedCase(
+            IdeProduct.RubyMine, BackendDownloadFeed.JETBRAINS_PRODUCTS_API,
+            version = "2026.2", resolvedBuild = "262.8665.308", installedBuild = "262.8665.308",
+            fileName = "RubyMine-2026.2-aarch64.dmg",
+        ),
+        // DataGrip is queried as DG but a real install reports productCode DB — installedProductCode
+        // carries the split, and the download validation must accept it.
+        ProductFeedCase(
+            IdeProduct.DataGrip, BackendDownloadFeed.JETBRAINS_PRODUCTS_API,
+            version = "2026.2.2", resolvedBuild = "262.9437.70", installedBuild = "262.9437.70",
+            fileName = "datagrip-2026.2.2-aarch64.dmg",
+        ),
+        // MPS lags the platform by one baseline (261) — still inside the bundled plugin's range.
+        ProductFeedCase(
+            IdeProduct.Mps, BackendDownloadFeed.JETBRAINS_PRODUCTS_API,
+            version = "2026.1", resolvedBuild = "261.25134.779", installedBuild = "261.25134.779",
+            fileName = "MPS-2026.1-macos-aarch64.dmg",
         ),
     )
 
