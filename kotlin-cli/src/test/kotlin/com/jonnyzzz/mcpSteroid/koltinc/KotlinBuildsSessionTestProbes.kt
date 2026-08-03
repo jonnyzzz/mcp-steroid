@@ -6,9 +6,9 @@ import kotlin.io.path.name
 
 /*
  * Reflection probes into a session's isolated BTA impl classloader.
- * Pinned to kotlin-build-tools-impl 2.4.x internals (same contract as
- * CompilerEnvironmentPin): any reflective failure throws loudly.
- * DELETE together with CompilerEnvironmentPin at the 2.5 line.
+ * Pinned to kotlin-build-tools-impl 2.4.20 RC internals to verify KT-87743's
+ * BuildSession-owned application-environment lifetime. Any reflective failure
+ * throws loudly so a BTA upgrade cannot silently remove the cache/lifecycle checks.
  */
 
 /**
@@ -19,13 +19,15 @@ import kotlin.io.path.name
 val KotlinBuildsSession.defaultStdlibJar: Path
     get() = implClasspath.single { it.name.startsWith("kotlin-stdlib-") }
 
-fun implClassLoaderOf(session: KotlinBuildsSession): ClassLoader =
-    KotlinBuildsSession::class.java.getDeclaredField("implClassLoader")
-        .apply { isAccessible = true }.get(session) as ClassLoader
+fun implClassLoaderOf(session: KotlinBuildsSession): ClassLoader {
+    val buildToolsApi = KotlinBuildsSession::class.java.getDeclaredField("buildToolsApi")
+        .apply { isAccessible = true }.get(session)
+    return buildToolsApi.javaClass.classLoader
+}
 
 /**
  * Reads `KotlinCoreEnvironment.Companion.applicationEnvironment` inside the session's
- * isolated BTA impl classloader — the static the pin keeps alive; null once disposed.
+ * isolated BTA impl classloader — the static BTA's session pin keeps alive; null once disposed.
  */
 fun applicationEnvironmentOf(session: KotlinBuildsSession): Any? {
     val companion = implClassLoaderOf(session)
@@ -36,7 +38,7 @@ fun applicationEnvironmentOf(session: KotlinBuildsSession): Any? {
         .invoke(companion)
 }
 
-/** `KotlinCoreEnvironment.ourProjectCount` — the env ref-count. Pin held => 1 at rest; closed => 0. */
+/** `KotlinCoreEnvironment.ourProjectCount` — the env ref-count. BTA pin held => 1; closed => 0. */
 fun environmentRefCountOf(session: KotlinBuildsSession): Int =
     implClassLoaderOf(session)
         .loadClass("org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment")

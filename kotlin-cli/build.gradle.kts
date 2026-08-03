@@ -9,6 +9,8 @@ kotlin {
 }
 
 repositories {
+    // Numbered Kotlin 2.4.20 RC builds are published here before the final RC reaches Maven Central.
+    maven("https://packages.jetbrains.team/maven/p/kt/dev")
     mavenCentral()
 }
 
@@ -24,18 +26,18 @@ val btaImplClasspath = configurations.resolvable("kotlinBuildToolsImplClasspath"
 }
 
 dependencies {
-    // Single version for the BTA api and impl: see the mcp.kotlinc.version comment
-    // in gradle.properties (-impl IS the snippet compiler). kotlin-build-tools-compat
+    // Keep the BTA API and implementation on the same version (-impl IS the snippet
+    // compiler). This is intentionally independent from the Kotlin Gradle plugin version.
+    // kotlin-build-tools-compat
     // is deliberately NOT bundled — it only adapts pre-2.3.0 impls to the
     // KotlinToolchains API; for impl >= 2.3.0 the ServiceLoader finds the
     // implementation directly and compat is dead weight.
-    val kotlincVersion = providers.gradleProperty("mcp.kotlinc.version").get()
     val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
 
-    api("org.jetbrains.kotlin:kotlin-build-tools-api:$kotlincVersion")
+    api("org.jetbrains.kotlin:kotlin-build-tools-api:2.4.20-RC-197")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
 
-    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:$kotlincVersion") {
+    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:2.4.20-RC-197") {
         // The daemon execution flow is gone — in-process is the only path (the daemon
         // clears the compiler cache after each compilation, upstream KT-88183; re-check
         // when updating the kotlinc/BTA logic). These two jars exist solely for the
@@ -44,11 +46,11 @@ dependencies {
         //    (its one in-process-path symbol, toArgumentStrings, ships inside kotlin-compiler-embeddable)
         //  - kotlin-daemon-client: the RMI client (BasicCompilerServicesWithResultsFacadeServer et al.),
         //    reached only via kotlin-compiler-runner
-        // kotlin-daemon-embeddable MUST stay: BTA 2.4.10 links daemon-common eagerly even in-process
+        // kotlin-daemon-embeddable MUST stay: BTA 2.4.20 RC links daemon-common eagerly even in-process
         // (JvmCompilationOperationImpl's constructor initializes
         // targetPlatform = CompileService.TargetPlatform.JVM), and kotlin-compiler-embeddable
         // declares kotlin-daemon-embeddable as a runtime dependency. Verified against the
-        // v2.4.10 sources/bytecode and a standalone in-process compile probe.
+        // v2.4.20 RC sources/bytecode and a standalone in-process compile probe.
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-compiler-runner")
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-daemon-client")
     }

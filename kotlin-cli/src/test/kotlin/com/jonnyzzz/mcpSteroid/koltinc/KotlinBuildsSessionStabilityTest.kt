@@ -34,8 +34,8 @@ import org.junit.rules.TemporaryFolder
  * sequential compiles, close()+recompile churn, timeout and error storms, the
  * close-vs-compile race, and a large single input. The structural probes
  * (env identity, `ourProjectCount`, jar-handler count) live in
- * [KotlinBuildsSessionTestProbes.kt] and are pinned to BTA 2.4.x internals —
- * same lifetime contract as [CompilerEnvironmentPin].
+ * [KotlinBuildsSessionTestProbes.kt] and verify BTA 2.4.20 RC's upstream
+ * KT-87743 environment-pin lifetime.
  */
 class KotlinBuildsSessionStabilityTest {
     @JvmField
@@ -107,7 +107,7 @@ class KotlinBuildsSessionStabilityTest {
                     // Structural, per-iteration, GC-independent:
                     assertSame("ONE application environment must serve the whole session",
                         envAtWarmup, applicationEnvironmentOf(session))
-                    assertEquals("env ref-count at rest must be exactly the pin's 1 " +
+                    assertEquals("env ref-count at rest must be exactly BTA's pin count of 1 " +
                         "(growth = a leaked per-compile ref)", 1, environmentRefCountOf(session))
                 }
                 assertEquals("jar-handler cache must not grow under a constant classpath",
@@ -129,14 +129,13 @@ class KotlinBuildsSessionStabilityTest {
     fun sessionChurnOnOneInstanceLeavesNothingBehind() {
         // The production-relevant churn: CodeEvalManager holds ONE session per project
         // for the project's life, and the documented contract is "fine to compile again
-        // after close()". Repeated pin acquire->dispose in the SAME impl classloader —
+        // after close()". Repeated upstream pin acquire->dispose in the SAME impl classloader —
         // env statics must return to zero after every close, each reopen builds a FRESH env.
         val src = tempFolder.newFolder("churn-src").toPath() / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val outRoot = tempFolder.newFolder("churn-out").toPath()
 
-        val session = newSession()
-        try {
+        newSession().use { session ->
             var previousEnv: Any? = null
             repeat(15) { cycle ->
                 runBlocking {
@@ -162,8 +161,6 @@ class KotlinBuildsSessionStabilityTest {
                 assertEquals(CompilationResult.COMPILATION_SUCCESS,
                     session.compileSnippet(src, (outRoot / "final").createDirectories() / "out.jar"))
             }
-        } finally {
-            session.close()
         }
     }
 
@@ -172,7 +169,7 @@ class KotlinBuildsSessionStabilityTest {
         // The cancellation path is production's riskiest: CodeEvalManager maps TCE to
         // "stopped on timeout" and then keeps using the same session forever. Repeated
         // jvmOperation.cancel() + OCE translation must not poison the lease bookkeeping,
-        // the pinned env, or the in-process executor.
+        // BTA's pinned env, or the in-process executor.
         val src = tempFolder.newFolder("storm-src").toPath() / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val outRoot = tempFolder.newFolder("storm-out").toPath()
@@ -196,7 +193,7 @@ class KotlinBuildsSessionStabilityTest {
                     }
                     // The finally-path lease release under cancellation is OUR machinery:
                     assertEquals("iteration $i leaked an operation lease", 0, session.activeOperations)
-                    assertSame("iteration $i: cancelled compile must not tear down the pinned env",
+                    assertSame("iteration $i: cancelled compile must not tear down BTA's pinned env",
                         env, applicationEnvironmentOf(session))
                     assertEquals(1, environmentRefCountOf(session))
                 }
@@ -255,7 +252,7 @@ class KotlinBuildsSessionStabilityTest {
                     assertTrue("a successful compile must render no stale errors",
                         succeeding.errorMessages().isEmpty())
 
-                    assertSame("failed compiles must not rebuild the pinned env",
+                    assertSame("failed compiles must not rebuild BTA's pinned env",
                         env, applicationEnvironmentOf(session))
                     assertEquals(1, environmentRefCountOf(session))
                 }
@@ -264,20 +261,19 @@ class KotlinBuildsSessionStabilityTest {
     }
 
     @Test
-    fun closeRacingCompileNeverLeaksThePin() {
+    fun closeRacingCompileNeverLeaksTheEnvironment() {
         // Fuzz-by-schedule with invariant assertions: the race outcome (close-before-
         // acquire vs close-mid-compile vs close-after-release) varies per run, but every
         // interleaving must converge on the same post-conditions — compile success +
-        // zero residue after the final close. This exercises OUR synchronized lease/pin
-        // bookkeeping; it deliberately never overlaps two compiles (production
-        // serializes them via CodeEvalManager.compilationMutex, and BTA does not
-        // document BuildSession thread-safety).
+        // zero residue after the final close. This exercises our synchronized session
+        // lease bookkeeping plus BTA's pin cleanup; it deliberately never overlaps two
+        // compiles (production serializes them via CodeEvalManager.compilationMutex, and
+        // BTA does not document BuildSession thread-safety).
         val src = tempFolder.newFolder("race-src").toPath() / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val outRoot = tempFolder.newFolder("race-out").toPath()
 
-        val session = newSession()
-        try {
+        newSession().use { session ->
             runBlocking {
                 repeat(8) { i ->
                     val compile = async(Dispatchers.IO) {
@@ -304,8 +300,6 @@ class KotlinBuildsSessionStabilityTest {
                     assertEquals(0, session.activeOperations)
                 }
             }
-        } finally {
-            session.close()
         }
     }
 

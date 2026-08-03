@@ -66,6 +66,7 @@ val verifierIdeProduct: IdeProduct = when (targetIdeProduct) {
 }
 
 repositories {
+    maven("https://packages.jetbrains.team/maven/p/kt/dev")
     mavenCentral()
 
     intellijPlatform {
@@ -411,13 +412,13 @@ tasks {
 
 val verifyBundledKotlinCompatibility = tasks.register<VerifyBundledKotlinCompatibilityTask>("verifyBundledKotlinCompatibility") {
     group = "verification"
-    description = "Verify the bundled BTA compiler version (mcp.kotlinc.version) is close enough to IntelliJ-bundled kotlin-stdlib"
+    description = "Verify the bundled BTA compiler version is close enough to IntelliJ-bundled kotlin-stdlib"
     dependsOn(tasks.prepareSandbox)
 
     val sourceSets = project.extensions.getByType<SourceSetContainer>()
     mainRuntimeClasspath.from(sourceSets.getByName("main").runtimeClasspath)
     mainRuntimeClasspath.from(configurations.getByName("intellijPlatformDependency"))
-    bundledKotlinVersion.set(providers.gradleProperty("mcp.kotlinc.version"))
+    bundledKotlinVersion.set("2.4.20-RC-197")
     kotlinPluginVersion.set(providers.provider {
         plugins.getPlugin(org.jetbrains.kotlin.gradle.plugin.KotlinPluginWrapper::class.java).pluginVersion
     })
@@ -550,7 +551,6 @@ artifacts {
 
 // Verify bundled libraries in plugin/lib folder
 val pluginVersion = version.toString()
-val bundledKotlincVersion = providers.gradleProperty("mcp.kotlinc.version").get()
 val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
     group = "verification"
     description = "List and verify libraries bundled in plugin lib folder"
@@ -603,17 +603,18 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
         val kotlincFiles = allFiles.filter { it.startsWith("kotlinc/") }.toSortedSet()
         val expectedKotlincFiles = sortedSetOf(
             "kotlinc/annotations-13.0.jar",
-            "kotlinc/kotlin-build-tools-api-$bundledKotlincVersion.jar",
-            "kotlinc/kotlin-build-tools-cri-impl-$bundledKotlincVersion.jar",
-            "kotlinc/kotlin-build-tools-impl-$bundledKotlincVersion.jar",
-            "kotlinc/kotlin-compiler-embeddable-$bundledKotlincVersion.jar",
-            // kotlin-daemon-embeddable stays even though the daemon flow is gone: BTA 2.4.10
+            "kotlinc/kotlin-build-tools-api-2.4.20-RC-197.jar",
+            "kotlinc/kotlin-build-tools-cri-impl-2.4.20-RC-197.jar",
+            "kotlinc/kotlin-build-tools-impl-2.4.20-RC-197.jar",
+            "kotlinc/kotlin-compiler-embeddable-2.4.20-RC-197.jar",
+            // kotlin-daemon-embeddable stays even though the daemon flow is gone: BTA 2.4.20 RC
             // eagerly links daemon-common (CompileService.TargetPlatform) on every compile,
             // and it is a declared runtime dep of kotlin-compiler-embeddable. See :kotlin-cli.
-            "kotlinc/kotlin-daemon-embeddable-$bundledKotlincVersion.jar",
+            "kotlinc/kotlin-daemon-embeddable-2.4.20-RC-197.jar",
             "kotlinc/kotlin-reflect-1.6.10.jar",
-            "kotlinc/kotlin-script-runtime-$bundledKotlincVersion.jar",
-            "kotlinc/kotlin-stdlib-$bundledKotlincVersion.jar",
+            "kotlinc/kotlin-script-runtime-2.4.20-RC-197.jar",
+            "kotlinc/kotlin-stdlib-2.4.20-RC-197.jar",
+            "kotlinc/kotlin-tooling-core-2.4.20-RC-197.jar",
             "kotlinc/kotlinx-coroutines-core-jvm-1.8.0.jar",
         )
         if (kotlincFiles != expectedKotlincFiles) {
@@ -676,7 +677,7 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
             "lib/posthog-6.4.0.jar",
             "lib/posthog-server-2.3.0.jar",
 
-            "lib/kotlin-build-tools-api-$bundledKotlincVersion.jar",
+            "lib/kotlin-build-tools-api-2.4.20-RC-197.jar",
 
         ).toSortedSet()
 

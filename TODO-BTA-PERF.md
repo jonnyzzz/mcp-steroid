@@ -10,7 +10,7 @@ IN_PROCESS, wrapped exec_code-shaped snippets, adversarially verified probe runs
 | + application-environment pin | ~2.0 s | **218 ms** | 1.68× | 14–28× |
 | + pin + merged STORED fat jar | ~1.7 s | **180 ms** | 2.04× | **17–33×** |
 
-## 1. Application-environment pin (DO THIS — biggest single win, no infra)
+## 1. Application-environment pin (DONE upstream in 2.4.20 RC)
 
 BTA 2.4.10 disposes the Kotlin compiler application environment after **every**
 compilation (`ourProjectCount` ref-count hits 0 per exec → `disposeApplicationEnvironment()`;
@@ -18,10 +18,12 @@ even `kotlin.environment.keepalive` still clears the FastJarFileSystem handler c
 via `idleCleanup()`, KotlinCoreEnvironment.kt:577-579 @ v2.4.10). So every warm compile
 re-parses the central directories of all ~1800 jars and rebuilds their VFS trees.
 
-Fix (mirrors what upstream master's BTA already does via `ApplicationEnvironmentPin`):
-in `KotlinBuildsSession`, after `loadImplementation`, reflectively — inside the impl
-classloader — call `KotlinCoreEnvironment.Companion.getOrCreateApplicationEnvironmentForProduction(disposable, CompilerConfiguration())`
-once per session; `Disposer.dispose(disposable)` in `close()`.
+PR #361 originally carried a reflective local pin mirroring Kotlin master. KT-87743
+backported that behavior to 2.4.20 RC: BTA now acquires its own
+`ApplicationEnvironmentPin` lazily for an in-process operation and releases it from
+`BuildSession.close()`. The branch uses `2.4.20-RC-197`, the current numbered RC build,
+and the local workaround is gone. The structural session tests still verify one stable
+environment/ref-count across compiles and full disposal on close.
 
 Implementation notes (validated by the probe):
 - The embeddable compiler **relocates** `com.intellij.*` → `org.jetbrains.kotlin.com.intellij.*`
@@ -36,11 +38,11 @@ Implementation notes (validated by the probe):
   the session (drops the pin) and start fresh.
 - Pin acquisition costs ~100 ms once. No significant retained-heap penalty measured
   (~520–610 MB used either way); un-pinned runs actually churn more garbage.
-- DAEMON policy note: production compiles via the daemon JVM; the same per-exec cache-clear
+- DAEMON policy note: the same per-exec cache-clear
   happens there (daemon sets keepalive but `idleCleanup()`/session-release clears jar caches
   — CompileServiceImpl.kt:118,878-881 @ v2.4.10). The pin must live in the JVM that runs the
-  compiler: for DAEMON policy this needs upstream (see 3) or switching exec_code to IN_PROCESS.
-  Measure IN_PROCESS-in-IDE memory impact before switching.
+  compiler: KT-87743 covers the in-process BuildSession only, so the daemon path remains
+  blocked on KT-88183 (see 3).
 
 ## 2. Repackaged-classpath cache — optional second stage (~20% on top of the pin)
 
@@ -62,14 +64,13 @@ first-wins order, STORED, zip64) jar:
 
 ## 3. Upstream / no-ops (verified against v2.4.10 sources)
 
-Filed upstream from this work — review both whenever the kotlinc/BTA logic changes or
-`mcp.kotlinc.version` is bumped:
+Filed upstream from this work — review both whenever the BTA dependencies change:
 - **KT-88182** — Contention in FastJarHandler during compilation.
 - **KT-88183** — Compilation via daemon clears the compiler cache after each compilation
   (the reason the daemon flow was removed; a fix makes it viable again).
 
-- Kotlin master's BTA pins the environment per BuildSession automatically → upgrading the
-  BTA impl to the 2.5 line makes item 1 free. Also relevant for DAEMON-policy pinning.
+- **KT-87743** — fixed in 2.4.20 RC; BTA now pins the application environment per
+  in-process BuildSession, making item 1 free without local reflection.
 - `-Xuse-fast-jar-file-system` is already default-on for K2; **no other classpath-perf
   flags exist**; no persisted classpath-index support anywhere in kotlinc (IC classpath
   snapshots are ABI change-detection only — unusable for resolution).

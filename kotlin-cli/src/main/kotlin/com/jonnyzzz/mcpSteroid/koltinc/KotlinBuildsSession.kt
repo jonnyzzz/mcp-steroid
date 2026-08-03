@@ -1,7 +1,6 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.koltinc
 
-import java.net.URLClassLoader
 import java.nio.file.Path
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
@@ -20,20 +19,19 @@ import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
 import org.jetbrains.kotlin.buildtools.api.KotlinToolchains
 import org.jetbrains.kotlin.buildtools.api.OperationCancelledException
-import org.jetbrains.kotlin.buildtools.api.SharedApiClassesClassLoader
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.jetbrains.kotlin.buildtools.api.arguments.enums.JvmTarget
 import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jvm
 
 /**
  * A build session compiling Kotlin code in-process via the Kotlin Build Tools API.
- * The session pins the compiler application environment ([CompilerEnvironmentPin]) so
- * jar/classpath caches survive across compilations (measured 367 -> 218 ms warm snippet
- * compiles on an IDE-sized classpath). There is deliberately no daemon flow: BTA 2.4.10
- * clears the daemon-side jar caches around every operation (reported upstream as
- * KT-88183), so the daemon could never be made this fast from our side, and the plugin
- * ships only the in-process jars. REVIEW when updating the kotlinc/BTA logic or bumping
- * mcp.kotlinc.version: if KT-88183 is fixed, the daemon flow becomes viable again.
+ * Since 2.4.20 RC, BTA itself pins the compiler application environment to the
+ * [KotlinToolchains.BuildSession] lifetime (KT-87743), so jar/classpath caches survive
+ * across compilations without a local reflective workaround. There is deliberately no
+ * daemon flow: BTA still clears the daemon-side jar caches around every operation
+ * (KT-88183), so the daemon cannot match the in-process path, and the plugin ships only
+ * the in-process jars. Review KT-88183 whenever updating the BTA dependencies: if it is
+ * fixed, the daemon flow becomes viable again.
  *
  * This class keeps Kotlin caches between different compilations. To drop them - call `close()` method.
  * It is fine to call again compilation after calling `close()`.
@@ -57,27 +55,18 @@ class KotlinBuildsSession(
         }
     }
 
-    // The session owns its implementation classloader (rather than using the
-    // loadImplementation(List<Path>) convenience) so CompilerEnvironmentPin can
-    // reach the compiler classes living inside it.
-    private val implClassLoader = URLClassLoader(
-        this.implClasspath.map { it.toUri().toURL() }.toTypedArray(),
-        SharedApiClassesClassLoader(),
-    )
-    private val buildToolsApi = KotlinToolchains.loadImplementation(implClassLoader)
+    private val buildToolsApi = KotlinToolchains.loadImplementation(this.implClasspath)
     private val inProcessExecutionStrategy = buildToolsApi.createInProcessExecutionPolicy()
 
     // Session lifecycle: every compile holds a lease on the current session; close()
     // detaches the session immediately (subsequent compiles start a fresh one) but the
     // actual BuildSession.close() is deferred until the last leased operation releases —
     // closing mid-operation would shut down the in-process executor underneath a running
-    // compile. The environment pin shares the lease lifecycle: acquired lazily before
-    // the first compile, released after the session closes — the compiler's jar caches
-    // live exactly as long as the session (no leak past close).
+    // compile. BTA owns the application-environment pin inside BuildSession, so closing
+    // the leased session also releases the compiler's jar caches.
     private class SessionLease(
         val session: KotlinToolchains.BuildSession,
     ) {
-        var environmentPin: CompilerEnvironmentPin? = null
         var activeOperations = 0
         var closeRequested = false
     }
@@ -91,12 +80,6 @@ class KotlinBuildsSession(
     private fun acquireSession(): SessionLease = synchronized(this) {
         val lease = currentLease
             ?: SessionLease(buildToolsApi.createBuildSession()).also { currentLease = it }
-        if (lease.environmentPin == null) {
-            // Lazy + transactional: on pin failure the lease stays valid (and unpinned
-            // usage would still work), but we fail the compile loudly rather than run
-            // with silently degraded per-compile cache teardown.
-            lease.environmentPin = CompilerEnvironmentPin.acquire(implClassLoader)
-        }
         lease.activeOperations++
         lease
     }
@@ -110,15 +93,7 @@ class KotlinBuildsSession(
     }
 
     private fun SessionLease.closeNow() {
-        // Session first (its close() clears the jar caches), then the pin — dropping
-        // the last ref-count lets the compiler dispose the application environment.
-        // The pin MUST be released even when BuildSession.close() throws: the lease is
-        // already detached, so this is the only chance.
-        try {
-            session.close()
-        } finally {
-            environmentPin?.dispose()
-        }
+        session.close()
     }
 
     /**
@@ -262,7 +237,7 @@ class KotlinBuildsSession(
          * Fails fast when the running JVM's version has no matching [JvmTarget]
          * entry in the bundled BTA — silently downgrading (e.g. to 21) would
          * resurrect the inline-bytecode failure above in a far less
-         * diagnosable form. The fix is to bump `mcp.kotlinc.version`.
+         * diagnosable form. The fix is to bump the BTA API and implementation versions.
          */
         val DEFAULT_JVM_TARGET: JvmTarget = getDefaultJvmTarget()
 
@@ -272,7 +247,8 @@ class KotlinBuildsSession(
             return JvmTarget.entries.find { it.stringValue == jvmTargetStr }
                 ?: error(
                     "The running JVM ('java.specification.version'=$jvmTargetStr) has no matching " +
-                        "JvmTarget in the bundled Kotlin Build Tools API. Bump mcp.kotlinc.version " +
+                        "JvmTarget in the bundled Kotlin Build Tools API. Bump the BTA API and " +
+                        "implementation versions in kotlin-cli/build.gradle.kts " +
                         "or run on a JDK the bundled compiler supports " +
                         "(known targets: ${JvmTarget.entries.joinToString { it.stringValue }})."
                 )
