@@ -1,10 +1,13 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.settings
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.ui.components.fields.ExtendableTextField
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
+import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import java.awt.Component
 import java.awt.Container
 import javax.swing.AbstractButton
@@ -36,21 +39,18 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
         configurable.disposeUIResources()
     }
 
-    fun `test panel promotes devrig and shows copyable install one-liners`() {
+    fun `test panel promotes devrig, renders statuses as value fields, and deprecates direct HTTP`() {
         val configurable = McpSteroidConfigurable()
         try {
-            val component = configurable.createComponent() ?: error("createComponent returned null")
+            val component = configurable.createComponent()
             val texts = collectTexts(component)
             val joined = texts.joinToString("\n")
 
-            // Two tabs, devrig first — the Kotlin UI DSL's tabbedPaneHeader shows the selected tab's
-            // content only, so the titles are the one place both paths are visible at once.
-            val header = findTabHeader(component)
-            assertEquals(
-                listOf(McpSteroidConfigurable.DEVRIG_TAB_TITLE, McpSteroidConfigurable.HTTP_TAB_TITLE),
-                (0 until header.tabCount).map { header.getTitleAt(it) },
+            // No tabs: everything is on one page, with the deprecated path collapsed at the bottom.
+            assertTrue(
+                "The page must not use a tabbed pane; found ${findAllTabbedPanes(component).size}",
+                findAllTabbedPanes(component).isEmpty(),
             )
-            assertEquals("The recommended path must be the tab that opens", 0, header.selectedIndex)
 
             // The intro leads with the "AI Agents" framing.
             assertContainsText(texts, "AI Agents")
@@ -60,18 +60,13 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             assertContainsText(texts, "Report issues on GitHub")
             assertFalse("No Slack workspace exists — the label must not mention Slack", joined.contains("Slack"))
 
-            // devrig install is implemented: the panel shows the copyable one-liners for both
-            // macOS/Linux (curl … | sh) and Windows (irm … | iex), plus the agent-registration hint.
-            assertContainsText(texts, McpSteroidConfigurable.DEVRIG_INSTALL_SH)
-            assertContainsText(texts, McpSteroidConfigurable.DEVRIG_INSTALL_PS1)
-            assertTrue(
-                "macOS/Linux installer must be a copyable curl|sh one-liner; found:\n$joined",
-                joined.contains("install.sh") && joined.contains("| sh"),
+            // The by-hand installer one-liners are gone: the button is the way to install devrig from the
+            // IDE, and a copyable `curl … | sh` next to it only invited a second, unmanaged install.
+            assertFalse(
+                "The page must not print installer one-liners any more; found:\n$joined",
+                joined.contains("install.sh") || joined.contains("install.ps1") || joined.contains("| iex"),
             )
-            assertTrue(
-                "Windows installer must be a copyable irm|iex one-liner; found:\n$joined",
-                joined.contains("install.ps1") && joined.contains("| iex"),
-            )
+
             // Exactly one of the two state-dependent blocks, never both: the install button has nothing
             // to offer someone who already has devrig, and the registration commands mean nothing to
             // someone who does not. Asserted against the real state so this holds on any machine.
@@ -97,45 +92,69 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // The panel still links to the devrig documentation.
             assertEquals("https://devrig.dev/docs/devrig/", McpSteroidConfigurable.DEVRIG_DOCS_URL)
 
-            // Status block sits outside the tabs, so it renders whichever tab is selected.
+            // Both halves of "can an agent reach this IDE?" live in the same Devrig group: the server's
+            // state, and devrig's right below it — each rendered as a read-only value field rather than a
+            // bare label, so the answer is visually separable from the label that names it.
             assertContainsText(texts, "MCP server")
+            val fieldTexts = collectValueFields(component).map { it.text }
+            assertTrue(
+                "The server status must be a value field, not a bare label; fields: $fieldTexts",
+                fieldTexts.any { it.startsWith("Running on port") || it == "Not running" },
+            )
+            if (installed) {
+                assertTrue(
+                    "devrig's status must be a value field too; fields: $fieldTexts",
+                    fieldTexts.any { it.startsWith("Installed") },
+                )
+            }
 
-            // Switching to the HTTP tab swaps the content in place — and that is also the only way to
-            // reach it, since an unselected tab's panel is not in the component tree at all.
-            header.selectedIndex = 1
-            val httpTexts = collectTexts(component)
-            val httpJoined = httpTexts.joinToString("\n")
-
-            // The legacy HTTP examples must carry a "not recommended" warning steering users to devrig.
-            assertContainsText(httpTexts, "Not recommended")
+            // The direct-HTTP path is collapsed at the bottom and says outright that it is deprecated —
+            // in the section title and in its first line.
+            assertTrue(
+                "The HTTP section title must mark the path deprecated; got '${McpSteroidConfigurable.HTTP_SECTION_TITLE}'",
+                McpSteroidConfigurable.HTTP_SECTION_TITLE.contains("deprecated"),
+            )
+            assertContainsText(texts, McpSteroidConfigurable.HTTP_SECTION_TITLE)
+            assertContainsText(texts, "Deprecated")
 
             // Legacy HTTP section must reference the registry keys so pre-devrig
             // HTTP-based setups can still find their port/host configuration.
-            assertContainsText(httpTexts, "mcp.steroid.server.port")
-            assertContainsText(httpTexts, "mcp.steroid.server.host")
-            assertContainsText(httpTexts, "MCP server")
+            assertContainsText(texts, "mcp.steroid.server.port")
+            assertContainsText(texts, "mcp.steroid.server.host")
 
-            // One tab at a time: the devrig content is gone, which is what makes the strip a tab strip
-            // rather than two stacked groups.
-            assertFalse(
-                "The devrig tab's content must leave the tree when the HTTP tab is selected; found:\n$httpJoined",
-                httpJoined.contains(McpSteroidConfigurable.DEVRIG_INSTALL_SH),
-            )
+            // The server URL is part of wiring an HTTP connection by hand, not part of the page's status,
+            // so it moved into that section. Rendered only when the server actually bound a port.
+            val serverUrl = ApplicationManager.getApplication()
+                .getServiceIfCreated(SteroidsMcpServer::class.java)
+                ?.takeIf { it.port > 0 }
+                ?.mcpUrl
+            if (serverUrl != null) {
+                assertContainsText(texts, serverUrl)
+            }
         } finally {
             configurable.disposeUIResources()
         }
     }
 
-    /** The DSL tab strip: `Row.tabbedPaneHeader` renders a [JTabbedPane] with no content pages. */
-    private fun findTabHeader(component: Component): JTabbedPane {
+    /** The read-only fields the page renders every value in — statuses, URLs and commands alike. */
+    private fun collectValueFields(component: Component): List<ExtendableTextField> {
+        val found = mutableListOf<ExtendableTextField>()
+        fun walk(c: Component) {
+            if (c is ExtendableTextField) found.add(c)
+            if (c is Container) c.components.forEach { walk(it) }
+        }
+        walk(component)
+        return found
+    }
+
+    private fun findAllTabbedPanes(component: Component): List<JTabbedPane> {
         val found = mutableListOf<JTabbedPane>()
         fun walk(c: Component) {
             if (c is JTabbedPane) found.add(c)
             if (c is Container) c.components.forEach { walk(it) }
         }
         walk(component)
-        return found.singleOrNull()
-            ?: error("Expected exactly one tab strip on the settings page, found ${found.size}")
+        return found
     }
 
     private fun assertContainsText(texts: List<String>, expected: String) {

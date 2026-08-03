@@ -15,14 +15,21 @@ installer.
 
 ### Settings page
 
-**Settings | Tools | Devrig — MCP Steroid** is where the plugin offers anything. One line of framing, the
-live server status, then two tabs — **Devrig — recommended** and **Direct HTTP** — in the order we
-recommend them. They used to be stacked sections, which read as two halves of one setup instead of a
-choice.
+**Settings | Tools | Devrig — MCP Steroid** is where the plugin offers anything. One line of framing, then
+two blocks:
 
-The devrig tab shows **exactly one of two states**, because only one of them is ever actionable:
+| Block | Holds, top to bottom |
+|---|---|
+| **Devrig** | why a separate binary is worth it and a **What is devrig?** link; then where both ends of the connection stand — the server's state (running, and on which port) and, directly below it, devrig's plus whatever the next step is |
+| **Direct HTTP connection (deprecated)** | collapsed, last, and deprecated in its own title and first line: the server URL, the per-agent `mcp add` commands, the generic `mcpServers` JSON, the registry keys |
 
-| devrig | What the tab shows |
+Both states sit in one group because they answer one question — "can an agent reach this IDE?": the server
+is the IDE end, devrig the agent end. Each value is a **read-only field**, not a bare label: a label ran
+together with the label naming it and left nothing to mark which half was the answer.
+
+The devrig block shows **exactly one of two states**, because only one of them is ever actionable:
+
+| devrig | What the block shows |
 |---|---|
 | missing | "devrig is not installed yet", an **Install devrig** button, and in plain words what pressing it does: downloads about 611 MB (a pinned JDK plus devrig) into `~/.mcp-steroid`, puts `devrig` on PATH, and **registers nothing with any agent** |
 | installed | the version, then the next step — one row per agent (Claude, Codex, Gemini), each showing where that agent stands and a **Register** button only where pressing one would change something |
@@ -57,10 +64,9 @@ Agents whose CLI is absent are answered from a PATH lookup alone, so opening the
 per **installed** agent, not one per agent we support. Success is quiet — the row flipping to *Registered*
 is the confirmation; only a failure gets a balloon, carrying devrig's own first line.
 
-Everything else on the tab is one row each: a one-line pitch, a **What is devrig?** link, and a collapsed
-**Install or update devrig by hand** group holding the same one-liners the button runs. The state block is
-the only part rebuilt while the page is open — an install finishes in the background and the page follows
-it (`DEVRIG_STATE_CHANGED`), instead of going on offering to install what is already there.
+That devrig block is the only part rebuilt while the page is open — an install finishes in the background
+and the page follows it (`DEVRIG_STATE_CHANGED`), instead of going on offering to install what is already
+there.
 
 This page is the offer's home on purpose. It is the one surface with room to say why installing a separate
 binary is worth it, and a user who opens it is asking.
