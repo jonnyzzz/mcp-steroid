@@ -793,7 +793,12 @@ class BackendManager(
         if (marker.devrigEndpoint == null) return false
         val expectedBuild = descriptor.buildNumber ?: return false
         // Marker builds carry the product-code prefix (`IC-262.8665.258`) that product-info.json
-        // omits, and a descriptor written from a baseline-only resolution holds just `262`.
+        // omits, and a descriptor written from a baseline-only resolution holds just `262`. The
+        // numeric comparison ignores prefixes on both sides, so when the marker DOES carry one it
+        // must name this backend's installed product — `IU-253.1` never matches an IC install
+        // that happens to share the same number.
+        val markerProductCode = marker.ide.build.substringBefore('-', missingDelimiterValue = "")
+        if (markerProductCode.isNotEmpty() && markerProductCode != descriptor.productCode) return false
         if (!ideBuildMatches(
                 actual = marker.ide.build,
                 expected = expectedBuild,
