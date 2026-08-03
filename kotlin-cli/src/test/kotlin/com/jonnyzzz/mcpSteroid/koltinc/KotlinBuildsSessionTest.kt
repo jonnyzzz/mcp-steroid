@@ -185,8 +185,8 @@ class KotlinBuildsSessionTest {
             }
             session.close()
             assertEquals(CompilationResult.COMPILATION_SUCCESS, compile.await())
-            // The deferred close (last lease release) must ALSO release the environment
-            // pin — otherwise the close-during-compile path leaks the pinned caches.
+            // The deferred close (last lease release) must close BTA's BuildSession and
+            // its upstream environment pin, otherwise this path leaks the cached environment.
             assertNull("deferred close must dispose the pinned application environment",
                 applicationEnvironmentOf(session))
         }
@@ -203,8 +203,8 @@ class KotlinBuildsSessionTest {
     }
 
     @Test
-    fun pinnedEnvironmentIsReusedAcrossCompilesAndDisposedOnClose() {
-        // Leak/lifecycle contract of CompilerEnvironmentPin:
+    fun upstreamPinnedEnvironmentIsReusedAcrossCompilesAndDisposedOnClose() {
+        // Leak/lifecycle contract of BTA's KT-87743 BuildSession-owned pin:
         // (1) one application environment instance serves all compiles of a session
         //     (this is what keeps the jar caches warm),
         // (2) close() releases it — the compiler disposes the environment, so nothing

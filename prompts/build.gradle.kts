@@ -10,6 +10,7 @@ kotlin {
 }
 
 repositories {
+    maven("https://packages.jetbrains.team/maven/p/kt/dev")
     mavenCentral()
 }
 
@@ -217,8 +218,6 @@ tasks.test {
     dependsOn(ktblockExtraClasspath)
     dependsOn(kotlincDist)
 
-    val kotlinVersion = providers.gradleProperty("mcp.kotlinc.version")
-
     doFirst {
         for ((spec, unpackDir, _) in ideDownloadTasks) {
             val dir = unpackDir.get().asFile
@@ -232,7 +231,7 @@ tasks.test {
         val ijSources = rootProject.layout.projectDirectory
             .dir("ij-plugin/src/main/kotlin").asFile.absolutePath
         systemProperty("mcp.steroid.ij.sources", ijSources)
-        systemProperty("mcp.steroid.kotlin.version", kotlinVersion.get())
+        systemProperty("mcp.steroid.kotlin.version", "2.4.20-RC-197")
 
         // BTA implementation jar directory (KotlinBuildsSession classpath)
         systemProperty("mcp.steroid.bta.impl.dir", kotlincDist.singleFile.absolutePath)

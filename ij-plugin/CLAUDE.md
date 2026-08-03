@@ -418,10 +418,12 @@ i.e. a `\\wsl$` UNC path for WSL projects), and that combination is unverified o
 
 ### Kotlin compiler version
 
-The snippet compiler is the Kotlin Build Tools implementation pinned by `mcp.kotlinc.version`
-in the root `gradle.properties` (bundled as the plugin's `kotlinc/` jar folder). When an IDE
-bundles a newer Kotlin than the plugin's compiler can read (metadata is readable at most one
-minor ahead), bump `mcp.kotlinc.version` — there is no runtime override.
+The snippet compiler is the Kotlin Build Tools implementation pinned directly in
+`kotlin-cli/build.gradle.kts` (bundled as the plugin's `kotlinc/` jar folder). Its version is
+intentionally independent from the Kotlin Gradle plugin used to build the rest of the repo.
+Keep the direct literals in `kotlin-cli`, `prompts`, and this module's compatibility/distribution
+checks aligned. When an IDE bundles a newer Kotlin than the snippet compiler can read (metadata
+is readable at most one minor ahead), bump those BTA literals — there is no runtime override.
 
 ### Script preprocessing (CodeButcher)
 
