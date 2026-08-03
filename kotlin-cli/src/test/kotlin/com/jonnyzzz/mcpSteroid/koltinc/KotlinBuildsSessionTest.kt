@@ -52,7 +52,8 @@ class KotlinBuildsSessionTest {
             runBlocking {
                 it.compileKotlin(
                     sources = listOf(source),
-                    destinationDir = outputJar,                ) {
+                    destinationDir = outputJar,
+                ) {
                     set(JvmCompilerArguments.CLASSPATH, listOf(it.defaultStdlibJar))
                 }
             }
@@ -81,13 +82,15 @@ class KotlinBuildsSessionTest {
             runBlocking {
                 assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                     sources = listOf(libSrc),
-                    destinationDir = libClasses,                ) {
+                    destinationDir = libClasses,
+                ) {
                     set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
                 })
 
                 assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                     sources = listOf(script),
-                    destinationDir = outputJar,                ) {
+                    destinationDir = outputJar,
+                ) {
                     set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar, libClasses))
                 })
             }
@@ -148,7 +151,8 @@ class KotlinBuildsSessionTest {
                 runBlocking {
                     session.compileKotlin(
                         sources = listOf(src),
-                        destinationDir = outputJar,                        compilationTimeout = 1.milliseconds,
+                        destinationDir = outputJar,
+                        compilationTimeout = 1.milliseconds,
                     ) {
                         set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
                     }
@@ -176,7 +180,8 @@ class KotlinBuildsSessionTest {
             val compile = async(Dispatchers.IO) {
                 session.compileKotlin(
                     sources = listOf(src),
-                    destinationDir = out1,                ) {
+                    destinationDir = out1,
+                ) {
                     set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
                 }
             }
@@ -195,7 +200,8 @@ class KotlinBuildsSessionTest {
         runBlocking {
             assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                 sources = listOf(src),
-                destinationDir = out2,            ) {
+                destinationDir = out2,
+            ) {
                 set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
             })
         }
@@ -218,7 +224,8 @@ class KotlinBuildsSessionTest {
         fun compileOnce(tag: String) = runBlocking {
             assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                 sources = listOf(src),
-                destinationDir = tempFolder.newFolder("pin-out-$tag").toPath() / "out.jar",            ) {
+                destinationDir = tempFolder.newFolder("pin-out-$tag").toPath() / "out.jar",
+            ) {
                 set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
             })
         }
