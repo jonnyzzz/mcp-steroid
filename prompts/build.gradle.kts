@@ -10,12 +10,21 @@ kotlin {
 }
 
 repositories {
+    mavenCentral()
+
+    // Numbered Kotlin 2.4.20 RC builds are published here before the final RC reaches Maven Central.
+    //
+    // TODO: drop this repository once 2.4.20-RC is on Maven Central (planned ~12.08) and bump
+    //  `mcp.kotlin.bta.version` to the release. kt/dev retains artifacts only for a period and
+    //  then deletes them — a build pinned here eventually stops resolving.
+    //  See https://github.com/jonnyzzz/mcp-steroid/pull/361#discussion_r3707401715
     maven("https://packages.jetbrains.team/maven/p/kt/dev") {
         content {
-            includeGroup("org.jetbrains.kotlin")
+            // Pre-release coordinates ONLY — see the same filter in :kotlin-cli for why
+            // `includeGroup("org.jetbrains.kotlin")` was too wide.
+            includeVersionByRegex("org\\.jetbrains\\.kotlin", ".*", ".*-(dev|RC|Beta|M)[0-9]*(-[0-9]+)?")
         }
     }
-    mavenCentral()
 }
 
 val promptGeneratorClasspath = configurations.create("promptGeneratorClasspath") {
@@ -188,6 +197,10 @@ tasks.register("listIdeDownloadSpecs") {
     }
 }
 
+// Kotlin/BTA version — single source of truth in gradle.properties. Read at
+// configuration time so the `doFirst` below captures a plain String.
+val btaVersion = providers.gradleProperty("mcp.kotlin.bta.version").get()
+
 tasks.test {
     useJUnitPlatform()
     // On TeamCity, run single-threaded to avoid overwhelming the agent with
@@ -235,7 +248,7 @@ tasks.test {
         val ijSources = rootProject.layout.projectDirectory
             .dir("ij-plugin/src/main/kotlin").asFile.absolutePath
         systemProperty("mcp.steroid.ij.sources", ijSources)
-        systemProperty("mcp.steroid.kotlin.version", "2.4.20-RC-197")
+        systemProperty("mcp.steroid.kotlin.version", btaVersion)
 
         // BTA implementation jar directory (KotlinBuildsSession classpath)
         systemProperty("mcp.steroid.bta.impl.dir", kotlincDist.singleFile.absolutePath)

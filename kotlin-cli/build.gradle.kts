@@ -9,13 +9,23 @@ kotlin {
 }
 
 repositories {
+    mavenCentral()
+
     // Numbered Kotlin 2.4.20 RC builds are published here before the final RC reaches Maven Central.
+    //
+    // TODO: drop this repository once 2.4.20-RC is on Maven Central (planned ~12.08) and bump
+    //  `mcp.kotlin.bta.version` to the release. kt/dev retains artifacts only for a period and
+    //  then deletes them — a build pinned here eventually stops resolving.
+    //  See https://github.com/jonnyzzz/mcp-steroid/pull/361#discussion_r3707401715
     maven("https://packages.jetbrains.team/maven/p/kt/dev") {
         content {
-            includeGroup("org.jetbrains.kotlin")
+            // Pre-release coordinates ONLY. `includeGroup("org.jetbrains.kotlin")` was too wide:
+            // it let release artifacts the Kotlin Gradle plugin asks for (kotlin-stdlib 2.3.20,
+            // kotlin-reflect 1.6.10, …) resolve from kt/dev, so the build depended on dev-repo
+            // retention for jars that Maven Central serves permanently.
+            includeVersionByRegex("org\\.jetbrains\\.kotlin", ".*", ".*-(dev|RC|Beta|M)[0-9]*(-[0-9]+)?")
         }
     }
-    mavenCentral()
 }
 
 // Declarable bucket for the BTA implementation jars (dependencyScope — a
@@ -37,11 +47,12 @@ dependencies {
     // KotlinToolchains API; for impl >= 2.3.0 the ServiceLoader finds the
     // implementation directly and compat is dead weight.
     val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
+    val btaVersion = providers.gradleProperty("mcp.kotlin.bta.version").get()
 
-    api("org.jetbrains.kotlin:kotlin-build-tools-api:2.4.20-RC-197")
+    api("org.jetbrains.kotlin:kotlin-build-tools-api:$btaVersion")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
 
-    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:2.4.20-RC-197") {
+    btaImplDecl.name("org.jetbrains.kotlin:kotlin-build-tools-impl:$btaVersion") {
         // The daemon execution flow is gone — in-process is the only path (the daemon
         // clears the compiler cache after each compilation, upstream KT-88183; re-check
         // when updating the kotlinc/BTA logic). These two jars exist solely for the

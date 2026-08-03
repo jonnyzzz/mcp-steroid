@@ -66,17 +66,30 @@ val verifierIdeProduct: IdeProduct = when (targetIdeProduct) {
 }
 
 repositories {
+    mavenCentral()
+
+    // Numbered Kotlin 2.4.20 RC builds are published here before the final RC reaches Maven Central.
+    //
+    // TODO: drop this repository once 2.4.20-RC is on Maven Central (planned ~12.08) and bump
+    //  `mcp.kotlin.bta.version` to the release. kt/dev retains artifacts only for a period and
+    //  then deletes them — a build pinned here eventually stops resolving.
+    //  See https://github.com/jonnyzzz/mcp-steroid/pull/361#discussion_r3707401715
     maven("https://packages.jetbrains.team/maven/p/kt/dev") {
         content {
-            includeGroup("org.jetbrains.kotlin")
+            // Pre-release coordinates ONLY — see the same filter in :kotlin-cli for why
+            // `includeGroup("org.jetbrains.kotlin")` was too wide.
+            includeVersionByRegex("org\\.jetbrains\\.kotlin", ".*", ".*-(dev|RC|Beta|M)[0-9]*(-[0-9]+)?")
         }
     }
-    mavenCentral()
 
     intellijPlatform {
         defaultRepositories()
     }
 }
+
+// Kotlin/BTA version — single source of truth in gradle.properties. The bundled
+// `kotlinc/` jar-name pins below and `verifyBundledKotlinCompatibility` derive from it.
+val btaVersion = providers.gradleProperty("mcp.kotlin.bta.version").get()
 
 // Libraries provided by IntelliJ platform - exclude from bundling
 configurations.named("implementation") {
@@ -400,7 +413,7 @@ val verifyBundledKotlinCompatibility = tasks.register<VerifyBundledKotlinCompati
     val sourceSets = project.extensions.getByType<SourceSetContainer>()
     mainRuntimeClasspath.from(sourceSets.getByName("main").runtimeClasspath)
     mainRuntimeClasspath.from(configurations.getByName("intellijPlatformDependency"))
-    bundledKotlinVersion.set("2.4.20-RC-197")
+    bundledKotlinVersion.set(btaVersion)
     kotlinPluginVersion.set(providers.provider {
         plugins.getPlugin(org.jetbrains.kotlin.gradle.plugin.KotlinPluginWrapper::class.java).pluginVersion
     })
@@ -585,18 +598,18 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
         val kotlincFiles = allFiles.filter { it.startsWith("kotlinc/") }.toSortedSet()
         val expectedKotlincFiles = sortedSetOf(
             "kotlinc/annotations-13.0.jar",
-            "kotlinc/kotlin-build-tools-api-2.4.20-RC-197.jar",
-            "kotlinc/kotlin-build-tools-cri-impl-2.4.20-RC-197.jar",
-            "kotlinc/kotlin-build-tools-impl-2.4.20-RC-197.jar",
-            "kotlinc/kotlin-compiler-embeddable-2.4.20-RC-197.jar",
+            "kotlinc/kotlin-build-tools-api-$btaVersion.jar",
+            "kotlinc/kotlin-build-tools-cri-impl-$btaVersion.jar",
+            "kotlinc/kotlin-build-tools-impl-$btaVersion.jar",
+            "kotlinc/kotlin-compiler-embeddable-$btaVersion.jar",
             // kotlin-daemon-embeddable stays even though the daemon flow is gone: BTA 2.4.20 RC
             // eagerly links daemon-common (CompileService.TargetPlatform) on every compile,
             // and it is a declared runtime dep of kotlin-compiler-embeddable. See :kotlin-cli.
-            "kotlinc/kotlin-daemon-embeddable-2.4.20-RC-197.jar",
+            "kotlinc/kotlin-daemon-embeddable-$btaVersion.jar",
             "kotlinc/kotlin-reflect-1.6.10.jar",
-            "kotlinc/kotlin-script-runtime-2.4.20-RC-197.jar",
-            "kotlinc/kotlin-stdlib-2.4.20-RC-197.jar",
-            "kotlinc/kotlin-tooling-core-2.4.20-RC-197.jar",
+            "kotlinc/kotlin-script-runtime-$btaVersion.jar",
+            "kotlinc/kotlin-stdlib-$btaVersion.jar",
+            "kotlinc/kotlin-tooling-core-$btaVersion.jar",
             "kotlinc/kotlinx-coroutines-core-jvm-1.8.0.jar",
         )
         if (kotlincFiles != expectedKotlincFiles) {
@@ -659,7 +672,7 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
             "lib/posthog-6.4.0.jar",
             "lib/posthog-server-2.3.0.jar",
 
-            "lib/kotlin-build-tools-api-2.4.20-RC-197.jar",
+            "lib/kotlin-build-tools-api-$btaVersion.jar",
 
         ).toSortedSet()
 
