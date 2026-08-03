@@ -1,0 +1,55 @@
+[
+  {
+    "code": "PS",
+    "releases": [
+      {
+        "build": "262.8665.325",
+        "date": "2026-07-23",
+        "downloads": {
+          "linux": {
+            "checksumLink": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1.tar.gz.sha256",
+            "link": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1.tar.gz",
+            "size": 1099882393
+          },
+          "linuxARM64": {
+            "checksumLink": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1-aarch64.tar.gz.sha256",
+            "link": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1-aarch64.tar.gz",
+            "size": 1123140282
+          },
+          "mac": {
+            "checksumLink": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1.dmg.sha256",
+            "link": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1.dmg",
+            "size": 1076546955
+          },
+          "macM1": {
+            "checksumLink": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1-aarch64.dmg.sha256",
+            "link": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1-aarch64.dmg",
+            "size": 1028484031
+          },
+          "thirdPartyLibrariesJson": {
+            "checksumLink": "https://resources.jetbrains.com/storage/third-party-libraries/webide/PhpStorm-2026.2.0.1-third-party-libraries.json.sha256",
+            "link": "https://resources.jetbrains.com/storage/third-party-libraries/webide/PhpStorm-2026.2.0.1-third-party-libraries.json",
+            "size": 67621
+          },
+          "windows": {
+            "checksumLink": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1.exe.sha256",
+            "link": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1.exe",
+            "size": 830151040
+          },
+          "windowsARM64": {
+            "checksumLink": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1-aarch64.exe.sha256",
+            "link": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1-aarch64.exe",
+            "size": 820496360
+          },
+          "windowsZip": {
+            "checksumLink": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1.win.zip.sha256",
+            "link": "https://download.jetbrains.com/webide/PhpStorm-2026.2.0.1.win.zip",
+            "size": 1112830767
+          }
+        },
+        "type": "release",
+        "version": "2026.2.0.1"
+      }
+    ]
+  }
+]

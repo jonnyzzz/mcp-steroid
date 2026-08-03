@@ -77,6 +77,9 @@ tasks.test {
     useJUnit {
         excludeCategories("com.jonnyzzz.mcpSteroid.ideDownloader.LiveNetwork")
     }
+    // ProductCatalogDocsDriftTest reads the published docs / CLI help straight from the
+    // working tree, so it needs the repo root rather than the module dir.
+    systemProperty("mcp.repo.root", rootProject.layout.projectDirectory.asFile.absolutePath)
     // OS-specific skip lives inside each test (`Assume.assumeTrue` / `assumeFalse`).
     // SevenZipLocatorTest needs the Windows-bundled resources → Windows-only.
     // IdeUnpackerSecurityTest hits tar path-separator behavior that differs on

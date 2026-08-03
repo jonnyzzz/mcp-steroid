@@ -98,7 +98,11 @@ installs a managed backend under devrig's home directory. The `id` accepts
 `idea-community`, `idea-community:2026.1`, or `idea-community-2026.1`.
 
 Known product ids: `idea-ultimate`, `idea-community`, `pycharm-pro`,
-`pycharm-community`, `goland`, `webstorm`, `rider`, `clion`, `android-studio`.
+`pycharm-community`, `goland`, `webstorm`, `rider`, `clion`, `rustrover`,
+`phpstorm`, `rubymine`, `datagrip`, `mps`, `android-studio`.
+
+MPS is published without a Linux ARM64 or Windows ARM64 distribution, so those two
+hosts report the platform as unavailable rather than downloading a mismatched archive.
 
 ### `devrig backend start [<id>] [--version <v>] [--json]`
 

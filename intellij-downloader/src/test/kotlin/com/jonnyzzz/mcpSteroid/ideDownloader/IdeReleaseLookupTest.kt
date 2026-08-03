@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -227,6 +228,197 @@ class IdeReleaseLookupTest {
                 product.acceptsDownloadFilename(filename),
             )
         }
+    }
+
+    /**
+     * The offline matrix above runs off recorded fixtures, so it cannot catch JetBrains renaming an
+     * archive or dropping an edition. This walks the SAME assertions against the live products API
+     * for every catalog product. Opt-in (`:intellij-downloader:liveNetworkTest`) so a vendor-feed
+     * outage cannot redden a default build.
+     */
+    @Test
+    @Category(LiveNetwork::class)
+    fun `live feed resolves every catalog product on every published OS-arch combo`() {
+        val products = IdeProduct.knownProducts.filterNot { it === IdeProduct.AndroidStudio }
+        val failures = mutableListOf<String>()
+        for (product in products) {
+            for (os in HostOs.values()) {
+                for (arch in HostArchitecture.values()) {
+                    val expectedUnpublished = product.id in unpublishedPlatforms &&
+                        (os to arch) in unpublishedPlatforms.getValue(product.id)
+                    try {
+                        val resolution = resolveArchive(product, IdeChannel.STABLE, os = os, architecture = arch)
+                        if (expectedUnpublished) {
+                            failures += "${product.code} on $os/$arch is listed as unpublished but the live " +
+                                "feed now serves ${resolution.url} — drop it from unpublishedPlatforms"
+                            continue
+                        }
+                        val filename = downloadFilenameFromUrl(resolution.url)
+                        if (!product.acceptsDownloadFilename(filename)) {
+                            failures += "${product.code} on $os/$arch resolved $filename, which none of " +
+                                "${product.urlFilenameTokens} accepts"
+                        }
+                    } catch (e: Exception) {
+                        if (!expectedUnpublished) {
+                            failures += "${product.code} on $os/$arch failed to resolve: ${e.message}"
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue("Live feed resolution failures:\n${failures.joinToString("\n")}", failures.isEmpty())
+    }
+
+    /**
+     * Every catalog product must resolve on every host the feed publishes it for. A new
+     * `knownProducts` entry fails here until its fixture exists and its filename tokens are right,
+     * so a product cannot land in the CLI list while being undownloadable.
+     *
+     * [unpublishedPlatforms] is the explicit, per-product allow-list of OS/arch combos JetBrains
+     * does not publish at all; those are asserted to fail with the dedicated diagnostic rather than
+     * silently skipped.
+     */
+    @Test
+    fun `every catalog product resolves on every published OS-arch combo`() {
+        val products = IdeProduct.knownProducts.filterNot { it === IdeProduct.AndroidStudio }
+        for (product in products) {
+            for (os in HostOs.values()) {
+                for (arch in HostArchitecture.values()) {
+                    val expectedUnpublished = product.id in unpublishedPlatforms &&
+                        (os to arch) in unpublishedPlatforms.getValue(product.id)
+                    if (expectedUnpublished) {
+                        val ex = expectError {
+                            resolveArchiveFromFixtures(product, IdeChannel.STABLE, os = os, architecture = arch)
+                        }
+                        assertTrue(
+                            "${product.code} on $os/$arch must fail with the unpublished-platform " +
+                                "diagnostic, got: ${ex.message}",
+                            ex.message!!.contains("publishes no '${resolveDownloadKey(os, arch)}' distribution"),
+                        )
+                        continue
+                    }
+                    val resolution = resolveArchiveFromFixtures(product, IdeChannel.STABLE, os = os, architecture = arch)
+                    assertExpectedExtension(product, os, arch, resolution.url)
+                    val filename = downloadFilenameFromUrl(resolution.url)
+                    assertTrue(
+                        "${product.code} resolved $filename on $os/$arch, expected one of ${product.urlFilenameTokens}",
+                        product.acceptsDownloadFilename(filename),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * MPS is the only catalog product with platform gaps: its feed entry carries no `linuxARM64`
+     * and no `windowsARM64` download key in any release. Verified against the live feed; the
+     * fixture reproduces it.
+     */
+    private val unpublishedPlatforms: Map<String, Set<Pair<HostOs, HostArchitecture>>> = mapOf(
+        IdeProduct.Mps.id to setOf(
+            HostOs.LINUX to HostArchitecture.ARM64,
+            HostOs.WINDOWS to HostArchitecture.ARM64,
+        ),
+    )
+
+    @Test
+    fun `MPS Linux ARM64 names the keys the feed does offer instead of suggesting a version retry`() {
+        val ex = expectError {
+            resolveArchiveFromFixtures(
+                IdeProduct.Mps,
+                IdeChannel.STABLE,
+                os = HostOs.LINUX,
+                architecture = HostArchitecture.ARM64,
+            )
+        }
+        val message = ex.message!!
+        assertTrue("expected the offered keys listed, got: $message", message.contains("linux, mac, macM1"))
+        assertTrue("expected product code, got: $message", message.contains("code=MPS"))
+        assertFalse("must not advise --version for an unpublished platform, got: $message", message.contains("--version"))
+    }
+
+    @Test
+    fun `DataGrip is queried as DG but validates the installed code DB`() {
+        assertEquals("DG", IdeProduct.DataGrip.code)
+        assertEquals("DB", IdeProduct.DataGrip.installedProductCode)
+        assertTrue(IdeProduct.fromString("datagrip") === IdeProduct.DataGrip)
+        assertTrue(IdeProduct.fromString("DG") === IdeProduct.DataGrip)
+        // `DB` is the spelling prompts/AGENTS.md uses — it must reach the same product.
+        assertTrue(IdeProduct.fromString("DB") === IdeProduct.DataGrip)
+    }
+
+    @Test
+    fun `newly added products resolve via fromString and carry a verified license tier`() {
+        assertTrue(IdeProduct.fromString("phpstorm") === IdeProduct.PhpStorm)
+        assertTrue(IdeProduct.fromString("PS") === IdeProduct.PhpStorm)
+        assertTrue(IdeProduct.fromString("php") === IdeProduct.PhpStorm)
+        assertTrue(IdeProduct.fromString("rubymine") === IdeProduct.RubyMine)
+        assertTrue(IdeProduct.fromString("RM") === IdeProduct.RubyMine)
+        assertTrue(IdeProduct.fromString("rustrover") === IdeProduct.RustRover)
+        assertTrue(IdeProduct.fromString("RR") === IdeProduct.RustRover)
+        assertTrue(IdeProduct.fromString("mps") === IdeProduct.Mps)
+        assertTrue(IdeProduct.fromString("MPS") === IdeProduct.Mps)
+
+        assertEquals(LicenseTier.Paid, IdeProduct.PhpStorm.licenseTier)
+        assertEquals(LicenseTier.Paid, IdeProduct.RubyMine.licenseTier)
+        assertEquals(LicenseTier.Paid, IdeProduct.DataGrip.licenseTier)
+        assertEquals(LicenseTier.FreeForNonCommercial, IdeProduct.RustRover.licenseTier)
+        assertEquals(LicenseTier.Free, IdeProduct.Mps.licenseTier)
+    }
+
+    /**
+     * #430: every product code the prompt pipeline claims to support must have a downloadable
+     * backend. The prompt codes are `ApplicationInfo` codes, so they compare against
+     * [IdeProduct.installedProductCode] — which is exactly why DataGrip carries `DB` and not `DG`.
+     * Source list: `prompts/AGENTS.md` "Common codes" + `PerIdeAvailabilityContractTest`.
+     */
+    @Test
+    fun `every prompt-pipeline product code has a downloadable backend`() {
+        val promptPipelineCodes = listOf("IU", "IC", "AI", "RD", "CL", "GO", "PY", "WS", "RM", "DB")
+        val installedCodes = IdeProduct.knownProducts.map { it.installedProductCode }.toSet()
+        val missing = promptPipelineCodes.filterNot { it in installedCodes }
+        assertTrue(
+            "prompts ship for $missing but devrig cannot download a backend for them; " +
+                "installedProductCode values in the catalog: ${installedCodes.sorted()}",
+            missing.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `catalog product ids and installed codes are unique`() {
+        val ids = IdeProduct.knownProducts.map { it.id }
+        assertEquals("duplicate product ids in knownProducts: $ids", ids.size, ids.toSet().size)
+        val installedCodes = IdeProduct.knownProducts.map { it.installedProductCode }
+        assertEquals(
+            "duplicate installedProductCode in knownProducts: $installedCodes",
+            installedCodes.size,
+            installedCodes.toSet().size,
+        )
+        // Every id must round-trip through the alias map to the very same product.
+        for (product in IdeProduct.knownProducts) {
+            assertTrue("${product.id} must round-trip via fromString", IdeProduct.fromString(product.id) === product)
+            assertTrue("${product.code} must round-trip via fromString", IdeProduct.fromString(product.code) === product)
+        }
+    }
+
+    /**
+     * Guards the in/out-of-scope decision recorded next to `knownProducts`: DataSpell (`DS`),
+     * GitClient (`GIG`) and CLion Nova (`CLN`) were evaluated and left out on purpose. If someone
+     * adds one without also revisiting that decision, this fails and points at the comment.
+     */
+    @Test
+    fun `deliberately excluded product codes stay out of the catalog`() {
+        val excluded = listOf("DS", "GIG", "CLN", "GW", "AC")
+        val catalogCodes = IdeProduct.knownProducts.map { it.code }.toSet()
+        for (code in excluded) {
+            assertFalse(
+                "$code is documented as deliberately excluded next to IdeProduct.knownProducts — " +
+                    "adding it needs that decision revisited first",
+                code in catalogCodes,
+            )
+        }
+        // CLion Nova is dead upstream: the feed folds it into CL, which we already ship.
+        assertTrue("CL must stay in the catalog — it covers CLion Nova", "CL" in catalogCodes)
     }
 
     @Test

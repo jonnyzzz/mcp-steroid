@@ -209,6 +209,13 @@ class BackendManagerDownloadValidationTest {
             IdeProduct.WebStorm to "WS",
             IdeProduct.Rider to "RD",
             IdeProduct.CLion to "CL",
+            IdeProduct.RustRover to "RR",
+            IdeProduct.PhpStorm to "PS",
+            IdeProduct.RubyMine to "RM",
+            // DataGrip is queried as DG but a real install reports DB (feed intellijProductCode) —
+            // the same code split as IIU→IU and PCP→PY.
+            IdeProduct.DataGrip to "DB",
+            IdeProduct.Mps to "MPS",
             IdeProduct.AndroidStudio to "AI",
         )
         assertEquals(expectedCodes.keys, IdeProduct.knownProducts.toSet())

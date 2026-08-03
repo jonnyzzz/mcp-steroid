@@ -1,0 +1,40 @@
+[
+  {
+    "code": "MPS",
+    "releases": [
+      {
+        "build": "261.25134.779",
+        "date": "2026-07-14",
+        "downloads": {
+          "linux": {
+            "checksumLink": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1.tar.gz.sha256",
+            "link": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1.tar.gz",
+            "size": 899056360
+          },
+          "mac": {
+            "checksumLink": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1-macos.dmg.sha256",
+            "link": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1-macos.dmg",
+            "size": 883022328
+          },
+          "macM1": {
+            "checksumLink": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1-macos-aarch64.dmg.sha256",
+            "link": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1-macos-aarch64.dmg",
+            "size": 872832236
+          },
+          "windows": {
+            "checksumLink": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1.exe.sha256",
+            "link": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1.exe",
+            "size": 745269984
+          },
+          "zip": {
+            "checksumLink": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1.zip.sha256",
+            "link": "https://download.jetbrains.com/mps/2026.1/MPS-2026.1.zip",
+            "size": 697222081
+          }
+        },
+        "type": "release",
+        "version": "2026.1"
+      }
+    ]
+  }
+]

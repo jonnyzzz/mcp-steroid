@@ -1,0 +1,55 @@
+[
+  {
+    "code": "RM",
+    "releases": [
+      {
+        "build": "262.8665.308",
+        "date": "2026-07-21",
+        "downloads": {
+          "linux": {
+            "checksumLink": "https://download.jetbrains.com/ruby/RubyMine-2026.2.tar.gz.sha256",
+            "link": "https://download.jetbrains.com/ruby/RubyMine-2026.2.tar.gz",
+            "size": 1070534777
+          },
+          "linuxARM64": {
+            "checksumLink": "https://download.jetbrains.com/ruby/RubyMine-2026.2-aarch64.tar.gz.sha256",
+            "link": "https://download.jetbrains.com/ruby/RubyMine-2026.2-aarch64.tar.gz",
+            "size": 1094122063
+          },
+          "mac": {
+            "checksumLink": "https://download.jetbrains.com/ruby/RubyMine-2026.2.dmg.sha256",
+            "link": "https://download.jetbrains.com/ruby/RubyMine-2026.2.dmg",
+            "size": 1048051866
+          },
+          "macM1": {
+            "checksumLink": "https://download.jetbrains.com/ruby/RubyMine-2026.2-aarch64.dmg.sha256",
+            "link": "https://download.jetbrains.com/ruby/RubyMine-2026.2-aarch64.dmg",
+            "size": 999698624
+          },
+          "thirdPartyLibrariesJson": {
+            "checksumLink": "https://resources.jetbrains.com/storage/third-party-libraries/ruby/RubyMine-2026.2-third-party-libraries.json.sha256",
+            "link": "https://resources.jetbrains.com/storage/third-party-libraries/ruby/RubyMine-2026.2-third-party-libraries.json",
+            "size": 69105
+          },
+          "windows": {
+            "checksumLink": "https://download.jetbrains.com/ruby/RubyMine-2026.2.exe.sha256",
+            "link": "https://download.jetbrains.com/ruby/RubyMine-2026.2.exe",
+            "size": 801593856
+          },
+          "windowsARM64": {
+            "checksumLink": "https://download.jetbrains.com/ruby/RubyMine-2026.2-aarch64.exe.sha256",
+            "link": "https://download.jetbrains.com/ruby/RubyMine-2026.2-aarch64.exe",
+            "size": 792195280
+          },
+          "windowsZip": {
+            "checksumLink": "https://download.jetbrains.com/ruby/RubyMine-2026.2.win.zip.sha256",
+            "link": "https://download.jetbrains.com/ruby/RubyMine-2026.2.win.zip",
+            "size": 1092523125
+          }
+        },
+        "type": "release",
+        "version": "2026.2"
+      }
+    ]
+  }
+]

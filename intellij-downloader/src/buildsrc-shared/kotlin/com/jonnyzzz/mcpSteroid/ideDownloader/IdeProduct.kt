@@ -146,6 +146,84 @@ sealed interface IdeProduct {
         override val urlFilenameTokens = listOf("CLion-")
     }
 
+    /**
+     * RustRover. The products feed serves only the `release` and `eap` channels for `RR` — there is
+     * no `rc` stream — which both [IdeChannel] values already cover.
+     */
+    data object RustRover : IdeProduct {
+        override val id = "rustrover"
+        override val displayName = "RustRover"
+        override val code = "RR"
+        override val launcherExecutable = "rustrover"
+        override val licenseTier = LicenseTier.FreeForNonCommercial
+        // HEAD evidence: RustRover archives use case-sensitive RustRover-* filenames.
+        override val urlFilenameTokens = listOf("RustRover-")
+    }
+
+    // ---- Paid IDEs ----
+
+    data object PhpStorm : IdeProduct {
+        override val id = "phpstorm"
+        override val displayName = "PhpStorm"
+        override val code = "PS"
+        override val launcherExecutable = "phpstorm"
+        override val licenseTier = LicenseTier.Paid
+        // HEAD evidence: PhpStorm archives use case-sensitive PhpStorm-* filenames (served under /webide/).
+        override val urlFilenameTokens = listOf("PhpStorm-")
+    }
+
+    data object RubyMine : IdeProduct {
+        override val id = "rubymine"
+        override val displayName = "RubyMine"
+        override val code = "RM"
+        override val launcherExecutable = "rubymine"
+        override val licenseTier = LicenseTier.Paid
+        // HEAD evidence: RubyMine archives use case-sensitive RubyMine-* filenames (served under /ruby/).
+        override val urlFilenameTokens = listOf("RubyMine-")
+    }
+
+    /**
+     * DataGrip. **Two different codes are in play, deliberately:** the products API is queried with
+     * `DG` (`alternativeCodes: ["DB"]`), while the feed's `intellijProductCode` — and therefore the
+     * `productCode` a real install writes into `product-info.json` — is `DB`. Same split as
+     * `IIU`→`IU` and `PCP`→`PY`, so [installedProductCode] carries `DB` and validation passes.
+     * `DB` is also the spelling `prompts/AGENTS.md` uses, so the alias map accepts both.
+     */
+    data object DataGrip : IdeProduct {
+        override val id = "datagrip"
+        override val displayName = "DataGrip"
+        override val code = "DG"
+        override val launcherExecutable = "datagrip"
+        override val licenseTier = LicenseTier.Paid
+        override val installedProductCode = "DB"
+        // HEAD evidence: DataGrip archives use LOWERCASE datagrip-* filenames, unlike its sibling IDEs.
+        override val urlFilenameTokens = listOf("datagrip-")
+    }
+
+    // ---- Free IDE ----
+
+    /**
+     * MPS (Apache 2.0, free). Its feed entry is the odd one in the catalog:
+     *
+     *  - **no `linuxARM64` and no `windowsARM64` distribution** in any release, so those two hosts
+     *    are simply not published; the resolver reports that explicitly instead of suggesting
+     *    `--version` (see `unpublishedPlatformFailureMessage`).
+     *  - it additionally offers a cross-platform `zip` that the OS/arch → download-key mapping does
+     *    not use. We deliberately do NOT fall back to it: that archive carries no per-host JBR, so
+     *    "resolved" would mean an install that cannot launch — a worse outcome than a clear error.
+     *  - `mac` / `macM1` are `.dmg`, same as every other JetBrains IDE, and `unpackIdeArchive`
+     *    already mounts those via `hdiutil` on a macOS host.
+     */
+    data object Mps : IdeProduct {
+        override val id = "mps"
+        override val displayName = "MPS"
+        override val code = "MPS"
+        override val launcherExecutable = "mps"
+        override val licenseTier = LicenseTier.Free
+        // HEAD evidence: MPS archives use case-sensitive MPS-* filenames (mac adds a -macos infix).
+        override val urlFilenameTokens = listOf("MPS-")
+    }
+
     // ---- Google-published IDE ----
 
     /**
@@ -163,8 +241,11 @@ sealed interface IdeProduct {
 
     /**
      * Catch-all for any JetBrains product not in the well-known list. The caller
-     * supplies the public product `code` (e.g. "RR", "AC", "DG") and a license tier
-     * so paid/free policies still work. Everything else is descriptive metadata.
+     * supplies the public product `code` (e.g. "DS" for DataSpell, or "AC") and a license
+     * tier so paid/free policies still work. Everything else is descriptive metadata.
+     *
+     * This is the escape hatch for the products listed as deliberately out of scope next to
+     * [knownProducts] — reaching one does not require editing the catalog.
      */
     data class Custom(
         override val id: String,
@@ -178,7 +259,32 @@ sealed interface IdeProduct {
         // Lazy-initialized to avoid a class-init cycle: data-object references to
         // IdeProduct constants trigger the Companion's <clinit>, which in turn would
         // touch those same data objects mid-init and pick up null entries.
-        /** All hard-coded products this module ships aliases for. */
+        /**
+         * All hard-coded products this module ships aliases for.
+         *
+         * ### Products we deliberately do NOT ship (not an oversight — do not "fix" this)
+         *
+         * The scope boundary for a devrig backend is: an IntelliJ-platform IDE that the
+         * products feed publishes as a self-contained desktop distribution, and that we can
+         * validate end to end. The following were evaluated and rejected on purpose:
+         *
+         *  - **DataSpell (`DS`)** — deliberately NOT added. In scope technically, left out by
+         *    decision; revisit only on an explicit request, not as catalog cleanup.
+         *  - **GitClient (`GIG`)** — deliberately NOT added. Same: an explicit decision, not a gap.
+         *  - **CLion Nova (`CLN`)** — deliberately NOT added because it is dead: the feed reports
+         *    `alternativeCodes: [CL]` and `intellijProductCode: CL`, i.e. Nova was folded back into
+         *    regular CLion. It is already covered by [CLion] (`CL`); a separate entry would be a
+         *    duplicate of the same artifacts.
+         *  - **Gateway (`GW`)** — a thin remote-development client, not a backend IDE.
+         *  - **JetBrains Air / Fleet** — not IntelliJ-platform desktop IDE distributions.
+         *  - **AppCode (`AC`)** — discontinued by JetBrains.
+         *  - **PhpStorm Light** — a stripped SKU of the [PhpStorm] entry we already ship.
+         *  - **Aqua** — test-automation IDE, out of the agreed backend scope.
+         *  - **Writerside / Qodana** — not IDEs (authoring tool / static-analysis platform).
+         *
+         * Anything genuinely missing can still be reached through [Custom] without touching
+         * this list.
+         */
         val knownProducts: List<IdeProduct> by lazy {
             listOf(
                 IntelliJIdea,
@@ -189,6 +295,11 @@ sealed interface IdeProduct {
                 WebStorm,
                 Rider,
                 CLion,
+                RustRover,
+                PhpStorm,
+                RubyMine,
+                DataGrip,
+                Mps,
                 AndroidStudio,
             )
         }
@@ -222,6 +333,13 @@ sealed interface IdeProduct {
                 put("go", GoLand)
                 put("ws", WebStorm)
                 put("cl", CLion)
+                put("php", PhpStorm)
+                put("ruby", RubyMine)
+                put("rust", RustRover)
+                // DataGrip answers to both spellings on purpose: `DG` is the products-API code we
+                // query with, `DB` is its alternativeCode / intellijProductCode and the spelling
+                // prompts/AGENTS.md already uses. Accepting both avoids a third spelling.
+                put("db", DataGrip)
                 put("ai", AndroidStudio)
                 put("studio", AndroidStudio)
                 put("androidstudio", AndroidStudio)

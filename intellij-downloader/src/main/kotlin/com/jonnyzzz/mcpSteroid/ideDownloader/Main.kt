@@ -14,8 +14,10 @@ private val ideDownloaderMainLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSter
  *
  * Arguments:
  *   --product            IDE product: idea-ultimate, idea-community, pycharm-pro,
- *                        pycharm-community, goland, webstorm, rider, clion
- *                        (default: idea-ultimate; legacy aliases idea/pycharm accepted)
+ *                        pycharm-community, goland, webstorm, rider, clion, rustrover,
+ *                        phpstorm, rubymine, datagrip, mps, android-studio
+ *                        (default: idea-ultimate; legacy aliases idea/pycharm accepted,
+ *                        datagrip also answers to db)
  *   --channel            Release channel: stable, eap (default: stable)
  *   --output-dir         Directory to store downloaded archives (required)
  *   --url                Direct download URL (overrides --product/--channel resolution)

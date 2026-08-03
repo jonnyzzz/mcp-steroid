@@ -75,6 +75,11 @@ private fun IdeProduct.toDownloaderProduct(): DownloaderProduct = when (this) {
     IdeProduct.WebStorm -> DownloaderProduct.WebStorm
     IdeProduct.Rider -> DownloaderProduct.Rider
     IdeProduct.CLion -> DownloaderProduct.CLion
+    IdeProduct.PhpStorm -> DownloaderProduct.PhpStorm
+    IdeProduct.RubyMine -> DownloaderProduct.RubyMine
+    IdeProduct.RustRover -> DownloaderProduct.RustRover
+    IdeProduct.DataGrip -> DownloaderProduct.DataGrip
+    IdeProduct.Mps -> DownloaderProduct.Mps
     IdeProduct.AndroidStudio -> DownloaderProduct.AndroidStudio
 }
 

@@ -64,6 +64,57 @@ enum class IdeProduct(
         jetbrainsProductCode = "CL",
         hasJavaSdk = false,
     ),
+    PhpStorm(
+        id = "phpstorm",
+        dockerImageBase = "phpstorm-agent",
+        launcherExecutable = "phpstorm",
+        displayName = "PhpStorm",
+        jetbrainsProductCode = "PS",
+        hasJavaSdk = false,
+    ),
+    RubyMine(
+        id = "rubymine",
+        dockerImageBase = "rubymine-agent",
+        launcherExecutable = "rubymine",
+        displayName = "RubyMine",
+        jetbrainsProductCode = "RM",
+        hasJavaSdk = false,
+    ),
+    RustRover(
+        id = "rustrover",
+        dockerImageBase = "rustrover-agent",
+        launcherExecutable = "rustrover",
+        displayName = "RustRover",
+        jetbrainsProductCode = "RR",
+        hasJavaSdk = false,
+    ),
+    /**
+     * DataGrip. [jetbrainsProductCode] is the products-API code `DG`; a real install's
+     * `product-info.json` reports `DB` instead (the feed's `intellijProductCode`) — see
+     * `IdeProduct.DataGrip.installedProductCode` in the downloader catalog.
+     */
+    DataGrip(
+        id = "datagrip",
+        dockerImageBase = "datagrip-agent",
+        launcherExecutable = "datagrip",
+        displayName = "DataGrip",
+        jetbrainsProductCode = "DG",
+        hasJavaSdk = false,
+    ),
+    /**
+     * MPS. `hasJavaSdk = false` verified against a real 2026.1 install: despite targeting the JVM,
+     * MPS bundles only `mps-kotlin` and no `com.intellij.java`, so `JavaSdk` is off the script
+     * classpath. Published without Linux/Windows ARM64 distributions — the Docker matrix is
+     * linux x64, so that gap does not affect these tests.
+     */
+    Mps(
+        id = "mps",
+        dockerImageBase = "mps-agent",
+        launcherExecutable = "mps",
+        displayName = "MPS",
+        jetbrainsProductCode = "MPS",
+        hasJavaSdk = false,
+    ),
 
     /**
      * Android Studio (Google) — an IntelliJ-platform IDE with a different plugin/SDK surface. Reuses the
@@ -88,8 +139,17 @@ enum class IdeProduct(
             "webstorm", "ws" -> WebStorm
             "rider", "rd", "dotnet" -> Rider
             "clion", "cl", "cpp", "c++" -> CLion
+            "phpstorm", "ps", "php" -> PhpStorm
+            "rubymine", "rm", "ruby" -> RubyMine
+            "rustrover", "rr", "rust" -> RustRover
+            // DataGrip answers to DG (products-API code) and DB (its intellijProductCode).
+            "datagrip", "dg", "db" -> DataGrip
+            "mps" -> Mps
             "androidstudio", "android-studio", "android", "as", "ai" -> AndroidStudio
-            else -> error("Unsupported test.integration.ide.product='$rawValue'. Use one of: idea, pycharm, goland, webstorm, rider, clion, android-studio.")
+            else -> error(
+                "Unsupported test.integration.ide.product='$rawValue'. Use one of: " +
+                    entries.joinToString { it.id } + "."
+            )
         }
     }
 }

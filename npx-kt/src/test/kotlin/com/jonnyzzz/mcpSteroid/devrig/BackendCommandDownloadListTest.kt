@@ -88,17 +88,24 @@ class BackendCommandDownloadListTest {
         assertEquals(setOf("tool", "available"), root.keys)
         assertEquals("devrig", root["tool"]!!.jsonObject["name"]!!.jsonPrimitive.content)
         val available = root["available"]!!.jsonArray.map { it.jsonObject }
+        // Grouped by license tier (free, then free-for-non-commercial, then paid), catalog order
+        // within each group.
         assertEquals(
             listOf(
                 "idea-community",
                 "pycharm-community",
+                "mps",
                 "android-studio",
                 "goland",
                 "webstorm",
                 "rider",
                 "clion",
+                "rustrover",
                 "idea-ultimate",
                 "pycharm-pro",
+                "phpstorm",
+                "rubymine",
+                "datagrip",
             ),
             available.map { it["id"]!!.jsonPrimitive.content },
         )
@@ -180,7 +187,11 @@ class BackendCommandDownloadListTest {
         collectAvailableBackendDownloads(versionResolver = resolver)
 
         assertEquals(
-            setOf("idea-community", "pycharm-community", "android-studio", "goland", "webstorm", "rider", "clion", "idea-ultimate", "pycharm-pro"),
+            setOf(
+                "idea-community", "pycharm-community", "mps", "android-studio",
+                "goland", "webstorm", "rider", "clion", "rustrover",
+                "idea-ultimate", "pycharm-pro", "phpstorm", "rubymine", "datagrip",
+            ),
             resolver.calls.toSet(),
         )
     }

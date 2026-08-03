@@ -1,0 +1,55 @@
+[
+  {
+    "code": "DG",
+    "releases": [
+      {
+        "build": "262.9437.70",
+        "date": "2026-07-30",
+        "downloads": {
+          "linux": {
+            "checksumLink": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2.tar.gz.sha256",
+            "link": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2.tar.gz",
+            "size": 1082147165
+          },
+          "linuxARM64": {
+            "checksumLink": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2-aarch64.tar.gz.sha256",
+            "link": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2-aarch64.tar.gz",
+            "size": 1105792859
+          },
+          "mac": {
+            "checksumLink": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2.dmg.sha256",
+            "link": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2.dmg",
+            "size": 1061305648
+          },
+          "macM1": {
+            "checksumLink": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2-aarch64.dmg.sha256",
+            "link": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2-aarch64.dmg",
+            "size": 1013387580
+          },
+          "thirdPartyLibrariesJson": {
+            "checksumLink": "https://resources.jetbrains.com/storage/third-party-libraries/datagrip/datagrip-2026.2.2-third-party-libraries.json.sha256",
+            "link": "https://resources.jetbrains.com/storage/third-party-libraries/datagrip/datagrip-2026.2.2-third-party-libraries.json",
+            "size": 58144
+          },
+          "windows": {
+            "checksumLink": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2.exe.sha256",
+            "link": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2.exe",
+            "size": 844885888
+          },
+          "windowsARM64": {
+            "checksumLink": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2-aarch64.exe.sha256",
+            "link": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2-aarch64.exe",
+            "size": 835658552
+          },
+          "windowsZip": {
+            "checksumLink": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2.win.zip.sha256",
+            "link": "https://download.jetbrains.com/datagrip/datagrip-2026.2.2.win.zip",
+            "size": 1094403228
+          }
+        },
+        "type": "release",
+        "version": "2026.2.2"
+      }
+    ]
+  }
+]
