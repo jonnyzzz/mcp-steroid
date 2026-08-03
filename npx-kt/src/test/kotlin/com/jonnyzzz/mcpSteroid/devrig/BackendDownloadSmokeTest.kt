@@ -1,12 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
-import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
-import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -28,6 +25,11 @@ import kotlin.test.assertTrue
  *
  * Opt-in — `./gradlew :npx-kt:liveDownloadSmokeTest`. Each case pulls roughly 1-2 GB into the
  * JUnit temp dir and deletes it again, so it is deliberately out of every default run.
+ *
+ * Not on Windows: there the IDE ships as an NSIS `.exe`, whose unpack path needs the bundled
+ * `7z.exe` from a real installDist tree. That exclusion lives on the `liveDownloadSmokeTest`
+ * task (`enabled = !isWindows` in `npx-kt/build.gradle.kts`) — the task level is the only
+ * acceptable skip per the root CLAUDE.md; the test methods themselves are unconditional.
  */
 @Tag("live-download")
 class BackendDownloadSmokeTest {
@@ -53,9 +55,6 @@ class BackendDownloadSmokeTest {
         smokeDownload(IdeProduct.AndroidStudio, tempDir)
 
     private fun smokeDownload(product: IdeProduct, tempDir: Path) = runBlocking {
-        // Windows ships the IDE as an NSIS .exe, which needs the bundled 7z.exe from a real dist.
-        assumeTrue(resolveHostOs() != HostOs.WINDOWS, "the .exe unpack path needs an installDist 7z.exe")
-
         val homePaths = HomePaths(tempDir.resolve("home"))
         val manager = BackendManager(
             homePaths = homePaths,

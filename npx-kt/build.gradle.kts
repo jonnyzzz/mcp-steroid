@@ -304,6 +304,12 @@ tasks.register<Test>("liveDownloadSmokeTest") {
     description = "Downloads and validates real IDE archives (idea-community, android-studio). Multi-GB."
     group = "verification"
     configureLikeUnitTests(liveDownloadTag)
+    // Windows ships the IDE as an NSIS .exe, whose unpack path needs the bundled 7z.exe from a real
+    // installDist tree — structurally incompatible with this classpath-driven smoke. Gated at the
+    // TASK level (the only skip the root CLAUDE.md allows); the test methods stay unconditional.
+    val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+    enabled = !isWindows
+    onlyIf("the .exe unpack path needs an installDist 7z.exe (not available on Windows here)") { !isWindows }
     // A single IDE archive plus its unpacked bundle needs far longer than a unit test.
     timeout.set(Duration.ofMinutes(60))
 }
