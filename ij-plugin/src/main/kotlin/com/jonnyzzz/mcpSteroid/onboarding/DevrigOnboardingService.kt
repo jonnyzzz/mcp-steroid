@@ -5,6 +5,7 @@ import com.intellij.notification.Notification
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -14,7 +15,27 @@ import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Sticky group: the startup offer, and every failure. Both are things the user must be able to read after
+ * looking away — a balloon that auto-hides during project open is a balloon nobody saw.
+ * Must match `plugin.xml`.
+ */
+const val ONBOARDING_NOTIFICATION_GROUP = "jonnyzzz.mcp.steroid.onboarding"
+
+/**
+ * Auto-hiding group: the outcome of an install the user started and is watching. Must match `plugin.xml`.
+ */
+const val ONBOARDING_RESULTS_NOTIFICATION_GROUP = "jonnyzzz.mcp.steroid.onboarding.results"
+
+/**
+ * How long "Later" holds. The offer is a migration nudge, not an alert: repeating it at every project open
+ * because the user has not acted yet is how a plugin turns into noise, and the same state is one click away
+ * in Settings (plus the widget, when enabled) the whole time.
+ */
+const val OFFER_SNOOZE_DAYS = 14L
 
 /**
  * Offers, once per IDE run, to install devrig or update a stale one.
@@ -33,6 +54,7 @@ class DevrigOnboardingService(private val scope: CoroutineScope) {
 
     fun maybeOffer(project: Project) {
         if (!devrigWidgetEnabled()) return
+        if (offerSnoozedUntilMs() > System.currentTimeMillis()) return
         if (!offered.compareAndSet(false, true)) return
         scope.launch {
             try {
@@ -88,8 +110,13 @@ class DevrigOnboardingService(private val scope: CoroutineScope) {
     }
 
     /**
-     * The two actions every offer carries. "Later" exists so that dismissing is a deliberate click rather
-     * than a stray one on the balloon's close button — it does NOT suppress future offers.
+     * The two actions every offer carries.
+     *
+     * "Later" means later, and is recorded: it snoozes the startup offer for [OFFER_SNOOZE_DAYS]. It used to
+     * suppress nothing, so the same balloon returned at every project open until the user gave in —
+     * a dismissal the product ignores is not a dismissal, and repeating an unanswered nudge is exactly how
+     * the interruption stops being worth its attention. Nothing is hidden by snoozing: the state, and the
+     * same install button, stay on the settings page (and on the widget, when it is enabled).
      */
     private fun Notification.withOfferActions(
         project: Project,
@@ -104,6 +131,7 @@ class DevrigOnboardingService(private val scope: CoroutineScope) {
             )
             runner.runInstall(project)
         }).addAction(NotificationAction.createSimpleExpiring("Later") {
+            snoozeOffer()
             analyticsBeacon.capture(
                 "devrig_onboarding_action",
                 project,
@@ -111,14 +139,28 @@ class DevrigOnboardingService(private val scope: CoroutineScope) {
             )
         })
 
+    /** Record the snooze application-wide: the offer is about this machine's devrig, not about one project. */
+    fun snoozeOffer() {
+        val until = System.currentTimeMillis() + Duration.ofDays(OFFER_SNOOZE_DAYS).toMillis()
+        PropertiesComponent.getInstance().setValue(OFFER_SNOOZED_UNTIL_KEY, until.toString())
+        log.info("devrig onboarding offer snoozed for $OFFER_SNOOZE_DAYS days")
+    }
+
+    /** 0 when never snoozed, or when the stored value is not a number we wrote. */
+    fun offerSnoozedUntilMs(): Long =
+        PropertiesComponent.getInstance().getValue(OFFER_SNOOZED_UNTIL_KEY)?.toLongOrNull() ?: 0L
+
     private fun captureOffered(project: Project, decision: OnboardingDecision) {
         analyticsBeacon.capture("devrig_onboarding_offered", project, mapOf("decision" to decision.name))
     }
 
     private fun group() = NotificationGroupManager.getInstance()
-        .getNotificationGroup("jonnyzzz.mcp.steroid.onboarding")
+        .getNotificationGroup(ONBOARDING_NOTIFICATION_GROUP)
 
     companion object {
+        /** Application-level, so "Later" is not re-asked by the next project window. */
+        const val OFFER_SNOOZED_UNTIL_KEY = "mcp.steroid.devrig.offer.snoozed.until"
+
         fun getInstance(): DevrigOnboardingService = service()
     }
 }

@@ -15,8 +15,10 @@ installer.
 
 ### Settings page
 
-**Settings | Tools | Devrig — MCP Steroid** is where the plugin offers anything. One line of framing, then
-two blocks:
+**Settings | Tools | Devrig — MCP Steroid** is where the plugin offers anything. No pitch at the top — the
+reader already installed the plugin, so selling it back to them spends the one screen they came to for state
+and a button; that copy lives in the Marketplace description. Two blocks, then a **Report an issue on
+GitHub** link last, because it is never the next step:
 
 | Block | Holds, top to bottom |
 |---|---|
@@ -103,7 +105,12 @@ line adds only what neither says. Explanations, install sizes and next steps liv
 
 ### Notifications
 
-Group `jonnyzzz.mcp.steroid.onboarding`, declared **`STICKY_BALLOON`**: nothing here auto-hides.
+Two groups, because stickiness has to be earned:
+
+| Group | Display | Carries |
+|---|---|---|
+| `jonnyzzz.mcp.steroid.onboarding` | **`STICKY_BALLOON`** | what the user must not miss: the startup offer, and every failure |
+| `jonnyzzz.mcp.steroid.onboarding.results` | `BALLOON` (auto-hides) | the outcome of an install the user started and is watching |
 
 The first two rows below only appear with `mcp.steroid.devrig.widget.enabled` on; the rest report an
 install the user started, and appear whether or not the key is set.
@@ -115,8 +122,14 @@ install the user started, and appear whether or not the key is set.
 | the install succeeded | devrig is installed | Register your agent with it to bridge this IDE — see Settings \| Tools \| Devrig — MCP Steroid. | — |
 | the install failed | devrig install failed | *&lt;the installer's own reason&gt;*. See the IDE log for details. | **Retry** |
 
-`Later` only dismisses the current balloon; there is no "don't ask again". Cancelling an install produces
-**no** notification — it is a choice, not a failure, and the user already knows what they did.
+**`Later` means later.** It snoozes the startup offer for 14 days (`OFFER_SNOOZE_DAYS`, stored
+application-wide in `PropertiesComponent`), so a dismissal the user made is a dismissal the product honours.
+It used to suppress nothing — the same balloon returned at every project open until the user gave in, which
+is how an interruption stops being worth its attention. Snoozing hides nothing: the state and the same
+button stay on the settings page, and on the widget when it is enabled.
+
+Cancelling an install produces **no** notification — it is a choice, not a failure, and the user already
+knows what they did.
 
 **No error ever reports an action the user did not start.** Every failure balloon above follows a button
 press; the startup state check logs and says nothing. Keep it that way — if any of this is ever triggered

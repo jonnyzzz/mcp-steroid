@@ -91,6 +91,13 @@
         <notificationGroup id="jonnyzzz.mcp.steroid.onboarding"
                            displayType="STICKY_BALLOON"/>
 
+        <!-- Results of an install the user just started, and only those: they auto-hide.
+             Stickiness is earned by messages the user must not miss (the offer above, failures); a
+             success balloon for an action the user is watching, whose outcome is on the settings page and
+             the widget anyway, would only be one more thing to dismiss. -->
+        <notificationGroup id="jonnyzzz.mcp.steroid.onboarding.results"
+                           displayType="BALLOON"/>
+
         <!-- devrig connection state; click = run the same install/update flow. Present only while there
              is something to act on: the factory reports itself unavailable once the IDE is connected, so
              the plugin does not hold status-bar space permanently. The user can also hide it for good by

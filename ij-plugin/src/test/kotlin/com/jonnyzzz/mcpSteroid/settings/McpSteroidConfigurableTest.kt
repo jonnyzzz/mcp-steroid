@@ -52,13 +52,22 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 findAllTabbedPanes(component).isEmpty(),
             )
 
-            // The intro leads with the "AI Agents" framing.
-            assertContainsText(texts, "AI Agents")
+            // No pitch: this page is for state and actions, and its reader already installed the plugin.
+            assertFalse(
+                "The settings page must not open with marketing copy; found:\n$joined",
+                joined.contains("not just over your files"),
+            )
 
-            // The feedback link points at GitHub issues only. There is no Slack workspace —
-            // the old label falsely promised one.
-            assertContainsText(texts, "Report issues on GitHub")
+            // The feedback link points at GitHub issues only, and lives at the bottom — it is never the
+            // next step for someone who just opened the page. There is no Slack workspace; the old label
+            // falsely promised one.
+            assertContainsText(texts, "Report an issue on GitHub")
             assertFalse("No Slack workspace exists — the label must not mention Slack", joined.contains("Slack"))
+            assertTrue(
+                "The feedback link must come after the devrig content; order was:\n$joined",
+                texts.indexOfFirst { it.contains("Report an issue on GitHub") } >
+                    texts.indexOfFirst { it.contains("What is devrig?") },
+            )
 
             // The by-hand installer one-liners are gone: the button is the way to install devrig from the
             // IDE, and a copyable `curl … | sh` next to it only invited a second, unmanaged install.

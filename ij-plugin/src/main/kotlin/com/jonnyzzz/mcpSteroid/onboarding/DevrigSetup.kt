@@ -439,9 +439,17 @@ class DevrigSetupRunner {
 
     private fun elapsedMs(startNanos: Long): Long = (System.nanoTime() - startNanos) / 1_000_000
 
+    /**
+     * Report the outcome of an install the user started, in the group that **auto-hides**.
+     *
+     * The sticky group is for messages the user must not miss — the startup offer, and failures. This one
+     * says "it worked" about an action the user just triggered and is watching, and the same fact is on the
+     * settings page and the widget a second later; making it sit there until dismissed would spend
+     * attention twice for one event.
+     */
     private fun notify(project: Project?, type: NotificationType, title: String, content: String) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("jonnyzzz.mcp.steroid.onboarding")
+            .getNotificationGroup(ONBOARDING_RESULTS_NOTIFICATION_GROUP)
             .createNotification(title, content, type)
             .notify(project)
     }

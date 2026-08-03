@@ -99,19 +99,11 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             .subscribe(DEVRIG_STATE_CHANGED, DevrigStateListener { refreshInstallStatus() })
 
         return panel {
-            // One line. The five-line version of this pitch used to be the most prominent thing on a
-            // settings page, above every actual control — which is backwards for a page you open to do
-            // something. What it says lives on the website; the link is one row down.
-            row {
-                text(
-                    "<b>AI Agents work inside your IDE — not just over your files.</b> Claude, Codex, " +
-                        "Gemini and any MCP-compatible agent drive the full IntelliJ Platform through " +
-                        "MCP Steroid."
-                )
-            }
-            row {
-                browserLink("Report issues on GitHub", FEEDBACK_URL)
-            }
+            // No pitch row. Whoever opens this page has already installed the plugin, so "AI agents work
+            // inside your IDE — not just over your files" was selling something they own, in the one place
+            // they came to check state and press a button. That copy belongs in the Marketplace description,
+            // and the one line still worth reading here — why devrig is a separate binary — is where it is
+            // actionable, next to the button.
 
             // One group for the whole recommended path: why it exists, then where both ends of it stand.
             // It was two groups — a Status one and a Devrig one — which split one story across two boxes
@@ -156,6 +148,12 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             }
 
             httpSection(portPhrase, info)
+
+            // Last, because it is never the next step for someone who just opened this page — it is where
+            // you go after everything else failed to help.
+            row {
+                browserLink("Report an issue on GitHub", FEEDBACK_URL)
+            }.topGap(TopGap.SMALL)
         }
     }
 
