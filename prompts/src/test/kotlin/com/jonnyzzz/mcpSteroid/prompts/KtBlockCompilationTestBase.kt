@@ -14,6 +14,7 @@ import kotlin.io.path.name
 import kotlin.io.path.walk
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
+import org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer
 import org.jetbrains.kotlin.buildtools.api.arguments.CommonToolArguments
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -137,6 +138,26 @@ abstract class KtBlockCompilationTestBase {
             Files.writeString(sourceFile, wrapped, StandardCharsets.UTF_8)
             val outputJar = tempDir.resolve("out.jar")
 
+            // Record compiler messages so a failing block reports WHAT failed —
+            // otherwise the only signal is the bare CompilationResult mismatch.
+            val recorded = java.util.concurrent.ConcurrentLinkedQueue<String>()
+            val renderer = object : CompilerMessageRenderer {
+                override fun render(
+                    severity: CompilerMessageRenderer.Severity,
+                    message: String,
+                    location: CompilerMessageRenderer.SourceLocation?,
+                ): String {
+                    if (severity != CompilerMessageRenderer.Severity.DEBUG) {
+                        recorded.add(
+                            "$severity: $message" +
+                                (location?.let { " at ${it.path}:${it.line}:${it.column}\n    ${it.lineContent}" }
+                                    ?: "")
+                        )
+                    }
+                    return message
+                }
+            }
+
             val compilationResult = runBlocking {
                 buildsSession.compileKotlin(
                     sources = listOf(sourceFile) + ijPluginSourceFiles(),
@@ -148,7 +169,10 @@ abstract class KtBlockCompilationTestBase {
                 }
             }
 
-            assertEquals(CompilationResult.COMPILATION_SUCCESS, compilationResult)
+            assertEquals(CompilationResult.COMPILATION_SUCCESS, compilationResult) {
+                "KtBlock compilation failed for ${block.javaClass.name}.\n" +
+                    recorded.joinToString("\n")
+            }
 
             // Cache successful compilation
             writeCacheEntry(cacheDir, cacheKey, wrapped, cacheCompilerOptions)
