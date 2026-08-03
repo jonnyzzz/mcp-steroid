@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeArchiveResolution
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeChannel
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
+import com.jonnyzzz.mcpSteroid.ideDownloader.resolveAndroidStudioPageDownload
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostArchitecture
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
 import java.io.IOException
@@ -20,15 +21,6 @@ import java.net.URI
  */
 const val ANDROID_STUDIO_PREVIEW_PAGE: String = "https://developer.android.com/studio/preview"
 
-/**
- * Maps an Android Studio marketing version to its IntelliJ platform baseline: `2026.1.2.3` -> 261,
- * `2025.3.4.7` -> 253. Android Studio tracks the platform it is built on as `YYYY.N`.
- */
-fun androidStudioPlatformBaseline(version: String): Int? {
-    val match = Regex("""^(\d{4})\.(\d+)""").find(version) ?: return null
-    return (match.groupValues[1].toInt() % 100) * 10 + match.groupValues[2].toInt()
-}
-
 private fun androidStudioPreviewSuffix(os: HostOs, architecture: HostArchitecture): String = when (os) {
     HostOs.LINUX -> {
         require(!architecture.isArmArch) { "Android Studio publishes no Linux ARM64 build; pick x86_64 or another product." }
@@ -41,14 +33,16 @@ private fun androidStudioPreviewSuffix(os: HostOs, architecture: HostArchitectur
     }
 }
 
-private fun inferAndroidStudioCanaryVersion(url: String): String =
-    Regex("""/(?:install|ide-zips)/([0-9]+(?:\.[0-9]+)+)/""").find(url)?.groupValues?.get(1)
-        ?: error("Could not infer the Android Studio canary version from $url")
-
 /**
  * Resolves the Android Studio canary archive from the preview page HTML (pure — no I/O, so it is
  * unit testable). The download URLs are absolute `edgedl.me.gvt1.com` links picked by OS/arch suffix
  * (stable across the codename segment, e.g. `quail2-canary3`); the build is the platform baseline.
+ *
+ * The preview page publishes SEVERAL generations at once — `2026.1.4.3` (Quail 4 Canary 3) next to
+ * the older `2026.1.3.6` (Quail 3 RC 2) — in an order Google is free to change. All of them are
+ * parsed and the newest wins ([resolveAndroidStudioPageDownload]); [version] pins a specific one by
+ * exact version (`2026.1.4.3`), version prefix (`2026.1`), platform baseline (`261`) or channel
+ * (`canary`, `rc`, `beta`).
  */
 fun resolveAndroidStudioCanaryArchiveFromHtml(
     html: String,
@@ -56,21 +50,14 @@ fun resolveAndroidStudioCanaryArchiveFromHtml(
     architecture: HostArchitecture,
     version: String? = null,
 ): IdeArchiveResolution {
-    val urls = Regex("""https://[^"'\s<>]*android-studio[^"'\s<>]*\.(?:zip|tar\.gz|dmg|exe)""")
-        .findAll(html).map { it.value }.toSet()
-    require(urls.isNotEmpty()) {
-        "No android-studio download URL on $ANDROID_STUDIO_PREVIEW_PAGE — the page format may have changed."
-    }
-
-    val suffix = androidStudioPreviewSuffix(os, architecture)
-    val url = urls.firstOrNull { it.endsWith(suffix) }
-        ?: error("No Android Studio canary asset ending in '$suffix' on $ANDROID_STUDIO_PREVIEW_PAGE (found: ${urls.sorted()})")
-
-    val resolvedVersion = inferAndroidStudioCanaryVersion(url)
-    require(version.isNullOrBlank() || version == resolvedVersion) {
-        "Android Studio canary $version is not the current preview build (current is $resolvedVersion); version pinning is not supported."
-    }
-    val baseline = androidStudioPlatformBaseline(resolvedVersion)
+    val download = resolveAndroidStudioPageDownload(
+        html = html,
+        pageUrl = ANDROID_STUDIO_PREVIEW_PAGE,
+        assetSuffix = androidStudioPreviewSuffix(os, architecture),
+        selector = version,
+    )
+    val resolvedVersion = download.release.version
+    val baseline = download.release.platformBaseline
 
     return IdeArchiveResolution(
         product = IdeProduct.AndroidStudio,
@@ -80,8 +67,8 @@ fun resolveAndroidStudioCanaryArchiveFromHtml(
         // The preview page only exposes the marketing version, so the build is the platform baseline
         // (`262`) while the installed artifact reports the full `262.8665.258.2621.14049965`.
         buildIsBaseline = baseline != null,
-        url = url,
-        downloadKey = url.substringAfterLast('/'),
+        url = download.url,
+        downloadKey = download.url.substringAfterLast('/'),
     )
 }
 

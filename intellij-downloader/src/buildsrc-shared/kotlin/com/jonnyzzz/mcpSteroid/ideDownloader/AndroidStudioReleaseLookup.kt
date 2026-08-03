@@ -27,6 +27,10 @@ private val androidStudioReleaseLookupLog =
  * Android Studio does NOT publish Linux ARM64 or Windows ARM64 builds. Those combos throw
  * with a clear message so callers can pick a different IDE / architecture.
  *
+ * The page can advertise more than one version at a time (a fresh release next to the previous
+ * patch), so the release is picked by version number rather than by HTML order — see
+ * [resolveAndroidStudioPageDownload].
+ *
  * Channels other than stable (canary, beta) live on a separate page and are not yet supported.
  *
  * @param channel only `STABLE` is supported (Android Studio's `EAP` channel = canary, served
@@ -80,64 +84,45 @@ internal fun resolveAndroidStudioArchiveFromHtml(
     html: String,
 ): IdeArchiveResolution {
     // Each download is an absolute https URL into edgedl.me.gvt1.com/android/studio/...
-    // We pull every match out of the page and pick by suffix — that's stable across
-    // the marketing-name segment in the filename ("panda4-patch1"), which we can't
-    // derive from the updates.xml alone.
-    val allUrls = Regex("""https://[^"'\s<>]*android-studio[^"'\s<>]*\.(?:zip|tar\.gz|dmg|exe)""")
-        .findAll(html)
-        .map { it.value }
-        .toSet()
-    val checksumsByFileName = androidStudioChecksumsByFileName(html)
-
-    if (allUrls.isEmpty()) {
-        error("Could not find any android-studio download URL on $pageUrl. Page format may have changed.")
-    }
-
-    val wantedSuffixes: List<String> = when (os) {
+    // We pull every match out of the page and pick the artifact by suffix — that's stable
+    // across the marketing-name segment in the filename ("panda4-patch1"), which we can't
+    // derive from the updates.xml alone. Which RELEASE the artifact belongs to is decided by
+    // version number, not by where Google placed the link on the page.
+    val wantedSuffix = when (os) {
         HostOs.LINUX -> {
             require(!architecture.isArmArch) {
                 "Android Studio does not publish a Linux ARM64 build (only x86_64 .tar.gz). " +
                     "Pick another product or architecture."
             }
-            listOf("-linux.tar.gz")
+            "-linux.tar.gz"
         }
-        HostOs.MAC -> if (architecture.isArmArch) listOf("-mac_arm.dmg") else listOf("-mac.dmg")
+        HostOs.MAC -> if (architecture.isArmArch) "-mac_arm.dmg" else "-mac.dmg"
         HostOs.WINDOWS -> {
             require(!architecture.isArmArch) {
                 "Android Studio does not publish a Windows ARM64 build. " +
                     "Pick x86_64 or another product."
             }
-            listOf("-windows.exe")
+            "-windows.exe"
         }
     }
 
-    for (suffix in wantedSuffixes) {
-        val match = allUrls.firstOrNull { it.endsWith(suffix) }
-        if (match != null) {
-            val resolvedVersion = inferAndroidStudioVersion(match)
-            if (!version.isNullOrBlank() && version != resolvedVersion) {
-                error(
-                    "Android Studio $version is not the current stable archive on $pageUrl " +
-                        "(current stable is $resolvedVersion). Version-pinned Android Studio downloads " +
-                        "are not supported by this downloader yet."
-                )
-            }
-            return IdeArchiveResolution(
-                product = IdeProduct.AndroidStudio,
-                channel = channel,
-                version = resolvedVersion,
-                build = resolvedVersion,
-                url = match,
-                downloadKey = suffix.removePrefix("-").removeSuffix(".tar.gz").removeSuffix(".dmg")
-                    .removeSuffix(".zip").removeSuffix(".exe"),
-                expectedSha256 = checksumsByFileName[downloadFilenameFromUrl(match)],
-            )
-        }
-    }
+    val download = resolveAndroidStudioPageDownload(
+        html = html,
+        pageUrl = pageUrl,
+        assetSuffix = wantedSuffix,
+        selector = version,
+    )
+    val checksumsByFileName = androidStudioChecksumsByFileName(html)
 
-    error(
-        "No Android Studio download URL ending in ${wantedSuffixes.joinToString()} found on $pageUrl. " +
-            "URLs discovered: ${allUrls.sorted().joinToString()}"
+    return IdeArchiveResolution(
+        product = IdeProduct.AndroidStudio,
+        channel = channel,
+        version = download.release.version,
+        build = download.release.version,
+        url = download.url,
+        downloadKey = wantedSuffix.removePrefix("-").removeSuffix(".tar.gz").removeSuffix(".dmg")
+            .removeSuffix(".zip").removeSuffix(".exe"),
+        expectedSha256 = checksumsByFileName[downloadFilenameFromUrl(download.url)],
     )
 }
 
@@ -155,17 +140,6 @@ internal fun androidStudioChecksumsByFileName(html: String): Map<String, String>
     }
 }
 
-internal fun inferAndroidStudioVersion(url: String): String {
-    val pathVersion = Regex("""/(?:install|ide-zips)/([0-9]+(?:\.[0-9]+)+)/""")
-        .find(url)
-        ?.groupValues
-        ?.get(1)
-    if (pathVersion != null) return pathVersion
-
-    val fileName = url.substringAfterLast('/')
-    val version = Regex("""android-studio-([0-9]+(?:\.[0-9]+)+)-""")
-        .find(fileName)
-        ?.groupValues
-        ?.get(1)
-    return version ?: error("Could not infer Android Studio version from download URL: $url")
-}
+internal fun inferAndroidStudioVersion(url: String): String =
+    androidStudioVersionFromDownloadUrl(url)
+        ?: error("Could not infer Android Studio version from download URL: $url")
