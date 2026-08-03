@@ -1,0 +1,22 @@
+{
+  "name": "jonnyzzz",
+  "owner": {
+    "name": "Eugene Petrenko",
+    "email": "mcp@jonnyzzz.com"
+  },
+  "plugins": [
+    {
+      "name": "devrig",
+      "source": "./claude-plugin",
+      "description": "Give AI the whole JetBrains IDE, not just the files — run code, debug, refactor, and inspect any running IntelliJ-based IDE from Claude via the devrig bridge.",
+      "category": "developer-tools",
+      "tags": ["jetbrains", "intellij", "ide", "mcp", "devrig", "debugging"],
+      "homepage": "https://mcp-steroid.jonnyzzz.com",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Eugene Petrenko",
+        "email": "mcp@jonnyzzz.com"
+      }
+    }
+  ]
+}

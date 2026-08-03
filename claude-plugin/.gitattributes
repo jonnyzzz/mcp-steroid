@@ -1,0 +1,4 @@
+# The polyglot launcher must stay LF (a CR after the #!/bin/sh shebang breaks it).
+bin/devrig-mcp.cmd text eol=lf
+# The PostToolUse recovery hook is a sh/cmd polyglot — keep LF so the shebang works.
+bin/devrig-recover text eol=lf

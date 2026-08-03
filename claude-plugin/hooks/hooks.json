@@ -1,0 +1,44 @@
+{
+  "description": "Nudge to /devrig:setup when devrig is missing, re-assert the IDE bridge on IDE-shaped prompts, and steer recovery on recoverable devrig errors.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__.*devrig.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/devrig-recover"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/check-devrig"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/offer-ide"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/devrig-progress"
+          }
+        ]
+      }
+    ]
+  }
+}
