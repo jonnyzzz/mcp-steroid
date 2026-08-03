@@ -10,7 +10,11 @@ kotlin {
 }
 
 repositories {
-    maven("https://packages.jetbrains.team/maven/p/kt/dev")
+    maven("https://packages.jetbrains.team/maven/p/kt/dev") {
+        content {
+            includeGroup("org.jetbrains.kotlin")
+        }
+    }
     mavenCentral()
 }
 

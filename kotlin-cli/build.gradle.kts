@@ -10,7 +10,11 @@ kotlin {
 
 repositories {
     // Numbered Kotlin 2.4.20 RC builds are published here before the final RC reaches Maven Central.
-    maven("https://packages.jetbrains.team/maven/p/kt/dev")
+    maven("https://packages.jetbrains.team/maven/p/kt/dev") {
+        content {
+            includeGroup("org.jetbrains.kotlin")
+        }
+    }
     mavenCentral()
 }
 
@@ -68,6 +72,7 @@ dependencies {
 val btaImplJarsDir = layout.buildDirectory.dir("bta-impl-jars")
 
 val syncBtaImplJars = tasks.register<Sync>("syncBtaImplJars") {
+    description = "Stage Kotlin Build Tools implementation jars for the plugin distribution"
     from(btaImplClasspath)
     into(btaImplJarsDir)
 }
