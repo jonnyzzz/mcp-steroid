@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.ideDownloader
 
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 
@@ -17,12 +16,9 @@ import java.io.File
  */
 class ProductCatalogDocsDriftTest {
 
-    private val repoRoot: File?
-        get() = System.getProperty("mcp.repo.root")?.let(::File)?.takeIf { it.isDirectory }
-
     @Test
     fun `published devrig docs list every catalog product id`() {
-        val docs = repoFile("website/content/docs/devrig.md") ?: return
+        val docs = repoFile("website/content/docs/devrig.md")
         val text = docs.readText()
         val missing = IdeProduct.knownProducts.map { it.id }.filterNot { text.contains("`$it`") }
         assertTrue(
@@ -35,7 +31,6 @@ class ProductCatalogDocsDriftTest {
     @Test
     fun `standalone downloader --product help lists every catalog product id`() {
         val main = repoFile("intellij-downloader/src/main/kotlin/com/jonnyzzz/mcpSteroid/ideDownloader/Main.kt")
-            ?: return
         // The help text lives in the file's KDoc; matching the whole file is enough to catch drift
         // without pinning the exact wrapping.
         val text = main.readText()
@@ -46,13 +41,18 @@ class ProductCatalogDocsDriftTest {
         )
     }
 
-    private fun repoFile(relativePath: String): File? {
-        val root = repoRoot
-        // Keep the suite green where the property is absent (e.g. running the class straight from
-        // an IDE) instead of failing for an environment reason.
-        assumeTrue("mcp.repo.root is not set — skipping docs drift check", root != null)
+    /**
+     * Hard requirements, not assumptions: the Gradle test task always sets `mcp.repo.root`
+     * (see `intellij-downloader/build.gradle.kts`), and a missing docs file is exactly the drift
+     * this guard exists to catch — skipping would let the docs vanish silently.
+     */
+    private fun repoFile(relativePath: String): File {
+        val rootPath = System.getProperty("mcp.repo.root")
+            ?: error("mcp.repo.root system property is not set — the :intellij-downloader:test Gradle task always sets it")
+        val root = File(rootPath)
+        assertTrue("mcp.repo.root=$rootPath is not a directory", root.isDirectory)
         val file = File(root, relativePath)
-        assumeTrue("$relativePath not found under $root — skipping docs drift check", file.isFile)
+        assertTrue("$relativePath not found under $root — the docs drift guard must see the published docs", file.isFile)
         return file
     }
 }

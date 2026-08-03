@@ -337,6 +337,31 @@ class IdeReleaseLookupTest {
         assertFalse("must not advise --version for an unpublished platform, got: $message", message.contains("--version"))
     }
 
+    /**
+     * With a `--version` filter only the matching releases were inspected, so the diagnostic must
+     * not over-claim "not a supported host" — releases outside the filter may still publish the
+     * platform. It names the filter instead.
+     */
+    @Test
+    fun `unpublished-platform diagnostic under a version filter does not claim the host is unsupported`() {
+        val ex = expectError {
+            resolveArchiveFromFixtures(
+                IdeProduct.Mps,
+                IdeChannel.STABLE,
+                os = HostOs.LINUX,
+                architecture = HostArchitecture.ARM64,
+                version = "2026.1",
+            )
+        }
+        val message = ex.message!!
+        assertTrue("expected the filter named, got: $message", message.contains("matching version '2026.1'"))
+        assertTrue("expected the offered keys listed, got: $message", message.contains("linux, mac, macM1"))
+        assertFalse(
+            "a filtered lookup must not claim the host is unsupported, got: $message",
+            message.contains("not a supported host"),
+        )
+    }
+
     @Test
     fun `DataGrip is queried as DG but validates the installed code DB`() {
         assertEquals("DG", IdeProduct.DataGrip.code)
