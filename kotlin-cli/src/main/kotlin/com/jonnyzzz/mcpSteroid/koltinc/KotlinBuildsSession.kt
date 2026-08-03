@@ -33,8 +33,9 @@ import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jv
  * the in-process jars. Review KT-88183 whenever updating the BTA dependencies: if it is
  * fixed, the daemon flow becomes viable again.
  *
- * This class keeps Kotlin caches between different compilations. To drop them - call `close()` method.
- * It is fine to call again compilation after calling `close()`.
+ * This class keeps Kotlin caches between different compilations. To drop them without giving
+ * up the instance - call [dropCaches]; the next compilation starts a fresh build session.
+ * [close] is terminal: the instance compiles no more afterwards.
  *
  * @param implClasspath The Kotlin Build Tools implementation jars (the plugin's `kotlinc/` folder,
  * or the `:kotlin-cli` `bta-impl-jars` directory in tests). The jars must be plain files on disk —
@@ -58,12 +59,12 @@ class KotlinBuildsSession(
     private val buildToolsApi = KotlinToolchains.loadImplementation(this.implClasspath)
     private val inProcessExecutionStrategy = buildToolsApi.createInProcessExecutionPolicy()
 
-    // Session lifecycle: every compile holds a lease on the current session; close()
-    // detaches the session immediately (subsequent compiles start a fresh one) but the
-    // actual BuildSession.close() is deferred until the last leased operation releases —
-    // closing mid-operation would shut down the in-process executor underneath a running
-    // compile. BTA owns the application-environment pin inside BuildSession, so closing
-    // the leased session also releases the compiler's jar caches.
+    // Session lifecycle: every compile holds a lease on the current session; close() and
+    // dropCaches() detach the session immediately, but the actual BuildSession.close() is
+    // deferred until the last leased operation releases — closing mid-operation would clear
+    // BTA's jar caches and shut down the in-process executor underneath a running compile.
+    // BTA owns the application-environment pin inside BuildSession, so closing the leased
+    // session also releases the compiler's jar caches.
     private class SessionLease(
         val session: KotlinToolchains.BuildSession,
     ) {
@@ -73,15 +74,37 @@ class KotlinBuildsSession(
 
     private var currentLease: SessionLease? = null
 
+    // Terminal state, guarded by the SAME monitor as currentLease on purpose: with a separate
+    // flag (however atomic) a compile starting concurrently with close() could still pass the
+    // check and then create a BuildSession nobody is left to close — leaking the KT-87743
+    // application-environment pin and its jar caches for the life of the process.
+    private var closed = false
+
     /** Number of in-flight compile operations on the current session (observable for tests). */
     val activeOperations: Int
         get() = synchronized(this) { currentLease?.activeOperations ?: 0 }
 
     private fun acquireSession(): SessionLease = synchronized(this) {
+        check(!closed) { "This KotlinBuildsSession is closed and cannot compile any more" }
         val lease = currentLease
             ?: SessionLease(buildToolsApi.createBuildSession()).also { currentLease = it }
         lease.activeOperations++
         lease
+    }
+
+    /**
+     * Detaches the current lease so the next compile starts a fresh session. Returns the lease
+     * only when the caller must close it right now — a leased-out session is left to its last
+     * [releaseSession]. Call under this instance's monitor.
+     */
+    private fun detachCurrentLease(): SessionLease? {
+        val lease = currentLease ?: return null
+        currentLease = null
+        if (lease.activeOperations > 0) {
+            lease.closeRequested = true
+            return null
+        }
+        return lease
     }
 
     private fun releaseSession(lease: SessionLease) {
@@ -118,6 +141,8 @@ class KotlinBuildsSession(
      * in-flight compilation is cancelled cooperatively via [org.jetbrains.kotlin.buildtools.api.BuildOperation.cancel].
      * @throws CancellationException when the calling coroutine is cancelled; BTA's own
      * [OperationCancelledException] is translated and never escapes.
+     * @throws IllegalStateException when this instance is already [close]d — nothing is
+     * started, so a compile racing `close()` cannot orphan a build session.
      */
     suspend fun compileKotlin(
         sources: List<Path>,
@@ -187,22 +212,39 @@ class KotlinBuildsSession(
     }
 
     /**
-     * Closes the current build session managed by this instance.
+     * Releases the Kotlin caches (the current build session) and keeps this instance usable:
+     * the next [compileKotlin] starts a fresh session and warms its caches from scratch.
+     * Thread-safe, and a no-op on an already-[close]d instance.
      *
-     * Thread-safe. In-flight compilations keep the session alive until they finish
-     * (the close is deferred to the last lease release); compilations started after
-     * `close()` returns get a fresh session — it is fine to compile again after closing.
+     * The teardown timing is that of [close] — see there.
+     */
+    fun dropCaches() {
+        val toClose = synchronized(this) { detachCurrentLease() }
+        toClose?.closeNow()
+    }
+
+    /**
+     * Terminates this instance. Idempotent and thread-safe; once it returns, a [compileKotlin]
+     * call fails fast with [IllegalStateException] instead of opening a new build session
+     * that nobody would be left to close. Use [dropCaches] to drop the caches and keep compiling.
+     *
+     * Returns immediately — O(1) bookkeeping under the lock. It neither waits for nor cancels a
+     * compilation that is in flight: cancellation lives one layer up (the [compileKotlin]
+     * timeout, or cancelling the calling coroutine), so by the time `close()` runs, whatever it
+     * defers to is already unwinding.
+     *
+     * What is deferred is the TEARDOWN. The underlying [KotlinToolchains.BuildSession.close]
+     * clears BTA's jar caches (the `ZipHandler` accessor cache and the jar-filesystem
+     * handlers), shuts down the executor that in-process operations are submitted to, and
+     * releases the KT-87743 application-environment pin. Firing that under a live compile
+     * would pull the jar filesystem and the compiler environment out from under a running
+     * resolve, so it is handed to whichever thread releases the LAST lease
+     * ([releaseSession]) — which is also why `close()` can return without blocking.
      */
     override fun close() {
         val toClose = synchronized(this) {
-            val lease = currentLease ?: return
-            currentLease = null
-            if (lease.activeOperations == 0) {
-                lease
-            } else {
-                lease.closeRequested = true
-                null
-            }
+            closed = true
+            detachCurrentLease()
         }
         toClose?.closeNow()
     }

@@ -129,8 +129,9 @@ class KotlinBuildsSessionStabilityTest {
     fun sessionChurnOnOneInstanceLeavesNothingBehind() {
         // The production-relevant churn: CodeEvalManager holds ONE session per project
         // for the project's life, and the documented contract is "fine to compile again
-        // after close()". Repeated upstream pin acquire->dispose in the SAME impl classloader —
-        // env statics must return to zero after every close, each reopen builds a FRESH env.
+        // after dropCaches()". Repeated upstream pin acquire->dispose in the SAME impl
+        // classloader — env statics must return to zero after every drop, each reopen
+        // builds a FRESH env.
         val src = tempFolder.newFolder("churn-src").toPath() / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val outRoot = tempFolder.newFolder("churn-out").toPath()
@@ -149,10 +150,10 @@ class KotlinBuildsSessionStabilityTest {
                 }
                 previousEnv = env
 
-                session.close()
-                assertNull("cycle $cycle: close() must dispose the environment",
+                session.dropCaches()
+                assertNull("cycle $cycle: dropCaches() must dispose the environment",
                     applicationEnvironmentOf(session))
-                assertEquals("cycle $cycle: no ref-count may survive close()",
+                assertEquals("cycle $cycle: no ref-count may survive dropCaches()",
                     0, environmentRefCountOf(session))
                 assertEquals(0, session.activeOperations)
             }
@@ -261,11 +262,11 @@ class KotlinBuildsSessionStabilityTest {
     }
 
     @Test
-    fun closeRacingCompileNeverLeaksTheEnvironment() {
-        // Fuzz-by-schedule with invariant assertions: the race outcome (close-before-
-        // acquire vs close-mid-compile vs close-after-release) varies per run, but every
+    fun dropCachesRacingCompileNeverLeaksTheEnvironment() {
+        // Fuzz-by-schedule with invariant assertions: the race outcome (drop-before-
+        // acquire vs drop-mid-compile vs drop-after-release) varies per run, but every
         // interleaving must converge on the same post-conditions — compile success +
-        // zero residue after the final close. This exercises our synchronized session
+        // zero residue after the final drop. This exercises our synchronized session
         // lease bookkeeping plus BTA's pin cleanup; it deliberately never overlaps two
         // compiles (production serializes them via CodeEvalManager.compilationMutex, and
         // BTA does not document BuildSession thread-safety).
@@ -280,19 +281,19 @@ class KotlinBuildsSessionStabilityTest {
                         session.compileSnippet(src, (outRoot / "r$i").createDirectories() / "out.jar")
                     }
                     if (i % 2 == 0) {
-                        // Even iterations: deterministic mid-compile close (the existing
+                        // Even iterations: deterministic mid-compile drop (the existing
                         // closeDuringCompileDefersUntilOperationCompletes pattern).
                         while (session.activeOperations == 0 && !compile.isCompleted) yield()
                     }
-                    // Odd iterations: close IMMEDIATELY, racing the lease acquire itself.
-                    session.close()
+                    // Odd iterations: drop IMMEDIATELY, racing the lease acquire itself.
+                    session.dropCaches()
 
                     // Every interleaving is legal and must converge on the same outcome:
                     // the compile succeeds (on the old lease or a fresh one)...
                     assertEquals("iteration $i", CompilationResult.COMPILATION_SUCCESS, compile.await())
-                    // ...and after a final close with no in-flight ops, NOTHING survives —
-                    // regardless of whether the compile re-opened a lease after the race close.
-                    session.close()
+                    // ...and after a final drop with no in-flight ops, NOTHING survives —
+                    // regardless of whether the compile re-opened a lease after the race drop.
+                    session.dropCaches()
                     assertNull("iteration $i leaked a pinned environment",
                         applicationEnvironmentOf(session))
                     assertEquals("iteration $i leaked an env ref-count",
@@ -300,6 +301,55 @@ class KotlinBuildsSessionStabilityTest {
                     assertEquals(0, session.activeOperations)
                 }
             }
+        }
+    }
+
+    @Test
+    fun closeRacingCompileNeverOrphansASession() {
+        // The production shape of the race: a project being disposed closes the session
+        // (CodeEvalManager's Disposer child) exactly ONCE while an exec_code compile is
+        // starting. A fresh instance per iteration, because close() is terminal — and the
+        // point is that NO second close is needed to clean up: whichever side wins,
+        // nothing may be retained afterwards. (Before the closed guard, the compile that
+        // lost the race opened a BuildSession nobody would ever close — a leaked KT-87743
+        // environment pin plus the jar caches it holds, for the life of the process.)
+        val src = tempFolder.newFolder("orphan-src").toPath() / "source.kt"
+        src.writeText("fun main() { println(\"Hello\") }\n")
+        val outRoot = tempFolder.newFolder("orphan-out").toPath()
+
+        repeat(4) { i ->
+            val session = newSession()
+            runBlocking {
+                val compile = async(Dispatchers.IO) {
+                    // Both outcomes are legal: the compile took its lease before the close and
+                    // ran to success, or it lost the race and was rejected. The rejection is
+                    // caught HERE, inside the child — letting the child fail would cancel this
+                    // scope before the residue assertions below get to run.
+                    try {
+                        session.compileSnippet(src, (outRoot / "o$i").createDirectories() / "out.jar")
+                    } catch (rejected: IllegalStateException) {
+                        assertTrue("iteration $i: unexpected message '${rejected.message}'",
+                            rejected.message.orEmpty().contains("closed"))
+                        null
+                    }
+                }
+                // Even iterations: let the compile take its lease first (close is deferred to
+                // the release). Odd: close IMMEDIATELY, racing — and usually beating — the
+                // lease acquire, so the compile is rejected instead of starting a session.
+                if (i % 2 == 0) {
+                    while (session.activeOperations == 0 && !compile.isCompleted) yield()
+                }
+                session.close()
+
+                val result = compile.await()
+                assertTrue("iteration $i compiled with an unexpected result: $result",
+                    result == null || result == CompilationResult.COMPILATION_SUCCESS)
+            }
+            // NO second close() here — that is the whole point.
+            assertNull("iteration $i orphaned a build session (leaked pinned environment)",
+                applicationEnvironmentOf(session))
+            assertEquals("iteration $i leaked an env ref-count", 0, environmentRefCountOf(session))
+            assertEquals(0, session.activeOperations)
         }
     }
 

@@ -167,13 +167,12 @@ class KotlinBuildsSessionTest {
     @Test
     fun closeDuringCompileDefersUntilOperationCompletes() {
         // close() must not tear down the session underneath an in-flight compile:
-        // the actual BuildSession.close() is deferred to the last lease release,
-        // and compiles started after close() get a fresh session.
+        // the actual BuildSession.close() is deferred to the last lease release.
+        // It also must not BLOCK on that compile — close() only detaches under the lock.
         val srcDir = tempFolder.newFolder("close-src").toPath()
         val src = srcDir / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val out1 = tempFolder.newFolder("close-out-1").toPath() / "out.jar"
-        val out2 = tempFolder.newFolder("close-out-2").toPath() / "out.jar"
 
         val session = newSession()
         runBlocking {
@@ -189,23 +188,58 @@ class KotlinBuildsSessionTest {
                 yield()
             }
             session.close()
+            // close() returned while the compile was still leased — the operation is
+            // neither awaited nor cancelled, it runs to its normal success.
             assertEquals(CompilationResult.COMPILATION_SUCCESS, compile.await())
             // The deferred close (last lease release) must close BTA's BuildSession and
             // its upstream environment pin, otherwise this path leaks the cached environment.
             assertNull("deferred close must dispose the pinned application environment",
                 applicationEnvironmentOf(session))
         }
+    }
 
-        // Compiling again after close() starts a fresh session.
+    @Test
+    fun compilingAfterCloseIsRejectedAndOpensNoSession() {
+        // The leak this guards: close() detaches the session, so a compile arriving
+        // afterwards used to open a BRAND-NEW BuildSession that nobody was left to close
+        // (production closes exactly once, from the CodeEvalManager Disposer child) —
+        // leaking the KT-87743 environment pin and its jar caches. Now it fails fast.
+        val src = tempFolder.newFolder("closed-src").toPath() / "source.kt"
+        src.writeText("fun main() { println(\"Hello\") }\n")
+        val outRoot = tempFolder.newFolder("closed-out").toPath()
+
+        val session = newSession()
         runBlocking {
             assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
                 sources = listOf(src),
-                destinationDir = out2,
+                destinationDir = (outRoot / "before").createDirectories() / "out.jar",
             ) {
                 set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
             })
         }
         session.close()
+        session.close() // idempotent
+
+        try {
+            runBlocking {
+                session.compileKotlin(
+                    sources = listOf(src),
+                    destinationDir = (outRoot / "after").createDirectories() / "out.jar",
+                ) {
+                    set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
+                }
+            }
+            fail("a closed session must reject compilation")
+        } catch (expected: IllegalStateException) {
+            assertTrue("the message must name the cause: ${expected.message}",
+                expected.message.orEmpty().contains("closed"))
+        }
+
+        // The rejected request must have created NOTHING: no session, no environment pin.
+        assertNull("a rejected compile must not open a build session",
+            applicationEnvironmentOf(session))
+        assertEquals(0, environmentRefCountOf(session))
+        assertEquals(0, session.activeOperations)
     }
 
     @Test
@@ -213,9 +247,10 @@ class KotlinBuildsSessionTest {
         // Leak/lifecycle contract of BTA's KT-87743 BuildSession-owned pin:
         // (1) one application environment instance serves all compiles of a session
         //     (this is what keeps the jar caches warm),
-        // (2) close() releases it — the compiler disposes the environment, so nothing
+        // (2) dropCaches() releases it — the compiler disposes the environment, so nothing
         //     is retained past the session (no leak),
-        // (3) a session used again after close() gets a fresh environment.
+        // (3) the instance stays usable and its next compile gets a fresh environment,
+        // (4) the terminal close() leaves nothing behind either.
         val srcDir = tempFolder.newFolder("pin-src").toPath()
         val src = srcDir / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
@@ -238,14 +273,14 @@ class KotlinBuildsSessionTest {
         assertSame("the SAME application environment must serve all compiles of a session " +
             "(otherwise the jar caches are rebuilt per compile)", envAfterFirst, envAfterSecond)
 
-        session.close()
-        assertNull("close() must release the pin so the compiler disposes the application " +
+        session.dropCaches()
+        assertNull("dropCaches() must release the pin so the compiler disposes the application " +
             "environment — anything else leaks the jar caches", applicationEnvironmentOf(session))
 
         compileOnce("c")
         val envAfterReopen = applicationEnvironmentOf(session)
         assertNotNull(envAfterReopen)
-        assertNotSame("a session reused after close() must build a fresh environment",
+        assertNotSame("a session reused after dropCaches() must build a fresh environment",
             envAfterFirst, envAfterReopen)
         session.close()
         assertNull(applicationEnvironmentOf(session))
