@@ -23,6 +23,16 @@ data class InstallerStep(
  */
 private const val INSTALLER_PREFIX = "[mcp-steroid] "
 
+/**
+ * The size-carrying download line, and the only source of a download *fraction*.
+ *
+ * It is emitted by `install.sh.tmpl` / `install.ps1.tmpl` only from the installer-progress work
+ * (`stack/1-installer-progress`, #363) onward, and — since [com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner]
+ * runs the **published** `https://devrig.dev/install.sh`, not the template in this repository — it reaches
+ * users only once a release republishes the website. Against an older published installer, which prints
+ * `downloading <kind> (<url>)...`, this and [RETRY] simply never match: the bar stays indeterminate and
+ * shows the step labels the other lines produce. That degradation is expected, not a defect.
+ */
 private val DOWNLOADING = Regex("""^downloading (\S+) \(~(\d+) MB\)""")
 private val RETRY = Regex("""^attempt (\d+)/(\d+) failed""")
 private val PLATFORM = Regex("""^platform: (\S+)""")

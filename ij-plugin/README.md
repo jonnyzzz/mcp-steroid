@@ -157,6 +157,13 @@ static label: the phase as text, and a real fraction from the bytes staged under
 | `devrig binary is ready.` | devrig is installed. |
 | `ERROR: …` | reported as the failure reason (and written to the marker below) |
 
+**The fraction depends on the installer that is published**, not on the template in this repository: the
+button downloads the live `https://devrig.dev/install.sh`. The size and retry lines above arrive with
+[#363](https://github.com/jonnyzzz/mcp-steroid/pull/363) and reach users only once a release republishes the
+website; until then the published script prints `downloading <kind> (<url>)...`, those two rows never match,
+and the bar stays indeterminate while still naming each step from the other lines. Expected degradation, not
+a defect.
+
 The progress bar is cancellable and the installer really does stop — the wait polls in short slices
 instead of blocking for the whole 30-minute timeout.
 
