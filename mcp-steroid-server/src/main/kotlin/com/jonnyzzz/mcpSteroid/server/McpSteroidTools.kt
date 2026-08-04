@@ -8,8 +8,9 @@ abstract class McpSteroidTools {
      * Registers the tools common to every backend surface.
      *
      * `steroid_open_project` is intentionally NOT registered here: its spec differs per surface
-     * (the in-IDE plugin advertises no `backend_name`, devrig advertises a required `backend_name`
-     * routing param). Each caller registers its own `OpenProjectToolSpec(...)` after this call,
+     * (the in-IDE plugin advertises no `backend_name`, devrig advertises an optional `backend_name`
+     * routing param for disambiguating multiple candidates). Each caller registers its own
+     * `OpenProjectToolSpec(...)` after this call,
      * using the public [handler] accessor to resolve the [OpenProjectToolHandler].
      */
     fun registerAll(server: McpServerCore) {

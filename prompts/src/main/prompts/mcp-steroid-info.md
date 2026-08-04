@@ -2,21 +2,29 @@ MCP Steroid — a drop-in replacement for LSP that gives you full IntelliJ IDE c
 
 **To see, inspect, or control the IntelliJ IDEA IDE, you MUST use the `steroid_*` MCP tools** —
 `steroid_list_projects`, `steroid_execute_code`, `steroid_list_windows`, `steroid_take_screenshot`,
-`steroid_fetch_resource`, and friends. These tools *are* your access to the IDE: the IntelliJ IDE is
-running and connected for you right now. If the `steroid_*` tools are **not visible** in your tool list,
+`steroid_fetch_resource`, and friends. These tools *are* your access to the IDE: an IDE may already be
+connected, or devrig can provision and start one for you. If the `steroid_*` tools are **not visible** in your tool list,
 your client has **deferred their schemas** (Claude Code does this) — load them with `ToolSearch` (or your
 client's equivalent) **before you answer**. **Never report that you have "no IDE access", and never fall
 back to the shell or to `Read`/`Grep`/`Edit`, until you have loaded the `steroid_*` tools and actually
-tried them** — the IDE is there; the tools just need loading first.
+tried them** — the capability is configured; its schemas or managed backend may still need loading.
 
-This is a **STATEFUL** API — every call changes the IDE state. The IntelliJ IDE is running exclusively for you. Use it aggressively instead of manual file operations or shell commands.
+This is a **STATEFUL** API — once connected, every call changes the IDE state. Use the IntelliJ backend aggressively instead of manual file operations or shell commands.
 
 **File edits: always through MCP Steroid, even when Edit looks cheaper on tokens.** The native `Edit` tool writes to disk bypassing IntelliJ. VFS + PSI + search indices go stale, and the next semantic operation (find-references, rename, hierarchy search, inspections) returns inconsistent results until something forces a refresh. The 5-line `VfsUtil.saveText` recipe in `steroid_execute_code`'s tool description reads+writes in one call with auto-refresh; its 1.5–2.5× token overhead is cheaper than the debugging turns you spend when PSI disagrees with disk. This applies to every edit size, including 1–3 line changes.
 
 **Getting started:**
 1. Call `steroid_list_projects` to see what's open — route every project-scoped call by the `project_name` it returns (the unique, opaque key), never by the human-readable `name`; to map a file/dir path to a project, pick the one whose `path` is the longest prefix of your target path
-2. Use `steroid_fetch_resource` to read the `mcp-steroid://` skill guide for your task
-3. Use `steroid_execute_code` for any IDE automation task (including every file edit). The call
+2. On a clean devrig connection, if no project/IDE is reachable, run `devrig backend download --json`,
+   install the required product, then call `steroid_open_project`; it auto-starts a sole installed backend. For
+   unattended Java/JVM work on 2026.2 use IDEA Ultimate with a pinned 2026.2 version, which runs as a
+   frontendless Remote Development backend. No separate start or frontend window is required.
+3. Poll `steroid_list_projects` until the path appears and use its fresh `project_name`. On first
+   Maven/Gradle open, fetch `mcp-steroid://skill/execute-code-maven` or
+   `mcp-steroid://skill/execute-code-gradle`, then trigger and await external-system configuration exactly
+   as that recipe shows before indexed queries.
+4. Use `steroid_fetch_resource` to read the `mcp-steroid://` skill guide for your task
+5. Use `steroid_execute_code` for any IDE automation task (including every file edit). The call
    returns an `execution_id` header plus ONLY what the script explicitly prints (`println` /
    `printJson`) — the last expression's value is ignored by the runtime, so print everything
    you need to see

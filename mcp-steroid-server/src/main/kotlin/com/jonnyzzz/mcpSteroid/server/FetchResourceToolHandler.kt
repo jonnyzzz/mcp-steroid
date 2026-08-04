@@ -15,9 +15,13 @@ import com.jonnyzzz.mcpSteroid.mcp.string
 import com.jonnyzzz.mcpSteroid.prompts.generated.ResourcesIndex
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.FindDuplicatesPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.InspectAndFixPromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.ide.TypeHierarchyPromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.openProject.ManagingBackendsPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.DebuggerSkillPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.SkillPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.TestSkillPromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeGradlePromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeMavenPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJPromptArticle
 import com.jonnyzzz.mcpSteroid.thisLogger
 
@@ -44,11 +48,18 @@ class FetchResourceToolHandler(
         val codingGuideUri = CodingWithIntelliJPromptArticle().uri
         val findDuplicatesUri = FindDuplicatesPromptArticle().uri
         val inspectAndFixUri = InspectAndFixPromptArticle().uri
+        val typeHierarchyUri = TypeHierarchyPromptArticle().uri
+        val managingBackendsUri = ManagingBackendsPromptArticle().uri
+        val executeCodeMavenUri = ExecuteCodeMavenPromptArticle().uri
+        val executeCodeGradleUri = ExecuteCodeGradlePromptArticle().uri
         return "Fetch a mcp-steroid:// skill guide by URI. Returns markdown with copy-paste Kotlin code recipes for steroid_execute_code. " +
                 "Running tests? → $testSkillUri | " +
                 "Debugging? → $debuggerUri | " +
                 "Find duplicates / clones / copy-pasted code / DRY violations? → $findDuplicatesUri (copy ONLY the 'Primary recipe — PSI body comparison' block; the Cross-check inspection path silently returns 0 clusters in fresh sessions) | " +
                 "Run a named inspection + quick fix? → $inspectAndFixUri | " +
+                "Find direct + indirect subtypes / implementors? → $typeHierarchyUri | " +
+                "First Maven/Gradle open or missing build model? → $executeCodeMavenUri / $executeCodeGradleUri | " +
+                "Managed backend lifecycle after opening a project? → $managingBackendsUri | " +
                 "Any IDE task? → $skillUri | " +
                 "Full reference? → $codingGuideUri"
     }
@@ -57,7 +68,8 @@ class FetchResourceToolHandler(
     override val cliAliases = listOf("prompt")
 
     val uri = InputSchemaElement.param("uri")
-        .description("The mcp-steroid:// URI to fetch (see the tool description for the canonical entry points, or fetch mcp-steroid://prompt/skill for the index)")
+        .description("The mcp-steroid:// URI to fetch (see the tool description for canonical entry points, " +
+            "or fetch ${SkillPromptArticle().uri} for the index)")
         .cliSynopsis("mcp-steroid:// resource URI to fetch")
         .cliMissingHint("missing --uri. Example:\n  devrig fetch_resource --uri=${SkillPromptArticle().uri}")
         .string()

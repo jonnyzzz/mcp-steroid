@@ -8,6 +8,29 @@ Use this recipe when you need to open a project in a **specific
 product/version** (Rider for .NET, GoLand for Go, a particular build,
 etc.) or in a **not-yet-running IDE**.
 
+## Clean machine: install, then open
+
+If no IDE is installed or reachable, use the devrig binary on your PATH:
+
+```
+devrig backend download --json
+devrig backend download <product-id> --version <version>
+```
+
+The first command lists downloadable product ids with each product's latest stable
+version, build, and license tier; pass `--version <version>` to pin another released
+version. For unattended Java/JVM work on the supported 2026.2 line, choose
+`devrig backend download idea-ultimate --version <version>`. IDEA Ultimate
+262 is launched as a **frontendless Remote Development backend** with MCP
+Steroid included; plain AWT headless mode is a different, unsupported mode.
+
+After the download, call `steroid_open_project` with the project path. When
+the installed backend is the sole candidate, omit `backend_name`: devrig
+selects it, starts it, waits until its MCP endpoint is reachable, and sends
+the open request. Do not run `devrig backend start` first unless you are
+explicitly diagnosing lifecycle behavior. No frontend window or screenshot
+is required for semantic IDE work.
+
 ## How `steroid_open_project` resolves a backend
 
 When you call `steroid_open_project` through the devrig stdio MCP
@@ -25,7 +48,8 @@ server, devrig composes two candidate sources:
 **Without `backend_name`**: if exactly one candidate exists across S1
 and S3, `open_project` uses it automatically. If more than one
 candidate exists, it returns the list grouped by kind and asks you to
-call again with a chosen `backend_name`.
+call again with a chosen `backend_name`. A sole S3 candidate is started
+automatically.
 
 **With `backend_name`**: devrig resolves the name to a candidate. If
 the candidate is a startable managed backend, devrig **starts the IDE
@@ -102,7 +126,8 @@ explicitly control lifecycle. It is **not a prerequisite** to
 `open_project` — if the IDE you need is already installed (even if
 not running), `open_project` can start it.
 
-- `devrig backend` — shows four groups:
+- `devrig backend` — shows the current running/installed inventory. On a
+  completely clean machine it points to `devrig backend download --json`:
   - **MCP Steroid backends** (running, compatible) — you can open
     projects here now.
   - **Other IDEs (incompatible or no MCP Steroid)** — running IDEs with
@@ -113,29 +138,48 @@ not running), `open_project` can start it.
   - **Downloadable** — not listed individually; the footer points at the
     full-cycle install command `devrig backend download <product>`, which
     downloads + installs an IDE so it becomes startable.
-- `devrig backend --json` — machine-readable:
+- `devrig backend --json` — machine-readable current inventory:
   `{ tool, mcpSteroidBackends[], otherIdes[], startableBackends[] }`;
   each entry carries `compatible: <bool>`.
+- `devrig backend download --json` — list downloadable product ids and
+  versions on a clean machine.
 - `devrig backend download <id>` — fetch + install an IDE (may take
   minutes; cached and resumable). This is the full install cycle — the
   IDE then appears as startable.
 - `devrig backend start <id>` / `devrig backend stop <id>` — explicit
   lifecycle control.
 
-The `<id>` values appear in `devrig backend --json`.
+Download `<id>` values appear in `devrig backend download --json`.
 
 ## After opening — polling for readiness
 
-`steroid_open_project` returns once the project-open request is
-accepted. The project is not fully ready until indexing finishes:
+`steroid_open_project` has two distinct readiness phases:
 
-1. Poll `steroid_list_windows` every 2-3 seconds until:
+1. **Backend reachability.** For a startable backend, the call blocks until
+   devrig observes its MCP marker. A frontendless Remote Development backend
+   does not need a window or screenshot.
+2. **Project/model readiness.** The IDE accepts the open request
+   asynchronously. Poll `steroid_list_projects` until the target path appears
+   and keep the returned opaque `project_name`.
+
+If a frontend window exists, `steroid_list_windows` is an additional signal:
+
+1. Poll it every 2-3 seconds until:
    - The project appears in the list.
    - `modalDialogShowing` is `false`.
    - `indexingInProgress` is `false`.
    - `projectInitialized` is `true`.
 2. If `modalDialogShowing` is `true`, call `steroid_take_screenshot`
    to see the dialog and `steroid_input` to interact.
+
+These four flags describe IDE/window state, **not Maven or Gradle model
+import**. On a first open, they can become ready before external-system
+configuration begins. Before an indexed semantic query, fetch the matching
+`mcp-steroid://skill/execute-code-maven` or
+`mcp-steroid://skill/execute-code-gradle` recipe, trigger and await sync exactly
+as it shows (the Maven recipe uses `Observation.awaitConfiguration(project)`),
+and run index-dependent work in `smartReadAction`. Treat an unexpectedly tiny first result as incomplete
+project configuration, not as an exhaustive semantic answer.
 
 When several IDEs are running, each `windows[]` / `backgroundTasks[]`
 entry carries a `backend_name` — use it to track the right IDE.

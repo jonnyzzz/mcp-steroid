@@ -1,6 +1,18 @@
 IDE: Type Hierarchy (Supertypes and Subtypes)
-[IU]
+[AI,IC,IU]
 Walks the supertype DAG and subtype tree of a class via PSI — the same APIs IntelliJ's Type Hierarchy view (Ctrl+H) uses. Project-scope subtypes; no lambdas.
+
+**First-open readiness:** on a newly opened Maven or Gradle project, window
+flags and `steroid_list_projects` can become ready before the external project
+model is imported. Fetch `mcp-steroid://skill/execute-code-maven` or
+`mcp-steroid://skill/execute-code-gradle`, trigger and await configuration exactly
+as that recipe shows (the Maven recipe uses `Observation.awaitConfiguration(project)`),
+then run this indexed query in `smartReadAction`. An unexpectedly tiny first
+hierarchy is an import-readiness failure, not an exhaustive result.
+
+The example caps output at 500 only to protect the response. For an exhaustive
+task, raise the cap as needed and fail/report `subsTruncated=true`; never present
+a truncated list as complete.
 
 ```kotlin
 import com.intellij.psi.CommonClassNames
@@ -17,13 +29,19 @@ data class TypeHierarchy(
 
 // Configuration - modify these for your use case
 val classFqn = "com.example.BaseType" // TODO: Set the class FQN
-val maxSubtypes = 50
+val maxSubtypes = 500
 
 val hierarchy = smartReadAction {
     val scope = projectScope()
     val baseClass = JavaPsiFacade.getInstance(project)
         .findClass(classFqn, GlobalSearchScope.allScope(project))
         ?: return@smartReadAction null
+
+    // Canonical exhaustive subtype query. The direct searches below reconstruct
+    // tree depth; this set proves that traversal did not silently miss a branch.
+    val expectedSubtypeFqns = ClassInheritorsSearch.search(baseClass, scope, true)
+        .findAll()
+        .mapNotNullTo(HashSet<String>()) { it.qualifiedName }
 
     val supers = mutableListOf<TypeHierarchyEntry>()
     val seenSupers = HashSet<String>()
@@ -58,6 +76,9 @@ val hierarchy = smartReadAction {
         }
     }
     walkSubs(baseClass, 1)
+    check(truncated || seenSubs.containsAll(expectedSubtypeFqns)) {
+        "Subtype traversal missed: " + (expectedSubtypeFqns - seenSubs).sorted().joinToString()
+    }
 
     TypeHierarchy(
         baseClass.qualifiedName ?: baseClass.name ?: classFqn,

@@ -178,6 +178,17 @@
   pinned by `CliErrorEnvelopeTest`. It affected EVERY tool-side argument rejection, not just an absent
   `project_name`, so it would have outlived the inference work.
 
+- [ ] **Agent harnesses must gate the first task turn on MCP initialization**: initialize instructions
+  solve deferred-schema discovery only after the devrig MCP server reaches ready state. A Claude Code
+  run can still begin while the server is `pending`, see no `steroid_*` names or instructions, and commit
+  to shell text search before initialization completes. This is a client/harness readiness problem; add
+  a regression in the agent launcher instead of another server prompt or MCP tool.
+
+- [ ] **Pin an exact semantic oracle for the Keycloak Authenticator hierarchy E2E**: the headless-agent
+  discovery scenario currently gates the pinned checkout with a 70-FQN lower bound plus known indirect
+  implementors. Capture the canonical full set (or query it independently after the agent run) so future
+  Keycloak fixture changes can distinguish exact completeness from a strong workflow regression signal.
+
 - [ ] **Harden the CLI tool-spec metadata layer (#284 follow-up)**: three review findings deferred from
   PR #356. (1) `CliToolSpec.schema` exposes the mutable `ToolSchema` — any consumer can call
   `register()` after registration and change the advertised `inputSchema`; expose a read-only view

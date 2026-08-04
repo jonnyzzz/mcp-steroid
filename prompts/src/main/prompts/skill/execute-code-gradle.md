@@ -6,9 +6,12 @@ Running Gradle syncs and tests through IntelliJ ExternalSystem APIs instead of n
 
 Use this resource when a `steroid_execute_code` script must run Gradle work from inside IntelliJ. For simple final verification from an agent shell, the Bash tool can run `./gradlew` directly. Inside `steroid_execute_code`, never spawn a nested Gradle process with `ProcessBuilder("./gradlew")`; use IntelliJ's Gradle ExternalSystem APIs.
 
-## Sync after build.gradle.kts Change
+## First open or build-script change: trigger and await Gradle import
 
-After modifying `build.gradle`, `build.gradle.kts`, or `settings.gradle.kts`, trigger a Gradle re-import and wait for final import tasks before compiling, running tests, or using indexed PSI:
+On a newly opened Gradle project, routing can finish before the Gradle model exists. On first open—or
+after modifying `build.gradle`, `build.gradle.kts`, or `settings.gradle.kts`—run this recipe to trigger a
+Gradle re-import and wait for final import tasks before compiling, running tests, or using indexed PSI.
+Waiting for smart mode alone does not trigger an import.
 
 ```kotlin[IU]
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder

@@ -103,7 +103,7 @@ devrig install plugin
 **Requirements**
 
 - A JetBrains IDE — IntelliJ IDEA, PyCharm, GoLand, WebStorm, Rider, CLion, or Android Studio.
-- The IDE runs with a real display: the normal GUI on macOS/Windows, or under **Xvfb** (a virtual X display) on Linux/CI. True headless launches (`-Djava.awt.headless=true`) are unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)) — see [Running devrig in CI](https://devrig.dev/docs/running-on-ci/).
+- The IDE runs with a real display: the normal GUI on macOS/Windows, or under **Xvfb** (a virtual X display) on Linux/CI. True AWT-headless launches (`-Djava.awt.headless=true`) are unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)). A frontendless Remote Development backend is supported and is not AWT-headless — see [Running devrig in CI](https://devrig.dev/docs/running-on-ci/).
 - An MCP-compatible AI agent (Claude Code, Codex, or Gemini).
 
 **Faster plugin updates (optional):** add `https://devrig.dev/updatePlugins.xml` in **Settings > Plugins > Gear icon > Manage Plugin Repositories...**. Or install a ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-steroid/releases) via **Install Plugin from Disk**.

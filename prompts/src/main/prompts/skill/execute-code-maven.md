@@ -4,6 +4,13 @@ Running Maven builds and tests via IntelliJ Maven APIs instead of ProcessBuilder
 
 # Execute Code: Maven Patterns
 
+## First open: trigger the Maven import before semantic work
+
+On a newly opened Maven project, routing and IDE initialization can finish before the Maven model exists.
+Before the first indexed semantic query, go directly to **Trigger and await Maven import** below and run
+that recipe even when no POM was edited. Scheduling the update starts the import;
+`Observation.awaitConfiguration(project)` only awaits work, so calling it alone is not a trigger.
+
 ## Agent: Run One Maven Test Method (two-call pattern)
 
 When an agent task asks for "run one fast test through Maven" — pick a plain JUnit method, then run it through IntelliJ's Maven integration. **Do NOT shell out to `./mvnw` or `mvn` via the `Bash` tool**, and do NOT use `ProcessBuilder("./mvnw")` inside `steroid_execute_code`. Both bypass the IDE entirely and defeat the value of MCP Steroid.
@@ -125,9 +132,10 @@ After each install round, re-issue the test launch+poll. Stop after at most TWO 
 
 ---
 
-## Sync after pom.xml Change
+## Trigger and await Maven import
 
-After modifying `pom.xml`, trigger a full Maven re-import and wait for completion before compiling or running tests:
+On a first open or after modifying `pom.xml`, trigger a full Maven re-import and wait for completion
+before compiling, running tests, or using indexed PSI:
 
 ```kotlin[IU]
 import org.jetbrains.idea.maven.project.MavenProjectsManager

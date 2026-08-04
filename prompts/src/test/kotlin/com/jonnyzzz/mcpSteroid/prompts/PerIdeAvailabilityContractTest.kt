@@ -55,6 +55,9 @@ class PerIdeAvailabilityContractTest {
             // Genuinely plugin-bound: the Maven integration plugin (org.jetbrains.idea.maven)
             // is bundled only in IDEA among the supported product codes; every fence needs it.
             "skill/execute-code-maven" to "Maven plugin is bundled only in IDEA",
+            // Genuinely Java-plugin-bound: PsiClass, JavaPsiFacade, and ClassInheritorsSearch are
+            // available in the IDEA family (IU/IC/AI), not in the other supported products.
+            "ide/type-hierarchy" to "Java PSI hierarchy APIs are bundled only in the IDEA family (IU/IC/AI)",
             // The entries below entered the corpus when the `mcp-steroid://ide/<id>` shorthand
             // list in prompt/skill became part of the audit (#98). Every fence in each of them
             // drives a Java-plugin refactoring processor (com.intellij.refactoring.* java-impl

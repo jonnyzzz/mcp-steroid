@@ -53,7 +53,10 @@ private fun candidateList(candidates: List<BackendCandidate>): String {
     // Tool payloads are served verbatim to BOTH surfaces (MCP clients over `devrig mcp`, and the CLI,
     // which never rewrites tool output) — so this text must stay surface-neutral: naming either
     // `steroid_list_projects` or `devrig list_projects` would be wrong for the other reader.
-    if (candidates.isEmpty()) return "No candidates are currently available; start an IDE, or list the open projects to find a reachable backend."
+    if (candidates.isEmpty()) {
+        return "No candidates are currently available. Run devrig backend download --json to discover " +
+            "and install an IDE, then retry this open-project command."
+    }
     val items = candidates.joinToString("\n") { c ->
         val tag = if (c.startable != null) " (startable)" else ""
         "  ${c.backendName} — ${c.displayName}$tag"

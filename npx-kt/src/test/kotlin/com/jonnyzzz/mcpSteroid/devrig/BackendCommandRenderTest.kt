@@ -89,11 +89,14 @@ class BackendCommandRenderTest {
     // ------------------------------ shape ---------------------------------
 
     @Test
-    fun `empty output starts with the no-backends message`() {
+    fun `empty output points agents at product discovery`() {
         val text = render()
         val lines = text.lines()
         assertEquals("No backends detected.", lines[0])
-        assertEquals("", lines[1])
+        assertTrue(
+            text.contains("devrig backend download --json"),
+            "a clean machine must explain how to list downloadable IDEs; got:\n$text",
+        )
     }
 
     @Test
@@ -112,12 +115,11 @@ class BackendCommandRenderTest {
     }
 
     @Test
-    fun `empty inputs prints the no-backends message + trailing blank`() {
+    fun `empty inputs print the no-backends message and actionable download hint`() {
         val text = render()
         assertTrue(text.contains("No backends detected."), "missing message; got:\n$text")
-        val lines = text.lines()
-        assertEquals("No backends detected.", lines[0])
-        assertEquals("", lines[1])
+        assertTrue(text.contains("devrig backend download --json"), "missing clean-machine hint; got:\n$text")
+        assertTrue(text.endsWith("\n\n"), "empty output must retain its trailing blank line; got:\n$text")
     }
 
     // --------------------- S1: MCP Steroid backends -----------------------

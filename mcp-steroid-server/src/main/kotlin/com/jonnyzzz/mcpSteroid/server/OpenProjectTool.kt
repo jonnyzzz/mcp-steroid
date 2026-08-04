@@ -14,6 +14,9 @@ import com.jonnyzzz.mcpSteroid.mcp.get
 import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
 import com.jonnyzzz.mcpSteroid.mcp.string
+import com.jonnyzzz.mcpSteroid.prompts.generated.openProject.ManagingBackendsPromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeGradlePromptArticle
+import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeMavenPromptArticle
 import com.jonnyzzz.mcpSteroid.thisLogger
 import java.nio.file.Files
 import java.nio.file.Path
@@ -25,9 +28,10 @@ import kotlinx.serialization.Serializable
 /**
  * Handler for the steroid_open_project MCP tool.
  *
- * This tool initiates opening a project in IntelliJ. It does NOT wait for the project
- * to fully open - instead it returns quickly so the client can interact with any dialogs
- * that may appear (such as the trust project dialog) using screenshot/input tools.
+ * This tool initiates opening a project in IntelliJ. A devrig-managed backend cold start may
+ * block until MCP is reachable; after forwarding the request, it does NOT wait for the project
+ * to fully open. A frontend client can interact with dialogs that appear (such as the trust
+ * project dialog) using screenshot/input tools.
  *
  * The tool can optionally trust the project path before opening, which allows skipping
  * the trust dialog.
@@ -74,7 +78,7 @@ class OpenProjectToolSpec(
                     "managed IDE is started automatically; the call blocks until the IDE is reachable. " +
                     "PREFER the backend that already has the same project — or another git worktree of " +
                     "the same repository — open: worktrees share build/index/VCS context, avoiding " +
-                    "redundant indexing. See mcp-steroid://open-project/managing-backends."
+                    "redundant indexing. See ${ManagingBackendsPromptArticle().uri}."
             )
             .cliSynopsis("backend id from `devrig backend --json` to target")
             .string()
@@ -131,27 +135,27 @@ class OpenProjectToolSpec(
     }
 
     private companion object {
-        const val BASE_DESCRIPTION = """Open a project in the IDE. This tool initiates the project opening process and returns quickly.
+        val BASE_DESCRIPTION = """Open a project in the IDE. Starting a managed backend may block until its MCP endpoint is reachable; the project-open request itself remains asynchronous.
 
-IMPORTANT: Project opening is ASYNCHRONOUS. This tool returns immediately; you MUST poll to verify the project is fully ready before using it.
+IMPORTANT: Project opening is ASYNCHRONOUS. Verify routing and build-model readiness separately.
 
 Verification Workflow:
 1. Call steroid_open_project with the project path
-2. Poll steroid_list_windows repeatedly (every 2-3 seconds) until:
-   - The project appears in the windows list
-   - modalDialogShowing is false (no dialogs blocking)
-   - indexingInProgress is false (indexing complete)
-   - projectInitialized is true
-3. If modalDialogShowing is true, use steroid_take_screenshot + steroid_input to handle dialogs
-4. Use steroid_take_screenshot to visually confirm the project is fully loaded
-5. Verify with steroid_list_projects that the project appears
+2. Poll steroid_list_projects until the path appears; keep its opaque project_name for project-scoped calls
+3. If a frontend window exists, steroid_list_windows reports modal/indexing/initialized state. An
+   unattended Remote Development backend needs no frontend or screenshot; do not block semantic work on one
+4. Project listing and window flags prove IDE reachability, not Maven/Gradle model import. On a first
+   Maven/Gradle open, fetch `${ExecuteCodeMavenPromptArticle().uri}` or
+   `${ExecuteCodeGradlePromptArticle().uri}`, trigger and await configuration exactly as that recipe
+   shows (the Maven recipe uses Observation.awaitConfiguration(project)), then run indexed queries in
+   smartReadAction
 
 Dialog Handling:
 - If trust_project=true (default), the trust dialog is skipped automatically
-- Other dialogs (project type, SDK selection, etc.) may still appear
-- Always check modalDialogShowing in steroid_list_windows response"""
+- Other dialogs (project type, SDK selection, etc.) may still appear in a frontend IDE
+- When steroid_list_windows reports modalDialogShowing=true, use steroid_take_screenshot + steroid_input"""
 
-        const val BACKEND_NAME_DESCRIPTION = """Choosing a backend (multiple IDEs):
+        val BACKEND_NAME_DESCRIPTION = """Choosing a backend (multiple IDEs):
 This connection can route to more than one running IDE. Call steroid_open_project WITHOUT a backend_name
 first: if there are several candidates the tool returns them in the error message — pick one and retry
 with backend_name set. PREFER the backend that already has the same project — or a git worktree of
@@ -160,11 +164,14 @@ indexing. A startable (installed but not running) managed IDE is started automat
 the call blocks until the IDE is reachable.
 
 Managing backends from the agent:
-To list/provision/run backends, call the devrig CLI (the same devrig you run as your MCP server):
-`devrig backend` (list), `devrig backend download <id>`, `devrig backend start <id>`,
-`devrig backend stop <id>`, `devrig backend provision <id>`. Backend ids come from `devrig backend
---json`. devrig is on your PATH as `devrig` — just run it.
-See mcp-steroid://open-project/managing-backends."""
+On a clean machine, `devrig backend download --json` lists product ids with their latest stable versions.
+Install one with `devrig backend download <id> [--version <version>]`; for an unattended IDEA 2026.2
+Remote Development backend use `devrig backend download idea-ultimate --version <version>`. Then call
+steroid_open_project: when it is the sole installed candidate, the tool starts it automatically and waits
+until it is reachable. No separate start and no frontend window are required. `devrig backend start/stop`
+remain available for explicit lifecycle diagnostics; `devrig backend provision` updates a running IDE.
+devrig is on PATH as `devrig` — just run it.
+See ${ManagingBackendsPromptArticle().uri}."""
     }
 }
 

@@ -345,6 +345,7 @@ fun renderBackendOutput3(
 
     if (s1Compatible.isEmpty() && s1Incompatible.isEmpty() && s2.isEmpty() && s3.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
+        out.println("To discover and install an IDE: devrig backend download --json")
         out.println()
         return
     }

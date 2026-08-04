@@ -6,6 +6,9 @@ Open a project and handle dialogs interactively.
 
 Open a project and interactively handle any dialogs that appear.
 
+Use this only when the selected IDE has a frontend. An unattended Remote Development backend needs no
+frontend or screenshot; prefer `trust_project=true` and verify it through `steroid_list_projects`.
+
 ## Workflow
 
 ### Step 1: Open the Project (Without Trust)

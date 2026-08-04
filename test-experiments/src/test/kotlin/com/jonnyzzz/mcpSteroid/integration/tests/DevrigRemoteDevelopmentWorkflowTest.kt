@@ -17,17 +17,29 @@ class DevrigRemoteDevelopmentWorkflowTest {
                 .findAll()
         """.trimIndent()
 
-        assertTrue(DevrigRemoteDevelopmentKeycloakTypeHierarchyTest.DEEP_SEARCH_ARGUMENT.containsMatchIn(code))
+        assertTrue(DevrigRemoteDevelopmentKeycloakTypeHierarchyTest.CLASS_HIERARCHY_API in code)
     }
 
     @Test
-    fun `deep hierarchy verifier rejects false followed by unrelated true`() {
+    fun `hierarchy verifier accepts manual deep traversal built from direct searches`() {
         val code = """
-            val inheritors = ClassInheritorsSearch.search(baseClass, scope, false).findAll()
-            val unrelated = true
+            fun walk(type: PsiClass) {
+                ClassInheritorsSearch.search(type, scope, false).forEach { child ->
+                    println(child.qualifiedName)
+                    walk(child)
+                }
+            }
+            walk(baseClass)
         """.trimIndent()
 
-        assertTrue(!DevrigRemoteDevelopmentKeycloakTypeHierarchyTest.DEEP_SEARCH_ARGUMENT.containsMatchIn(code))
+        assertTrue(DevrigRemoteDevelopmentKeycloakTypeHierarchyTest.CLASS_HIERARCHY_API in code)
+    }
+
+    @Test
+    fun `hierarchy verifier rejects code without the IntelliJ hierarchy API`() {
+        val code = "val unrelated = true"
+
+        assertTrue(DevrigRemoteDevelopmentKeycloakTypeHierarchyTest.CLASS_HIERARCHY_API !in code)
     }
 
     @Test

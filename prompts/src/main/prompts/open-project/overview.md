@@ -10,7 +10,8 @@ This guide explains how to open projects in IntelliJ using the MCP Steroid plugi
 
 ### `steroid_open_project`
 
-Opens a project in the IDE. This tool initiates the project opening process and returns quickly.
+Opens a project in the IDE. A managed backend cold start may block until MCP is reachable; only the
+project-open phase is asynchronous.
 
 **Parameters:**
 - `project_path` (required): Absolute path to the project directory
@@ -20,8 +21,8 @@ Opens a project in the IDE. This tool initiates the project opening process and 
 
 ## Important: Project Opening is Asynchronous
 
-Project opening is **asynchronous** - the `steroid_open_project` tool returns immediately after
-initiating the open operation. You **MUST poll** to verify the project is fully ready.
+Project opening is **asynchronous**. Verify IDE routing first, then build-model readiness. A managed
+backend may also need to start; devrig handles that before forwarding the open request.
 
 ## Verification Workflow (Required)
 
@@ -29,17 +30,17 @@ After calling `steroid_open_project`, follow this workflow:
 
 ```
 1. Call steroid_open_project(project_path="/path/to/project", trust_project=true, ...)
-2. Poll steroid_list_windows() every 2-3 seconds until:
-   - The project appears in the windows list
-   - modalDialogShowing is false (no dialogs blocking)
-   - indexingInProgress is false (indexing complete)
-   - projectInitialized is true
-3. If modalDialogShowing is true:
-   - Call steroid_take_screenshot() to see the dialog
-   - Use steroid_input() to interact with the dialog
-4. Use steroid_take_screenshot() to visually confirm project is loaded
-5. Verify with steroid_list_projects() that the project appears
+2. Poll steroid_list_projects() until the target path appears; keep its fresh project_name
+3. If a frontend window exists, steroid_list_windows() reports modal/indexing/initialized state
+4. Only when modalDialogShowing=true, use screenshot/input to diagnose the frontend dialog
+5. For a first Maven/Gradle open, fetch `mcp-steroid://skill/execute-code-maven` or
+   `mcp-steroid://skill/execute-code-gradle`, then trigger and await configuration exactly as that recipe
+   shows before indexed semantic queries
 ```
+
+An unattended Remote Development backend can have no frontend window. Do not block on
+`steroid_list_windows` or visual confirmation; project routing plus a successful project-scoped call is
+the non-visual readiness path. Window flags also do not prove Maven/Gradle import completion.
 
 ## Window Info Fields for Polling
 
@@ -50,7 +51,7 @@ After calling `steroid_open_project`, follow this workflow:
 | `project_name` | The single routing key for the window's project (null if not a project window). Look up that project's human-readable `name` and `path` via `steroid_list_projects` by this key. |
 | `modalDialogShowing` | True if any modal dialog is showing in IDE |
 | `indexingInProgress` | True if project is indexing (dumb mode) |
-| `projectInitialized` | True if project is fully initialized |
+| `projectInitialized` | True if the IDE project is initialized; does not prove Maven/Gradle model import |
 
 To find the right project for a file or directory path, pick the project (from `steroid_list_projects`) whose `path` is the longest prefix of your target path — this disambiguates nested checkouts and git worktrees.
 
@@ -62,8 +63,9 @@ When you trust the project and want to skip dialogs:
 
 ```
 1. steroid_open_project(project_path="/path/to/project", trust_project=true, ...)
-2. Poll steroid_list_windows() until indexingInProgress=false and projectInitialized=true
-3. steroid_list_projects() to verify project is open
+2. Poll steroid_list_projects() until the target path appears and keep project_name
+3. If a frontend exists, optionally check steroid_list_windows()
+4. Await first Maven/Gradle model import before indexed queries
 ```
 
 Resource: `mcp-steroid://open-project/open-trusted`
@@ -125,18 +127,6 @@ steroid_open_project(
 )
 ```
 
-### Opening in New Window
-
-```
-steroid_open_project(
-    project_path="/Users/me/projects/another-project",
-    task_id="open-in-new-window",
-    reason="Opening second project for comparison",
-    trust_project=true,
-    force_new_frame=true
-)
-```
-
 ### Checking if Project is Already Open
 
 Before opening, you can check if the project is already open:
@@ -151,9 +141,9 @@ return immediately with a message indicating the project is already open.
 ## Troubleshooting
 
 ### Project not appearing in list
-- Poll `steroid_list_windows()` - check if `indexingInProgress` is still true
-- Wait for indexing to complete (can take several minutes for large projects)
-- Use `steroid_take_screenshot()` to see if there's a dialog waiting
+- Continue polling `steroid_list_projects()`; backend start and project open can take several minutes
+- If a frontend window exists, check `steroid_list_windows()` for indexing or a modal dialog
+- Only then use `steroid_take_screenshot()` to inspect that dialog
 - Check IDE logs for errors
 
 ### Trust dialog keeps appearing
@@ -161,9 +151,11 @@ return immediately with a message indicating the project is already open.
 - Or use `steroid_input()` to click the "Trust Project" button
 
 ### Project opens but is empty/broken
-- Check `steroid_list_windows()` for `projectInitialized` status
-- Wait for `indexingInProgress` to become false
-- The project may need additional configuration
+- For Maven/Gradle, fetch `mcp-steroid://skill/execute-code-maven` or
+  `mcp-steroid://skill/execute-code-gradle`, then trigger and await external-system configuration exactly
+  as that recipe shows
+- Then run the indexed query in `smartReadAction`
+- If a frontend exists, also check `steroid_list_windows()` for IDE indexing/initialization
 - Check if all required plugins are installed via `steroid_execute_code`
 - Some projects require specific SDKs to be configured
 
@@ -180,6 +172,7 @@ return immediately with a message indicating the project is already open.
 | `mcp-steroid://open-project/open-trusted` | Example: Open with automatic trust |
 | `mcp-steroid://open-project/open-with-dialogs` | Example: Open with dialog handling |
 | `mcp-steroid://open-project/open-via-code` | Example: Open via IntelliJ APIs |
+| `mcp-steroid://open-project/managing-backends` | devrig install/auto-start and Remote Development readiness |
 
 ---
 
@@ -195,6 +188,7 @@ return immediately with a message indicating the project is already open.
 - [Open Trusted](mcp-steroid://open-project/open-trusted) - Auto-trust project opening
 - [Open with Dialogs](mcp-steroid://open-project/open-with-dialogs) - Interactive dialog handling
 - [Open via Code](mcp-steroid://open-project/open-via-code) - Programmatic opening
+- [Managing IDE backends](mcp-steroid://open-project/managing-backends) - Clean-machine install and auto-start
 
 ### Related Example Guides
 - [IDE Examples](mcp-steroid://ide/overview) - IDE power operations

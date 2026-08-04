@@ -13,14 +13,21 @@ import com.jonnyzzz.mcpSteroid.integration.infra.streamDevrigLogsToConsole
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
 import com.jonnyzzz.mcpSteroid.testHelper.DockerClaudeSession
 import com.jonnyzzz.mcpSteroid.testHelper.DockerCodexSession
+import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.git.BareRepoCache
 import com.jonnyzzz.mcpSteroid.testHelper.git.GitDriver
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
 import java.io.File
+import java.time.Instant
 import java.util.concurrent.TimeUnit
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -41,6 +48,23 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
     fun `codex installs devrig and uses a remote development backend for keycloak hierarchy`() =
         runScenario("codex")
 
+    @Test
+    fun `agent prompt requests the outcome without scripting the bootstrap recipe`() {
+        val prompt = buildPrompt()
+        for (forbidden in listOf(
+            "devrig",
+            "steroid_",
+            "mcp-steroid://",
+            "ClassInheritorsSearch",
+            "Observation.awaitConfiguration",
+        )) {
+            assertTrue(forbidden !in prompt) { "Task-only prompt must not reveal '$forbidden':\n$prompt" }
+        }
+        for (required in listOf(PROJECT_DIR, IDE_VERSION, KeycloakTypeHierarchyScenario.INTERFACE_FQN)) {
+            assertTrue(required in prompt) { "Task-only prompt must state the reproducible outcome '$required':\n$prompt" }
+        }
+    }
+
     private fun runScenario(agentName: String) = runWithCloseableStack { lifetime ->
         BareRepoCache.ensureRepo(KEYCLOAK_REPO_URL, IdeTestFolders.repoCacheDir)
 
@@ -60,6 +84,7 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
 
         prepareKeycloak(container)
         installDevrigForAgent(container, agentName)
+        assertCleanBackendState(container)
         streamDevrigLogsToConsole(lifetime, File(container.runDir, "devrig-logs"), console)
 
         var backendMayBeRunning = false
@@ -76,8 +101,10 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
             ).awaitForProcessFinish()
             backendMayBeRunning = true
 
-            val toolScore = assertAgentWorkflow(result.rawStdout)
+            val workflow = assertAgentWorkflow(result.rawStdout)
             val finalAnswerScore = assertFinalAnswer(result.rawStdout)
+            val improvements = assertImprovements(result.rawStdout)
+            val improvementsArtifact = saveImprovements(container, agentName, workflow, improvements)
 
             assertRemoteBackendState(container)
             if (agentName == "codex" && result.exitCode == 137) {
@@ -87,8 +114,9 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
             }
             console.writeSuccess(
                 "$agentName completed the hierarchy through the IU 262 Remote Development backend " +
-                    "(${toolScore.reportedCount} tool-result subtypes, " +
-                    "${finalAnswerScore.reportedCount} final-answer subtypes)",
+                    "(${workflow.hierarchyScore.reportedCount} tool-result subtypes, " +
+                    "${finalAnswerScore.reportedCount} final-answer subtypes, " +
+                    "${workflow.startMode}; improvements: $improvementsArtifact)",
             )
         } finally {
             try {
@@ -157,78 +185,208 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
             else -> error("Unknown agent: $agentName")
         }
 
-    private fun buildPrompt(): String = buildString {
-        appendLine("# Open Keycloak in a devrig-managed IDE and report its complete Authenticator hierarchy")
-        appendLine()
-        appendLine("This is a clean machine. devrig is installed and registered as your `mcp-steroid` server,")
-        appendLine("but no IDE is installed or running. You must provision and start the IDE yourself.")
-        appendLine()
-        appendLine("1. Use your shell tool to run this exact download command:")
-        appendLine("   \"$INSTALLED_DEVRIG\" backend download idea-ultimate --version $IDE_VERSION")
-        appendLine("2. Use your shell tool to run this exact start command:")
-        appendLine("   \"$INSTALLED_DEVRIG\" backend start idea-ultimate --version $IDE_VERSION")
-        appendLine("3. Call `steroid_open_project` with `project_path=$PROJECT_DIR`. The IDE is a headless Remote")
-        appendLine("   Development backend, so no frontend window is expected. Its first boot and project import can")
-        appendLine("   take several minutes; if it is not reachable yet, wait and retry the MCP call.")
-        appendLine("4. After open_project succeeds, call `steroid_list_projects`. Its successful result must contain")
-        appendLine("   the Keycloak path `$PROJECT_DIR`. If it does not yet, retry open_project/list_projects until it does.")
-        appendLine("5. Only after Keycloak appears in list_projects, complete this semantic task in that managed IDE:")
-        appendLine()
-        append(KeycloakTypeHierarchyScenario.mcpTaskInstructions())
+    private fun assertCleanBackendState(container: DevrigContainer) {
+        container.execAndAssertWithConsoleStream(
+            description = "prove the agent starts with no installed or running managed IDE",
+            timeoutSeconds = 30,
+            script = $$"""
+                set -euo pipefail
+                backend_root=/home/agent/.mcp-steroid/backends
+                state_root=/home/agent/.mcp-steroid/state
+                marker_root=/home/agent/.mcp-steroid/markers
+                test ! -d "$backend_root" || test -z "$(find "$backend_root" -mindepth 1 -print -quit)"
+                test ! -d "$state_root" || test -z "$(find "$state_root" -type f -name '*.pid' -print -quit)"
+                test ! -d "$marker_root" || test -z "$(find "$marker_root" -type f -name '*.mcp-steroid' -print -quit)"
+            """.trimIndent(),
+        )
     }
 
-    private fun assertAgentWorkflow(rawNdjson: String): TypeHierarchyScore {
+    private fun buildPrompt(): String = buildString {
+        appendLine("# Report Keycloak's complete Authenticator hierarchy")
+        appendLine()
+        appendLine("The pinned Keycloak checkout is at `$PROJECT_DIR`.")
+        appendLine()
+        appendLine("Do this with IntelliJ IDEA Ultimate $IDE_VERSION. This clean machine starts with no JetBrains IDE")
+        appendLine("installed or running. Work autonomously with the capabilities already configured for you.")
+        appendLine()
+        append(KeycloakTypeHierarchyScenario.baselineTaskInstructions())
+        appendLine()
+        appendLine("After the result, explain what was hard or unclear about discovering the IDE capability,")
+        appendLine("installing or starting a suitable backend, opening the project, waiting for readiness, and using")
+        appendLine("IDE semantics. Suggest prompt, tool-description, server-instruction, or built-in guidance article")
+        appendLine("improvements only; do not propose new tools or API methods.")
+        appendLine()
+        appendLine("<<<IMPROVEMENTS>>>")
+        appendLine("(your reflection)")
+        appendLine("<<<END_IMPROVEMENTS>>>")
+    }
+
+    private fun assertAgentWorkflow(rawNdjson: String): AgentWorkflowEvidence {
         val calls = decodeAgentToolCalls(rawNdjson)
         assertTrue(calls.isNotEmpty()) { "No Claude/Codex tool calls were decoded from raw NDJSON." }
 
-        assertSuccessfulCommand(calls, INSTALLED_DEVRIG, "backend download idea-ultimate", "--version $IDE_VERSION")
-        assertSuccessfulCommand(calls, INSTALLED_DEVRIG, "backend start idea-ultimate", "--version $IDE_VERSION")
+        val downloadIndex = successfulIdeaDownloadIndex(calls)
+        assertTrue(downloadIndex >= 0) {
+            "Raw agent events do not contain a successful IU $IDE_VERSION download. ${summarizeCalls(calls)}"
+        }
 
-        val openedProject = calls.any { call ->
+        val openIndex = calls.indexOfFirstAfter(downloadIndex) { call ->
             call.toolName == "steroid_open_project" &&
                 call.argumentText("project_path") == PROJECT_DIR &&
                 call.hasSuccessfulResult()
         }
-        assertTrue(openedProject) {
+        assertTrue(openIndex >= 0) {
             "Raw agent events do not contain a successful steroid_open_project for $PROJECT_DIR. " +
                 summarizeCalls(calls)
         }
 
-        val listedKeycloak = calls.any { call ->
+        val listIndex = calls.indexOfFirstAfter(openIndex) { call ->
             call.toolName == "steroid_list_projects" &&
                 call.hasSuccessfulResult() &&
                 call.result?.text?.contains(PROJECT_DIR) == true
         }
-        assertTrue(listedKeycloak) {
+        assertTrue(listIndex >= 0) {
             "Raw agent events do not contain a successful steroid_list_projects result with $PROJECT_DIR. " +
                 summarizeCalls(calls)
         }
-
-        val hierarchyExecutions = calls.filter { call ->
-            if (call.toolName != "steroid_execute_code" || !call.hasSuccessfulResult()) return@filter false
+        val hierarchyExecutions = calls.withIndex().mapNotNull { (index, call) ->
+            if (index <= listIndex || call.toolName != "steroid_execute_code") return@mapNotNull null
             val code = call.argumentText("code")
-            code.contains("ClassInheritorsSearch") &&
-                code.contains("findAll") &&
-                DEEP_SEARCH_ARGUMENT.containsMatchIn(code)
+            if (!code.contains(CLASS_HIERARCHY_API)) {
+                return@mapNotNull null
+            }
+            val latestProjectName = latestProjectNameForPath(calls, index, PROJECT_DIR)
+                ?: return@mapNotNull null
+            if (call.argumentText("project_name") != latestProjectName) return@mapNotNull null
+            HierarchyExecution(index, call, latestProjectName)
         }
         assertTrue(hierarchyExecutions.isNotEmpty()) {
-            "Raw agent events do not contain a successful deep ClassInheritorsSearch execution. " +
+            "Raw agent events do not contain a deep ClassInheritorsSearch routed with the latest " +
+                "project_name for $PROJECT_DIR. " +
                 summarizeCalls(calls)
         }
-        val scores = hierarchyExecutions.map { call ->
-            scoreTypeHierarchy(
-                call.result?.text.orEmpty(),
-                KeycloakTypeHierarchyScenario.requiredTransitive,
-                KeycloakTypeHierarchyScenario.MIN_TOTAL,
-            )
+        val firstSuccessfulHierarchy = hierarchyExecutions.firstOrNull { it.call.hasSuccessfulResult() }
+            ?: error("Every deep ClassInheritorsSearch execution failed. ${summarizeCalls(calls)}")
+        val hierarchyScore = scoreTypeHierarchy(
+            firstSuccessfulHierarchy.call.result?.text.orEmpty(),
+            KeycloakTypeHierarchyScenario.requiredTransitive,
+            E2E_MIN_TOTAL,
+        )
+        assertTrue(hierarchyScore.complete) {
+            "The first successful deep ClassInheritorsSearch was incomplete: " +
+                "reported=${hierarchyScore.reportedCount}, missing=${hierarchyScore.missingRequired}. " +
+                "This usually means the project model/import was not ready. ${summarizeCalls(calls)}"
         }
-        val bestScore = scores.maxBy { it.reportedCount }
-        assertTrue(scores.any { it.complete }) {
-            "No successful deep ClassInheritorsSearch tool result contained the complete hierarchy: " +
-                "best reported=${bestScore.reportedCount}, missing=${bestScore.missingRequired}. " +
-                summarizeCalls(calls)
+
+        val explicitStart = successfulCommandIndex(calls, "backend start idea-ultimate") >= 0
+        val startMode = if (explicitStart) "explicit-cli-start" else "open-project-auto-start"
+        val failedOpenAttempts = calls.count { it.toolName == "steroid_open_project" && it.result?.isError == true }
+        val hierarchyErrors = hierarchyExecutions.count { it.call.result?.isError != false }
+        val emptyProjectLists = calls.take(listIndex).count { call ->
+            call.toolName == "steroid_list_projects" &&
+                call.hasSuccessfulResult() &&
+                call.result?.text?.contains(PROJECT_DIR) != true
         }
-        return scores.first { it.complete }
+        val fetchedArticles = calls.asSequence()
+            .filter { it.toolName == "steroid_fetch_resource" }
+            .map { it.argumentText("uri") }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+        val readinessSyncBeforeHierarchy = calls.take(firstSuccessfulHierarchy.index).any { call ->
+            if (call.toolName != "steroid_execute_code") return@any false
+            val code = call.argumentText("code")
+            "Observation.awaitConfiguration" in code &&
+                ("MavenProjectsManager" in code || "scheduleUpdate" in code)
+        }
+        val summary = buildString {
+            appendLine("download discovered: yes")
+            appendLine("start mode: $startMode")
+            appendLine("failed open attempts: $failedOpenAttempts")
+            appendLine("empty project-list results before routing: $emptyProjectLists")
+            appendLine("list_windows used: ${calls.any { it.toolName == "steroid_list_windows" }}")
+            appendLine("screenshot used: ${calls.any { it.toolName == "steroid_take_screenshot" }}")
+            appendLine("input used: ${calls.any { it.toolName == "steroid_input" }}")
+            appendLine("fetched articles: ${fetchedArticles.ifEmpty { listOf("none") }.joinToString()}")
+            appendLine("Maven trigger+await before hierarchy: $readinessSyncBeforeHierarchy")
+            appendLine("execute attempts/errors: ${hierarchyExecutions.size}/$hierarchyErrors")
+            appendLine("project_name: ${firstSuccessfulHierarchy.projectName}")
+            appendLine("tool-result subtype count: ${hierarchyScore.reportedCount}")
+        }
+        return AgentWorkflowEvidence(hierarchyScore, startMode, summary)
+    }
+
+    private fun latestProjectNameForPath(
+        calls: List<AgentToolCall>,
+        beforeIndex: Int,
+        projectPath: String,
+    ): String? {
+        for (index in (beforeIndex - 1) downTo 0) {
+            val call = calls[index]
+            val text = call.result?.text.orEmpty()
+            if (call.toolName == "steroid_list_projects" && call.hasSuccessfulResult() && projectPath in text) {
+                return projectNameForPath(text, projectPath)
+            }
+        }
+        return null
+    }
+
+    private fun projectNameForPath(resultText: String, projectPath: String): String {
+        val root = Json.parseToJsonElement(resultText) as? JsonObject
+            ?: error("steroid_list_projects did not return a JSON object: $resultText")
+        val projects = root["projects"] as? JsonArray
+            ?: error("steroid_list_projects result has no projects array: $resultText")
+        val project = projects.filterIsInstance<JsonObject>().singleOrNull { candidate ->
+            candidate["path"]?.jsonPrimitive?.contentOrNull == projectPath
+        } ?: error("steroid_list_projects result does not contain exactly one $projectPath entry: $resultText")
+        return project["project_name"]?.jsonPrimitive?.contentOrNull
+            ?: error("Keycloak project entry has no project_name: $project")
+    }
+
+    private fun assertImprovements(rawNdjson: String): String {
+        val finalResponse = decodeAgentFinalResponse(rawNdjson)
+            ?: error("Raw agent events do not contain a final user-visible response.")
+        val match = IMPROVEMENTS_BLOCK.findAll(finalResponse).lastOrNull()
+            ?: error("Final response has no <<<IMPROVEMENTS>>> block: $finalResponse")
+        val improvements = match.groupValues[1].trim()
+        assertTrue(improvements.isNotBlank() && !improvements.startsWith("(your reflection")) {
+            "Final response contains only the improvements placeholder: $finalResponse"
+        }
+        return improvements
+    }
+
+    private fun saveImprovements(
+        container: DevrigContainer,
+        agentName: String,
+        workflow: AgentWorkflowEvidence,
+        improvements: String,
+    ): File {
+        val content = buildString {
+            appendLine("# Headless backend: agent reflection ($agentName)")
+            appendLine()
+            appendLine("Generated by DevrigRemoteDevelopmentKeycloakTypeHierarchyTest on ${Instant.now()}.")
+            appendLine()
+            appendLine("## Machine summary")
+            appendLine()
+            append(workflow.summary)
+            appendLine()
+            appendLine("## Agent reflection")
+            appendLine()
+            appendLine(improvements)
+        }
+        val artifactName = "IMPROVEMENTS-headless-backend-$agentName.md"
+        val runArtifact = container.runDir.resolve(artifactName)
+        runArtifact.writeText(content)
+
+        val improvementsDir = ProjectHomeDirectory.requireProjectHomeDirectory()
+            .resolve("test-experiments/build/improvements")
+            .toFile()
+        assertTrue(improvementsDir.mkdirs() || improvementsDir.isDirectory) {
+            "Failed to create improvements directory: $improvementsDir"
+        }
+        val buildArtifact = improvementsDir.resolve(artifactName)
+        buildArtifact.writeText(content)
+        return buildArtifact
     }
 
     private fun assertFinalAnswer(rawNdjson: String): TypeHierarchyScore {
@@ -237,7 +395,7 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
         val score = scoreTypeHierarchy(
             finalResponse.orEmpty(),
             KeycloakTypeHierarchyScenario.requiredTransitive,
-            KeycloakTypeHierarchyScenario.MIN_TOTAL,
+            E2E_MIN_TOTAL,
         )
         assertTrue(score.complete) {
             "The agent final response does not contain the complete hierarchy: " +
@@ -246,16 +404,31 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
         return score
     }
 
-    private fun assertSuccessfulCommand(calls: List<AgentToolCall>, vararg fragments: String) {
-        val succeeded = calls.any { candidate ->
+    private fun successfulCommandIndex(calls: List<AgentToolCall>, vararg fragments: String): Int =
+        calls.indexOfFirst { candidate ->
             (candidate.toolName.equals("Bash", ignoreCase = true) || candidate.toolName == "command_execution") &&
                 fragments.all { it in candidate.argumentText("command") } &&
                 candidate.hasSuccessfulResult()
         }
-        assertTrue(succeeded) {
-            "Raw agent events do not contain a successful shell command with ${fragments.toList()}. " +
-                summarizeCalls(calls)
+
+    private fun successfulIdeaDownloadIndex(calls: List<AgentToolCall>): Int =
+        calls.indexOfFirst { candidate ->
+            val command = candidate.argumentText("command")
+            (candidate.toolName.equals("Bash", ignoreCase = true) ||
+                candidate.toolName == "command_execution") &&
+                "backend download idea-ultimate" in command &&
+                ("--version $IDE_VERSION" in command || "--version=$IDE_VERSION" in command) &&
+                candidate.hasSuccessfulResult()
         }
+
+    private inline fun List<AgentToolCall>.indexOfFirstAfter(
+        previousIndex: Int,
+        predicate: (AgentToolCall) -> Boolean,
+    ): Int {
+        for (index in (previousIndex + 1)..lastIndex) {
+            if (predicate(this[index])) return index
+        }
+        return -1
     }
 
     private fun assertRemoteBackendState(container: DevrigContainer) {
@@ -488,6 +661,18 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
         limit = 20,
     ) { call -> "${call.toolName}(${call.arguments}) result=${call.result?.isError}" }
 
+    private data class AgentWorkflowEvidence(
+        val hierarchyScore: TypeHierarchyScore,
+        val startMode: String,
+        val summary: String,
+    )
+
+    private data class HierarchyExecution(
+        val index: Int,
+        val call: AgentToolCall,
+        val projectName: String,
+    )
+
     companion object {
         private const val PROJECT_DIR = "/home/agent/keycloak"
         private const val INSTALLED_DEVRIG = "/home/agent/.mcp-steroid/bin/devrig"
@@ -498,14 +683,17 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
         // product-info.json / backend.json stores the numeric build; the runtime marker uses IU-<build>.
         private const val IDE_DESCRIPTOR_BUILD = "262.8665.337"
         private const val IDE_BUILD = "IU-262.8665.337"
+        // Lower-bound oracle for the pinned commit; exact-set follow-up is tracked in TODO.md.
+        private const val E2E_MIN_TOTAL = 70
+        const val CLASS_HIERARCHY_API = "ClassInheritorsSearch"
         const val BEARER_TOKEN_CHARACTERS = "A-Za-z0-9._~+/=-"
         const val MARKER_CREDENTIAL_VALUE_CHARACTERS = "A-Za-z0-9._~+/%=-"
         private val BEARER_CREDENTIAL = Regex("Bearer\\s+[$BEARER_TOKEN_CHARACTERS]+")
         private val IJT_QUERY_CREDENTIAL = Regex("([?&]_ijt=)[^&\"\\s]+")
         private val IJT_HEADER_CREDENTIAL = Regex("(\"x-ijt\"\\s*:\\s*\")[^\"]*(\")")
-        val DEEP_SEARCH_ARGUMENT = Regex(
-            "ClassInheritorsSearch\\s*\\.\\s*search\\s*\\(\\s*[^,]+,\\s*[^,]+," +
-                "\\s*(?:checkDeep\\s*=\\s*)?true\\s*\\)",
+        val IMPROVEMENTS_BLOCK = Regex(
+            pattern = """<<<\s*IMPROVEMENTS\s*>>>\s*\n([\s\S]*?)\n\s*<<<\s*END_IMPROVEMENTS\s*>>>""",
+            options = setOf(RegexOption.IGNORE_CASE),
         )
 
         fun redactMarkerCredentials(text: String): String {

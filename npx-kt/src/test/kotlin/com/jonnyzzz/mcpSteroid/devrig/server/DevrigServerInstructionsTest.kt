@@ -44,17 +44,35 @@ class DevrigServerInstructionsTest {
     }
 
     @Test
-    fun `the capability statement names the tool prefix and the IDE provisioning commands`(
+    fun `the capability statement explains the autonomous clean-machine route`(
         @TempDir tempDir: Path,
     ) {
         val instructions = runDevrigMcp(tempDir).initializeResult["instructions"]?.jsonPrimitive?.contentOrNull
             ?: error("initialize result has no instructions")
 
-        // The two facts an agent cannot discover any other way before loading a schema: the tool
-        // name prefix to search for, and how to get an IDE when none is running.
-        for (fact in listOf("steroid_", "devrig backend download", "devrig backend start")) {
+        // These facts are unreachable from deferred tool schemas and project-scoped articles when no
+        // IDE is installed. Initialization must carry the complete bootstrap route itself.
+        for (fact in listOf(
+            "steroid_",
+            "devrig backend download --json",
+            "idea-ultimate",
+            "2026.2",
+            "Remote Development",
+            "no frontend",
+            "starts the sole installed backend automatically",
+            "mcp-steroid://skill/execute-code-maven",
+            "mcp-steroid://skill/execute-code-gradle",
+            "~/.mcp-steroid/bin/devrig",
+            "latest stable",
+            "cached and resumable",
+            "trigger and",
+        )) {
             assertTrue(fact in instructions, "capability statement must mention '$fact': $instructions")
         }
+        assertTrue(
+            "devrig backend start" !in instructions,
+            "capability statement must present open_project auto-start as the default: $instructions",
+        )
     }
 
     @Test

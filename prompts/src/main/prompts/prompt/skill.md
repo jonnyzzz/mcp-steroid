@@ -28,6 +28,7 @@ Before reading further, if your task matches one of these, skip straight to the 
 | List enabled inspections in the project | `mcp-steroid://ide/inspection-summary` |
 | Multi-file literal-text edit | one `steroid_execute_code` script: read + replace + save all files in a single `writeAction { }` |
 | Find usages of a symbol | `mcp-steroid://lsp/find-references` |
+| Find every direct/indirect subtype or implementor | `mcp-steroid://ide/type-hierarchy` |
 | Run / debug a test | `mcp-steroid://ide/demo-debug-test` |
 | Run Maven / Gradle tests | `mcp-steroid://skill/execute-code-maven`, `mcp-steroid://skill/execute-code-gradle` |
 | API discovery / exploration | continue reading this guide |
@@ -38,10 +39,21 @@ The full index is in the "MCP Resources (Use Them)" section below.
 
 ```
 1. steroid_list_projects → get list of open projects
-2. Pick the `project_name` of the one you want (the unique routing key — NOT the human-readable `name`)
-3. steroid_execute_code → run Kotlin code with that project_name
-4. steroid_execute_feedback → report success/failure for tracking
+2. Empty on a clean machine? Run `devrig backend download --json`, install the required product, then
+   call steroid_open_project. It auto-starts a sole installed backend; no separate start is required.
+3. Poll steroid_list_projects until the path appears, then pick its `project_name` (the unique routing
+   key — NOT the human-readable `name`). Do not reuse a key from before an IDE/project restart.
+4. On a first Maven/Gradle open, fetch `mcp-steroid://skill/execute-code-maven` or
+   `mcp-steroid://skill/execute-code-gradle`, then trigger and await external-system configuration exactly
+   as that recipe shows.
+5. steroid_execute_code → run Kotlin code with that project_name
+6. steroid_execute_feedback → report success/failure for tracking
 ```
+
+For unattended Java/JVM work on 2026.2, install IDEA Ultimate with a pinned 2026.2 version. devrig launches it as a
+frontendless Remote Development backend with MCP Steroid included, so a window or screenshot is not a
+readiness requirement. Full lifecycle details: `mcp-steroid://open-project/managing-backends` (fetch it
+after `steroid_list_projects` supplies a project_name).
 
 Each `steroid_list_projects` entry has TWO name fields: `project_name` (the within-IDE-unique,
 opaque routing KEY you pass back to every project-scoped tool) and `name` (the human-readable
@@ -148,9 +160,11 @@ computes but never prints returns no data, just a `HINT:` about the missing prin
 Rate execution results. Use after `steroid_execute_code`.
 
 ### `steroid_open_project`
-Open a project in the IDE. This tool initiates the project opening process and returns quickly.
+Open a project in the IDE. A managed backend cold start may block until MCP is reachable; only the
+project-open phase is asynchronous.
 
-**IMPORTANT**: This tool does NOT wait for the project to fully open. The project opening process may show dialogs (such as "Trust Project", project type selection, etc.) that require interaction. Use `steroid_take_screenshot` and `steroid_input` tools to interact with any dialogs that appear.
+Through devrig, a sole installed managed backend is selected and started automatically; backend startup
+waits until MCP is reachable. The project-open request itself remains asynchronous.
 
 **Parameters:**
 - `project_path` (required): Absolute path to the project directory to open
@@ -161,17 +175,20 @@ Open a project in the IDE. This tool initiates the project opening process and r
 **Workflow:**
 1. Call `steroid_open_project` with the project path
 2. If `trust_project=true`, the project will be trusted automatically (no trust dialog)
-3. Call `steroid_take_screenshot` to see the current IDE state
-4. If dialogs are shown, use `steroid_input` to interact with them
-5. Call `steroid_list_projects` to verify the project is open
+3. Poll `steroid_list_projects` until the path appears and keep its fresh `project_name`
+4. If a frontend exists, use `steroid_list_windows`; only use screenshot/input when it reports a modal
+5. A frontendless Remote Development backend has no required window. For a first Maven/Gradle open, await
+   the build-system model using its execute-code sync recipe before indexed semantic queries
 
 ## MCP Resources (Use Them)
 
-This server exposes built-in resources through the MCP resource APIs. These are the fastest way to load full examples and guides without guessing or copy/pasting from the web.
+This server exposes built-in articles through `steroid_fetch_resource`. These are the fastest way to load full examples and guides without guessing or copy/pasting from the web.
 
 **How to access resources:**
 1. Call `steroid_fetch_resource` with a `mcp-steroid://` URI to load the content.
-2. Or use `list_mcp_resources` to browse all available resources.
+
+The fetch tool is project-scoped because articles render for the target IDE. On a clean machine, use the
+initialize instructions and open-project description to bootstrap; fetch articles after a project appears.
 
 **Key resources provided by this server:**
 - `mcp-steroid://prompt/skill` - This guide as a resource.
@@ -185,6 +202,7 @@ This server exposes built-in resources through the MCP resource APIs. These are 
 - `mcp-steroid://debugger/<id>` - Runnable Kotlin scripts (e.g., `set-line-breakpoint`, `debug-run-configuration`, `debug-session-control`, `debug-list-threads`, `debug-thread-dump`).
 - `mcp-steroid://open-project/overview` - Guide for opening projects via MCP.
 - `mcp-steroid://open-project/<id>` - Project opening examples (e.g., `open-trusted`, `open-with-dialogs`, `open-via-code`).
+- `mcp-steroid://open-project/managing-backends` - devrig download, auto-start, Remote Development, and readiness phases.
 
 These resources are designed to be plugged directly into `steroid_execute_code` after you configure file paths/positions.
 

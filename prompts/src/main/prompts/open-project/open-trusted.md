@@ -34,10 +34,15 @@ The tool will:
 
 ### Step 2: Wait for Project to Load
 
-Wait 2-5 seconds for the project to initialize. The time depends on:
+Poll `steroid_list_projects` until the target path appears. Backend startup, first open, and indexing can
+take minutes; a fixed sleep is not a readiness check. The time depends on:
 - Project size
 - Number of files to index
 - Installed plugins
+
+Keep the fresh opaque `project_name` returned for that path. If a frontend exists, `steroid_list_windows`
+can additionally report IDE indexing and modal state. A frontendless Remote Development backend needs no
+window or screenshot.
 
 ### Step 3: Verify Project is Open
 
@@ -73,7 +78,10 @@ identity (`intellij` = `{name, version, build}`) — see
 
 ### Step 4: Start Working
 
-Now you can use `steroid_execute_code` with the project:
+On a first Maven/Gradle open, fetch `mcp-steroid://skill/execute-code-maven` or
+`mcp-steroid://skill/execute-code-gradle`, then trigger and await configuration exactly as that recipe
+shows before indexed semantic queries. Then use
+`steroid_execute_code` with the fresh project routing key:
 
 ```kotlin
 val executeCodeJson = """
@@ -96,7 +104,7 @@ println(executeCodeJson)
 → steroid_open_project(project_path="/Users/me/projects/my-app", task_id="open-app", reason="Opening to add feature", trust_project=true)
 ← Project opening initiated...
 
-→ [wait 3 seconds]
+→ [poll until the path appears]
 
 → steroid_list_projects()
 ← {"projects":[{"project_name":"my-app-9fk2a0xq","name":"my-app","path":"/Users/me/projects/my-app","backend_name":"iu-9fk2a0xq"}],
@@ -129,7 +137,7 @@ Related project opening examples:
 Related MCP tools:
 - `steroid_open_project` - Tool for opening projects via MCP
 - `steroid_list_projects` - List all open projects
-- `steroid_list_windows` - Check project initialization status
+- `steroid_list_windows` - Optional frontend IDE/index/modal status
 
 Overview resources:
 - [Open Project Examples Overview](mcp-steroid://open-project/overview) - All project opening workflows
