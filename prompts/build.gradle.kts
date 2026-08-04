@@ -10,12 +10,6 @@ kotlin {
 }
 
 repositories {
-    // TODO(TODO-BTA-PERF.md): remove this repository once a regular Kotlin release contains KT-87743.
-    maven("https://packages.jetbrains.team/maven/p/kt/dev") {
-        content {
-            includeGroup("org.jetbrains.kotlin")
-        }
-    }
     mavenCentral()
 }
 
@@ -62,7 +56,10 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(project(":test-helper"))
-    testImplementation(project(":kotlin-cli"))
+    testImplementation(project(":kotlin-cli")) {
+        isTransitive = false
+    }
+    testImplementation(kotlincDist.incoming.files.asFileTree.matching { include("*.jar") })
     testImplementation(project(":prompt-generator"))
 
     ideDownloaderClasspath(project(":intellij-downloader"))
@@ -236,7 +233,6 @@ tasks.test {
         val ijSources = rootProject.layout.projectDirectory
             .dir("ij-plugin/src/main/kotlin").asFile.absolutePath
         systemProperty("mcp.steroid.ij.sources", ijSources)
-        systemProperty("mcp.steroid.kotlin.version", "2.4.20-RC-197")
 
         // BTA implementation jar directory (KotlinBuildsSession classpath)
         systemProperty("mcp.steroid.bta.impl.dir", kotlincDist.singleFile.absolutePath)

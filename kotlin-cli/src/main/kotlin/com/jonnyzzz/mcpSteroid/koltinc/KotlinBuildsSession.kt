@@ -57,6 +57,7 @@ class KotlinBuildsSession(
     }
 
     private val buildToolsApi = KotlinToolchains.loadImplementation(this.implClasspath)
+    val compilerVersion: String = buildToolsApi.getCompilerVersion()
     private val inProcessExecutionStrategy = buildToolsApi.createInProcessExecutionPolicy()
     private val buildSession = buildToolsApi.createBuildSession()
 

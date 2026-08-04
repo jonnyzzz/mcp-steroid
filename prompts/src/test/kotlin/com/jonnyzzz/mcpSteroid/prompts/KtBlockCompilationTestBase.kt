@@ -34,7 +34,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
  * System properties:
  * - `mcp.steroid.ide.home` — path to the unpacked IDE distribution
  * - `mcp.steroid.bta.impl.dir` — directory with the BTA implementation jars
- * - `mcp.steroid.kotlin.version` — Kotlin compiler version (cache key input)
  * - `mcp.steroid.ij.sources` — path to ij-plugin/src/main/kotlin (for McpScriptContext/McpScriptBuilder sources)
  * - `mcp.steroid.ktblock.cache.dir` — path to compilation cache directory (optional but recommended)
  */
@@ -297,12 +296,7 @@ abstract class KtBlockCompilationTestBase {
 
         private fun ijPluginSourceFiles(): List<Path> = ijPluginSourceFilesCache
 
-        private val kotlincVersionCache: String by lazy {
-            System.getProperty("mcp.steroid.kotlin.version")
-                ?: error("Missing system property 'mcp.steroid.kotlin.version'")
-        }
-
-        private fun readKotlincVersion(): String = kotlincVersionCache
+        private fun readKotlincVersion(): String = buildsSession.compilerVersion
 
         private val productInfoCache = mutableMapOf<String, String>()
 
