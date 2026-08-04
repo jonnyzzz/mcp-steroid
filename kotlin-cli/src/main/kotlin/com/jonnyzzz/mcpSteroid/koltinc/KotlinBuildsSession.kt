@@ -60,6 +60,7 @@ class KotlinBuildsSession(
     private val buildToolsApi = KotlinToolchains.loadImplementation(this.implClasspath)
     val compilerVersion: String = buildToolsApi.getCompilerVersion()
     private val inProcessExecutionStrategy = buildToolsApi.createInProcessExecutionPolicy()
+    // Keep for the project lifetime: closing it drops BTA's JarFS/classpath caches.
     private val buildSession = buildToolsApi.createBuildSession()
 
     /**
