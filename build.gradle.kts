@@ -1,7 +1,7 @@
 @file:Suppress("HasPlatformType")
 
 plugins {
-    id("de.undercouch.download") version "5.7.0" apply false
+    id("de.undercouch.download") version "5.6.0" apply false
     id("org.jetbrains.intellij.platform") version "2.18.1" apply false
     id("com.github.node-gradle.node") version "7.1.0" apply false
     kotlin("jvm") version "2.3.20" apply false
