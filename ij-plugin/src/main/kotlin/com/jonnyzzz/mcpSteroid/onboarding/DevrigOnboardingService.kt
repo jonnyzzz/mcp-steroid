@@ -11,6 +11,8 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.SystemInfo
+import com.jonnyzzz.mcpSteroid.aiAgents.devrigHomeDisplayPath
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +38,16 @@ const val ONBOARDING_RESULTS_NOTIFICATION_GROUP = "jonnyzzz.mcp.steroid.onboardi
  * in Settings (plus the widget, when enabled) the whole time.
  */
 const val OFFER_SNOOZE_DAYS = 14L
+
+/**
+ * The install offer's balloon body. A pure function so a test can pin the one fact a one-click install
+ * surface owes the user before the click: the button starts a ~611 MB download, and where it lands.
+ * The settings page disclosed both; this balloon used to start the identical download saying neither.
+ * [devrigHome] follows the display policy of [devrigHomeDisplayPath]: the real absolute home, never `~`.
+ */
+fun devrigInstallOfferBody(devrigHome: String): String =
+    "devrig bridges Claude Code, Codex or Gemini to this IDE — so an agent can run, debug, " +
+        "refactor and inspect it.<br>Downloads ~611 MB into <code>$devrigHome</code>."
 
 /**
  * Offers, once per IDE run, to install devrig or update a stale one.
@@ -87,10 +99,10 @@ class DevrigOnboardingService(private val scope: CoroutineScope) {
     }
 
     private fun offerInstall(project: Project, decision: OnboardingDecision) {
+        val home = devrigHomeDisplayPath(System.getProperty("user.home"), SystemInfo.isWindows)
         group().createNotification(
             "Install devrig to connect an AI agent",
-            "devrig bridges Claude Code, Codex or Gemini to this IDE — so an agent can run, debug, " +
-                "refactor and inspect it.",
+            devrigInstallOfferBody(home),
             NotificationType.INFORMATION,
         ).withOfferActions(project, decision, actionLabel = "Install devrig").notify(project)
         captureOffered(project, decision)
