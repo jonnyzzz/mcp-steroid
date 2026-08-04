@@ -39,7 +39,17 @@ class UpdateChecker(
     parentScope: CoroutineScope
 ) : Disposable {
     private val log = thisLogger()
-    private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * The polling loop's scope, a **child** of the injected one. A bare `SupervisorJob()` would not be:
+     * `+` replaces the context's Job with the new, parentless one, so cancelling the injected scope would
+     * never stop the poller. Passing the parent Job explicitly makes this scope die with the service.
+     * Same pattern and full rationale as [com.jonnyzzz.mcpSteroid.server.ServerUrlWriter]. (The platform's
+     * named `childScope(name, ...)` overload is still `@ApiStatus.Experimental` on 261, so it is avoided.)
+     */
+    private val scope = CoroutineScope(
+        parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]) + Dispatchers.IO
+    )
 
     /** Whether we've already shown the update notification in this IDE session */
     private val notificationShown = AtomicBoolean(false)
@@ -49,10 +59,6 @@ class UpdateChecker(
     var lastFetchedVersion: String? = null
         private set
 
-    /**
-     * Performs a single update check.
-     * Can be called manually for testing.
-     */
     /**
      * Fetch the published `version-base` from version.json, or null when the request or parse fails.
      *
