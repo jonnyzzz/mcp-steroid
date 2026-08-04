@@ -68,9 +68,11 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
     }
 
     /**
-     * The heartbeat must not outlive the service. A parentless SupervisorJob made it do exactly that, and
-     * the visible damage is here: dispose() deletes the marker, a surviving tick re-creates it, and devrig
-     * goes on routing to a live pid whose MCP server is gone.
+     * The heartbeat must not outlive the service, and the marker must go when the service goes. The
+     * deletion is the heartbeat coroutine's own `finally` — dispose() only cancels — so an in-flight
+     * tick can never land its write after the delete: cancellation lets the tick finish, then runs the
+     * finally. From the outside that makes the delete asynchronous (hence the deadline loop) but
+     * race-free: once the marker is gone it must STAY gone.
      */
     fun testDisposeStopsTheHeartbeat() = withTemporaryUserHome { userHome ->
         val originalInterval = ServerUrlWriter.markerHeartbeatMs
@@ -83,10 +85,17 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
                 .resolve(PidMarker.markerFileNameFor(ProcessHandle.current().pid()))
             assertTrue("marker should exist after initial write", Files.isRegularFile(markerFile))
 
-            // dispose() removes the marker itself; anything that brings it back is the heartbeat.
             Disposer.dispose(writer)
-            assertFalse("dispose should remove this pid's marker", Files.exists(markerFile))
 
+            // The heartbeat's finally deletes the marker; give the cancelled coroutine a moment.
+            val deadline = System.currentTimeMillis() + 5_000
+            while (Files.exists(markerFile) && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20)
+            }
+            assertFalse("disposing the writer must remove this pid's marker", Files.exists(markerFile))
+
+            // No resurrection: nothing may bring the marker back after dispose — not an in-flight
+            // tick whose write raced the delete, and not a survivor of the cancelled loop.
             Thread.sleep(300) // ten heartbeat intervals
             assertFalse("a disposed writer must not re-create the marker", Files.exists(markerFile))
         } finally {
@@ -112,7 +121,9 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
             assertTrue("marker should exist after initial write", Files.isRegularFile(markerFile))
 
             scope.cancel()
-            Files.delete(markerFile)
+            // The cancelled heartbeat's finally deletes the marker on its own; deleteIfExists keeps
+            // this test correct on either side of that race.
+            Files.deleteIfExists(markerFile)
 
             Thread.sleep(300) // ten heartbeat intervals
             assertFalse(
