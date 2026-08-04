@@ -83,11 +83,12 @@
         <notificationGroup id="jonnyzzz.mcp.steroid.updates"
                            displayType="BALLOON"/>
 
-        <!-- IDE-first onboarding: offer to connect an AI agent to this IDE.
+        <!-- IDE-first onboarding: offer to install devrig, or update a stale one, for this IDE.
              STICKY_BALLOON on purpose: a plain BALLOON auto-hides in ~10s, at the noisiest moment of the
-             session (project open + indexing), so the migration offer was routinely never seen. There is
-             deliberately no "don't ask again" — the offer repeats every IDE run until devrig is connected,
-             and the status-bar widget carries the same state without popping up. -->
+             session (project open + indexing), so the offer was routinely never seen. The offer is
+             registry-gated ("mcp.steroid.devrig.widget.enabled", off by default), shown at most once per
+             IDE run, and "Later" snoozes it app-wide for 14 days; it stops once devrig is installed and
+             current. Policy lives in DevrigOnboardingService. -->
         <notificationGroup id="jonnyzzz.mcp.steroid.onboarding"
                            displayType="STICKY_BALLOON"/>
 
