@@ -51,13 +51,19 @@ class CodeEvalManager(
     // plugin classloader: KotlinBuildsSession loads these jars into its own
     // isolated classloader.
     private val kotlinBuildsSession = run {
+        // TODO(KT-88278): remove this process-global workaround when BTA accepts
+        // explicit IntelliJ paths instead of reading/writing the host JVM's IntelliJ
+        // system properties.
+        // https://youtrack.jetbrains.com/issue/KT-88278/BTA-tools-avoid-usage-of-IntelliJ-system-properties
         // The relocated IdeaStandaloneExecutionSetup.doSetup() — which BTA runs before
         // EVERY in-process compile — writes `idea.config.path=some/non/existent/path`
         // when the property is unset (property names are JVM-global, not relocated;
         // every other property it writes equals the IDE bundle default). Pre-seed it
         // with a dedicated path under the system temp dir so third-party readers never
         // observe the garbage value — and never the IDE's own config folder, which
-        // must not be advertised through a property the IDE itself didn't set.
+        // must not be advertised through a property the IDE itself didn't set. When
+        // the host IDE already set the property, we leave it untouched; there is no
+        // safe per-session redirect until KT-88278 provides one.
         if (System.getProperty("idea.config.path") == null) {
             System.setProperty(
                 "idea.config.path",

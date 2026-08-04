@@ -81,6 +81,10 @@ Filed upstream from this work — review both whenever the BTA dependencies chan
 - **KT-88182** — Contention in FastJarHandler during compilation.
 - **KT-88183** — Compilation via daemon clears the compiler cache after each compilation
   (the reason the daemon flow was removed; a fix makes it viable again).
+- **KT-88278** — BTA tools use the host JVM's IntelliJ system properties. Prefer explicit
+  per-session IntelliJ paths with safe defaults upstream; once available, delete
+  `CodeEvalManager`'s `idea.config.path` pre-seed. Until then, the mitigation only redirects
+  an unset property and deliberately never overwrites the host IDE's configured path.
 
 - **KT-87743** — fixed in 2.4.20 RC; BTA now pins the application environment per
   in-process BuildSession, making item 1 free without local reflection.
