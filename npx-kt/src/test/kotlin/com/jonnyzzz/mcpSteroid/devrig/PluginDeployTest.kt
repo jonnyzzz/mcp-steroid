@@ -35,7 +35,7 @@ class PluginDeployTest {
 
         assertEquals(homePaths.cacheDir("idea-community-2025.3.3").resolve("plugins/mcp-steroid"), deployed)
         assertEquals("one", Files.readString(deployed.resolve("lib/plugin.txt")))
-        assertTrue(deployed.resolve("ocr-tesseract/bin/ocr-tesseract").toFile().canExecute(),
+        assertTrue(deployed.resolve("kotlinc/bin/kotlinc").toFile().canExecute(),
             "executable bit from bundled plugin fixture must survive deployment")
         assertFalse(stale.exists(), "deploy must clear leftover plugin pieces before copying")
     }
