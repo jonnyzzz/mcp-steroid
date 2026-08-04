@@ -10,11 +10,8 @@ import kotlin.io.path.writeText
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.yield
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
@@ -31,10 +28,8 @@ import org.junit.rules.TemporaryFolder
 
 /**
  * Stability / stress coverage for [KotlinBuildsSession]: memory flatness under
- * sequential compiles, close()+recompile churn, timeout and error storms, the
- * close-vs-compile race, and a large single input. The structural probes
- * (env identity, `ourProjectCount`, jar-handler count) live in
- * [KotlinBuildsSessionTestProbes.kt] and verify BTA 2.4.20 RC's upstream
+ * sequential compiles, repeated fresh-session lifecycles, timeout and error storms,
+ * and a large single input. The structural probes verify BTA 2.4.20 RC's upstream
  * KT-87743 environment-pin lifetime.
  */
 class KotlinBuildsSessionStabilityTest {
@@ -46,6 +41,10 @@ class KotlinBuildsSessionStabilityTest {
         Path.of(System.getProperty("mcp.steroid.bta.impl.dir")
             ?: error("Gradle sets mcp.steroid.bta.impl.dir (see kotlin-cli/build.gradle.kts)"))
     ))
+
+    private fun withSession(action: (KotlinBuildsSession) -> Unit) {
+        newSession().use(action)
+    }
 
     private suspend fun KotlinBuildsSession.compileSnippet(
         source: Path,
@@ -89,7 +88,7 @@ class KotlinBuildsSessionStabilityTest {
             return src
         }
 
-        newSession().use { session ->
+        withSession { session ->
             runBlocking {
                 suspend fun compileOnce(i: Int) = assertEquals(
                     CompilationResult.COMPILATION_SUCCESS,
@@ -126,41 +125,35 @@ class KotlinBuildsSessionStabilityTest {
     }
 
     @Test
-    fun sessionChurnOnOneInstanceLeavesNothingBehind() {
-        // The production-relevant churn: CodeEvalManager holds ONE session per project
-        // for the project's life, and the documented contract is "fine to compile again
-        // after close()". Repeated upstream pin acquire->dispose in the SAME impl classloader —
-        // env statics must return to zero after every close, each reopen builds a FRESH env.
+    fun repeatedFreshSessionLifecyclesLeaveNothingBehind() {
+        // KotlinBuildsSession is single-lifecycle: production owns one for the
+        // project lifetime and closes it during disposal. Exercise repeated lifecycles
+        // by allocating a fresh wrapper instead of reopening a closed one.
         val src = tempFolder.newFolder("churn-src").toPath() / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val outRoot = tempFolder.newFolder("churn-out").toPath()
 
-        newSession().use { session ->
-            var previousEnv: Any? = null
-            repeat(15) { cycle ->
+        var previousEnv: Any? = null
+        repeat(15) { cycle ->
+            val session = newSession()
+            session.use {
                 runBlocking {
                     assertEquals(CompilationResult.COMPILATION_SUCCESS,
-                        session.compileSnippet(src, (outRoot / "c$cycle").createDirectories() / "out.jar"))
+                        session.compileSnippet(src,
+                            (outRoot / "c$cycle").createDirectories() / "out.jar"))
                 }
                 val env = applicationEnvironmentOf(session)
                 assertNotNull("cycle $cycle must pin an environment", env)
                 previousEnv?.let {
-                    assertNotSame("cycle $cycle must not resurrect the disposed environment", it, env)
+                    assertNotSame("cycle $cycle must use a fresh environment", it, env)
                 }
                 previousEnv = env
+            }
 
-                session.close()
-                assertNull("cycle $cycle: close() must dispose the environment",
-                    applicationEnvironmentOf(session))
-                assertEquals("cycle $cycle: no ref-count may survive close()",
-                    0, environmentRefCountOf(session))
-                assertEquals(0, session.activeOperations)
-            }
-            // The instance is still fully usable after the churn.
-            runBlocking {
-                assertEquals(CompilationResult.COMPILATION_SUCCESS,
-                    session.compileSnippet(src, (outRoot / "final").createDirectories() / "out.jar"))
-            }
+            assertNull("cycle $cycle: close() must dispose the environment",
+                applicationEnvironmentOf(session))
+            assertEquals("cycle $cycle: no ref-count may survive close()",
+                0, environmentRefCountOf(session))
         }
     }
 
@@ -168,13 +161,13 @@ class KotlinBuildsSessionStabilityTest {
     fun timeoutStormDoesNotPoisonTheSession() {
         // The cancellation path is production's riskiest: CodeEvalManager maps TCE to
         // "stopped on timeout" and then keeps using the same session forever. Repeated
-        // jvmOperation.cancel() + OCE translation must not poison the lease bookkeeping,
-        // BTA's pinned env, or the in-process executor.
+        // jvmOperation.cancel() + OCE translation must not poison BTA's pinned
+        // environment or the in-process executor.
         val src = tempFolder.newFolder("storm-src").toPath() / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
         val outRoot = tempFolder.newFolder("storm-out").toPath()
 
-        newSession().use { session ->
+        withSession { session ->
             runBlocking {
                 // Pin + identity anchor via one normal compile.
                 assertEquals(CompilationResult.COMPILATION_SUCCESS,
@@ -188,11 +181,9 @@ class KotlinBuildsSessionStabilityTest {
                             (outRoot / "t$i").createDirectories() / "out.jar",
                             timeout = 1.milliseconds)
                         fail("iteration $i: expected TimeoutCancellationException")
-                    } catch (expected: TimeoutCancellationException) {
+                    } catch (_: TimeoutCancellationException) {
                         // expected — BTA's OperationCancelledException must stay translated
                     }
-                    // The finally-path lease release under cancellation is OUR machinery:
-                    assertEquals("iteration $i leaked an operation lease", 0, session.activeOperations)
                     assertSame("iteration $i: cancelled compile must not tear down BTA's pinned env",
                         env, applicationEnvironmentOf(session))
                     assertEquals(1, environmentRefCountOf(session))
@@ -227,7 +218,7 @@ class KotlinBuildsSessionStabilityTest {
             return src
         }
 
-        newSession().use { session ->
+        withSession { session ->
             runBlocking {
                 assertEquals(CompilationResult.COMPILATION_SUCCESS,
                     session.compileSnippet(goodSource(999), (outRoot / "pre").createDirectories() / "out.jar"))
@@ -261,49 +252,6 @@ class KotlinBuildsSessionStabilityTest {
     }
 
     @Test
-    fun closeRacingCompileNeverLeaksTheEnvironment() {
-        // Fuzz-by-schedule with invariant assertions: the race outcome (close-before-
-        // acquire vs close-mid-compile vs close-after-release) varies per run, but every
-        // interleaving must converge on the same post-conditions — compile success +
-        // zero residue after the final close. This exercises our synchronized session
-        // lease bookkeeping plus BTA's pin cleanup; it deliberately never overlaps two
-        // compiles (production serializes them via CodeEvalManager.compilationMutex, and
-        // BTA does not document BuildSession thread-safety).
-        val src = tempFolder.newFolder("race-src").toPath() / "source.kt"
-        src.writeText("fun main() { println(\"Hello\") }\n")
-        val outRoot = tempFolder.newFolder("race-out").toPath()
-
-        newSession().use { session ->
-            runBlocking {
-                repeat(8) { i ->
-                    val compile = async(Dispatchers.IO) {
-                        session.compileSnippet(src, (outRoot / "r$i").createDirectories() / "out.jar")
-                    }
-                    if (i % 2 == 0) {
-                        // Even iterations: deterministic mid-compile close (the existing
-                        // closeDuringCompileDefersUntilOperationCompletes pattern).
-                        while (session.activeOperations == 0 && !compile.isCompleted) yield()
-                    }
-                    // Odd iterations: close IMMEDIATELY, racing the lease acquire itself.
-                    session.close()
-
-                    // Every interleaving is legal and must converge on the same outcome:
-                    // the compile succeeds (on the old lease or a fresh one)...
-                    assertEquals("iteration $i", CompilationResult.COMPILATION_SUCCESS, compile.await())
-                    // ...and after a final close with no in-flight ops, NOTHING survives —
-                    // regardless of whether the compile re-opened a lease after the race close.
-                    session.close()
-                    assertNull("iteration $i leaked a pinned environment",
-                        applicationEnvironmentOf(session))
-                    assertEquals("iteration $i leaked an env ref-count",
-                        0, environmentRefCountOf(session))
-                    assertEquals(0, session.activeOperations)
-                }
-            }
-        }
-    }
-
-    @Test
     fun compilesLargeGeneratedSourceWithinDefaultTimeout() {
         // Guards against a pathological (superlinear) regression on large single inputs —
         // the shape an agent producing a huge snippet hits.
@@ -315,7 +263,7 @@ class KotlinBuildsSessionStabilityTest {
         })
         val out = tempFolder.newFolder("big-out").toPath() / "out.jar"
 
-        newSession().use { session ->
+        withSession { session ->
             runBlocking {
                 // Default 120s timeout on purpose: the guard is "completes at all, not
                 // hangs/superlinear" — a tighter bound would trade regression sensitivity

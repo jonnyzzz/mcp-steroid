@@ -33,8 +33,9 @@ import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jv
  * the in-process jars. Review KT-88183 whenever updating the BTA dependencies: if it is
  * fixed, the daemon flow becomes viable again.
  *
- * This class keeps Kotlin caches between different compilations. To drop them - call `close()` method.
- * It is fine to call again compilation after calling `close()`.
+ * Each instance owns one [KotlinToolchains.BuildSession], and all compilations on that
+ * instance reuse its compiler and JarFS caches. Callers must serialize compilations and call
+ * [close] only after the last one completes. A closed instance must not be used again.
  *
  * @param implClasspath The Kotlin Build Tools implementation jars (the plugin's `kotlinc/` folder,
  * or the `:kotlin-cli` `bta-impl-jars` directory in tests). The jars must be plain files on disk —
@@ -57,52 +58,14 @@ class KotlinBuildsSession(
 
     private val buildToolsApi = KotlinToolchains.loadImplementation(this.implClasspath)
     private val inProcessExecutionStrategy = buildToolsApi.createInProcessExecutionPolicy()
-
-    // Session lifecycle: every compile holds a lease on the current session; close()
-    // detaches the session immediately (subsequent compiles start a fresh one) but the
-    // actual BuildSession.close() is deferred until the last leased operation releases —
-    // closing mid-operation would shut down the in-process executor underneath a running
-    // compile. BTA owns the application-environment pin inside BuildSession, so closing
-    // the leased session also releases the compiler's jar caches.
-    private class SessionLease(
-        val session: KotlinToolchains.BuildSession,
-    ) {
-        var activeOperations = 0
-        var closeRequested = false
-    }
-
-    private var currentLease: SessionLease? = null
-
-    /** Number of in-flight compile operations on the current session (observable for tests). */
-    val activeOperations: Int
-        get() = synchronized(this) { currentLease?.activeOperations ?: 0 }
-
-    private fun acquireSession(): SessionLease = synchronized(this) {
-        val lease = currentLease
-            ?: SessionLease(buildToolsApi.createBuildSession()).also { currentLease = it }
-        lease.activeOperations++
-        lease
-    }
-
-    private fun releaseSession(lease: SessionLease) {
-        val toClose = synchronized(this) {
-            lease.activeOperations--
-            if (lease.closeRequested && lease.activeOperations == 0) lease else null
-        }
-        toClose?.closeNow()
-    }
-
-    private fun SessionLease.closeNow() {
-        session.close()
-    }
+    private val buildSession = buildToolsApi.createBuildSession()
 
     /**
      * Compiles a set of Kotlin source files into the specified destination directory.
      *
-     * Compilations may be invoked from multiple coroutines; each holds a lease on the
-     * shared build session. (Note: BTA does not document BuildSession thread-safety —
-     * the in-repo consumers serialize compiles anyway: CodeEvalManager via a mutex,
-     * the KtBlock tests sequentially per test JVM.)
+     * BTA does not document [KotlinToolchains.BuildSession] thread-safety. Callers must
+     * serialize calls: CodeEvalManager uses its compilation mutex, and KtBlock tests compile
+     * sequentially within each test JVM.
      *
      * @param sources A list of paths pointing to the Kotlin source files to be compiled.
      * @param destinationDir The path to the directory where the compiled outputs will be stored. Either could be a directory or jar file.
@@ -126,85 +89,69 @@ class KotlinBuildsSession(
         compilerMessageRenderer: CompilerMessageRenderer? = null,
         argumentsConf: JvmCompilerArguments.Builder.() -> Unit = {}
     ): CompilationResult {
-        val lease = acquireSession()
-        try {
-            val jvmCompilationBuilder = lease.session.kotlinToolchains
-                .jvm
-                .jvmCompilationOperationBuilder(
-                    sources = sources,
-                    destinationDirectory = destinationDir,
-                )
-            compilerMessageRenderer?.let {
-                jvmCompilationBuilder[BaseCompilationOperation.COMPILER_MESSAGE_RENDERER] = it
-            }
+        val jvmCompilationBuilder = buildSession.kotlinToolchains
+            .jvm
+            .jvmCompilationOperationBuilder(
+                sources = sources,
+                destinationDirectory = destinationDir,
+            )
+        compilerMessageRenderer?.let {
+            jvmCompilationBuilder[BaseCompilationOperation.COMPILER_MESSAGE_RENDERER] = it
+        }
 
-            with(jvmCompilationBuilder.compilerArguments) {
-                argumentsConf()
-                set(JvmCompilerArguments.NO_STDLIB, true)
-                set(JvmCompilerArguments.NO_REFLECT, true)
-                set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET)
-            }
+        with(jvmCompilationBuilder.compilerArguments) {
+            argumentsConf()
+            set(JvmCompilerArguments.NO_STDLIB, true)
+            set(JvmCompilerArguments.NO_REFLECT, true)
+            set(JvmCompilerArguments.JVM_TARGET, DEFAULT_JVM_TARGET)
+        }
 
-            val jvmOperation = jvmCompilationBuilder.build()
-            return coroutineScope {
-                // executeOperation is a plain blocking call. Run it in a child coroutine so the
-                // caller's timeout/cancellation can act while the compile is in flight — awaiting
-                // it inline would let the compiler run to completion and only then observe the
-                // cancellation, making the timeout (and jvmOperation.cancel()) decorative.
-                val compilation = async(Dispatchers.IO) {
-                    try {
-                        lease.session.executeOperation(
-                            operation = jvmOperation,
-                            executionPolicy = inProcessExecutionStrategy,
-                            logger = kotlinLogger,
-                        )
-                    } catch (e: OperationCancelledException) {
-                        // BTA reports a cancelled operation with its own RuntimeException
-                        // subtype. The only cancel() caller is the catch below, so an OCE
-                        // always means "this coroutine's compilation was cancelled". The
-                        // translation must happen INSIDE the child: a child failing with
-                        // CancellationException counts as cancellation and lets
-                        // coroutineScope rethrow the caller's original exception (e.g.
-                        // TimeoutCancellationException), whereas a non-CE child failure
-                        // would supersede it and break the timeout contract.
-                        throw CancellationException("Kotlin compilation was cancelled", e)
-                    }
-                }
+        val jvmOperation = jvmCompilationBuilder.build()
+        return coroutineScope {
+            // executeOperation is a plain blocking call. Run it in a child coroutine so the
+            // caller's timeout/cancellation can act while the compile is in flight — awaiting
+            // it inline would let the compiler run to completion and only then observe the
+            // cancellation, making the timeout (and jvmOperation.cancel()) decorative.
+            val compilation = async(Dispatchers.IO) {
                 try {
-                    withTimeout(compilationTimeout) { compilation.await() }
-                } catch (e: CancellationException) {
-                    // Timeout or caller cancellation: request cooperative cancellation so the
-                    // compiler aborts promptly — executeOperation then completes with
-                    // OperationCancelledException (translated above) and coroutineScope can
-                    // exit instead of waiting for the full compilation to run to the end.
-                    jvmOperation.cancel()
-                    throw e
+                    buildSession.executeOperation(
+                        operation = jvmOperation,
+                        executionPolicy = inProcessExecutionStrategy,
+                        logger = kotlinLogger,
+                    )
+                } catch (e: OperationCancelledException) {
+                    // BTA reports a cancelled operation with its own RuntimeException
+                    // subtype. The only cancel() caller is the catch below, so an OCE
+                    // always means "this coroutine's compilation was cancelled". The
+                    // translation must happen INSIDE the child: a child failing with
+                    // CancellationException counts as cancellation and lets
+                    // coroutineScope rethrow the caller's original exception (e.g.
+                    // TimeoutCancellationException), whereas a non-CE child failure
+                    // would supersede it and break the timeout contract.
+                    throw CancellationException("Kotlin compilation was cancelled", e)
                 }
             }
-        } finally {
-            releaseSession(lease)
+            try {
+                withTimeout(compilationTimeout) { compilation.await() }
+            } catch (e: CancellationException) {
+                // Timeout or caller cancellation: request cooperative cancellation so the
+                // compiler aborts promptly — executeOperation then completes with
+                // OperationCancelledException (translated above) and coroutineScope can
+                // exit instead of waiting for the full compilation to run to the end.
+                jvmOperation.cancel()
+                throw e
+            }
         }
     }
 
     /**
-     * Closes the current build session managed by this instance.
+     * Closes this instance's build session and releases its compiler and JarFS caches.
      *
-     * Thread-safe. In-flight compilations keep the session alive until they finish
-     * (the close is deferred to the last lease release); compilations started after
-     * `close()` returns get a fresh session — it is fine to compile again after closing.
+     * Call this only after the final compilation completes. Closing concurrently with
+     * compilation and compiling again after close are unsupported.
      */
     override fun close() {
-        val toClose = synchronized(this) {
-            val lease = currentLease ?: return
-            currentLease = null
-            if (lease.activeOperations == 0) {
-                lease
-            } else {
-                lease.closeRequested = true
-                null
-            }
-        }
-        toClose?.closeNow()
+        buildSession.close()
     }
 
     companion object {

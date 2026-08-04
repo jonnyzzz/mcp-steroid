@@ -7,16 +7,12 @@ import kotlin.io.path.div
 import kotlin.io.path.exists
 import kotlin.io.path.writeText
 import kotlin.time.Duration.Companion.milliseconds
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.yield
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -165,57 +161,12 @@ class KotlinBuildsSessionTest {
     }
 
     @Test
-    fun closeDuringCompileDefersUntilOperationCompletes() {
-        // close() must not tear down the session underneath an in-flight compile:
-        // the actual BuildSession.close() is deferred to the last lease release,
-        // and compiles started after close() get a fresh session.
-        val srcDir = tempFolder.newFolder("close-src").toPath()
-        val src = srcDir / "source.kt"
-        src.writeText("fun main() { println(\"Hello\") }\n")
-        val out1 = tempFolder.newFolder("close-out-1").toPath() / "out.jar"
-        val out2 = tempFolder.newFolder("close-out-2").toPath() / "out.jar"
-
-        val session = newSession()
-        runBlocking {
-            val compile = async(Dispatchers.IO) {
-                session.compileKotlin(
-                    sources = listOf(src),
-                    destinationDir = out1,
-                ) {
-                    set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
-                }
-            }
-            while (session.activeOperations == 0 && !compile.isCompleted) {
-                yield()
-            }
-            session.close()
-            assertEquals(CompilationResult.COMPILATION_SUCCESS, compile.await())
-            // The deferred close (last lease release) must close BTA's BuildSession and
-            // its upstream environment pin, otherwise this path leaks the cached environment.
-            assertNull("deferred close must dispose the pinned application environment",
-                applicationEnvironmentOf(session))
-        }
-
-        // Compiling again after close() starts a fresh session.
-        runBlocking {
-            assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileKotlin(
-                sources = listOf(src),
-                destinationDir = out2,
-            ) {
-                set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
-            })
-        }
-        session.close()
-    }
-
-    @Test
     fun upstreamPinnedEnvironmentIsReusedAcrossCompilesAndDisposedOnClose() {
         // Leak/lifecycle contract of BTA's KT-87743 BuildSession-owned pin:
         // (1) one application environment instance serves all compiles of a session
         //     (this is what keeps the jar caches warm),
         // (2) close() releases it — the compiler disposes the environment, so nothing
-        //     is retained past the session (no leak),
-        // (3) a session used again after close() gets a fresh environment.
+        //     is retained past the session (no leak).
         val srcDir = tempFolder.newFolder("pin-src").toPath()
         val src = srcDir / "source.kt"
         src.writeText("fun main() { println(\"Hello\") }\n")
@@ -241,14 +192,6 @@ class KotlinBuildsSessionTest {
         session.close()
         assertNull("close() must release the pin so the compiler disposes the application " +
             "environment — anything else leaks the jar caches", applicationEnvironmentOf(session))
-
-        compileOnce("c")
-        val envAfterReopen = applicationEnvironmentOf(session)
-        assertNotNull(envAfterReopen)
-        assertNotSame("a session reused after close() must build a fresh environment",
-            envAfterFirst, envAfterReopen)
-        session.close()
-        assertNull(applicationEnvironmentOf(session))
     }
 
     @Test
