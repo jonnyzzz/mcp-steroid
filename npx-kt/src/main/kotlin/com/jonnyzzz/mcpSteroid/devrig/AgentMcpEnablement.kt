@@ -262,7 +262,9 @@ fun enableRegistrationFor(agent: AiAgentCli, userHome: Path = userHomePath()): B
     }
     if (patched == current) return false
     return try {
-        Files.writeString(path, patched)
+        // Stage-and-move (writeTextAtomically) so a crash mid-write can never truncate the user's
+        // primary agent config — these files belong to the agent CLIs, not to us.
+        writeTextAtomically(path, patched)
         true
     } catch (e: Exception) {
         System.err.println("[mcp-steroid] could not update $path: $e")

@@ -209,6 +209,36 @@ class AgentMcpEnablementTest {
         }
     }
 
+    // ---------- atomic replacement: the agent's config must never be observed truncated ----------
+
+    @Test
+    fun `enabling goes through a same-directory staging file, never truncating the config in place`() {
+        val home = Files.createTempDirectory("home-atomic")
+        val config = home.resolve(".claude.json")
+        Files.writeString(config, claudeJson)
+
+        // Occupy the exact staging path the atomic write must use (an undeletable non-empty directory).
+        // An implementation that rewrote the config in place would sail past this and change the file.
+        val staging = config.resolveSibling(".tmp.${ProcessHandle.current().pid()}.${config.fileName}")
+        Files.createDirectories(staging)
+        Files.writeString(staging.resolve("occupied"), "keeps the staging path taken")
+
+        assertFalse(enableRegistrationFor(AiAgentCli.CLAUDE, home), "a failed staging write must report false")
+        assertEquals(claudeJson, Files.readString(config), "the config must survive a failed write byte for byte")
+    }
+
+    @Test
+    fun `a successful enable leaves no staging residue next to the config`() {
+        val home = Files.createTempDirectory("home-residue")
+        Files.writeString(home.resolve(".claude.json"), claudeJson)
+        assertTrue(enableRegistrationFor(AiAgentCli.CLAUDE, home))
+        assertNull(disabledRegistrationFor(AiAgentCli.CLAUDE, home))
+        val leftovers = Files.list(home).use { paths ->
+            paths.map { it.fileName.toString() }.filter { it.startsWith(".tmp.") }.toList()
+        }
+        assertEquals(emptyList(), leftovers)
+    }
+
     @Test
     fun `the claude message names every project it is switched off in`() {
         val home = Files.createTempDirectory("home-claude")

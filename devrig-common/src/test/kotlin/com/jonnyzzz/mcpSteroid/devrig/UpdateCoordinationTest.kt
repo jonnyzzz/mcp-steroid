@@ -99,6 +99,24 @@ class UpdateCoordinationTest {
         assertFalse(c.anyLiveInProgressMarker(), "a dead filename pid retires it even when young")
     }
 
+    // ── the shared atomic write (markers here, agent configs in AgentMcpEnablement) ─────────────
+
+    @Test
+    fun `writeTextAtomically replaces the target and cleans its staging sibling up`(@TempDir dir: Path) {
+        val target = dir.resolve("config.json")
+        Files.writeString(target, "old")
+
+        writeTextAtomically(target, "new", stagingPid = 4242L)
+
+        assertEquals("new", Files.readString(target))
+        val leftovers = Files.list(dir).use { paths ->
+            paths.map { it.fileName.toString() }.filter { it != "config.json" }.toList()
+        }
+        assertEquals(emptyList(), leftovers, "no staging residue may remain next to the target")
+        // A crash leftover inside the update dir must stay recognizable to the GC sweep.
+        assertEquals(4242L, parseStagingFilePid(".tmp.4242.config.json"))
+    }
+
     // ── completion record ────────────────────────────────────────────────────────────────────────
 
     @Test
