@@ -52,6 +52,19 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
         val configurable = McpSteroidConfigurable()
         try {
             val component = configurable.createComponent()
+
+            // The devrig block populates on show, never at build time: creating the panel must leave
+            // only the "Checking…" placeholder — the EDT does no file I/O while building Swing.
+            assertTrue(
+                "before the on-show populate the devrig block must say Checking…; found:\n" +
+                    collectTexts(component).joinToString("\n"),
+                collectTexts(component).any { it.contains("Checking…") },
+            )
+
+            // A test panel is never physically showing, so the launchOnShow block never runs here.
+            // Drive the same populate path it takes, with the same probe it uses.
+            configurable.applyInstallState(probeDevrigInstallState())
+
             val texts = collectTexts(component)
             val joined = texts.joinToString("\n")
 
