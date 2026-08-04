@@ -47,9 +47,6 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import javax.swing.JComponent
-import javax.swing.text.AbstractDocument
-import javax.swing.text.AttributeSet
-import javax.swing.text.DocumentFilter
 
 /** What the confirmation says. Short on purpose: it is a receipt, not a message. */
 const val COPIED_HINT = "Copied"
@@ -498,17 +495,20 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * prose, and nothing said which half was the answer. A field draws the boundary the reader is looking
      * for, and being a text component it also lets a version string be selected and copied by hand.
      *
-     * isEditable stays true so the background paints as a normal field (a disabled one greys out and reads
-     * as broken); the DocumentFilter is what actually makes it read-only.
+     * Read-only via isEditable = false — the platform affordance. An earlier revision kept
+     * isEditable = true and swallowed keystrokes with a DocumentFilter, claiming a non-editable field
+     * "greys out and reads as broken". Verified against the platform LaF: that claim conflated
+     * non-editable with DISABLED. Non-editable does change the paint — DarculaTextFieldUI's
+     * paintDarculaBackground skips the inner fill (the interior takes the panel background) and
+     * DarculaTextBorderNew dims the border — but the text keeps its normal foreground (greying is tied
+     * to isEnabled, not isEditable), and selection and copy keep working. That flatter rendering is
+     * exactly how the IDE marks a read-only field; the filter instead faked an editable field — caret,
+     * focus, no reaction to typing — which read as frozen.
      */
     private fun valueTextField(content: String): ExtendableTextField =
         ExtendableTextField().apply {
             text = content
-            (document as? AbstractDocument)?.documentFilter = object : DocumentFilter() {
-                override fun insertString(fb: FilterBypass, offset: Int, string: String?, attr: AttributeSet?) {}
-                override fun remove(fb: FilterBypass, offset: Int, length: Int) {}
-                override fun replace(fb: FilterBypass, offset: Int, length: Int, text: String?, attrs: AttributeSet?) {}
-            }
+            isEditable = false
         }
 
     /**

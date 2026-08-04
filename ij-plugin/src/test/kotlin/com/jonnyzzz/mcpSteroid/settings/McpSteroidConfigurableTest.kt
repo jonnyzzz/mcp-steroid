@@ -21,6 +21,7 @@ import javax.swing.JButton
 import javax.swing.AbstractButton
 import javax.swing.JLabel
 import javax.swing.JTabbedPane
+import javax.swing.text.AbstractDocument
 import javax.swing.text.JTextComponent
 
 class McpSteroidConfigurableTest : BasePlatformTestCase() {
@@ -170,11 +171,27 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 texts.indexOfFirst { it.contains("MCP server:") } >
                     texts.indexOfFirst { it.contains(McpSteroidConfigurable.HTTP_SECTION_TITLE) },
             )
-            val fieldTexts = collectValueFields(component).map { it.text }
+            val valueFields = collectValueFields(component)
+            val fieldTexts = valueFields.map { it.text }
             assertTrue(
                 "The server status must be a value field, not a bare label; fields: $fieldTexts",
                 fieldTexts.any { it.startsWith("Running on port") || it == "Not running" },
             )
+
+            // Every value field is read-only the platform way: isEditable=false, no keystroke-swallowing
+            // DocumentFilter. An earlier revision kept isEditable=true and filtered edits out — the field
+            // showed a caret, took focus, and ignored typing, which read as frozen.
+            assertTrue("the page must render at least one value field", valueFields.isNotEmpty())
+            for (field in valueFields) {
+                assertFalse(
+                    "value field '${field.text}' must set isEditable=false, not fake read-only behind an editable look",
+                    field.isEditable,
+                )
+                assertNull(
+                    "value field '${field.text}' must not carry a DocumentFilter — isEditable=false is the read-only mechanism",
+                    (field.document as? AbstractDocument)?.documentFilter,
+                )
+            }
 
             // Display policy: every devrig path on this page names the real absolute home — never `~`,
             // which Windows would not expand and which would make the display differ from what the copy
