@@ -169,7 +169,8 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
         // progress bar takes over.
         docs.addHyperlinkListener {
             popup.closeOk(null)
-            BrowserUtil.browse(McpSteroidConfigurable.DEVRIG_DOCS_URL)
+            // Same target as the settings page's "What is devrig?": the site root, tagged with the IDE build.
+            BrowserUtil.browse(McpSteroidConfigurable.whatIsDevrigUrl())
         }
 
         // Anchor above the widget: the status bar sits at the bottom of the screen, so a popup dropped

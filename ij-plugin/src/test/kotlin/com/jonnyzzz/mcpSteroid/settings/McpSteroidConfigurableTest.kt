@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.settings
 
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.Configurable
@@ -137,8 +138,8 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 )
             }
 
-            // The panel still links to the devrig documentation.
-            assertEquals("https://devrig.dev/docs/devrig/", McpSteroidConfigurable.DEVRIG_DOCS_URL)
+            // The panel still links to the devrig site; the exact URL shape is pinned in its own test.
+            assertContainsText(texts, "What is devrig?")
 
             // The server's state is rendered as a read-only value field, and it lives INSIDE the Direct
             // HTTP section: this single IDE's port only matters to someone wiring HTTP by hand, so the
@@ -275,6 +276,41 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 receipt.contains("<code>devrig install ${agent.binary}</code>"),
             )
         }
+    }
+
+    /**
+     * "What is devrig?" (settings page) and "Learn more" (status-bar popup) both go to the devrig site
+     * ROOT — no sub-URL or doc path — with the IDE build attached as a query parameter, so the site can
+     * tell which IDE sent the visitor (owner click-testing feedback). The build is injectable precisely
+     * so this test can pin the exact shape.
+     */
+    fun `test the what-is-devrig link targets the site root with the IDE build as a query param`() {
+        assertEquals(
+            "https://devrig.dev/?fromIntelliJ=IU-261.25134.95",
+            McpSteroidConfigurable.whatIsDevrigUrl("IU-261.25134.95"),
+        )
+
+        // The pieces the URL is built from stay pinned on their own: root with no path, and the
+        // agreed parameter name.
+        assertEquals("https://devrig.dev/", McpSteroidConfigurable.DEVRIG_SITE_URL)
+        assertEquals("fromIntelliJ", McpSteroidConfigurable.FROM_INTELLIJ_PARAM)
+
+        // The build value is URL-encoded, so an unexpected build string cannot corrupt the query.
+        assertEquals(
+            "https://devrig.dev/?fromIntelliJ=IU-261%2F95%26x",
+            McpSteroidConfigurable.whatIsDevrigUrl("IU-261/95&x"),
+        )
+
+        // Production callers take the default — the running IDE's own build.
+        val build = ApplicationInfo.getInstance().build.asString()
+        assertEquals(
+            McpSteroidConfigurable.whatIsDevrigUrl(build),
+            McpSteroidConfigurable.whatIsDevrigUrl(),
+        )
+        assertTrue(
+            "the default URL must start with the root + param prefix; got '${McpSteroidConfigurable.whatIsDevrigUrl()}'",
+            McpSteroidConfigurable.whatIsDevrigUrl().startsWith("https://devrig.dev/?fromIntelliJ="),
+        )
     }
 
     private fun assertContainsText(texts: List<String>, expected: String) {
