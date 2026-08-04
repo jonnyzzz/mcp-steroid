@@ -5,6 +5,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.wm.StatusBar
@@ -52,6 +53,25 @@ fun devrigWidgetEnabled(): Boolean = Registry.`is`(DEVRIG_WIDGET_REGISTRY_KEY, f
  */
 fun shouldShowDevrigWidget(state: DevrigConnectionState): Boolean =
     state.decision != OnboardingDecision.DEVRIG_READY
+
+/**
+ * The widget's tooltip: it states the situation, and every branch ends with the same "click for details"
+ * promise the click keeps (the click opens the popup that explains and offers the action).
+ *
+ * Top-level and pure so `DevrigWidgetTooltipTest` can pin the wording. The missing-devrig branch must
+ * offer, not overclaim: while the deprecated direct-HTTP path exists an agent can still reach the IDE
+ * without devrig, so "no agent can reach this IDE" would be false.
+ */
+fun devrigWidgetTooltip(state: DevrigConnectionState): String = when (state.decision) {
+    OnboardingDecision.DEVRIG_READY ->
+        "devrig" + (state.installedVersion?.let { " $it" } ?: "") +
+            " bridges your AI agent to this IDE — click for details"
+    OnboardingDecision.OFFER_UPDATE ->
+        "devrig ${state.installedVersion ?: ""} is behind " +
+            "${state.latestBaseVersion ?: "the current release"} — click for details"
+    OnboardingDecision.OFFER_INSTALL ->
+        "devrig is not installed — install it to bridge an agent to this IDE — click for details"
+}
 
 /**
  * A calm, always-visible alternative to the startup balloon, for the sessions where it is switched on.
@@ -107,21 +127,7 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
 
         override fun getAlignment(): Float = Component.CENTER_ALIGNMENT
 
-        // The tooltip states the situation; the click opens the popup that explains it and offers the
-        // action — so every branch ends with the same "click for details" promise the click keeps.
-        override fun getTooltipText(): String {
-            val state = state()
-            return when (state.decision) {
-                OnboardingDecision.DEVRIG_READY ->
-                    "devrig" + (state.installedVersion?.let { " $it" } ?: "") +
-                        " bridges your AI agent to this IDE — click for details"
-                OnboardingDecision.OFFER_UPDATE ->
-                    "devrig ${state.installedVersion ?: ""} is behind " +
-                        "${state.latestBaseVersion ?: "the current release"} — click for details"
-                OnboardingDecision.OFFER_INSTALL ->
-                    "devrig is not installed, so no agent can reach this IDE — click for details"
-            }
-        }
+        override fun getTooltipText(): String = devrigWidgetTooltip(state())
 
         // A click must explain before it acts: starting a ~611 MB download from a single unexplained click
         // on a status-bar label would be hostile, and doing nothing (the earlier behaviour of quietly
@@ -162,6 +168,9 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
             .setResizable(false)
             .setMovable(false)
             .createPopup()
+        // Tie the popup to the widget's lifetime, so closing the project or window while the popup is
+        // open destroys it instead of leaving it orphaned (precedent: EditorBasedStatusBarPopup.showPopup).
+        Disposer.register(this, popup)
 
         actionButton.addActionListener {
             popup.closeOk(null)
