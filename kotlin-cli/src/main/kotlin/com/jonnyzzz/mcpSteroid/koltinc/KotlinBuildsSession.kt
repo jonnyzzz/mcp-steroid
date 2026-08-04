@@ -5,20 +5,14 @@ import java.nio.file.Path
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 import org.jetbrains.kotlin.buildtools.api.BaseCompilationOperation
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer
 import org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
 import org.jetbrains.kotlin.buildtools.api.KotlinToolchains
-import org.jetbrains.kotlin.buildtools.api.OperationCancelledException
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
 import org.jetbrains.kotlin.buildtools.api.arguments.enums.JvmTarget
 import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jvm
@@ -34,8 +28,14 @@ import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jv
  * fixed, the daemon flow becomes viable again.
  *
  * Each instance owns one [KotlinToolchains.BuildSession], and all compilations on that
- * instance reuse its compiler and JarFS caches. Callers must serialize compilations and call
- * [close] only after the last one completes. A closed instance must not be used again.
+ * instance reuse its compiler and JarFS caches. Creating and closing a session for every
+ * compilation was measured against 18 real IDEA/PyCharm/CLion prompt compilations with a
+ * clean KtBlock cache: it took 24.587 s instead of 15.023 s with one shared session, a 1.64×
+ * slowdown. Closing the session releases the application-environment/JarFS pin added by
+ * KT-87743, so the following compilation must rebuild those classpath caches. Keep the session
+ * field-owned until the upstream cache lifetime no longer depends on the build-session lifetime.
+ * Callers must serialize compilations and call [close] only after the last one completes. A
+ * closed instance must not be used again.
  *
  * @param implClasspath The Kotlin Build Tools implementation jars (the plugin's `kotlinc/` folder,
  * or the `:kotlin-cli` `bta-impl-jars` directory in tests). The jars must be plain files on disk —
@@ -70,7 +70,6 @@ class KotlinBuildsSession(
      *
      * @param sources A list of paths pointing to the Kotlin source files to be compiled.
      * @param destinationDir The path to the directory where the compiled outputs will be stored. Either could be a directory or jar file.
-     * @param compilationTimeout maximum time compilation is allowed to run. The default is 120 seconds.
      * @param compilerMessageRenderer optional [CompilerMessageRenderer] to collect and transform compiler messages.
      * @param argumentsConf A lambda that allows configuration of additional JVM compiler arguments.
      * '-no-stdlib', '-no-reflect' and '-jvm-target' ([DEFAULT_JVM_TARGET]) are force-set AFTER
@@ -78,15 +77,14 @@ class KotlinBuildsSession(
      * deliberately overridden, the script target must track the running JVM.
      * @return A [CompilationResult] encapsulating the result of the compilation process.
      *
-     * @throws kotlinx.coroutines.TimeoutCancellationException on reaching [compilationTimeout]; the
-     * in-flight compilation is cancelled cooperatively via [org.jetbrains.kotlin.buildtools.api.BuildOperation.cancel].
-     * @throws CancellationException when the calling coroutine is cancelled; BTA's own
-     * [OperationCancelledException] is translated and never escapes.
+     * The compiler operation is intentionally not timed out or cancelled. BTA execution is a
+     * blocking call, so it runs on [Dispatchers.IO] and is allowed to finish normally. Cancelling
+     * the caller may discard the result after the blocking call returns, but does not interrupt
+     * compiler state halfway through an operation.
      */
     suspend fun compileKotlin(
         sources: List<Path>,
         destinationDir: Path,
-        compilationTimeout: Duration = 120.seconds,
         compilerMessageRenderer: CompilerMessageRenderer? = null,
         argumentsConf: JvmCompilerArguments.Builder.() -> Unit = {}
     ): CompilationResult {
@@ -108,40 +106,12 @@ class KotlinBuildsSession(
         }
 
         val jvmOperation = jvmCompilationBuilder.build()
-        return coroutineScope {
-            // executeOperation is a plain blocking call. Run it in a child coroutine so the
-            // caller's timeout/cancellation can act while the compile is in flight — awaiting
-            // it inline would let the compiler run to completion and only then observe the
-            // cancellation, making the timeout (and jvmOperation.cancel()) decorative.
-            val compilation = async(Dispatchers.IO) {
-                try {
-                    buildSession.executeOperation(
-                        operation = jvmOperation,
-                        executionPolicy = inProcessExecutionStrategy,
-                        logger = kotlinLogger,
-                    )
-                } catch (e: OperationCancelledException) {
-                    // BTA reports a cancelled operation with its own RuntimeException
-                    // subtype. The only cancel() caller is the catch below, so an OCE
-                    // always means "this coroutine's compilation was cancelled". The
-                    // translation must happen INSIDE the child: a child failing with
-                    // CancellationException counts as cancellation and lets
-                    // coroutineScope rethrow the caller's original exception (e.g.
-                    // TimeoutCancellationException), whereas a non-CE child failure
-                    // would supersede it and break the timeout contract.
-                    throw CancellationException("Kotlin compilation was cancelled", e)
-                }
-            }
-            try {
-                withTimeout(compilationTimeout) { compilation.await() }
-            } catch (e: CancellationException) {
-                // Timeout or caller cancellation: request cooperative cancellation so the
-                // compiler aborts promptly — executeOperation then completes with
-                // OperationCancelledException (translated above) and coroutineScope can
-                // exit instead of waiting for the full compilation to run to the end.
-                jvmOperation.cancel()
-                throw e
-            }
+        return withContext(Dispatchers.IO) {
+            buildSession.executeOperation(
+                operation = jvmOperation,
+                executionPolicy = inProcessExecutionStrategy,
+                logger = kotlinLogger,
+            )
         }
     }
 

@@ -7,10 +7,6 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.div
 import kotlin.io.path.exists
 import kotlin.io.path.writeText
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer
@@ -21,14 +17,13 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
  * Stability / stress coverage for [KotlinBuildsSession]: memory flatness under
- * sequential compiles, repeated fresh-session lifecycles, timeout and error storms,
+ * sequential compiles, repeated fresh-session lifecycles, error storms,
  * and a large single input. The structural probes verify BTA 2.4.20 RC's upstream
  * KT-87743 environment-pin lifetime.
  */
@@ -50,11 +45,9 @@ class KotlinBuildsSessionStabilityTest {
         source: Path,
         out: Path,
         renderer: CompilerMessageRenderer? = null,
-        timeout: Duration = 120.seconds,
     ): CompilationResult = compileKotlin(
         sources = listOf(source),
         destinationDir = out,
-        compilationTimeout = timeout,
         compilerMessageRenderer = renderer,
     ) { set(JvmCompilerArguments.CLASSPATH, listOf(defaultStdlibJar)) }
 
@@ -154,47 +147,6 @@ class KotlinBuildsSessionStabilityTest {
                 applicationEnvironmentOf(session))
             assertEquals("cycle $cycle: no ref-count may survive close()",
                 0, environmentRefCountOf(session))
-        }
-    }
-
-    @Test
-    fun timeoutStormDoesNotPoisonTheSession() {
-        // The cancellation path is production's riskiest: CodeEvalManager maps TCE to
-        // "stopped on timeout" and then keeps using the same session forever. Repeated
-        // jvmOperation.cancel() + OCE translation must not poison BTA's pinned
-        // environment or the in-process executor.
-        val src = tempFolder.newFolder("storm-src").toPath() / "source.kt"
-        src.writeText("fun main() { println(\"Hello\") }\n")
-        val outRoot = tempFolder.newFolder("storm-out").toPath()
-
-        withSession { session ->
-            runBlocking {
-                // Pin + identity anchor via one normal compile.
-                assertEquals(CompilationResult.COMPILATION_SUCCESS,
-                    session.compileSnippet(src, (outRoot / "pre").createDirectories() / "out.jar"))
-                val env = applicationEnvironmentOf(session)
-                assertNotNull(env)
-
-                repeat(10) { i ->
-                    try {
-                        session.compileSnippet(src,
-                            (outRoot / "t$i").createDirectories() / "out.jar",
-                            timeout = 1.milliseconds)
-                        fail("iteration $i: expected TimeoutCancellationException")
-                    } catch (_: TimeoutCancellationException) {
-                        // expected — BTA's OperationCancelledException must stay translated
-                    }
-                    assertSame("iteration $i: cancelled compile must not tear down BTA's pinned env",
-                        env, applicationEnvironmentOf(session))
-                    assertEquals(1, environmentRefCountOf(session))
-                }
-
-                // The same session still compiles normally after the storm.
-                val out = (outRoot / "post").createDirectories() / "out.jar"
-                assertEquals(CompilationResult.COMPILATION_SUCCESS, session.compileSnippet(src, out))
-                assertTrue(out.exists())
-                assertSame(env, applicationEnvironmentOf(session))
-            }
         }
     }
 

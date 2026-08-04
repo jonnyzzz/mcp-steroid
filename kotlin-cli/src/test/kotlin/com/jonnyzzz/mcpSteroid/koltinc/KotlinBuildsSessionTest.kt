@@ -6,8 +6,6 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.div
 import kotlin.io.path.exists
 import kotlin.io.path.writeText
-import kotlin.time.Duration.Companion.milliseconds
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.arguments.JvmCompilerArguments
@@ -16,7 +14,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -128,35 +125,6 @@ class KotlinBuildsSessionTest {
                 })
             }
             assertTrue(outputJar.exists())
-        }
-    }
-
-    @Test
-    fun timeoutSurfacesAsTimeoutCancellationException() {
-        // The caller-visible timeout contract: CodeEvalManager maps
-        // TimeoutCancellationException to the "stopped on timeout" failure. The OCE
-        // that BTA throws after the cooperative cancel must NOT supersede it
-        // (quorum finding: translate OCE inside the async child).
-        val srcDir = tempFolder.newFolder("timeout-src").toPath()
-        val src = srcDir / "source.kt"
-        src.writeText("fun main() { println(\"Hello\") }\n")
-        val outputJar = tempFolder.newFolder("timeout-out").toPath() / "out.jar"
-
-        newSession().use { session ->
-            try {
-                runBlocking {
-                    session.compileKotlin(
-                        sources = listOf(src),
-                        destinationDir = outputJar,
-                        compilationTimeout = 1.milliseconds,
-                    ) {
-                        set(JvmCompilerArguments.CLASSPATH, listOf(session.defaultStdlibJar))
-                    }
-                }
-                fail("Expected TimeoutCancellationException for a 1ms compilation timeout")
-            } catch (expected: TimeoutCancellationException) {
-                // expected
-            }
         }
     }
 

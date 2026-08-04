@@ -23,7 +23,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.io.path.div
 import kotlin.io.path.writeText
-import kotlinx.coroutines.TimeoutCancellationException
 import org.jetbrains.kotlin.buildtools.api.CompilationResult
 import org.jetbrains.kotlin.buildtools.api.CompilerMessageRenderer
 import org.jetbrains.kotlin.buildtools.api.KotlinLogger
@@ -80,7 +79,7 @@ class CodeEvalManager(
         // dispose() override — children are disposed in a well-defined order
         // before the parent, and the registration is explicit at the same
         // place the resource is created.
-        Disposer.register(this, Disposable { session.close() })
+        Disposer.register(this) { session.close() }
         session
     }
 
@@ -128,26 +127,18 @@ class CodeEvalManager(
             val extraParams = ParametersListUtil.parse(Registry.stringValue("mcp.steroid.kotlinc.parameters"))
 
             val compilerMessageRenderer = RecordingCompilerMessageRenderer()
-            val compileResult = try {
-                kotlinBuildsSession.compileKotlin(
-                    sources = listOf(inputKt),
-                    destinationDir = outputJar,
-                    compilerMessageRenderer = compilerMessageRenderer,
-                ) {
-                    // Must be applied FIRST: applyArgumentStrings re-applies every
-                    // argument key and would reset options configured before it back
-                    // to compiler defaults. Invalid registry parameters throw — the
-                    // generic handler below surfaces them as an execution error
-                    // instead of silently compiling without the requested flags.
-                    applyArgumentStrings(extraParams)
-                    set(JvmCompilerArguments.CLASSPATH, compileClasspath)
-                }
-            } catch (_: TimeoutCancellationException) {
-                // Messages recorded before the timeout still land in kotlin.txt
-                // (the old subprocess path persisted partial output on timeout too).
-                persistCompilerMessages(executionId, compileResult = null, compilerMessageRenderer.getRecordedMessages())
-                resultBuilder.reportFailed("Kotlin compilation stopped on timeout")
-                return null
+            val compileResult = kotlinBuildsSession.compileKotlin(
+                sources = listOf(inputKt),
+                destinationDir = outputJar,
+                compilerMessageRenderer = compilerMessageRenderer,
+            ) {
+                // Must be applied FIRST: applyArgumentStrings re-applies every
+                // argument key and would reset options configured before it back
+                // to compiler defaults. Invalid registry parameters throw — the
+                // generic handler below surfaces them as an execution error
+                // instead of silently compiling without the requested flags.
+                applyArgumentStrings(extraParams)
+                set(JvmCompilerArguments.CLASSPATH, compileClasspath)
             }
 
             val compilerMessages = compilerMessageRenderer.getRecordedMessages()
@@ -271,11 +262,10 @@ class CodeEvalManager(
      * Persists the compiler verdict + all recorded messages as `kotlin.txt` under
      * the exec folder. Raw (non-remapped) locations on purpose — this file is for
      * debugging the wrapped input.kt, unlike the agent-visible remapped messages.
-     * [compileResult] is null when the compilation did not complete (timeout).
      */
     private suspend fun persistCompilerMessages(
         executionId: ExecutionId,
-        compileResult: CompilationResult?,
+        compileResult: CompilationResult,
         compilerMessages: List<CompilerMessage>,
     ) {
         if (compilerMessages.isEmpty() && compileResult == CompilationResult.COMPILATION_SUCCESS) return
@@ -283,7 +273,7 @@ class CodeEvalManager(
             executionId,
             "kotlin.txt",
             buildString {
-                appendLine(compileResult?.toString() ?: "TIMEOUT")
+                appendLine(compileResult)
                 appendLine("---")
                 for (message in compilerMessages) {
                     val where = message.location?.let { " at ${it.locationString}" }.orEmpty()

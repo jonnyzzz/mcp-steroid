@@ -110,19 +110,11 @@ Get services: `project.service<MyService>()` or `service<AppService>()`. Use `ch
 ### Cancellation and the BTA compile
 
 Snippets compile through the Kotlin Build Tools API
-(`KotlinBuildsSession.compileKotlin`, `kotlin-cli/`): the blocking
-`executeOperation` runs in a child `async(Dispatchers.IO)`, and on timeout
-(120 s default) or caller cancellation the session calls
-`jvmOperation.cancel()` — BTA's **cooperative** cancellation (supported by
-compiler ≥ 2.3.20; in-process it flips the compiler's canceled
-status). BTA reports a cancelled operation
-with its own `OperationCancelledException` (a plain `RuntimeException`);
-`KotlinBuildsSession` translates it back into `CancellationException`, so
-the CE-rethrow rules above hold unchanged and a timeout still surfaces as
-`TimeoutCancellationException` → the "compilation stopped on timeout"
-failure in `CodeEvalManager`. This replaces the old non-cancellable
-`KotlincProcessClient` subprocess contract (removed with the BTA
-migration, PR #361).
+(`KotlinBuildsSession.compileKotlin`, `kotlin-cli/`). The blocking
+`executeOperation` runs on `Dispatchers.IO` and has no compiler-specific
+timeout or cooperative-cancellation path. A caller cancellation may discard
+the result after `executeOperation` returns, but it deliberately does not call
+`BuildOperation.cancel()` and tear through compiler state mid-operation.
 
 ## Build
 
