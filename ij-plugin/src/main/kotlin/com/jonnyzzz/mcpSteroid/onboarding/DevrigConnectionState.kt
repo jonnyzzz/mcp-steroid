@@ -9,6 +9,7 @@ import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.wm.IdeFrame
@@ -16,22 +17,27 @@ import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import com.intellij.util.messages.Topic
 import com.jonnyzzz.mcpSteroid.updates.UpdateChecker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Notified when the devrig install state may have changed — after an install, an update, or a re-check.
+ * Notified when the devrig install state changed — after an install, an update, or a re-check.
  *
  * The status bar can be told to re-read [DevrigStatusBarWidgetFactory.isAvailable], but an open settings
  * page cannot: its panel was built once. Without this, finishing an install left the page still offering
- * to install.
+ * to install. The event carries the fresh state, already computed off the EDT, so a listener never has a
+ * reason to read the filesystem from its (EDT) callback.
  */
 fun interface DevrigStateListener {
-    fun devrigStateChanged()
+    fun devrigStateChanged(state: DevrigConnectionState)
 }
 
 val DEVRIG_STATE_CHANGED: Topic<DevrigStateListener> =
@@ -55,32 +61,48 @@ data class DevrigConnectionState(
 }
 
 /**
- * Computes [DevrigConnectionState] on demand. **Nothing is cached** — deliberately.
+ * Computes [DevrigConnectionState] off the EDT and caches it for the EDT to read.
  *
- * The local half is a `Files.isRegularFile` plus reading a launcher script of a few hundred bytes, which
- * is cheaper than any scheme for keeping a cached copy honest would be. An earlier version did cache it,
- * and the cost was not the memory: it was a debounce clock, a "carry the last known remote version
- * forward" parameter, and a self-healing publish path that existed purely so a missed invalidation could
- * not strand the UI. All of that is gone.
+ * The widget asks for the state from inside its paint path: [DevrigStatusBarWidgetFactory.isAvailable],
+ * `getText()` and `getTooltipText()` all run on the EDT and are re-asked on every widget refresh — which
+ * [DevrigFocusRefreshListener] triggers on every window-focus regain. An earlier version computed the two
+ * file reads on the spot, right there; cheap as they usually are, `Files.isRegularFile` +
+ * `Files.readString` on the paint path is still disk I/O on the EDT, and a slow home directory (network
+ * mount, corporate AV) turns every alt-tab back into a UI stall.
  *
- * The remote half ([stateWithVersionCheck]) is a single HTTP GET of `version.json` and is not stored
- * either. Callers that need it ask at the moment they need it; callers that do not — the settings page,
- * the widget's existence check — never pay for it.
+ * So the platform's own status-bar idiom (see `EditorBasedStatusBarPopup` and its update queue) is
+ * followed instead: every "the answer may have changed" moment only signals [notifyStateChanged]; ONE
+ * collector (in [DevrigStateCache]) debounces the signals, computes [localState] on [Dispatchers.IO],
+ * stores it in a volatile cache, and then hops to the EDT to update the widgets and tell the settings
+ * page. EDT presentation paths read only the cache, via [state].
  */
 @Service(Service.Level.APP)
-class DevrigConnectionStateService(private val scope: CoroutineScope) {
+class DevrigConnectionStateService(scope: CoroutineScope) {
     private val log = thisLogger()
 
     /**
-     * Is the stable launcher there? One `stat`, no parsing — this is what the widget's existence hangs
-     * on, so it is kept separate from [localState] and cheap enough to answer on the EDT.
+     * The last `version-base` we fetched, for rendering only.
+     *
+     * This is **not** a cache: it never causes a fetch to be skipped — [stateWithVersionCheck] always
+     * goes to the network. It exists because the status bar renders synchronously and cannot await an
+     * HTTP call, so the answer has to be somewhere by the time `getText()` is asked. Null until the
+     * first successful fetch, which reads as "not outdated" — we never claim stale without knowing.
      */
-    fun devrigIsInstalled(): Boolean =
-        devrigInstalled(Path.of(System.getProperty("user.home")), SystemInfo.isWindows)
+    @Volatile
+    private var lastFetchedBaseVersion: String? = null
+
+    private val cache = DevrigStateCache(
+        scope = scope,
+        debounceMs = REFRESH_DEBOUNCE_MS,
+        compute = ::localState,
+        push = { fresh, changed -> pushToUi(fresh, changed) },
+    )
 
     /**
-     * Local facts only: installed, and which version. No network — [DevrigConnectionState.outdated] is
-     * therefore false, which is the safe direction (we never claim "stale" without having checked).
+     * Local facts read from disk: installed, and which version. **Does file I/O — background threads
+     * only**; EDT readers take [state], which is the cached result of this very computation. No network —
+     * [DevrigConnectionState.outdated] is therefore false, which is the safe direction (we never claim
+     * "stale" without having checked).
      */
     fun localState(): DevrigConnectionState {
         val userHome = Path.of(System.getProperty("user.home"))
@@ -95,18 +117,11 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
     }
 
     /**
-     * The last `version-base` we fetched, for rendering only.
-     *
-     * This is **not** a cache: it never causes a fetch to be skipped — [stateWithVersionCheck] always
-     * goes to the network. It exists because the status bar renders synchronously and cannot await an
-     * HTTP call, so the answer has to be somewhere by the time `getText()` is asked. Null until the
-     * first successful fetch, which reads as "not outdated" — we never claim stale without knowing.
+     * The cached facts plus whatever the last version check found. No I/O of any kind — safe to call
+     * from painting code. Before the first background refresh lands this is [DevrigStateCache.SAFE_DEFAULT];
+     * the cache is kept honest by [notifyStateChanged] and the focus listener below.
      */
-    @Volatile
-    private var lastFetchedBaseVersion: String? = null
-
-    /** [localState] plus whatever the last version check found. Synchronous; safe to call for painting. */
-    fun state(): DevrigConnectionState = localState().copy(latestBaseVersion = lastFetchedBaseVersion)
+    fun state(): DevrigConnectionState = cache.current.copy(latestBaseVersion = lastFetchedBaseVersion)
 
     /** [localState] plus a **fresh** `version-base`, so the result can say "outdated". Always refetches. */
     suspend fun stateWithVersionCheck(): DevrigConnectionState {
@@ -119,35 +134,44 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
     }
 
     /**
-     * Recompute nothing, just tell every surface that the answer may have changed: the widget refresh
-     * below, and anything subscribed to [DEVRIG_STATE_CHANGED] (the settings page). Called after an
-     * install finishes, which is the one moment a page the user is looking at goes stale.
+     * Tell the service the answer may have changed. Only a `tryEmit` — never blocks, never reads disk, so
+     * it is safe from any thread including the EDT. The collector recomputes off the EDT (debounced by
+     * [REFRESH_DEBOUNCE_MS]), refreshes every status bar, and — when the facts actually changed —
+     * publishes [DEVRIG_STATE_CHANGED] with the fresh state (the settings page). Called after an install
+     * finishes, and on every window-focus regain.
      */
     fun notifyStateChanged() {
-        refreshWidgets()
-        ApplicationManager.getApplication().messageBus
-            .syncPublisher(DEVRIG_STATE_CHANGED)
-            .devrigStateChanged()
+        cache.requestRefresh()
     }
 
     /**
-     * Bring every open project's status bar in line with the current state.
+     * Bring every open project's status bar in line with [fresh], and tell the settings page when the
+     * facts changed.
      *
      * [StatusBarWidgetsManager.updateWidget] is idempotent — it creates the widget when it should exist,
      * disposes it when it should not, and returns early when it is already correct — so calling it
      * unconditionally is self-healing. It also honours a widget the user hid (the manager consults
      * `StatusBarWidgetSettings` first), so this never resurrects one by force. The repaint afterwards is
      * what picks up a changed label on a widget that stays.
+     *
+     * The [DEVRIG_STATE_CHANGED] publish, by contrast, is gated on [changed]: rebuilding the settings
+     * page resets its agent rows to "Checking…" and re-runs the agents' CLIs, so telling it about a
+     * refresh that found nothing new (every window-focus regain) would not be free.
      */
-    fun refreshWidgets() {
+    private suspend fun pushToUi(fresh: DevrigConnectionState, changed: Boolean) {
         // ModalityState.any(): a plain EDT dispatch is withheld while a modal dialog is up, so an install
         // started from the (modal) Settings dialog would not reach the status bar until it closed.
-        scope.launch(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+        withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
             for (project in ProjectManager.getInstance().openProjects) {
                 if (project.isDisposed) continue
                 project.service<StatusBarWidgetsManager>()
                     .updateWidget(DevrigStatusBarWidgetFactory::class.java)
                 WindowManager.getInstance().getStatusBar(project)?.updateWidget(DEVRIG_STATUS_WIDGET_ID)
+            }
+            if (changed) {
+                ApplicationManager.getApplication().messageBus
+                    .syncPublisher(DEVRIG_STATE_CHANGED)
+                    .devrigStateChanged(fresh.copy(latestBaseVersion = lastFetchedBaseVersion))
             }
         }
     }
@@ -160,22 +184,105 @@ class DevrigConnectionStateService(private val scope: CoroutineScope) {
     }
 
     companion object {
+        /** How long a refresh request sits before the recompute, so a burst of focus events runs once. */
+        const val REFRESH_DEBOUNCE_MS = 200L
+
         fun getInstance(): DevrigConnectionStateService = service()
     }
 }
 
 /**
- * Re-checks the widget when the IDE window regains focus.
+ * The update-signal → cached-state machinery, factored out of the service so it can be tested as plain
+ * logic (no IDE, no filesystem): [requestRefresh] only `tryEmit`s into a conflating flow (`replay = 1` +
+ * `DROP_OLDEST`: it never suspends, never fails, and a burst collapses into one pending request); ONE
+ * collector on [scope] waits out [debounceMs], runs [compute] on [Dispatchers.IO] (it may touch the
+ * disk), stores the result in [current], and hands it to [push] together with whether the facts actually
+ * changed since the last refresh.
+ *
+ * [current] is `@Volatile` and starts as [SAFE_DEFAULT]: any thread may read it at any moment and gets
+ * either the default or a complete computed state, never a torn one. The seed request is emitted at
+ * construction, so the real state replaces the default one debounce after the service exists — computed
+ * on the collector, never on whichever thread (possibly the EDT) constructed the service.
+ *
+ * A failed [compute] or [push] is logged and the collector lives on: one bad refresh must not silence
+ * the widget for the rest of the session.
+ */
+class DevrigStateCache(
+    scope: CoroutineScope,
+    private val debounceMs: Long,
+    private val compute: () -> DevrigConnectionState,
+    private val push: suspend (fresh: DevrigConnectionState, changed: Boolean) -> Unit,
+) {
+    private val log = thisLogger()
+
+    /** The last computed state — [SAFE_DEFAULT] until the first refresh lands. */
+    @Volatile
+    var current: DevrigConnectionState = SAFE_DEFAULT
+        private set
+
+    private val updateRequests =
+        MutableSharedFlow<Unit>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    init {
+        scope.launch(Dispatchers.IO) {
+            updateRequests.collect {
+                delay(debounceMs)
+                try {
+                    refreshNow()
+                } catch (e: ProcessCanceledException) {
+                    throw e
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.warn("devrig state refresh failed", e)
+                }
+            }
+        }
+        // Seed: have the collector compute the real state once, right away.
+        requestRefresh()
+    }
+
+    /** Ask for a recompute. Never blocks, never fails; callers may be on the EDT. */
+    fun requestRefresh() {
+        updateRequests.tryEmit(Unit)
+    }
+
+    private suspend fun refreshNow() {
+        val previous = current
+        val fresh = compute()
+        current = fresh
+        push(fresh, fresh != previous)
+    }
+
+    companion object {
+        /**
+         * What every reader sees until the first refresh lands: installed and current — nothing to act on.
+         * That is the safe direction: an unknown state must not flash the widget in, nag about an install,
+         * or claim staleness. Reality arrives one debounce later and corrects it.
+         */
+        val SAFE_DEFAULT = DevrigConnectionState(
+            devrigInstalled = true,
+            installedVersion = null,
+            latestBaseVersion = null,
+        )
+    }
+}
+
+/**
+ * Re-checks the devrig state when the IDE window regains focus.
  *
  * The status bar never polls: it consults [DevrigStatusBarWidgetFactory.isAvailable] when it creates
  * widgets and when someone calls `updateWidget`. So a widget that removed itself cannot notice that
  * devrig was later deleted, and one that is showing cannot notice that devrig has arrived. Window focus
  * is the cheap, event-driven moment to look again — the user has just come back to the IDE, very
  * possibly from doing exactly that in a terminal.
+ *
+ * Only a signal: [DevrigConnectionStateService.notifyStateChanged] is a `tryEmit`, so a burst of focus
+ * events costs nothing here, and the actual file reads happen once, off the EDT, after the debounce.
  */
 class DevrigFocusRefreshListener : ApplicationActivationListener {
     override fun applicationActivated(ideFrame: IdeFrame) {
         if (!devrigWidgetEnabled()) return
-        DevrigConnectionStateService.getInstance().refreshWidgets()
+        DevrigConnectionStateService.getInstance().notifyStateChanged()
     }
 }

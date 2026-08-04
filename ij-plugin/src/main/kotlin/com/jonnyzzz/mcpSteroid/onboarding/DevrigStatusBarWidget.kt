@@ -47,7 +47,8 @@ fun devrigWidgetEnabled(): Boolean = Registry.`is`(DEVRIG_WIDGET_REGISTRY_KEY, f
  * something to act on and removes itself once devrig is installed and current. If that regresses — devrig
  * deleted, a newer release published — it comes back, see [DevrigFocusRefreshListener].
  *
- * There is no "unknown" case to get wrong any more: the state is two file reads, computed on the spot.
+ * An unknown state reads as ready ([DevrigStateCache.SAFE_DEFAULT]), so before the first background
+ * refresh lands the widget stays out — not knowing must not become a nag.
  */
 fun shouldShowDevrigWidget(state: DevrigConnectionState): Boolean =
     state.decision != OnboardingDecision.DEVRIG_READY
@@ -69,8 +70,8 @@ class DevrigStatusBarWidgetFactory : StatusBarWidgetFactory {
      * [com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager.updateWidget] is called — the
      * status bar never polls, hence [DevrigFocusRefreshListener].
      *
-     * Cheap on purpose: a `stat` and a small file read, so it can answer here on the EDT without a cached
-     * copy behind it.
+     * Cheap on purpose: this runs on the EDT, so it reads only the service's cached state — the file
+     * reads behind the answer happen in the service's background collector, never here.
      */
     override fun isAvailable(project: Project): Boolean =
         devrigWidgetEnabled() && shouldShowDevrigWidget(DevrigConnectionStateService.getInstance().state())
@@ -129,6 +130,7 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
         override fun getClickConsumer(): com.intellij.util.Consumer<MouseEvent> =
             com.intellij.util.Consumer { event -> showPopup(event) }
 
+        // Paint path: the cached state only. The service's collector keeps it honest off the EDT.
         private fun state() = DevrigConnectionStateService.getInstance().state()
     }
 

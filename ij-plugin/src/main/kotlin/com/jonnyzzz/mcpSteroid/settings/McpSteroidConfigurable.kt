@@ -112,10 +112,16 @@ fun agentRegisterCommandComment(agent: AiAgentCli): String =
  */
 class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
-    /** The one block that is rebuilt while the page is open; see [refreshInstallStatus]. */
+    /**
+     * The one block that is rebuilt while the page is open; see [refreshInstallStatus]. `@Volatile`
+     * (here and on [uiDisposable]): written on the EDT, but read from whichever thread publishes
+     * [DEVRIG_STATE_CHANGED] — the topic makes no threading promise, so these reads must not rely on one.
+     */
+    @Volatile
     private var installStatus: Placeholder? = null
 
     /** Scopes the [DEVRIG_STATE_CHANGED] subscription to one opening of the dialog. */
+    @Volatile
     private var uiDisposable: CheckedDisposable? = null
 
     override fun disposeUIResources() {
@@ -137,9 +143,11 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // with no bound port (server not running) it degrades to a generic phrase instead of "port 0".
         // No hard-coded default here — 6315 lives solely in the registry config.
         val portPhrase = if (port > 0) "on port <b>$port</b>" else "on its HTTP port"
-        // Two file reads (is the launcher there, and which version does it point at) — computed here
-        // rather than cached, because the panel is built once per dialog opening and a stale answer on
-        // this page is worse than a stat.
+        // Two file reads (is the launcher there, and which version does it point at) — a fresh snapshot,
+        // not the service's cache: this runs once per dialog opening, off the widget's paint path, and a
+        // stale answer on the page the user opened to check state is worse than a one-off stat. Every
+        // LATER update while the page is open arrives through DEVRIG_STATE_CHANGED below, which carries
+        // the state already computed on a background thread — the EDT never re-reads the disk for it.
         val devrigState = DevrigConnectionStateService.getInstance().localState()
 
         // An install runs in the background and finishes while this page is open, so the page listens
@@ -148,7 +156,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = disposable
         ApplicationManager.getApplication().messageBus.connect(disposable)
-            .subscribe(DEVRIG_STATE_CHANGED, DevrigStateListener { refreshInstallStatus() })
+            .subscribe(DEVRIG_STATE_CHANGED, DevrigStateListener { state -> refreshInstallStatus(state) })
 
         return panel {
             // No pitch row. Whoever opens this page has already installed the plugin, so "AI agents work
@@ -395,15 +403,16 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     }
 
     /**
-     * Swap the install block for one built from the current state. Called on [DEVRIG_STATE_CHANGED],
-     * which fires when an install finishes — the moment this page would otherwise keep offering to
-     * install something that is already there.
+     * Swap the install block for one built from [state]. Called on [DEVRIG_STATE_CHANGED], which fires
+     * when an install finishes — the moment this page would otherwise keep offering to install something
+     * that is already there. The state arrives with the event, already computed off the EDT; the EDT
+     * lambda below only builds Swing out of it and never touches the filesystem.
      */
-    private fun refreshInstallStatus() {
+    private fun refreshInstallStatus(state: DevrigConnectionState) {
         val placeholder = installStatus ?: return
         onEdtEvenUnderThisDialog {
             if (installStatus !== placeholder) return@onEdtEvenUnderThisDialog   // panel rebuilt meanwhile
-            placeholder.component = installStatusPanel(DevrigConnectionStateService.getInstance().localState())
+            placeholder.component = installStatusPanel(state)
         }
     }
 
