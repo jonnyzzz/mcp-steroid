@@ -21,8 +21,10 @@ import com.intellij.ui.dsl.builder.Placeholder
 import com.intellij.ui.dsl.builder.Row
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.panel
+import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
+import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
 import com.jonnyzzz.mcpSteroid.onboarding.DEVRIG_STATE_CHANGED
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigAgentRegistrationService
@@ -32,6 +34,7 @@ import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigStateListener
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import java.awt.datatransfer.StringSelection
+import java.nio.file.Path
 import javax.swing.text.AbstractDocument
 import javax.swing.text.AttributeSet
 import javax.swing.text.DocumentFilter
@@ -190,6 +193,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                         "running agent session to pick one up."
                 )
             }
+            otherClientsSection()
         } else {
             row {
                 text("<b>devrig is not installed yet.</b>")
@@ -209,6 +213,46 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 )
             }
         }
+    }
+
+    /**
+     * The manual recipe for the clients devrig has no CLI for — Cursor, Windsurf, anything configured by an
+     * `mcpServers` JSON file. Same server, same launcher, same `mcp` subcommand as the buttons above; the
+     * only difference is that the user pastes it themselves.
+     *
+     * Collapsed, and only shown once devrig is installed, because the snippet names a launcher path that
+     * has to exist to be worth copying. This is the settings-page twin of `devrig install config`, and both
+     * build the command through [devrigStdioMcpCommand], so the snippet cannot drift from what
+     * `devrig install <agent>` writes.
+     */
+    private fun Panel.otherClientsSection() {
+        val json = devrigStdioMcpConfigJson(Path.of(System.getProperty("user.home")), SystemInfo.isWindows)
+        collapsibleGroup(OTHER_CLIENTS_SECTION_TITLE) {
+            row {
+                text(
+                    "Any MCP client that reads an <code>mcpServers</code> JSON file can reach this IDE " +
+                        "through the same devrig — it runs as a stdio MCP server. Add:"
+                )
+            }
+            row {
+                val textArea = JBTextArea(json).apply {
+                    isEditable = false
+                    rows = json.lines().size
+                }
+                cell(JBScrollPane(textArea)).align(Align.FILL)
+            }.topGap(TopGap.NONE)
+            row {
+                button("Copy JSON") {
+                    CopyPasteManager.getInstance().setContents(StringSelection(json))
+                }
+            }
+            row {
+                comment(
+                    "The same registration the buttons above write, so it survives devrig updates too. " +
+                        "<code>devrig install config</code> prints this in a terminal."
+                )
+            }
+        }.topGap(TopGap.SMALL)
     }
 
     /**
@@ -412,6 +456,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
         /** Title of the collapsed section holding the deprecated direct-HTTP setup. */
         const val HTTP_SECTION_TITLE = "Direct HTTP connection (deprecated)"
+
+        /** Title of the collapsed section with the manual stdio config for clients devrig cannot register. */
+        const val OTHER_CLIENTS_SECTION_TITLE = "Another MCP client (Cursor, Windsurf, …)"
 
         const val DEVRIG_DOCS_URL = "https://devrig.dev/docs/devrig/"
 

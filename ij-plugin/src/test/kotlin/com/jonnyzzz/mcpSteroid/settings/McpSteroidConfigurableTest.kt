@@ -3,11 +3,14 @@ package com.jonnyzzz.mcpSteroid.settings
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
+import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
+import java.nio.file.Path
 import java.awt.Component
 import java.awt.Container
 import javax.swing.AbstractButton
@@ -85,6 +88,21 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 for (agent in AiAgentCli.entries) {
                     assertContainsText(texts, agent.displayName)
                 }
+
+                // devrig registers three agents by CLI; everything else — Cursor, Windsurf, any
+                // mcpServers file — gets the same server as a copyable stdio snippet, so an unsupported
+                // client is a paste away rather than a dead end. Only once devrig is there: the snippet
+                // names a launcher path that has to exist to be worth copying.
+                assertContainsText(texts, McpSteroidConfigurable.OTHER_CLIENTS_SECTION_TITLE)
+                assertContainsText(texts, "\"mcpServers\"")
+                val expected = devrigStdioMcpConfigJson(
+                    Path.of(System.getProperty("user.home")),
+                    SystemInfo.isWindows,
+                )
+                assertTrue(
+                    "The snippet must be the one devrig itself would register; expected:\n$expected",
+                    texts.any { it.contains(expected) },
+                )
                 assertFalse(
                     "devrig is installed — the panel must not offer to install it again; found:\n$joined",
                     joined.contains("devrig is not installed"),
@@ -92,6 +110,10 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             } else {
                 assertContainsText(texts, "devrig is not installed")
                 assertContainsText(texts, "Install devrig")
+                assertFalse(
+                    "Without devrig the stdio snippet would name a launcher that does not exist; found:\n$joined",
+                    joined.contains(McpSteroidConfigurable.OTHER_CLIENTS_SECTION_TITLE),
+                )
                 assertFalse(
                     "devrig is missing — registering an agent is not yet the next step; found:\n$joined",
                     joined.contains("Point an agent at it"),

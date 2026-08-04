@@ -66,6 +66,14 @@ Agents whose CLI is absent are answered from a PATH lookup alone, so opening the
 per **installed** agent, not one per agent we support. Success is quiet — the row flipping to *Registered*
 is the confirmation; only a failure gets a balloon, carrying devrig's own first line.
 
+**Any other MCP client** — Cursor, Windsurf, anything configured through an `mcpServers` JSON file — gets a
+collapsed **Another MCP client (Cursor, Windsurf, …)** group with the same server as a copyable stdio
+snippet: devrig's stable launcher plus its `mcp` subcommand. So a client devrig has no CLI for is a paste
+away rather than a dead end. It is the settings-page twin of `devrig install config`, and both build the
+command through `devrigStdioMcpCommand` in `:ai-agents`, so what you copy cannot drift from what
+**Register** writes. Shown only once devrig is installed — before that, the snippet would name a launcher
+that is not there.
+
 That devrig block is the only part rebuilt while the page is open — an install finishes in the background
 and the page follows it (`DEVRIG_STATE_CHANGED`), instead of going on offering to install what is already
 there.

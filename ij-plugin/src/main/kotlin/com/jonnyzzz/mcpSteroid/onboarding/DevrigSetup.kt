@@ -30,6 +30,8 @@ import kotlinx.coroutines.CancellationException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ScheduledFuture
+import com.jonnyzzz.mcpSteroid.aiAgents.devrigStdioMcpCommand
+import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
@@ -40,6 +42,17 @@ fun devrigHome(userHome: Path): Path = userHome.resolve(".mcp-steroid")
 /** The stable devrig launcher path for this OS. */
 fun devrigBinPath(userHome: Path, windows: Boolean): Path =
     devrigHome(userHome).resolve("bin").resolve(if (windows) "devrig.cmd" else "devrig")
+
+/**
+ * The `mcpServers` snippet that points an MCP client at this machine's devrig over stdio — for the clients
+ * devrig has no CLI for (Cursor, Windsurf, anything configured by an `mcp.json`-style file).
+ *
+ * Built from the same [devrigStdioMcpCommand] that devrig itself registers with, so what the settings page
+ * offers to copy and what `devrig install <agent>` writes cannot drift. The settings-page twin of
+ * `devrig install config`.
+ */
+fun devrigStdioMcpConfigJson(userHome: Path, windows: Boolean): String =
+    stdioMcpServersJson(devrigStdioMcpCommand(devrigBinPath(userHome, windows).toString(), windows))
 
 /**
  * devrig's update-coordination directory (`HomePaths.updateDir`). The IDE participates in the same

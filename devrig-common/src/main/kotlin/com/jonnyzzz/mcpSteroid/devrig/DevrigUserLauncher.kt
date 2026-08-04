@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
+import com.jonnyzzz.mcpSteroid.aiAgents.devrigStdioMcpCommand
 import java.nio.file.Path
 
 /**
@@ -26,16 +27,6 @@ object DevrigUserLauncher {
      * AutoRun script); POSIX execs the script directly. **No JAVA_HOME** — the launcher exports
      * `DEVRIG_JAVA_HOME` for the JDK devrig runs under.
      */
-    fun invocation(home: HomePaths, args: List<String>, windows: Boolean = isWindows()): StdioMcpCommand {
-        val launcher = path(home, windows).toString()
-        return if (windows) {
-            // cmd.exe parses everything after `/c` as ONE command line, so the launcher path must be
-            // quoted or a `%USERPROFILE%` with a space (e.g. C:\Users\First Last) splits and the server
-            // never starts.
-            val line = (listOf("\"$launcher\"") + args).joinToString(" ")
-            StdioMcpCommand(command = "cmd.exe", args = listOf("/d", "/c", line))
-        } else {
-            StdioMcpCommand(command = launcher, args = args)
-        }
-    }
+    fun invocation(home: HomePaths, args: List<String>, windows: Boolean = isWindows()): StdioMcpCommand =
+        devrigStdioMcpCommand(path(home, windows).toString(), windows, args)
 }

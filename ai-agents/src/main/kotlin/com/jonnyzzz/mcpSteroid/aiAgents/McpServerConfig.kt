@@ -66,6 +66,30 @@ data class StdioMcpCommand(
     val args: List<String> = emptyList(),
 )
 
+/**
+ * OS-correct stdio invocation of the stable devrig launcher at [launcherPath], with [args].
+ *
+ * Lives here, in the module both halves already depend on, because two places need the exact same answer:
+ * devrig itself when it registers an agent (`DevrigUserLauncher.invocation`), and the IDE plugin when it
+ * shows the manual configuration for a client devrig cannot register (Cursor, Windsurf, anything reading an
+ * `mcpServers` file). If the two ever built this string separately, the copyable snippet would quietly stop
+ * matching what the button writes.
+ *
+ * Windows runs the `.cmd` through `cmd.exe /d /c` — a `.cmd` is not directly executable as a process image,
+ * and `/d` skips any AutoRun script. The launcher path is quoted because `cmd.exe` parses everything after
+ * `/c` as ONE command line, so an unquoted `C:\Users\First Last\…` splits and the server never starts.
+ * POSIX execs the script directly.
+ */
+fun devrigStdioMcpCommand(launcherPath: String, windows: Boolean, args: List<String> = listOf("mcp")): StdioMcpCommand =
+    if (windows) {
+        StdioMcpCommand(
+            command = "cmd.exe",
+            args = listOf("/d", "/c", (listOf("\"$launcherPath\"") + args).joinToString(" ")),
+        )
+    } else {
+        StdioMcpCommand(command = launcherPath, args = args)
+    }
+
 private val stdioMcpServersJsonFormat = Json { prettyPrint = true }
 
 /**

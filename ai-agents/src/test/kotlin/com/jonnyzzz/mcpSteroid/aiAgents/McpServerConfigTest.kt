@@ -45,6 +45,27 @@ class McpServerConfigTest {
     }
 
     @Test
+    fun `devrigStdioMcpCommand execs the launcher directly on POSIX`() {
+        val command = devrigStdioMcpCommand("/home/user/.mcp-steroid/bin/devrig", windows = false)
+
+        assertEquals("/home/user/.mcp-steroid/bin/devrig", command.command)
+        assertEquals(listOf("mcp"), command.args)
+    }
+
+    @Test
+    fun `devrigStdioMcpCommand wraps the cmd launcher and quotes a path with spaces`() {
+        // A .cmd is not executable as a process image, so it goes through cmd.exe; /d skips AutoRun.
+        // cmd.exe parses everything after /c as ONE command line, so an unquoted "First Last" would split.
+        val command = devrigStdioMcpCommand("C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd", windows = true)
+
+        assertEquals("cmd.exe", command.command)
+        assertEquals(
+            listOf("/d", "/c", "\"C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd\" mcp"),
+            command.args,
+        )
+    }
+
+    @Test
     fun `stdioMcpServersJson honors a custom server name`() {
         val json = stdioMcpServersJson(StdioMcpCommand("/opt/devrig", listOf("mcp")), serverName = "custom-name")
         val servers = Json.parseToJsonElement(json).jsonObject.getValue("mcpServers").jsonObject
