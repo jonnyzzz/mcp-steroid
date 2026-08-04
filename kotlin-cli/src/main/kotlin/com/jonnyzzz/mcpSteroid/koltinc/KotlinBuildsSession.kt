@@ -187,19 +187,9 @@ class KotlinBuildsSession(
          * resurrect the inline-bytecode failure above in a far less
          * diagnosable form. The fix is to bump the BTA API and implementation versions.
          */
-        val DEFAULT_JVM_TARGET: JvmTarget = getDefaultJvmTarget()
-
-        private fun getDefaultJvmTarget(): JvmTarget {
+        val DEFAULT_JVM_TARGET: JvmTarget by lazy {
             val jvmTargetStr = System.getProperty("java.specification.version")
-                ?: error("System property 'java.specification.version' is not set on this JVM")
-            return JvmTarget.entries.find { it.stringValue == jvmTargetStr }
-                ?: error(
-                    "The running JVM ('java.specification.version'=$jvmTargetStr) has no matching " +
-                        "JvmTarget in the bundled Kotlin Build Tools API. Bump the BTA API and " +
-                        "implementation versions in kotlin-cli/build.gradle.kts " +
-                        "or run on a JDK the bundled compiler supports " +
-                        "(known targets: ${JvmTarget.entries.joinToString { it.stringValue }})."
-                )
+            JvmTarget.entries.find { it.stringValue == jvmTargetStr } ?: JvmTarget.entries.last()
         }
     }
 }
