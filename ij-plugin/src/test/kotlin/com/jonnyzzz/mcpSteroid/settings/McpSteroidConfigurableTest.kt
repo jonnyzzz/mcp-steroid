@@ -167,6 +167,27 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                     "devrig's status must be a value field too; fields: $fieldTexts",
                     fieldTexts.any { it.startsWith("Installed") },
                 )
+
+                // Owner click-testing feedback: the installed-state field must not stretch across the
+                // whole page. It and the agent status fields ("Checking…", "Registered") share one fixed
+                // column width, so the devrig block reads as one column of answers. The agent fields are
+                // asserted opportunistically — a background check may already have swapped one for a
+                // button state — but the Installed field is always there in this branch.
+                val statusFields = collectValueFields(component).filter {
+                    it.text.startsWith("Installed") || it.text == "Registered" || it.text == "Checking…"
+                }
+                assertTrue(
+                    "expected at least the Installed field among: $fieldTexts",
+                    statusFields.isNotEmpty(),
+                )
+                for (field in statusFields) {
+                    assertEquals(
+                        "status field '${field.text}' must be ${McpSteroidConfigurable.STATUS_FIELD_COLUMNS} " +
+                            "columns wide, matching the value areas around it — not page-wide",
+                        McpSteroidConfigurable.STATUS_FIELD_COLUMNS,
+                        field.columns,
+                    )
+                }
             }
 
             // The direct-HTTP path is collapsed at the bottom and says outright that it is deprecated —

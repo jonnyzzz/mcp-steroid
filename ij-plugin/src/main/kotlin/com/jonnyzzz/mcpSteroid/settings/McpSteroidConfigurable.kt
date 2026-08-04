@@ -20,10 +20,12 @@ import com.intellij.ui.components.fields.ExtendableTextComponent
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.COLUMNS_MEDIUM
 import com.intellij.ui.dsl.builder.Panel
 import com.intellij.ui.dsl.builder.Placeholder
 import com.intellij.ui.dsl.builder.Row
 import com.intellij.ui.dsl.builder.TopGap
+import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
@@ -196,8 +198,12 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     private fun installStatusPanel(state: DevrigConnectionState): DialogPanel = panel {
         if (state.devrigInstalled) {
             row("devrig:") {
+                // A fixed medium width, not AlignX.FILL: stretched across the whole page the field
+                // dwarfed the agent value areas right below it (owner click-testing feedback). The
+                // status fields in this block all share STATUS_FIELD_COLUMNS so they line up as one
+                // column of answers.
                 cell(valueTextField("Installed" + (state.installedVersion?.let { " — version $it" } ?: "")))
-                    .align(AlignX.FILL)
+                    .columns(STATUS_FIELD_COLUMNS)
             }
             row {
                 text("<b>Point an agent at it</b> — once per machine, not once per project:")
@@ -310,12 +316,14 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     ): DialogPanel = panel {
         row {
             when (state) {
-                // The two states that are pure fact get the same value field as the rows above them; the
-                // rest are an action plus a reason, and a field would only dress up a button.
+                // The two states that are pure fact get the same value field as the rows above them — same
+                // shape, same STATUS_FIELD_COLUMNS width, so the devrig row and the agent rows read as one
+                // column of answers. The rest are an action plus a reason, and a field would only dress up
+                // a button.
                 AgentRegistrationState.CHECKING ->
-                    cell(valueTextField("Checking…")).align(AlignX.FILL)
+                    cell(valueTextField("Checking…")).columns(STATUS_FIELD_COLUMNS)
                 AgentRegistrationState.REGISTERED ->
-                    cell(valueTextField("Registered")).align(AlignX.FILL)
+                    cell(valueTextField("Registered")).columns(STATUS_FIELD_COLUMNS)
                 AgentRegistrationState.NOT_REGISTERED -> {
                     registerButton(agent, "Register", placeholder)
                     comment(agentRegisterCommandComment(agent))
@@ -517,6 +525,16 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
         /** Title of the collapsed section with the manual stdio config for clients devrig cannot register. */
         const val OTHER_CLIENTS_SECTION_TITLE = "Another MCP client (Cursor, Windsurf, …)"
+
+        /**
+         * Width of every short status field in the devrig block ("Installed — version X", "Registered",
+         * "Checking…"), in text-field columns. One shared constant, because these fields sit in adjacent
+         * rows and must read as one column of answers: the installed-state field used to be AlignX.FILL
+         * and spanned the entire page, dwarfing the agent value areas right below it (owner click-testing
+         * feedback). COLUMNS_MEDIUM is the DSL's own standard value-field width; long copyable content
+         * (URLs, command lines) keeps AlignX.FILL because it exists to be read in full.
+         */
+        const val STATUS_FIELD_COLUMNS = COLUMNS_MEDIUM
 
         const val DEVRIG_DOCS_URL = "https://devrig.dev/docs/devrig/"
 
