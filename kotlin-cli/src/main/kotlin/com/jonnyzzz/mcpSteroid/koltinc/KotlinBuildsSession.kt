@@ -28,14 +28,15 @@ import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain.Companion.jv
  * fixed, the daemon flow becomes viable again.
  *
  * Each instance owns one [KotlinToolchains.BuildSession], and all compilations on that
- * instance reuse its compiler and JarFS caches. Creating and closing a session for every
- * compilation was measured against 18 real IDEA/PyCharm/CLion prompt compilations with a
- * clean KtBlock cache: it took 24.587 s instead of 15.023 s with one shared session, a 1.64×
- * slowdown. Closing the session releases the application-environment/JarFS pin added by
- * KT-87743, so the following compilation must rebuild those classpath caches. Keep the session
- * field-owned until the upstream cache lifetime no longer depends on the build-session lifetime.
- * Callers must serialize compilations and call [close] only after the last one completes. A
- * closed instance must not be used again.
+ * instance reuse its compiler and JarFS caches. `CodeEvalManager` keeps its instance for the
+ * project lifetime and closes it through the IntelliJ Disposer at project shutdown. Creating
+ * and closing a session for every compilation was measured against
+ * 18 real IDEA/PyCharm/CLion prompt compilations with a clean KtBlock cache: it took 24.587 s,
+ * while repeated shared-session runs took 15.023–17.259 s. Closing the session releases the
+ * application-environment/JarFS pin added by KT-87743, so the following compilation must rebuild
+ * those classpath caches. Keep the session field-owned until the upstream cache lifetime no longer
+ * depends on the build-session lifetime. Callers must serialize compilations and call [close] only
+ * after the last one completes. A closed instance must not be used again.
  *
  * @param implClasspath The Kotlin Build Tools implementation jars (the plugin's `kotlinc/` folder,
  * or the `:kotlin-cli` `bta-impl-jars` directory in tests). The jars must be plain files on disk —

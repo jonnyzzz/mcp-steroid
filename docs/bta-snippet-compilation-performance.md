@@ -52,10 +52,11 @@ all 18 IDEA/PyCharm/CLion cases in `TestSkillKtBlocksCompilationTest`:
 
 | BuildSession lifetime | 18-case suite time |
 |---|---:|
-| One session reused and closed after the final compilation | **15.023 s** |
+| One session reused and closed after the final compilation | **15.023 s; 17.259 s repeat** |
 | New session created and closed around every compilation | 24.587 s |
 
-Per-compilation sessions took 1.64× as long; the shared session cut suite time by 39%.
+Per-compilation sessions took 1.42–1.64× as long; the shared session cut suite time by
+30–39% across the two clean-cache shared-session measurements.
 `BuildSession.close()` releases KT-87743's application-environment/JarFS pin, so the next
 session has to rebuild the classpath caches. Keep the session field-owned and dispose it with
 the project service until that upstream cache lifetime changes.
