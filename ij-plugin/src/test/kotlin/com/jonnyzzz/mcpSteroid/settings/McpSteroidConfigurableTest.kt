@@ -8,6 +8,7 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import com.jonnyzzz.mcpSteroid.aiAgents.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
@@ -106,6 +107,19 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                     "The snippet must be the one devrig itself would register; expected:\n$expected",
                     texts.any { it.contains(expected) },
                 )
+
+                // Besides the JSON, the same section offers the bare command line — the real absolute
+                // launcher plus the `mcp` subcommand — for clients that ask for a command instead of a
+                // file. Rendered in a copyable field, so display and clipboard are the same string.
+                assertContainsText(texts, "register devrig as an MCP server with the following command line")
+                val commandLine = devrigMcpCommandLine(System.getProperty("user.home"), SystemInfo.isWindows)
+                val fields = collectValueFields(component).map { it.text }
+                assertTrue(
+                    "The stdio command line must be a copyable value field with the absolute launcher " +
+                        "path; expected '$commandLine' among: $fields",
+                    fields.any { it == commandLine },
+                )
+
                 assertFalse(
                     "devrig is installed — the panel must not offer to install it again; found:\n$joined",
                     joined.contains("devrig is not installed"),
@@ -126,14 +140,27 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // The panel still links to the devrig documentation.
             assertEquals("https://devrig.dev/docs/devrig/", McpSteroidConfigurable.DEVRIG_DOCS_URL)
 
-            // Both halves of "can an agent reach this IDE?" live in the same Devrig group: the server's
-            // state, and devrig's right below it — each rendered as a read-only value field rather than a
-            // bare label, so the answer is visually separable from the label that names it.
-            assertContainsText(texts, "MCP server")
+            // The server's state is rendered as a read-only value field, and it lives INSIDE the Direct
+            // HTTP section: this single IDE's port only matters to someone wiring HTTP by hand, so the
+            // row sits with the URL and the commands it belongs to (manual click-testing feedback).
+            assertContainsText(texts, "MCP server:")
+            assertTrue(
+                "The MCP server row must live under the Direct HTTP section title; order was:\n$joined",
+                texts.indexOfFirst { it.contains("MCP server:") } >
+                    texts.indexOfFirst { it.contains(McpSteroidConfigurable.HTTP_SECTION_TITLE) },
+            )
             val fieldTexts = collectValueFields(component).map { it.text }
             assertTrue(
                 "The server status must be a value field, not a bare label; fields: $fieldTexts",
                 fieldTexts.any { it.startsWith("Running on port") || it == "Not running" },
+            )
+
+            // Display policy: every devrig path on this page names the real absolute home — never `~`,
+            // which Windows would not expand and which would make the display differ from what the copy
+            // buttons put on the clipboard.
+            assertFalse(
+                "No user-visible devrig path may render '~'; found:\n$joined",
+                joined.contains("~/.mcp-steroid") || joined.contains("~\\.mcp-steroid"),
             )
             if (installed) {
                 assertTrue(
@@ -208,6 +235,25 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             CopyPasteManager.getInstance().getContents<String>(DataFlavor.stringFlavor),
         )
         assertEquals("Copied", COPIED_HINT)
+    }
+
+    /**
+     * The receipt under a Register/Enable button must draw the boundary between the label and the command:
+     * "runs devrig install claude" read as one sentence, and where the prose ended was anyone's guess
+     * (manual click-testing feedback). One explicit method per pinned property — no parameterized tests.
+     */
+    fun `test the register receipt leads with 'runs command' before the command itself`() {
+        for (agent in AiAgentCli.entries) {
+            val receipt = agentRegisterCommandComment(agent)
+            assertTrue(
+                "the receipt must lead with 'runs command:' for ${agent.displayName}; got '$receipt'",
+                receipt.startsWith("runs command: "),
+            )
+            assertTrue(
+                "the receipt must name the exact command for ${agent.displayName}; got '$receipt'",
+                receipt.contains("<code>devrig install ${agent.binary}</code>"),
+            )
+        }
     }
 
     private fun assertContainsText(texts: List<String>, expected: String) {

@@ -76,6 +76,9 @@ class DevrigWidgetPopupContentTest {
             // What devrig is, how big it is, and what to do next belong in the docs behind "Learn more".
             assertTrue("must not advertise the download size for $s", !content.message.contains("MB"))
             assertTrue("must not mention the bundled JDK for $s", !content.message.contains("JDK"))
+            // Paths belong on the settings page, where they render as the real home (never `~` — on
+            // Windows a tilde is a placeholder the OS will not expand).
+            assertTrue("must not render a home-relative path for $s", !content.message.contains("~"))
         }
     }
 

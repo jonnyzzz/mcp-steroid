@@ -206,7 +206,9 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
             .getNotificationGroup("jonnyzzz.mcp.steroid.onboarding")
             .createNotification(
                 "Could not register ${agent.displayName}",
-                "$reason<br>See the IDE log for details, or run " +
+                // "run the command:" and not just "run": the boundary between the prose and the command
+                // must be unambiguous — the same rule as the settings page's register receipt.
+                "$reason<br>See the IDE log for details, or run the command " +
                     "<code>devrig install ${agent.binary}</code> in a terminal.",
                 NotificationType.ERROR,
             )

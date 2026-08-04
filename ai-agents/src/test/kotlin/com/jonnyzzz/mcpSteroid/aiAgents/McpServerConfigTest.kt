@@ -71,4 +71,67 @@ class McpServerConfigTest {
         val servers = Json.parseToJsonElement(json).jsonObject.getValue("mcpServers").jsonObject
         assertEquals(setOf("custom-name"), servers.keys)
     }
+
+    // Display policy for user-visible devrig paths: the REAL absolute home (never `~`), OS-native
+    // separators — so what the settings page shows equals what its copy buttons put on the clipboard.
+    // POSIX and Windows are pinned as explicit methods (no parameterized tests in this repo).
+
+    @Test
+    fun `devrigHomeDisplayPath renders the real home on POSIX`() {
+        assertEquals("/home/user/.mcp-steroid", devrigHomeDisplayPath("/home/user", windows = false))
+    }
+
+    @Test
+    fun `devrigHomeDisplayPath renders the real home with backslashes on Windows`() {
+        assertEquals("C:\\Users\\me\\.mcp-steroid", devrigHomeDisplayPath("C:\\Users\\me", windows = true))
+    }
+
+    @Test
+    fun `devrigLauncherDisplayPath names the plain launcher on POSIX`() {
+        assertEquals(
+            "/home/user/.mcp-steroid/bin/devrig",
+            devrigLauncherDisplayPath("/home/user", windows = false),
+        )
+    }
+
+    @Test
+    fun `devrigLauncherDisplayPath names the cmd shim with backslashes on Windows`() {
+        assertEquals(
+            "C:\\Users\\me\\.mcp-steroid\\bin\\devrig.cmd",
+            devrigLauncherDisplayPath("C:\\Users\\me", windows = true),
+        )
+    }
+
+    @Test
+    fun `devrigLauncherDisplayPath normalizes a forward-slash Windows home and a trailing separator`() {
+        assertEquals(
+            "C:\\Users\\me\\.mcp-steroid\\bin\\devrig.cmd",
+            devrigLauncherDisplayPath("C:/Users/me/", windows = true),
+        )
+    }
+
+    @Test
+    fun `devrigMcpCommandLine is the absolute launcher plus the mcp subcommand on POSIX`() {
+        assertEquals(
+            "/home/user/.mcp-steroid/bin/devrig mcp",
+            devrigMcpCommandLine("/home/user", windows = false),
+        )
+    }
+
+    @Test
+    fun `devrigMcpCommandLine leaves a space-free Windows launcher unquoted`() {
+        assertEquals(
+            "C:\\Users\\me\\.mcp-steroid\\bin\\devrig.cmd mcp",
+            devrigMcpCommandLine("C:\\Users\\me", windows = true),
+        )
+    }
+
+    @Test
+    fun `devrigMcpCommandLine quotes a launcher path containing a space`() {
+        // An unquoted "C:\Users\First Last\..." splits into two arguments in every shell and client.
+        assertEquals(
+            "\"C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd\" mcp",
+            devrigMcpCommandLine("C:\\Users\\First Last", windows = true),
+        )
+    }
 }

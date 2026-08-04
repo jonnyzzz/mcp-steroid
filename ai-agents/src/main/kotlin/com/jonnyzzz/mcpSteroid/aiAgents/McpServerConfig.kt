@@ -66,6 +66,52 @@ data class StdioMcpCommand(
     val args: List<String> = emptyList(),
 )
 
+/** The directory devrig owns under the user home — the one name every devrig path hangs off. */
+const val DEVRIG_HOME_DIR_NAME = ".mcp-steroid"
+
+/**
+ * The stable launcher's file name for this OS: a `.cmd` shim on Windows (so cmd.exe and PowerShell resolve
+ * it via PATHEXT), a plain `devrig` script on POSIX.
+ */
+fun devrigLauncherFileName(windows: Boolean): String = if (windows) "devrig.cmd" else "devrig"
+
+/**
+ * devrig's home rendered for humans — see the display policy on [devrigLauncherDisplayPath].
+ */
+fun devrigHomeDisplayPath(userHome: String, windows: Boolean): String =
+    displayPath(userHome, windows, DEVRIG_HOME_DIR_NAME)
+
+/**
+ * The stable launcher path rendered for humans.
+ *
+ * Display policy for every user-visible devrig path: the **real absolute home** (never `~`), joined with
+ * the OS-native separator — `C:\Users\me\.mcp-steroid\bin\devrig.cmd` on Windows,
+ * `/home/me/.mcp-steroid/bin/devrig` on POSIX. `~` is a lie on Windows (neither cmd.exe nor an
+ * `mcp.json`-reading client expands it), and a copy button must put exactly what is displayed on the
+ * clipboard — so the display IS the clipboard content, on every OS.
+ */
+fun devrigLauncherDisplayPath(userHome: String, windows: Boolean): String =
+    displayPath(userHome, windows, DEVRIG_HOME_DIR_NAME, "bin", devrigLauncherFileName(windows))
+
+/**
+ * The one-line command that runs devrig as a stdio MCP server — what a user types into an MCP client that
+ * asks for a command line instead of reading an `mcpServers` file. The launcher path follows the
+ * [devrigLauncherDisplayPath] policy (real absolute home, OS-native separators) and is quoted when it
+ * contains a space, because every shell and client splits an unquoted `C:\Users\First Last\…` in two.
+ */
+fun devrigMcpCommandLine(userHome: String, windows: Boolean): String {
+    val launcher = devrigLauncherDisplayPath(userHome, windows)
+    val quoted = if (' ' in launcher) "\"$launcher\"" else launcher
+    return "$quoted mcp"
+}
+
+private fun displayPath(userHome: String, windows: Boolean, vararg segments: String): String {
+    val separator = if (windows) "\\" else "/"
+    // A Windows home can arrive with forward slashes (a config file, a test) — render it Windows-naturally.
+    val home = (if (windows) userHome.replace('/', '\\') else userHome).trimEnd('/', '\\')
+    return (listOf(home) + segments).joinToString(separator)
+}
+
 /**
  * OS-correct stdio invocation of the stable devrig launcher at [launcherPath], with [args].
  *

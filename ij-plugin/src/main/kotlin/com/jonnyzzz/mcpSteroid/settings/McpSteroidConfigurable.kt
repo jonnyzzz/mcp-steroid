@@ -28,6 +28,8 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
+import com.jonnyzzz.mcpSteroid.aiAgents.devrigHomeDisplayPath
+import com.jonnyzzz.mcpSteroid.aiAgents.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
 import com.jonnyzzz.mcpSteroid.onboarding.DEVRIG_STATE_CHANGED
@@ -74,20 +76,28 @@ fun copyWithFeedback(content: String, source: JComponent?) {
 private const val COPIED_HINT_FADEOUT_MS = 2000L
 
 /**
+ * The receipt under a Register/Enable button. It leads with "runs command:" so the boundary between the
+ * label and the command itself is unambiguous — "runs devrig install claude" read as one sentence, and a
+ * user could not tell where the prose ended and the command began.
+ */
+fun agentRegisterCommandComment(agent: AiAgentCli): String =
+    "runs command: <code>devrig install ${agent.binary}</code>"
+
+/**
  * Application-level settings page: Settings | Tools | Devrig — MCP Steroid.
  *
  * Purely informational — no persistent state, no mutable options. The page exists so users
  * can confirm the plugin is installed and connect an AI agent:
  *
  * 1. **Devrig** — the whole recommended path in one group, read top to bottom: why it is worth a separate
- *    binary, then where both ends of the connection stand (the live server state — a cheap
- *    [SteroidsMcpServer.port] read from an in-memory atomic, no background work on the settings thread —
- *    and devrig's own state plus whatever the next step is: install it, or point an agent at it). This
- *    page is the only place the plugin offers the install — see
+ *    binary, then devrig's own state plus whatever the next step is: install it, or point an agent at it.
+ *    This page is the only place the plugin offers the install — see
  *    [com.jonnyzzz.mcpSteroid.onboarding.devrigWidgetEnabled].
- * 2. **Direct HTTP (deprecated)**, collapsed and last: server URL, per-agent `mcp add` commands, generic
- *    `mcpServers` JSON, registry keys. Nobody should start here; the setups that already did still need
- *    to look their own configuration up.
+ * 2. **Direct HTTP (deprecated)**, collapsed and last: the in-IDE server's live state (a cheap
+ *    [SteroidsMcpServer.port] read from an in-memory atomic, no background work on the settings thread),
+ *    its URL, per-agent `mcp add` commands, generic `mcpServers` JSON, registry keys. Nobody should start
+ *    here; the setups that already did still need to look their own configuration up — and the server row
+ *    lives with them, because a port on this single IDE only matters to someone wiring HTTP by hand.
  *
  * The only I/O is two small file reads that answer "is devrig installed, and which version" while the
  * panel is being built.
@@ -158,24 +168,6 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     browserLink("What is devrig?", DEVRIG_DOCS_URL)
                 }
 
-                // Both ends of the same question — "can an agent reach this IDE?". The server is the IDE
-                // end, devrig the agent end, so they read as one block instead of two unrelated setups.
-                if (info != null) {
-                    row("MCP server:") {
-                        cell(valueTextField("Running on port $port")).align(AlignX.FILL)
-                    }
-                } else {
-                    row("MCP server:") {
-                        cell(valueTextField("Not running")).align(AlignX.FILL)
-                    }
-                    row {
-                        comment(
-                            "The server normally starts at IDE startup. Check the IDE log (Help | Show Log in Finder/Explorer) " +
-                                "for bind errors, or adjust the registry keys in the Direct HTTP section below."
-                        )
-                    }
-                }
-
                 // A placeholder, not a plain row: an install takes minutes and finishes while this page is
                 // open, so the block has to be replaceable in place. Rebuilt from DEVRIG_STATE_CHANGED.
                 row {
@@ -184,7 +176,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 installStatus?.component = installStatusPanel(devrigState)
             }
 
-            httpSection(portPhrase, info)
+            httpSection(port, portPhrase, info)
 
             // Last, because it is never the next step for someone who just opened this page — it is where
             // you go after everything else failed to help.
@@ -240,8 +232,11 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 }
             }
             row {
+                // The real home, never `~` — on Windows a tilde is a placeholder the OS will not expand,
+                // and this page's policy is that a displayed path is the literal path on disk.
+                val home = devrigHomeDisplayPath(System.getProperty("user.home"), SystemInfo.isWindows)
                 comment(
-                    "Downloads about 611 MB (a pinned JDK plus devrig) into <code>~/.mcp-steroid</code> and " +
+                    "Downloads about 611 MB (a pinned JDK plus devrig) into <code>$home</code> and " +
                         "puts <code>devrig</code> on your PATH. It registers nothing with your agents — " +
                         "that is the next step, and it appears here once devrig is in place."
                 )
@@ -251,16 +246,21 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
     /**
      * The manual recipe for the clients devrig has no CLI for — Cursor, Windsurf, anything configured by an
-     * `mcpServers` JSON file. Same server, same launcher, same `mcp` subcommand as the buttons above; the
-     * only difference is that the user pastes it themselves.
+     * `mcpServers` JSON file or an "add MCP server" dialog. Same server, same launcher, same `mcp`
+     * subcommand as the buttons above; the only difference is that the user pastes it themselves. Two
+     * shapes of the same registration: the JSON snippet for file-configured clients, and the bare
+     * `<launcher> mcp` command line for clients that ask for a command.
      *
-     * Collapsed, and only shown once devrig is installed, because the snippet names a launcher path that
-     * has to exist to be worth copying. This is the settings-page twin of `devrig install config`, and both
-     * build the command through [devrigStdioMcpCommand], so the snippet cannot drift from what
-     * `devrig install <agent>` writes.
+     * Collapsed, and only shown once devrig is installed, because both name a launcher path that has to
+     * exist to be worth copying. This is the settings-page twin of `devrig install config`; the JSON is
+     * built through [devrigStdioMcpCommand] and the command line through [devrigMcpCommandLine], so
+     * neither can drift from what `devrig install <agent>` writes.
      */
     private fun Panel.otherClientsSection() {
-        val json = devrigStdioMcpConfigJson(Path.of(System.getProperty("user.home")), SystemInfo.isWindows)
+        val userHome = System.getProperty("user.home")
+        val windows = SystemInfo.isWindows
+        val json = devrigStdioMcpConfigJson(Path.of(userHome), windows)
+        val commandLine = devrigMcpCommandLine(userHome, windows)
         collapsibleGroup(OTHER_CLIENTS_SECTION_TITLE) {
             row {
                 text(
@@ -279,6 +279,12 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 button("Copy JSON") { event ->
                     copyWithFeedback(json, event.source as? JComponent)
                 }
+            }
+            row {
+                text("Or register devrig as an MCP server with the following command line:")
+            }.topGap(TopGap.SMALL)
+            row {
+                cell(copyableTextField(commandLine)).align(AlignX.FILL)
             }
             row {
                 comment(
@@ -312,7 +318,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     cell(valueTextField("Registered")).align(AlignX.FILL)
                 AgentRegistrationState.NOT_REGISTERED -> {
                     registerButton(agent, "Register", placeholder)
-                    comment("runs <code>devrig install ${agent.binary}</code>")
+                    comment(agentRegisterCommandComment(agent))
                 }
                 // Registered and switched off in the agent's own config. Same fix, different word: the
                 // user is not missing a registration, theirs is turned off — and no `mcp list` mentions
@@ -386,14 +392,15 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     }
 
     /**
-     * The deprecated single-IDE path, collapsed and last: the server URL, the per-agent `mcp add`
-     * commands, the generic JSON, and the registry keys.
+     * The deprecated single-IDE path, collapsed and last: the in-IDE server's live state, its URL, the
+     * per-agent `mcp add` commands, the generic JSON, and the registry keys.
      *
      * Collapsed rather than deleted. Nobody should start here, but the setups that already did need
-     * somewhere to look up their own configuration — and the server URL is part of that lookup, not part
-     * of the page's status: a URL is only ever useful to someone wiring this connection by hand.
+     * somewhere to look up their own configuration — and the server row is part of that lookup, not part
+     * of the page's status: this single IDE's port is only ever useful to someone wiring HTTP by hand
+     * (devrig finds every running IDE on its own).
      */
-    private fun Panel.httpSection(portPhrase: String, info: McpConnectionInfo?) {
+    private fun Panel.httpSection(port: Int, portPhrase: String, info: McpConnectionInfo?) {
         collapsibleGroup(HTTP_SECTION_TITLE) {
             row {
                 icon(AllIcons.General.Warning)
@@ -403,6 +410,21 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                         "and every agent must be set up by hand. Use devrig instead: it reaches every running " +
                         "IDE automatically and keeps working across restarts and port changes."
                 )
+            }
+            if (info != null) {
+                row("MCP server:") {
+                    cell(valueTextField("Running on port $port")).align(AlignX.FILL)
+                }
+            } else {
+                row("MCP server:") {
+                    cell(valueTextField("Not running")).align(AlignX.FILL)
+                }
+                row {
+                    comment(
+                        "The server normally starts at IDE startup. Check the IDE log (Help | Show Log in Finder/Explorer) " +
+                            "for bind errors, or adjust the registry keys below."
+                    )
+                }
             }
             if (info != null) {
                 row("Server URL:") {

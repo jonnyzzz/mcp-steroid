@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.onboarding
 
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
+import com.jonnyzzz.mcpSteroid.aiAgents.devrigLauncherDisplayPath
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -19,6 +20,20 @@ class DevrigSetupTest {
         val home = Path.of("/home/u")
         assertEquals(Path.of("/home/u/.mcp-steroid/bin/devrig"), devrigBinPath(home, windows = false))
         assertEquals(Path.of("/home/u/.mcp-steroid/bin/devrig.cmd"), devrigBinPath(home, windows = true))
+    }
+
+    /**
+     * The launcher path the settings page RENDERS and the path this module CHECKS on disk are built by two
+     * functions in two modules — they must name the same file, or the page shows a command that does not
+     * run. POSIX only: on this (POSIX) JVM, `Path.resolve` cannot produce a backslash-joined Windows path,
+     * so the Windows rendering is pinned string-only in `McpServerConfigTest`.
+     */
+    @Test
+    fun `the displayed launcher path and the filesystem launcher path agree`() {
+        assertEquals(
+            devrigBinPath(Path.of("/home/u"), windows = false).toString(),
+            devrigLauncherDisplayPath("/home/u", windows = false),
+        )
     }
 
     /**

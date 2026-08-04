@@ -30,6 +30,8 @@ import kotlinx.coroutines.CancellationException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ScheduledFuture
+import com.jonnyzzz.mcpSteroid.aiAgents.DEVRIG_HOME_DIR_NAME
+import com.jonnyzzz.mcpSteroid.aiAgents.devrigLauncherFileName
 import com.jonnyzzz.mcpSteroid.aiAgents.devrigStdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import java.util.concurrent.TimeUnit
@@ -37,11 +39,14 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
 
 /** devrig's home, the one both halves of the product agree on. */
-fun devrigHome(userHome: Path): Path = userHome.resolve(".mcp-steroid")
+fun devrigHome(userHome: Path): Path = userHome.resolve(DEVRIG_HOME_DIR_NAME)
 
-/** The stable devrig launcher path for this OS. */
+/**
+ * The stable devrig launcher path for this OS. Built from the same names as the user-visible rendering
+ * (`devrigLauncherDisplayPath` in `:ai-agents`), so what the settings page shows is the file this checks.
+ */
 fun devrigBinPath(userHome: Path, windows: Boolean): Path =
-    devrigHome(userHome).resolve("bin").resolve(if (windows) "devrig.cmd" else "devrig")
+    devrigHome(userHome).resolve("bin").resolve(devrigLauncherFileName(windows))
 
 /**
  * The `mcpServers` snippet that points an MCP client at this machine's devrig over stdio — for the clients
@@ -66,11 +71,11 @@ fun devrigUpdateDir(userHome: Path): Path = devrigHome(userHome).resolve("update
  * visible from the agent side no matter which half of the product attempted the install.
  */
 fun devrigInstallFailedMarker(userHome: Path): Path =
-    userHome.resolve(".mcp-steroid").resolve("markers").resolve("bootstrap-install.failed")
+    devrigHome(userHome).resolve("markers").resolve("bootstrap-install.failed")
 
 /** Where the installer stages its in-flight downloads (`.tmp.*` under `binaries/`). */
 private fun devrigBinariesDir(userHome: Path): Path =
-    userHome.resolve(".mcp-steroid").resolve("binaries")
+    devrigHome(userHome).resolve("binaries")
 
 /**
  * Download the published installer for this OS. Returns the script file, or null on any failure —
