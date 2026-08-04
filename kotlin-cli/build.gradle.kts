@@ -10,6 +10,7 @@ kotlin {
 
 repositories {
     // Numbered Kotlin 2.4.20 RC builds are published here before the final RC reaches Maven Central.
+    // TODO(TODO-BTA-PERF.md): remove this repository once a regular Kotlin release contains KT-87743.
     maven("https://packages.jetbrains.team/maven/p/kt/dev") {
         content {
             includeGroup("org.jetbrains.kotlin")

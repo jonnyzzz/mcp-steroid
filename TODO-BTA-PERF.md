@@ -25,6 +25,19 @@ backported that behavior to 2.4.20 RC: BTA now acquires its own
 and the local workaround is gone. The structural session tests still verify one stable
 environment/ref-count across compiles and full disposal on close.
 
+### TODO: return BTA dependencies to a regular Kotlin release
+
+Switch the BTA API/implementation literals to the first regular Kotlin release containing
+KT-87743, remove the temporary Kotlin dev repository from `kotlin-cli`, `ij-plugin`, and
+`prompts`, and resolve exclusively from Maven Central again. Kotlin bootstrap releases are
+an acceptable non-expiring fallback only after verifying the selected BTA implementation
+actually contains the upstream `ApplicationEnvironmentPin` fix.
+
+Bootstrap audit on 2026-08-04: `2.4.20-RC-197` is absent (API and implementation POMs
+both return 404), and every published bootstrap BTA implementation in the 2.4.20 and 2.5.0
+lines lacks `org.jetbrains.kotlin.buildtools.internal.ApplicationEnvironmentPin`. Keep the
+current scoped dev repository until a fixed build is published to bootstrap or Maven Central.
+
 Implementation notes (validated by the probe):
 - The embeddable compiler **relocates** `com.intellij.*` → `org.jetbrains.kotlin.com.intellij.*`
   (Disposer/Disposable FQNs must use the relocated names).

@@ -10,6 +10,7 @@ kotlin {
 }
 
 repositories {
+    // TODO(TODO-BTA-PERF.md): remove this repository once a regular Kotlin release contains KT-87743.
     maven("https://packages.jetbrains.team/maven/p/kt/dev") {
         content {
             includeGroup("org.jetbrains.kotlin")
