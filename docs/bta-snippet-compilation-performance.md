@@ -45,6 +45,21 @@ Implementation notes (validated by the probe):
   compiler: KT-87743 covers the in-process BuildSession only, so the daemon path remains
   blocked on KT-88183 (see "Remaining follow-ups").
 
+### BuildSession lifetime A/B
+
+Rechecked on 2026-08-04 with BTA 2.4.20 RC and a clean KtBlock cache. Both variants passed
+all 18 IDEA/PyCharm/CLion cases in `TestSkillKtBlocksCompilationTest`:
+
+| BuildSession lifetime | 18-case suite time |
+|---|---:|
+| One session reused and closed after the final compilation | **15.023 s** |
+| New session created and closed around every compilation | 24.587 s |
+
+Per-compilation sessions took 1.64× as long; the shared session cut suite time by 39%.
+`BuildSession.close()` releases KT-87743's application-environment/JarFS pin, so the next
+session has to rebuild the classpath caches. Keep the session field-owned and dispose it with
+the project service until that upstream cache lifetime changes.
+
 ## Measured but not adopted: repackaged-classpath cache
 
 This was an optional second stage worth about 20% on top of the pin. It is retained here as
@@ -92,8 +107,11 @@ These are the only remaining actions from this investigation:
    lacks `org.jetbrains.kotlin.buildtools.internal.ApplicationEnvironmentPin`. Keep the current
    scoped dev repository until a fixed build is published to bootstrap or Maven Central.
 
-2. Monitor these three upstream issues when upgrading the BTA dependencies:
+2. Monitor these four upstream issues when upgrading the BTA dependencies:
 
+   - [KT-57097](https://youtrack.jetbrains.com/issue/KT-57097) — remove the Kotlin compiler's
+     dependency on the IntelliJ Platform. This could eliminate compiler coupling to embedded
+     IntelliJ classes and their process-global state.
    - [KT-88182](https://youtrack.jetbrains.com/issue/KT-88182) — contention in
      `FastJarHandler` during compilation.
    - [KT-88183](https://youtrack.jetbrains.com/issue/KT-88183) — daemon compilation clears the
