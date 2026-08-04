@@ -7,31 +7,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
-import java.nio.file.Path
 
-class OnboardingDecisionTest {
-
-    @Test
-    fun `decision truth table`() {
-        // Nothing installed -> offer the install.
-        assertEquals(OnboardingDecision.OFFER_INSTALL, decideOnboarding(devrigInstalled = false))
-        // Installed and current -> nothing to say.
-        assertEquals(OnboardingDecision.DEVRIG_READY, decideOnboarding(devrigInstalled = true))
-    }
-
-    @Test
-    fun `a stale devrig is offered as an update, not treated as done`() {
-        // The plugin's job is getting the user onto a CURRENT devrig, so "installed" alone is not success.
-        assertEquals(
-            OnboardingDecision.OFFER_UPDATE,
-            decideOnboarding(devrigInstalled = true, devrigOutdated = true),
-        )
-        // "Outdated" cannot outrank "missing": there is nothing to update yet.
-        assertEquals(
-            OnboardingDecision.OFFER_INSTALL,
-            decideOnboarding(devrigInstalled = false, devrigOutdated = true),
-        )
-    }
+class DevrigInstallProbeTest {
 
     @Test
     fun `installedDevrigVersion reads the version out of the launcher script`() {
@@ -70,24 +47,6 @@ class OnboardingDecisionTest {
     }
 
     @Test
-    fun `isDevrigOutdated only fires when we actually know the user is behind`() {
-        assertTrue(isDevrigOutdated("0.100", "0.101"))
-        assertFalse(isDevrigOutdated("0.101", "0.101"))
-        // A snapshot of the current release counts as current (same semantics as the plugin's own check).
-        assertFalse(isDevrigOutdated("0.101-SNAPSHOT-abc1234", "0.101"))
-        // A local SNAPSHOT build is never stale: DevrigVersion ranks it ahead of anything published,
-        // which is the same rule devrig's own updater and the plugin update check use.
-        assertFalse(isDevrigOutdated("0.100.19999-SNAPSHOT-c6568a61", "0.101"))
-        // The comparison is semantic, not textual: 0.99 is behind 0.101, though it sorts after as a string.
-        assertTrue(isDevrigOutdated("0.99", "0.101"))
-        // Unknown inputs must never produce a nag.
-        assertFalse(isDevrigOutdated(null, "0.101"))
-        assertFalse(isDevrigOutdated("0.100", null))
-        assertFalse(isDevrigOutdated("0.100", ""))
-        assertFalse(isDevrigOutdated(null, null))
-    }
-
-    @Test
     fun `devrigInstalled checks the per-OS launcher file`() {
         val home = Files.createTempDirectory("home")
         assertFalse(devrigInstalled(home, windows = false))
@@ -98,5 +57,32 @@ class OnboardingDecisionTest {
         assertFalse(devrigInstalled(home, windows = true))
         Files.createFile(bin.resolve("devrig.cmd"))
         assertTrue(devrigInstalled(home, windows = true))
+    }
+
+    @Test
+    fun `probeDevrigInstallState combines the two file reads`() {
+        val home = Files.createTempDirectory("home")
+        assertEquals(
+            DevrigInstallState(installed = false, version = null),
+            probeDevrigInstallState(home, windows = false),
+        )
+
+        val bin = Files.createDirectories(home.resolve(".mcp-steroid").resolve("bin"))
+        val launcher = bin.resolve("devrig")
+        Files.writeString(
+            launcher,
+            """exec "/home/u/.mcp-steroid/binaries/devrig-linux-x64-0.101-bbbbbbbbbbbb/devrig-0.101/bin/devrig" "${'$'}@"""",
+        )
+        assertEquals(
+            DevrigInstallState(installed = true, version = "0.101"),
+            probeDevrigInstallState(home, windows = false),
+        )
+
+        // An unrecognised launcher is "installed, version unknown" — never a guess.
+        Files.writeString(launcher, "#!/bin/sh\necho hello\n")
+        assertEquals(
+            DevrigInstallState(installed = true, version = null),
+            probeDevrigInstallState(home, windows = false),
+        )
     }
 }

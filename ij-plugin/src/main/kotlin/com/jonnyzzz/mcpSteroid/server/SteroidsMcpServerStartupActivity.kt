@@ -7,7 +7,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.jonnyzzz.mcpSteroid.demo.DemoModeService
-import com.jonnyzzz.mcpSteroid.onboarding.DevrigOnboardingService
+import com.jonnyzzz.mcpSteroid.onboarding.DevrigPromotion
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import com.jonnyzzz.mcpSteroid.updates.UpdateChecker
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +36,7 @@ class SteroidsMcpServerStartupActivity : ProjectActivity {
         analyticsBeacon.runHeartbeat()
         analyticsBeacon.capture("plugin_startup_per_project")
 
-        DevrigOnboardingService.getInstance().maybeOffer(project)
+        // Touch-to-arm: the service's own init owns the once-per-IDE-run, delayed promotion one-shot.
+        DevrigPromotion.getInstance()
     }
 }

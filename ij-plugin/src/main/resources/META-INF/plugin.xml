@@ -79,33 +79,14 @@
             serviceInterface="com.jonnyzzz.mcpSteroid.server.PromptsContextHandler"
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.PromptsContextHandlerIJ"/>
 
-        <!-- Update checker notification group -->
+        <!-- The plugin's single notification group: plugin-update notifications, the once-per-run devrig
+             promotion, and install/register results and failures. Plain BALLOON on purpose (owner call):
+             every message here may auto-hide — a balloon is a nudge, and anything missed stays reachable
+             in the Notifications tool window. The id predates the merge (it was the update checker's) and
+             is kept stable so users' notification settings survive. Must match
+             MCP_STEROID_NOTIFICATION_GROUP in DevrigPromotion.kt. -->
         <notificationGroup id="jonnyzzz.mcp.steroid.updates"
                            displayType="BALLOON"/>
-
-        <!-- IDE-first onboarding: offer to install devrig, or update a stale one, for this IDE.
-             STICKY_BALLOON on purpose: a plain BALLOON auto-hides in ~10s, at the noisiest moment of the
-             session (project open + indexing), so the offer was routinely never seen. The offer is
-             registry-gated ("mcp.steroid.devrig.widget.enabled", off by default), shown at most once per
-             IDE run, and "Later" snoozes it app-wide for 14 days; it stops once devrig is installed and
-             current. Policy lives in DevrigOnboardingService. -->
-        <notificationGroup id="jonnyzzz.mcp.steroid.onboarding"
-                           displayType="STICKY_BALLOON"/>
-
-        <!-- Results of an install the user just started, and only those: they auto-hide.
-             Stickiness is earned by messages the user must not miss (the offer above, failures); a
-             success balloon for an action the user is watching, whose outcome is on the settings page and
-             the widget anyway, would only be one more thing to dismiss. -->
-        <notificationGroup id="jonnyzzz.mcp.steroid.onboarding.results"
-                           displayType="BALLOON"/>
-
-        <!-- devrig connection state; click = run the same install/update flow. Present only while there
-             is something to act on: the factory reports itself unavailable once the IDE is connected, so
-             the plugin does not hold status-bar space permanently. The user can also hide it for good by
-             right-clicking the status bar (platform-provided, since the factory stays configurable). -->
-        <statusBarWidgetFactory id="jonnyzzz.mcp.steroid.devrig"
-                                order="last"
-                                implementation="com.jonnyzzz.mcpSteroid.onboarding.DevrigStatusBarWidgetFactory"/>
 
         <!-- Settings | Tools | Devrig — MCP Steroid: informational page promoting the devrig CLI
              setup, showing the MCP server status, and keeping the legacy HTTP connection info. -->
@@ -143,11 +124,12 @@
         <registryKey key="mcp.steroid.updates.enabled" defaultValue="true"
             description="Enable automatic update checks"/>
 
-        <!-- Devrig onboarding: status-bar widget + the once-per-run startup offer. Off by default:
-             status-bar space and startup balloons are not ours to take uninvited, and the settings
-             page carries the same offer with room to explain it. -->
+        <!-- Devrig promotion: the once-per-IDE-run, delayed, non-sticky offer to install devrig when it
+             is missing. Off by default: a startup balloon is not ours to take uninvited, and the settings
+             page carries the same offer with room to explain it. The key id predates the (since deleted)
+             status-bar widget and stays stable so machines that already flipped it keep their choice. -->
         <registryKey key="mcp.steroid.devrig.widget.enabled" defaultValue="false"
-            description="Show the devrig status-bar widget and the startup offer to install devrig"/>
+            description="Show the once-per-run startup offer to install devrig"/>
 
         <!-- Storage folder configuration -->
         <registryKey key="mcp.steroid.storage.path" defaultValue=""
@@ -176,11 +158,6 @@
     <applicationListeners>
         <listener class="com.jonnyzzz.mcpSteroid.server.SteroidsMcpServerAppLifecycleListener"
                   topic="com.intellij.ide.AppLifecycleListener"/>
-        <!-- Re-check the devrig state when the IDE regains focus. The status-bar widget removes itself
-             once everything is connected, and a removed widget cannot notice that devrig was deleted
-             afterwards — this is what brings it back inside the same session. Debounced + no network. -->
-        <listener class="com.jonnyzzz.mcpSteroid.onboarding.DevrigFocusRefreshListener"
-                  topic="com.intellij.openapi.application.ApplicationActivationListener"/>
     </applicationListeners>
 
 </idea-plugin>

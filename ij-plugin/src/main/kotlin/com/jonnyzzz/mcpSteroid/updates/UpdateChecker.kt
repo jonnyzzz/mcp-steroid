@@ -13,6 +13,7 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.util.io.HttpRequests
 import com.jonnyzzz.mcpSteroid.getBuildVersion
+import com.jonnyzzz.mcpSteroid.onboarding.MCP_STEROID_NOTIFICATION_GROUP
 import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 import kotlinx.coroutines.*
 import kotlinx.coroutines.delay
@@ -54,17 +55,8 @@ class UpdateChecker(
     /** Whether we've already shown the update notification in this IDE session */
     private val notificationShown = AtomicBoolean(false)
 
-    /** For testing: the last fetched remote version */
-    @Volatile
-    var lastFetchedVersion: String? = null
-        private set
-
     /**
      * Fetch the published `version-base` from version.json, or null when the request or parse fails.
-     *
-     * The release process ships the plugin and devrig from one VERSION, so this single value is the
-     * "current release" line for BOTH — the onboarding flow reuses it to tell whether the devrig the
-     * user has installed is stale (see [com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService]).
      */
     suspend fun fetchLatestBaseVersion(): String? {
         val currentVersion = getBuildVersion()
@@ -91,7 +83,6 @@ class UpdateChecker(
             log.debug("Failed to parse version response: ${e.message}")
             return null
         }
-        lastFetchedVersion = versionInfo.versionBase
         return versionInfo.versionBase
     }
 
@@ -132,7 +123,7 @@ class UpdateChecker(
 
     private fun showUpdateNotification(currentVersion: String, newVersion: String) {
         val notificationGroup = NotificationGroupManager.getInstance()
-            .getNotificationGroup("jonnyzzz.mcp.steroid.updates")
+            .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
 
         notificationGroup.createNotification(
             "MCP Steroid plugin update available",

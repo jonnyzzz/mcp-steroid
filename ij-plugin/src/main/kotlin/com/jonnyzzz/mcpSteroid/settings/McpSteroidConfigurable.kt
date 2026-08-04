@@ -35,12 +35,10 @@ import com.jonnyzzz.mcpSteroid.aiAgents.devrigHomeDisplayPath
 import com.jonnyzzz.mcpSteroid.aiAgents.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
-import com.jonnyzzz.mcpSteroid.onboarding.DEVRIG_STATE_CHANGED
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigAgentRegistrationService
-import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionState
-import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
+import com.jonnyzzz.mcpSteroid.onboarding.DevrigInstallState
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
-import com.jonnyzzz.mcpSteroid.onboarding.DevrigStateListener
+import com.jonnyzzz.mcpSteroid.onboarding.probeDevrigInstallState
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import java.awt.datatransfer.StringSelection
 import java.net.URLEncoder
@@ -93,8 +91,6 @@ fun agentRegisterCommandComment(agent: AiAgentCli): String =
  *
  * 1. **Devrig** — the whole recommended path in one group, read top to bottom: why it is worth a separate
  *    binary, then devrig's own state plus whatever the next step is: install it, or point an agent at it.
- *    This page is the only place the plugin offers the install — see
- *    [com.jonnyzzz.mcpSteroid.onboarding.devrigWidgetEnabled].
  * 2. **Direct HTTP (deprecated)**, collapsed and last: the in-IDE server's live state (a cheap
  *    [SteroidsMcpServer.port] read from an in-memory atomic, no background work on the settings thread),
  *    its URL, per-agent `mcp add` commands, generic `mcpServers` JSON, registry keys. Nobody should start
@@ -109,16 +105,10 @@ fun agentRegisterCommandComment(agent: AiAgentCli): String =
  */
 class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
-    /**
-     * The one block that is rebuilt while the page is open; see [refreshInstallStatus]. `@Volatile`
-     * (here and on [uiDisposable]): written on the EDT, but read from whichever thread publishes
-     * [DEVRIG_STATE_CHANGED] — the topic makes no threading promise, so these reads must not rely on one.
-     */
-    @Volatile
+    /** The one state-dependent block. (Interim shape; the next commit makes it populate-on-show.) */
     private var installStatus: Placeholder? = null
 
-    /** Scopes the [DEVRIG_STATE_CHANGED] subscription to one opening of the dialog. */
-    @Volatile
+    /** Scopes the async row updates to one opening of the dialog. */
     private var uiDisposable: CheckedDisposable? = null
 
     override fun disposeUIResources() {
@@ -141,19 +131,13 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // No hard-coded default here — 6315 lives solely in the registry config.
         val portPhrase = if (port > 0) "on port <b>$port</b>" else "on its HTTP port"
         // Two file reads (is the launcher there, and which version does it point at) — a fresh snapshot,
-        // not the service's cache: this runs once per dialog opening, off the widget's paint path, and a
-        // stale answer on the page the user opened to check state is worse than a one-off stat. Every
-        // LATER update while the page is open arrives through DEVRIG_STATE_CHANGED below, which carries
-        // the state already computed on a background thread — the EDT never re-reads the disk for it.
-        val devrigState = DevrigConnectionStateService.getInstance().localState()
+        // once per dialog opening. (Interim shape: the next commit moves this probe off the EDT into an
+        // on-show background compute.)
+        val devrigState = probeDevrigInstallState()
 
-        // An install runs in the background and finishes while this page is open, so the page listens
-        // instead of staying a snapshot. Scoped to this opening of the dialog.
         val disposable = Disposer.newCheckedDisposable()
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = disposable
-        ApplicationManager.getApplication().messageBus.connect(disposable)
-            .subscribe(DEVRIG_STATE_CHANGED, DevrigStateListener { state -> refreshInstallStatus(state) })
 
         return panel {
             // No pitch row. Whoever opens this page has already installed the plugin, so "AI agents work
@@ -179,7 +163,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 }
 
                 // A placeholder, not a plain row: an install takes minutes and finishes while this page is
-                // open, so the block has to be replaceable in place. Rebuilt from DEVRIG_STATE_CHANGED.
+                // open, so the block has to be replaceable in place.
                 row {
                     installStatus = placeholder().align(AlignX.FILL)
                 }
@@ -203,14 +187,14 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * Showing exactly one of the two is the point. The button has nothing to offer someone who already
      * has devrig, and the registration commands mean nothing to someone who does not.
      */
-    private fun installStatusPanel(state: DevrigConnectionState): DialogPanel = panel {
-        if (state.devrigInstalled) {
+    private fun installStatusPanel(state: DevrigInstallState): DialogPanel = panel {
+        if (state.installed) {
             row("devrig:") {
                 // A fixed medium width, not AlignX.FILL: stretched across the whole page the field
                 // dwarfed the agent value areas right below it (owner click-testing feedback). The
                 // status fields in this block all share STATUS_FIELD_COLUMNS so they line up as one
                 // column of answers.
-                cell(valueTextField("Installed" + (state.installedVersion?.let { " — version $it" } ?: "")))
+                cell(valueTextField("Installed" + (state.version?.let { " — version $it" } ?: "")))
                     .columns(STATUS_FIELD_COLUMNS)
             }
             row {
@@ -397,20 +381,6 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             if (disposable.isDisposed) return@invokeLater
             update()
         }, ModalityState.any())
-    }
-
-    /**
-     * Swap the install block for one built from [state]. Called on [DEVRIG_STATE_CHANGED], which fires
-     * when an install finishes — the moment this page would otherwise keep offering to install something
-     * that is already there. The state arrives with the event, already computed off the EDT; the EDT
-     * lambda below only builds Swing out of it and never touches the filesystem.
-     */
-    private fun refreshInstallStatus(state: DevrigConnectionState) {
-        val placeholder = installStatus ?: return
-        onEdtEvenUnderThisDialog {
-            if (installStatus !== placeholder) return@onEdtEvenUnderThisDialog   // panel rebuilt meanwhile
-            placeholder.component = installStatusPanel(state)
-        }
     }
 
     /**

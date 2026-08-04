@@ -211,18 +211,23 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
     private val log = thisLogger()
 
     /**
-     * Install devrig, or re-run the installer to move a stale one onto the current release.
+     * Install devrig by running the canonical installer.
      *
      * [project] only anchors the progress bar and the notifications; it may be null when the call comes
      * from an application-level surface such as the settings page with no project open.
+     *
+     * [onFinished] runs on the task's background thread after the install ends, however it ended —
+     * the completion callback of a button the user pressed, not a monitoring pipeline. The settings
+     * page uses it to re-probe and stop offering an install that just succeeded. It survives the
+     * failure notification's Retry, so a retried install reports back to the same surface.
      */
-    fun runInstall(project: Project?) {
+    fun runInstall(project: Project?, onFinished: (() -> Unit)? = null) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Installing devrig…", true) {
             override fun run(indicator: ProgressIndicator) {
                 val userHome = Path.of(System.getProperty("user.home"))
                 val windows = SystemInfo.isWindows
                 try {
-                    if (!installDevrig(project, indicator, userHome, windows)) return
+                    if (!installDevrig(project, indicator, userHome, windows, onFinished)) return
                     notify(
                         project, NotificationType.INFORMATION, "devrig is installed",
                         "Register your agent with it to bridge this IDE — see Settings | Tools | " +
@@ -236,11 +241,9 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
                     log.warn("devrig install failed", e)
                     val reason = e.message ?: e.javaClass.simpleName
                     writeFailureMarker(userHome, "devrig install failed: $reason")
-                    notifyFailure(project, "Installing devrig failed: $reason.")
+                    notifyFailure(project, "Installing devrig failed: $reason.", onFinished)
                 } finally {
-                    // Whatever happened, every surface must reflect reality afterwards — including a
-                    // settings page the user is looking at right now.
-                    DevrigConnectionStateService.getInstance().notifyStateChanged()
+                    onFinished?.invoke()
                 }
             }
         })
@@ -262,6 +265,7 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
         indicator: ProgressIndicator,
         userHome: Path,
         windows: Boolean,
+        onFinished: (() -> Unit)?,
     ): Boolean {
         val coordination = UpdateCoordination(devrigUpdateDir(userHome))
         if (coordination.anyLiveInProgressMarker()) {
@@ -279,7 +283,11 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
         val script = downloadInstaller(coordination.scriptFile(windows), windows)
         if (script == null) {
             writeFailureMarker(userHome, "could not download ${devrigInstallerUrl(windows)}")
-            notifyFailure(project, "Could not download the devrig installer from ${devrigInstallerUrl(windows)}.")
+            notifyFailure(
+                project,
+                "Could not download the devrig installer from ${devrigInstallerUrl(windows)}.",
+                onFinished,
+            )
             return false
         }
 
@@ -295,7 +303,7 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
         )
         coordination.writeInProgressMarker(target, info)
         try {
-            return runInstaller(project, indicator, userHome, windows, script, coordination, target, info)
+            return runInstaller(project, indicator, userHome, windows, script, coordination, target, info, onFinished)
         } finally {
             coordination.deleteInProgressMarker(target)
             try {
@@ -315,6 +323,7 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
         coordination: UpdateCoordination,
         target: String,
         info: UpdateStateInfo,
+        onFinished: (() -> Unit)?,
     ): Boolean {
         indicator.text = "Installing devrig…"
         val lastError = StringBuilder()
@@ -372,7 +381,7 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
             else -> "the installer finished but devrig was not found at ${devrigBinPath(userHome, windows)}"
         }
         writeFailureMarker(userHome, reason)
-        notifyFailure(project, "$reason.")
+        notifyFailure(project, "$reason.", onFinished)
         log.warn("devrig install failed: $reason\n${result.output.takeLast(4000)}")
         return false
     }
@@ -516,16 +525,13 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
     private fun elapsedMs(startNanos: Long): Long = (System.nanoTime() - startNanos) / 1_000_000
 
     /**
-     * Report the outcome of an install the user started, in the group that **auto-hides**.
-     *
-     * The sticky group is for messages the user must not miss — the startup offer, and failures. This one
-     * says "it worked" about an action the user just triggered and is watching, and the same fact is on the
-     * settings page and the widget a second later; making it sit there until dismissed would spend
-     * attention twice for one event.
+     * Report the outcome of an install the user started, in the plugin's single auto-hiding group.
+     * The message reports an action the user just triggered and is watching, and the same fact is on
+     * the settings page a moment later; anything missed stays in the Notifications tool window.
      */
     private fun notify(project: Project?, type: NotificationType, title: String, content: String) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup(ONBOARDING_RESULTS_NOTIFICATION_GROUP)
+            .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
             .createNotification(title, content, type)
             .notify(project)
     }
@@ -534,14 +540,15 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
      * Report a failed install. The reason comes from the installer itself (`ERROR: …` — a sha mismatch, a
      * dead mirror, no space), which is the only wording that tells the user whether retrying is worth it,
      * so it leads. Retry is offered right here because most of these are transient and the alternative is
-     * making the user find the button again.
+     * making the user find the button again; it keeps [onFinished] so the retried run reports back to the
+     * same surface that started the original.
      */
-    private fun notifyFailure(project: Project?, reason: String) {
+    private fun notifyFailure(project: Project?, reason: String, onFinished: (() -> Unit)? = null) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup(ONBOARDING_NOTIFICATION_GROUP)
+            .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
             // The reason is a sentence of its own — keep the follow-up on its own line so they do not merge.
             .createNotification("devrig install failed", "$reason<br>See the IDE log for details.", NotificationType.ERROR)
-            .addAction(NotificationAction.createSimpleExpiring("Retry") { runInstall(project) })
+            .addAction(NotificationAction.createSimpleExpiring("Retry") { runInstall(project, onFinished) })
             .notify(project)
     }
 

@@ -10,8 +10,8 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.devrigMcpCommandLine
-import com.jonnyzzz.mcpSteroid.onboarding.DevrigConnectionStateService
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
+import com.jonnyzzz.mcpSteroid.onboarding.probeDevrigInstallState
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import java.nio.file.Path
 import java.awt.Component
@@ -88,7 +88,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // Exactly one of the two state-dependent blocks, never both: the install button has nothing
             // to offer someone who already has devrig, and the registration commands mean nothing to
             // someone who does not. Asserted against the real state so this holds on any machine.
-            val installed = DevrigConnectionStateService.getInstance().localState().devrigInstalled
+            val installed = probeDevrigInstallState().installed
             if (installed) {
                 // One row per agent devrig can register — never just Claude.
                 for (agent in AiAgentCli.entries) {
