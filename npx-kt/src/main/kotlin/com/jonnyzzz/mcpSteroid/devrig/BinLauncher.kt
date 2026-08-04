@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -82,7 +83,9 @@ private fun parseBinAutoRegisterOptOut(value: String?): Boolean? = when (value?.
  * The launcher is rewritten ONLY when its content actually changed (normalized comparison), never on
  * every launch — and writes are atomic (temp file + atomic move), so a concurrent agent that is mid-read
  * of the file (the contract: it can change WHILE the binary runs) never sees a torn launcher. When the
- * content already matches, a lost executable bit is still repaired.
+ * content already matches, a lost executable bit is still repaired. An existing launcher whose stamped
+ * header version is strictly newer than this binary is never overwritten at all — see
+ * [shouldKeepNewerLauncher] (#373).
  *
  * [force] = an explicit `devrig install`: write regardless of the SNAPSHOT/dev passive-start default
  * (but still honoring an explicit opt-out), so install never registers a wrapper it didn't write.
@@ -146,27 +149,38 @@ internal fun ensureBinLauncherCore(
     userHome: Path,
     pathDirs: List<String>,
     registerWindowsPath: Boolean = true,
+    buildVersion: DevrigVersion = DevrigVersionMetadata.getBuildVersion(),
 ) {
     if (isWin) {
         // CMD-only launcher: a single self-contained devrig.cmd. No PowerShell at launch — PS is only
         // needed by the install SCRIPT, not the launcher.
         val cmd = home.binDir.resolve("devrig.cmd")
-        writeIfChanged(home.binDir, cmd, renderWindowsCmd(ownBin, jdkHome), executable = false, ownBin = ownBin)
+        writeIfChanged(home.binDir, cmd, renderWindowsCmd(ownBin, jdkHome, buildVersion.value), executable = false, ownBin = ownBin, buildVersion = buildVersion)
         // PATH registration spawns PowerShell, so skip it on the `devrig mcp` hot path (registerWindowsPath
         // = false) — it would block the first serve until the marker exists. Interactive/install pass true.
         if (registerWindowsPath) ensureWindowsPathEntry(home.binDir)
     } else {
         val devrig = home.binDir.resolve("devrig")
-        writeIfChanged(home.binDir, devrig, renderPosixLauncher(ownBin, jdkHome), executable = true, ownBin = ownBin)
+        writeIfChanged(home.binDir, devrig, renderPosixLauncher(ownBin, jdkHome, buildVersion.value), executable = true, ownBin = ownBin, buildVersion = buildVersion)
         ensurePosixPathSymlink(home.binDir, devrig, userHome, pathDirs)
     }
 }
 
-/** The POSIX wrapper: pins the JDK devrig runs under via DEVRIG_JAVA_HOME, then execs the install-tree launcher. */
-internal fun renderPosixLauncher(launcher: Path, jdkHome: Path): String {
+/**
+ * The POSIX wrapper: pins the JDK devrig runs under via DEVRIG_JAVA_HOME, then execs the install-tree
+ * launcher. The header stamps the generating devrig [version] and the source install tree — the version
+ * line is machine-parseable (see [parseLauncherVersion]) and drives the regeneration guard (#373).
+ */
+internal fun renderPosixLauncher(
+    launcher: Path,
+    jdkHome: Path,
+    version: String = DevrigVersionMetadata.getDevrigVersion(),
+): String {
     val launcherStr = launcher.toString().replace('\\', '/')
     val jdkStr = jdkHome.toString().replace('\\', '/')
     return "#!/bin/sh\n" +
+        "# devrig launcher version: ${headerSafe(version)}\n" +
+        "# devrig launcher source: ${headerSafe(launcherStr)}\n" +
         "# devrig launcher — managed by the devrig binary. Writes nothing to stdout (MCP stdio channel).\n" +
         "# Pins the JDK devrig runs under via DEVRIG_JAVA_HOME (its supported runtime), then hands off to\n" +
         "# the install-tree devrig launcher.\n" +
@@ -181,12 +195,48 @@ internal fun renderPosixLauncher(launcher: Path, jdkHome: Path): String {
  * the inner devrig.bat → java does. The agent invokes this via `cmd.exe /d /c` — see
  * [DevrigUserLauncher.invocation].
  */
-internal fun renderWindowsCmd(launcher: Path, jdkHome: Path): String =
+internal fun renderWindowsCmd(
+    launcher: Path,
+    jdkHome: Path,
+    version: String = DevrigVersionMetadata.getDevrigVersion(),
+): String =
+    // The header sits AFTER `@echo off`: anything before it would echo to stdout — the MCP JSON-RPC channel.
+    // The source path is QUOTED: `rem` does not neutralize batch metacharacters, so an unquoted install
+    // path containing `&` would terminate the rem and execute the rest as a command.
     "@echo off\r\n" +
+        "rem devrig launcher version: ${headerSafe(version)}\r\n" +
+        "rem devrig launcher source: \"${headerSafe(launcher.toString())}\"\r\n" +
         "set \"DEVRIG_JAVA_HOME=$jdkHome\"\r\n" +
         "call \"$launcher\" %*\r\n"
 
-private fun writeIfChanged(dir: Path, target: Path, desired: String, executable: Boolean, ownBin: Path) {
+/** Header fields must stay on their own comment line: CR/LF in interpolated values become spaces. */
+private fun headerSafe(value: String): String = value.replace('\r', ' ').replace('\n', ' ')
+
+/**
+ * Matches the machine-parseable version header stamped into generated launchers — POSIX
+ * (`# devrig launcher version: …`) and Windows (`rem devrig launcher version: …`).
+ */
+private val LAUNCHER_VERSION_HEADER =
+    Regex("""^(?:#|rem)\s+devrig launcher version:\s*(\S+)""", setOf(RegexOption.MULTILINE, RegexOption.IGNORE_CASE))
+
+/** Version stamped in a launcher's header, or null when the header is absent (pre-#373 launchers). */
+fun parseLauncherVersion(content: String): DevrigVersion? =
+    LAUNCHER_VERSION_HEADER.find(content)?.let { DevrigVersion.parse(it.groupValues[1]) }
+
+/**
+ * The regeneration guard (#373): an existing launcher stamped with a STRICTLY NEWER version than the
+ * running binary must not be overwritten — an older devrig process never clobbers a newer launcher.
+ * Snapshot rule (from [DevrigVersion]): a SNAPSHOT-stamped launcher counts as newer than any release,
+ * so a release binary never overwrites a deliberately installed dev launcher. A missing or headerless
+ * launcher never blocks regeneration (migration + corrupt-file self-heal keep working).
+ */
+fun shouldKeepNewerLauncher(existingContent: String?, currentVersion: DevrigVersion): Boolean {
+    val existing = existingContent?.let { parseLauncherVersion(it) } ?: return false
+    return existing > currentVersion
+}
+
+private fun writeIfChanged(dir: Path, target: Path, desired: String, executable: Boolean, ownBin: Path, buildVersion: DevrigVersion) {
+    Files.createDirectories(dir)
     // An unreadable existing launcher (non-UTF-8 bytes, wrong file type, transient IO) counts as
     // "changed" so a corrupt launcher self-heals rather than being left in place.
     val current = if (!target.exists()) null else try {
@@ -194,6 +244,26 @@ private fun writeIfChanged(dir: Path, target: Path, desired: String, executable:
     } catch (e: Exception) {
         System.err.println("[mcp-steroid] existing launcher $target is unreadable ($e); rewriting it")
         null
+    }
+    // The #373 guard: never overwrite a launcher stamped with a strictly newer version — an older
+    // devrig start (a stale install still registered somewhere) must not re-register itself over a
+    // newer launcher. No cross-process lock around read→check→write: replacement is an atomic
+    // same-directory move (see replaceLauncherFile), so a concurrent racing start can at worst make a
+    // stale-read guard decision — never a torn file — and the newer devrig re-heals the launcher on
+    // its next start anyway.
+    if (shouldKeepNewerLauncher(current, buildVersion)) {
+        val existing = current?.let { parseLauncherVersion(it) }
+        System.err.println(
+            "[mcp-steroid] keeping $target: its launcher version ${existing?.value} " +
+                "is newer than this devrig ${buildVersion.value}",
+        )
+        // Content-neutral healing still applies: a kept NEWER launcher that lost its executable bit
+        // would otherwise stay unusable forever (no devrig would ever rewrite it).
+        if (executable && !Files.isExecutable(target)) {
+            setExecutable(target)
+            System.err.println("[mcp-steroid] restored the executable bit on $target")
+        }
+        return
     }
     if (current != null && normalizeLauncher(current) == normalizeLauncher(desired)) {
         // Content already correct — but a launcher that lost its executable bit (e.g. a copy that dropped

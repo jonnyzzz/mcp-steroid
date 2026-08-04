@@ -9,10 +9,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
+import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 import kotlin.io.path.readText
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class BinLauncherTest {
@@ -116,6 +118,9 @@ class BinLauncherTest {
         assertTrue(text.contains("exec \"/tmp/devrig/bin/devrig\" \"\$@\""), text)
         assertFalse(text.contains("\r\n"), "POSIX launcher must be LF-only")
         assertFalse(text.contains("\$HOME"), "wrapper records absolute paths, not \$HOME-relative")
+        // #373 header: version + source stamped as comments
+        assertTrue(text.contains("# devrig launcher version: ${DevrigVersionMetadata.getDevrigVersion()}"), text)
+        assertTrue(text.contains("# devrig launcher source: /tmp/devrig/bin/devrig"), text)
     }
 
     @Test
@@ -125,11 +130,136 @@ class BinLauncherTest {
         assertTrue(text.contains("set \"DEVRIG_JAVA_HOME=C:\\devrig\\jdk-25\"\r\n"), text)
         assertTrue(text.contains("call \"C:\\devrig\\bin\\devrig.bat\" %*\r\n"), text)
         assertFalse(text.contains("powershell", ignoreCase = true), "windows launcher must not invoke PowerShell")
+        // #373 header: AFTER `@echo off` (anything before it would echo to stdout — the MCP channel)
+        assertTrue(text.contains("rem devrig launcher version: ${DevrigVersionMetadata.getDevrigVersion()}\r\n"), text)
+        assertTrue(text.contains("rem devrig launcher source: \"C:\\devrig\\bin\\devrig.bat\"\r\n"), text)
+        assertTrue(text.indexOf("@echo off") < text.indexOf("rem devrig launcher version:"), text)
     }
 
     @Test
     fun `normalizeLauncher is tolerant of CRLF and trailing newlines`() {
         assertEquals(normalizeLauncher("a\nb\n"), normalizeLauncher("a\r\nb\r\n\n"))
+    }
+
+    // ── launcher version header + regeneration guard (#373) ────────────────────────────────────
+
+    @Test
+    fun `parseLauncherVersion reads the posix and windows headers`() {
+        val posix = renderPosixLauncher(Path.of("/tmp/devrig/bin/devrig"), Path.of("/tmp/jdk-25"), version = "0.102-abc1234")
+        assertEquals("0.102-abc1234", parseLauncherVersion(posix)?.value)
+
+        val cmd = renderWindowsCmd(Path.of("C:\\devrig\\bin\\devrig.bat"), Path.of("C:\\jdk"), version = "0.101.442-jb-fedcba9")
+        assertEquals("0.101.442-jb-fedcba9", parseLauncherVersion(cmd)?.value)
+
+        // hand-edited uppercase REM still parses
+        assertEquals("0.99", parseLauncherVersion("@echo off\r\nREM devrig launcher version: 0.99\r\n")?.value)
+
+        // pre-#373 launchers carry no header
+        assertNull(parseLauncherVersion("#!/bin/sh\nexec \"/tmp/devrig/bin/devrig\" \"\$@\"\n"))
+    }
+
+    @Test
+    fun `shouldKeepNewerLauncher keeps only strictly newer launchers`() {
+        val current = DevrigVersion.parse("0.101-abc1234")
+        fun launcherStamped(v: String) = renderPosixLauncher(Path.of("/x/bin/devrig"), Path.of("/x/jdk"), version = v)
+
+        assertFalse(shouldKeepNewerLauncher(null, current), "missing launcher never blocks regeneration")
+        assertFalse(shouldKeepNewerLauncher("#!/bin/sh\nexec x\n", current), "headerless launcher never blocks")
+        assertFalse(shouldKeepNewerLauncher(launcherStamped("0.100-fff0000"), current), "older launcher is replaced")
+        assertFalse(shouldKeepNewerLauncher(launcherStamped("0.101-fff0000"), current), "same version (different hash) is replaced")
+        assertTrue(shouldKeepNewerLauncher(launcherStamped("0.102-fff0000"), current), "newer launcher is kept")
+
+        // snapshot rules from DevrigVersion: a SNAPSHOT-stamped launcher outranks any release binary...
+        assertTrue(shouldKeepNewerLauncher(launcherStamped("0.100.19999-SNAPSHOT-fff0000"), current))
+        // ...while a SNAPSHOT binary replaces even a much larger release launcher
+        val snapshotBinary = DevrigVersion.parse("0.100.19999-SNAPSHOT-fff0000")
+        assertFalse(shouldKeepNewerLauncher(launcherStamped("999.0-abc1234"), snapshotBinary))
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `an older devrig never overwrites a newer launcher - a newer one regenerates it`(@TempDir tmp: Path) {
+        val userHome = tmp.resolve("home")
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        fun run(ownBin: Path, version: String) = ensureBinLauncherCore(
+            home, isWin = false, ownBin = ownBin, jdkHome = tmp.resolve("jdk"),
+            userHome = userHome, pathDirs = emptyList(),
+            buildVersion = DevrigVersion.parse(version),
+        )
+
+        run(tmp.resolve("opt/devrig-0.102/bin/devrig"), "0.102-abc1234")
+        val launcher = home.binDir.resolve("devrig")
+        val written = launcher.readText()
+        assertTrue(written.contains("# devrig launcher version: 0.102-abc1234"), written)
+
+        // an older binary starts: the newer launcher must be left byte-identical
+        run(tmp.resolve("opt/devrig-0.101/bin/devrig"), "0.101-fff0000")
+        assertEquals(written, launcher.readText())
+
+        // a newer binary starts: the launcher is regenerated to point at it
+        val newest = tmp.resolve("opt/devrig-0.103/bin/devrig")
+        run(newest, "0.103-0123abc")
+        val regenerated = launcher.readText()
+        assertTrue(regenerated.contains("# devrig launcher version: 0.103-0123abc"), regenerated)
+        assertTrue(regenerated.contains(newest.toString()), regenerated)
+    }
+
+    @Test
+    fun `windows header quotes the source path so batch metacharacters stay inert`() {
+        // `rem` does not neutralize `&` — an unquoted path would execute the tail as a command
+        val text = renderWindowsCmd(Path.of("C:\\tools & extras\\devrig\\bin\\devrig.bat"), Path.of("C:\\jdk"), version = "0.101")
+        assertTrue(text.contains("rem devrig launcher source: \"C:\\tools & extras\\devrig\\bin\\devrig.bat\"\r\n"), text)
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `header interpolation strips newlines so a value cannot escape its comment line`() {
+        val evil = Path.of("/tmp/evil\ndir/devrig") // POSIX file names may legally contain a newline
+        val text = renderPosixLauncher(evil, Path.of("/tmp/jdk"), version = "0.101")
+        assertTrue(text.contains("# devrig launcher source: /tmp/evil dir/devrig\n"), text)
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `keeping a newer launcher still repairs a lost executable bit`(@TempDir tmp: Path) {
+        val userHome = tmp.resolve("home")
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        fun run(version: String) = ensureBinLauncherCore(
+            home, isWin = false, ownBin = tmp.resolve("opt/devrig/bin/devrig"), jdkHome = tmp.resolve("jdk"),
+            userHome = userHome, pathDirs = emptyList(),
+            buildVersion = DevrigVersion.parse(version),
+        )
+
+        run("0.102-abc1234")
+        val launcher = home.binDir.resolve("devrig")
+        val written = launcher.readText()
+        val perms = Files.getPosixFilePermissions(launcher).toMutableSet()
+        perms.removeAll(setOf(PosixFilePermission.OWNER_EXECUTE, PosixFilePermission.GROUP_EXECUTE, PosixFilePermission.OTHERS_EXECUTE))
+        Files.setPosixFilePermissions(launcher, perms)
+
+        // an OLDER binary keeps the newer launcher byte-identical, but must still restore +x
+        run("0.101-fff0000")
+        assertEquals(written, launcher.readText(), "newer launcher must not be rewritten")
+        assertTrue(Files.isExecutable(launcher), "kept launcher must be usable again")
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `a headerless pre-existing launcher is regenerated`(@TempDir tmp: Path) {
+        val userHome = tmp.resolve("home")
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        Files.createDirectories(home.binDir)
+        val launcher = home.binDir.resolve("devrig")
+        Files.writeString(launcher, "#!/bin/sh\nexec \"/somewhere/else/devrig\" \"\$@\"\n")
+
+        ensureBinLauncherCore(
+            home, isWin = false, ownBin = tmp.resolve("opt/devrig/bin/devrig"), jdkHome = tmp.resolve("jdk"),
+            userHome = userHome, pathDirs = emptyList(),
+            buildVersion = DevrigVersion.parse("0.101-abc1234"),
+        )
+        val text = launcher.readText()
+        assertTrue(text.contains("# devrig launcher version: 0.101-abc1234"), text)
+        assertTrue(Files.isExecutable(launcher), "regenerated launcher must be executable")
     }
 
     // ── core self-heal (POSIX) ──────────────────────────────────────────────────────────────────
