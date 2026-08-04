@@ -62,7 +62,6 @@ fun devrigInstallOfferBody(devrigHome: String): String =
 class DevrigOnboardingService(private val scope: CoroutineScope) {
     private val log = thisLogger()
     private val offered = AtomicBoolean(false)
-    private val runner = DevrigSetupRunner()
 
     fun maybeOffer(project: Project) {
         if (!devrigWidgetEnabled()) return
@@ -141,7 +140,7 @@ class DevrigOnboardingService(private val scope: CoroutineScope) {
                 project,
                 mapOf("action" to "install", "decision" to decision.name),
             )
-            runner.runInstall(project)
+            DevrigSetupRunner.getInstance().runInstall(project)
         }).addAction(NotificationAction.createSimpleExpiring("Later") {
             snoozeOffer()
             analyticsBeacon.capture(

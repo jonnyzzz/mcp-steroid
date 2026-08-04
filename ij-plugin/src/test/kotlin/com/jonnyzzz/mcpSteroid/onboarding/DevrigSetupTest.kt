@@ -1,12 +1,28 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.onboarding
 
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.progress.ProgressIndicator
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.devrigLauncherDisplayPath
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.milliseconds
 
 class DevrigSetupTest {
     @Test
@@ -60,4 +76,166 @@ class DevrigSetupTest {
             devrigStdioMcpConfigJson(winHome, windows = true),
         )
     }
+
+    // --- the download poller (coroutine, replacing scheduleWithFixedDelay) ---
+
+    @Test
+    fun `download poller updates the indicator and cancellation actually stops it`() {
+        val indicator = RecordingIndicator()
+        val total = AtomicLong(100L * 1024 * 1024)
+        val polls = AtomicInteger()
+        runBlocking {
+            val scope = CoroutineScope(Job())
+            val poller = scope.startDownloadPoller(indicator, total, pollInterval = 5.milliseconds) {
+                polls.incrementAndGet()
+                50L * 1024 * 1024
+            }
+            waitUntil("the poller reports the staged fraction") { indicator.fractionValue == 0.5 }
+            assertEquals("50 MB of 100 MB", indicator.text2Value)
+
+            // The while(isActive) + delay loop must end on cancel, not spin on — this join hangs if it does.
+            withTimeout(10_000) { poller.cancelAndJoin() }
+            val pollsAfterCancel = polls.get()
+            Thread.sleep(50)
+            assertEquals("a cancelled poller must not poll again", pollsAfterCancel.toLong(), polls.get().toLong())
+            scope.cancel()
+        }
+    }
+
+    /**
+     * The regression the coroutine poller exists to fix: with `scheduleWithFixedDelay`, ANY exception
+     * escaping one run silently cancelled every future run (the executor's own contract) — a frozen
+     * progress bar for the rest of a 30-minute install. One bad poll must cost one tick, not the poller.
+     */
+    @Test
+    fun `one failing poll does not stop the poller`() {
+        val indicator = RecordingIndicator()
+        val total = AtomicLong(100L * 1024 * 1024)
+        val failFirst = AtomicBoolean(true)
+        runBlocking {
+            val scope = CoroutineScope(Job())
+            val poller = scope.startDownloadPoller(indicator, total, pollInterval = 5.milliseconds) {
+                if (failFirst.getAndSet(false)) throw IllegalStateException("staging dir vanished mid-poll")
+                25L * 1024 * 1024
+            }
+            // This update can only come from a poll AFTER the throwing one — the loop survived it.
+            waitUntil("a poll after the failing one updates the indicator") { indicator.fractionValue == 0.25 }
+            withTimeout(10_000) { poller.cancelAndJoin() }
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `ProcessCanceledException from a poll ends the poller as cancellation`() {
+        val indicator = RecordingIndicator()
+        val total = AtomicLong(100L * 1024 * 1024)
+        runBlocking {
+            val scope = CoroutineScope(Job())
+            val poller = scope.startDownloadPoller(indicator, total, pollInterval = 5.milliseconds) {
+                throw ProcessCanceledException()
+            }
+            // PCE means "this computation is being cancelled": the poller must END (join returns), and it
+            // must not poison anything else running on the same scope.
+            withTimeout(10_000) { poller.join() }
+            assertTrue(scope.isActive)
+            scope.cancel()
+        }
+    }
+
+    // --- ProcessLineBuffer: chunk reassembly, and the last-line flush ---
+
+    @Test
+    fun `line buffer reassembles chunks and emits only completed lines`() {
+        val lines = mutableListOf<String>()
+        val buffer = ProcessLineBuffer { lines += it }
+        buffer.append("[mcp-steroid] down")
+        buffer.append("loading devrig (~226 MB) ...\n[mcp-steroid] SHA")
+        assertEquals(listOf("[mcp-steroid] downloading devrig (~226 MB) ..."), lines)
+        buffer.append("-256 verified: abc\n")
+        assertEquals(
+            listOf("[mcp-steroid] downloading devrig (~226 MB) ...", "[mcp-steroid] SHA-256 verified: abc"),
+            lines,
+        )
+    }
+
+    /**
+     * The installer's final line — the `ERROR: …` reason on the failures that matter most — can arrive
+     * with no trailing newline. Before [ProcessLineBuffer.flush] existed it was silently dropped and the
+     * user got the generic exit-code message instead of the reason.
+     */
+    @Test
+    fun `flush emits the trailing ERROR line that has no newline`() {
+        val lines = mutableListOf<String>()
+        val buffer = ProcessLineBuffer { lines += it }
+        buffer.append("[mcp-steroid] platform: macos-arm64\n[mcp-steroid] ERROR: no space left on device")
+        assertEquals(listOf("[mcp-steroid] platform: macos-arm64"), lines)
+
+        buffer.flush()
+        assertEquals(2, lines.size)
+        assertEquals("[mcp-steroid] ERROR: no space left on device", lines.last())
+        // And the flushed line is one the progress parser surfaces as the failure reason.
+        val step = parseInstallerLine(lines.last())
+        assertTrue(step != null && step.isError)
+
+        buffer.flush() // nothing left: flushing again must not re-emit
+        assertEquals(2, lines.size)
+    }
+
+    private fun waitUntil(what: String, condition: () -> Boolean) {
+        val deadline = System.nanoTime() + 10_000_000_000L
+        while (System.nanoTime() < deadline) {
+            if (condition()) return
+            Thread.sleep(5)
+        }
+        fail("timed out waiting for: $what")
+    }
+}
+
+/**
+ * A [ProgressIndicator] that only records what the poller writes. The platform's `EmptyProgressIndicator`
+ * records nothing, and the full progress machinery needs an `Application` this plain unit test does not
+ * have. Methods the poller never touches throw or no-op.
+ */
+private class RecordingIndicator : ProgressIndicator {
+    @Volatile
+    var fractionValue: Double = -1.0
+
+    @Volatile
+    var text2Value: String? = null
+
+    @Volatile
+    private var cancelled = false
+
+    override fun start() {}
+    override fun stop() {}
+    override fun isRunning(): Boolean = true
+    override fun cancel() {
+        cancelled = true
+    }
+
+    override fun isCanceled(): Boolean = cancelled
+    override fun setText(text: String?) {}
+    override fun getText(): String? = null
+    override fun setText2(text: String?) {
+        text2Value = text
+    }
+
+    override fun getText2(): String? = text2Value
+    override fun getFraction(): Double = fractionValue
+    override fun setFraction(fraction: Double) {
+        fractionValue = fraction
+    }
+
+    override fun pushState() {}
+    override fun popState() {}
+    override fun isModal(): Boolean = false
+    override fun getModalityState(): ModalityState =
+        throw UnsupportedOperationException("not used by the download poller")
+
+    override fun setModalityProgress(modalityProgress: ProgressIndicator?) {}
+    override fun isIndeterminate(): Boolean = false
+    override fun setIndeterminate(indeterminate: Boolean) {}
+    override fun checkCanceled() {}
+    override fun isPopupWasShown(): Boolean = false
+    override fun isShowing(): Boolean = false
 }

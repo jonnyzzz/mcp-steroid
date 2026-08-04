@@ -256,7 +256,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 button("Install devrig") {
                     // Application-level page: any open project just anchors the progress bar, and none
                     // is fine too (the task then runs at IDE level).
-                    DevrigSetupRunner().runInstall(ProjectManager.getInstance().openProjects.firstOrNull())
+                    DevrigSetupRunner.getInstance().runInstall(ProjectManager.getInstance().openProjects.firstOrNull())
                 }
             }
             row {

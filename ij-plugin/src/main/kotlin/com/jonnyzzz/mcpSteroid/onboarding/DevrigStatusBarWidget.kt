@@ -199,7 +199,7 @@ private class DevrigStatusBarWidget(private val project: Project) : StatusBarWid
             mapOf("action" to "widget", "widget_action" to action.name),
         )
         when (action) {
-            DevrigWidgetAction.INSTALL, DevrigWidgetAction.UPDATE -> DevrigSetupRunner().runInstall(project)
+            DevrigWidgetAction.INSTALL, DevrigWidgetAction.UPDATE -> DevrigSetupRunner.getInstance().runInstall(project)
             DevrigWidgetAction.OPEN_SETTINGS ->
                 ShowSettingsUtil.getInstance().showSettingsDialog(project, McpSteroidConfigurable::class.java)
         }

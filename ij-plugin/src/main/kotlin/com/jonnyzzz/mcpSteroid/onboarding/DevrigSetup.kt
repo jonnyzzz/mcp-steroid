@@ -8,6 +8,8 @@ import com.intellij.execution.process.ProcessListener
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -17,7 +19,6 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.SystemInfo
-import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.io.HttpRequests
 import com.jonnyzzz.mcpSteroid.getBuildVersion
 import com.jonnyzzz.mcpSteroid.devrig.UpdateCoordination
@@ -27,16 +28,22 @@ import com.jonnyzzz.mcpSteroid.devrig.installerCommands
 import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.ScheduledFuture
 import com.jonnyzzz.mcpSteroid.aiAgents.DEVRIG_HOME_DIR_NAME
 import com.jonnyzzz.mcpSteroid.aiAgents.devrigLauncherFileName
 import com.jonnyzzz.mcpSteroid.aiAgents.devrigStdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /** devrig's home, the one both halves of the product agree on. */
 fun devrigHome(userHome: Path): Path = userHome.resolve(DEVRIG_HOME_DIR_NAME)
@@ -97,8 +104,86 @@ fun downloadInstaller(target: Path, windows: Boolean): Path? {
         Files.writeString(target, body)
         target
     } catch (e: Exception) {
-        Logger.getInstance("com.jonnyzzz.mcpSteroid.onboarding.DevrigSetup").warn("could not download $url", e)
+        setupLog().warn("could not download $url", e)
         null
+    }
+}
+
+private fun setupLog(): Logger = Logger.getInstance("com.jonnyzzz.mcpSteroid.onboarding.DevrigSetup")
+
+private const val MIB = 1024L * 1024L
+
+/**
+ * Polls how much of the announced artifact size has landed on disk, once per [pollInterval], until
+ * cancelled. The installer stages every download as `binaries/.tmp.*` before moving it into place
+ * (`install.sh.tmpl`), so [stagedBytes] sums those as the bytes-so-far for the current phase; [total]
+ * comes from the installer's own log line and 0 means "no download announced yet — nothing to report".
+ *
+ * A coroutine, not a `ScheduledExecutorService` task, on purpose: `scheduleWithFixedDelay` stops
+ * scheduling **forever** after any exception escapes one run — including a rethrown
+ * [ProcessCanceledException] — per its own contract, so one bad poll froze the progress bar for the rest
+ * of a 30-minute install with no signal anywhere. In a coroutine the failure handling is the loop's own
+ * (log and keep polling), and PCE/[CancellationException] mean exactly what they should: this poller is
+ * being cancelled, so it ends. Same shape as the platform's `JVMStatsToOTelReporter` (`launch` + `delay`
+ * loop).
+ */
+fun CoroutineScope.startDownloadPoller(
+    indicator: ProgressIndicator,
+    total: AtomicLong,
+    pollInterval: Duration = 1.seconds,
+    stagedBytes: () -> Long,
+): Job = launch(Dispatchers.IO) {
+    while (isActive) {
+        delay(pollInterval)
+        try {
+            val expected = total.get()
+            if (expected <= 0) continue
+            val staged = stagedBytes()
+            indicator.fraction = (staged.toDouble() / expected).coerceIn(0.0, 1.0)
+            indicator.text2 = "${staged / MIB} MB of ${expected / MIB} MB"
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            setupLog().debug("download progress poll failed: ${e.message}")
+        }
+    }
+}
+
+/**
+ * Reassembles a process's output chunks into lines. `onTextAvailable` delivers arbitrary chunks (curl's
+ * progress bar is not even newline-terminated), so [append] buffers until a newline and hands every
+ * completed line to [onLine]. [flush] then hands over whatever is left once the stream is done: the
+ * installer's **last** line — its `ERROR: …` reason, on the failures that matter most — can arrive with
+ * no trailing newline, and before the flush existed it was silently dropped, leaving the user a generic
+ * exit-code message instead of the reason.
+ */
+class ProcessLineBuffer(private val onLine: (String) -> Unit) {
+    private val pending = StringBuilder()
+
+    /** Buffers [text] and emits every line it completes. Safe to call from the process-reader threads. */
+    fun append(text: String) {
+        synchronized(pending) {
+            pending.append(text)
+            while (true) {
+                val nl = pending.indexOf("\n")
+                if (nl < 0) break
+                val line = pending.substring(0, nl)
+                pending.delete(0, nl + 1)
+                onLine(line)
+            }
+        }
+    }
+
+    /** Emits the trailing newline-less line, if any. Call once the process is done; further calls no-op. */
+    fun flush() {
+        synchronized(pending) {
+            if (pending.isNotEmpty()) {
+                onLine(pending.toString())
+                pending.setLength(0)
+            }
+        }
     }
 }
 
@@ -117,8 +202,12 @@ fun downloadInstaller(target: Path, windows: Boolean): Path? {
  * **Every notification below reports something the user asked for by pressing a button.** Nothing here
  * runs on its own, so there is no path by which someone is told that an operation they never started has
  * failed. Keep it that way: if this is ever triggered automatically, the reporting has to change with it.
+ *
+ * An application service, so the install's helper coroutines (the download poller) have a structured
+ * parent: the platform-injected [scope] dies with the plugin, and every child launched on it dies too.
  */
-class DevrigSetupRunner {
+@Service(Service.Level.APP)
+class DevrigSetupRunner(private val scope: CoroutineScope) {
     private val log = thisLogger()
 
     /**
@@ -232,7 +321,7 @@ class DevrigSetupRunner {
         val total = AtomicLong(0)
         val started = System.nanoTime()
 
-        val poller = startDownloadPoller(userHome, indicator, total)
+        val poller = scope.startDownloadPoller(indicator, total) { stagedBytes(userHome) }
         val result = try {
             runCommandStreaming(installerCommands(script, windows), indicator, timeoutMs = 30 * 60 * 1000) { line ->
                 val step = parseInstallerLine(line) ?: return@runCommandStreaming
@@ -248,7 +337,7 @@ class DevrigSetupRunner {
                 }
             }
         } finally {
-            poller.cancel(false)
+            poller.cancel()
         }
 
         val installed = devrigInstalled(userHome, windows)
@@ -287,30 +376,6 @@ class DevrigSetupRunner {
         log.warn("devrig install failed: $reason\n${result.output.takeLast(4000)}")
         return false
     }
-
-    /**
-     * Reports how much of the announced artifact size has landed on disk. The installer stages every
-     * download as `binaries/.tmp.*` before moving it into place (`install.sh.tmpl`), so their combined
-     * size is the bytes-so-far for the current phase; [total] comes from the installer's own log line.
-     */
-    private fun startDownloadPoller(
-        userHome: Path,
-        indicator: ProgressIndicator,
-        total: AtomicLong,
-    ): ScheduledFuture<*> =
-        AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay({
-            try {
-                val expected = total.get()
-                if (expected <= 0) return@scheduleWithFixedDelay
-                val staged = stagedBytes(userHome)
-                indicator.fraction = (staged.toDouble() / expected).coerceIn(0.0, 1.0)
-                indicator.text2 = "${staged / MIB} MB of ${expected / MIB} MB"
-            } catch (e: ProcessCanceledException) {
-                throw e
-            } catch (e: Exception) {
-                log.debug("download progress poll failed: ${e.message}")
-            }
-        }, 1, 1, TimeUnit.SECONDS)
 
     private fun stagedBytes(userHome: Path): Long {
         val dir = devrigBinariesDir(userHome)
@@ -379,7 +444,7 @@ class DevrigSetupRunner {
         onLine: (String) -> Unit,
     ): CommandResult {
         val captured = StringBuilder()
-        val pending = StringBuilder()
+        val lines = ProcessLineBuffer(onLine)
 
         handler.addProcessListener(object : ProcessListener {
             override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
@@ -389,18 +454,7 @@ class DevrigSetupRunner {
                     captured.append(text)
                     if (captured.length > 64_000) captured.delete(0, captured.length - 64_000)
                 }
-                // onTextAvailable delivers arbitrary chunks (curl's progress bar is not even newline
-                // terminated), so buffer until a newline before parsing.
-                synchronized(pending) {
-                    pending.append(text)
-                    while (true) {
-                        val nl = pending.indexOf("\n")
-                        if (nl < 0) break
-                        val line = pending.substring(0, nl)
-                        pending.delete(0, nl + 1)
-                        onLine(line)
-                    }
-                }
+                lines.append(text)
             }
         })
 
@@ -418,6 +472,10 @@ class DevrigSetupRunner {
                 break
             }
         }
+        // The installer's final line may carry the reason (`ERROR: …`) and no trailing newline — hand it
+        // over now that no more output is coming. On the cancel/timeout paths this is best-effort (the
+        // fragment may be mid-write), but timeout/cancel already outrank a partial reason downstream.
+        lines.flush()
         val output = synchronized(captured) { captured.toString() }
         if (cancelled || timedOut) {
             handler.destroyProcess()
@@ -487,10 +545,10 @@ class DevrigSetupRunner {
             .notify(project)
     }
 
-    private companion object {
-        const val MIB = 1024L * 1024L
+    companion object {
+        fun getInstance(): DevrigSetupRunner = service()
 
         /** How long a single wait slice is; also the worst-case delay before Cancel takes effect. */
-        const val CANCEL_POLL_MS = 200L
+        private const val CANCEL_POLL_MS = 200L
     }
 }
