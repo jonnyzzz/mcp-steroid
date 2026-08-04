@@ -60,7 +60,7 @@ Three independent audits found the same agent-facing gaps:
   `<<<IMPROVEMENTS>>>` artifacts. Locally blocked: Docker is available, but all Anthropic/OpenAI agent
   API-key environment variables are unset; the tests remain enabled and unweakened.
 - [x] Run final quorum review.
-- [ ] Commit atomically, push the branch, and open a PR.
+- [x] Commit atomically, push the branch, and open PR #441.
 
 ## Validation status
 
