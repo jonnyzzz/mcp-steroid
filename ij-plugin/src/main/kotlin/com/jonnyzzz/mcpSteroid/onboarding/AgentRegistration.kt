@@ -203,7 +203,7 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
 
     private fun notifyFailure(project: Project?, agent: AiAgentCli, reason: String) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("jonnyzzz.mcp.steroid.onboarding")
+            .getNotificationGroup(ONBOARDING_NOTIFICATION_GROUP)
             .createNotification(
                 "Could not register ${agent.displayName}",
                 // "run the command:" and not just "run": the boundary between the prose and the command

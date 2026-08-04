@@ -480,7 +480,7 @@ class DevrigSetupRunner {
      */
     private fun notifyFailure(project: Project?, reason: String) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("jonnyzzz.mcp.steroid.onboarding")
+            .getNotificationGroup(ONBOARDING_NOTIFICATION_GROUP)
             // The reason is a sentence of its own — keep the follow-up on its own line so they do not merge.
             .createNotification("devrig install failed", "$reason<br>See the IDE log for details.", NotificationType.ERROR)
             .addAction(NotificationAction.createSimpleExpiring("Retry") { runInstall(project) })
