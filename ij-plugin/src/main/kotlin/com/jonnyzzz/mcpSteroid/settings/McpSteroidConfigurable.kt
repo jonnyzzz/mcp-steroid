@@ -222,6 +222,20 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     }
                 }
             }
+            // The registration devrig has no button for, right under the three it does: any client with an
+            // "add MCP server" dialog takes this one command line. It used to hide inside the collapsed
+            // "Another MCP client" group below the JSON snippet, where nobody wiring such a client would
+            // look first (owner click-testing feedback) — the agent rows are where "point a client at
+            // devrig" answers live, so the command line is one of them. Built through [devrigMcpCommandLine]
+            // (real absolute launcher, quoted when the path holds a space), copyable so display and
+            // clipboard are the same string.
+            row {
+                text("Register devrig as an MCP server in <b>any other client</b> with:")
+            }.topGap(TopGap.SMALL)
+            row {
+                cell(copyableTextField(devrigMcpCommandLine(System.getProperty("user.home"), SystemInfo.isWindows)))
+                    .align(AlignX.FILL)
+            }
             row {
                 comment(
                     "Registrations point at the stable launcher, so they survive devrig updates. Restart a " +
@@ -254,22 +268,19 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     }
 
     /**
-     * The manual recipe for the clients devrig has no CLI for — Cursor, Windsurf, anything configured by an
-     * `mcpServers` JSON file or an "add MCP server" dialog. Same server, same launcher, same `mcp`
-     * subcommand as the buttons above; the only difference is that the user pastes it themselves. Two
-     * shapes of the same registration: the JSON snippet for file-configured clients, and the bare
-     * `<launcher> mcp` command line for clients that ask for a command.
+     * The manual recipe for the clients devrig has no CLI for and that read an `mcpServers` JSON file —
+     * Cursor, Windsurf, and friends. Same server, same launcher, same `mcp` subcommand as the buttons
+     * above; the only difference is that the user pastes it themselves. Clients that ask for a bare
+     * command instead of a file are served by the `<launcher> mcp` command-line row up with the agent
+     * rows — this collapsed group holds only the JSON shape.
      *
-     * Collapsed, and only shown once devrig is installed, because both name a launcher path that has to
-     * exist to be worth copying. This is the settings-page twin of `devrig install config`; the JSON is
-     * built through [devrigStdioMcpCommand] and the command line through [devrigMcpCommandLine], so
-     * neither can drift from what `devrig install <agent>` writes.
+     * Collapsed, and only shown once devrig is installed, because the snippet names a launcher path that
+     * has to exist to be worth copying. This is the settings-page twin of `devrig install config`; the
+     * JSON is built through [devrigStdioMcpCommand], so it cannot drift from what
+     * `devrig install <agent>` writes.
      */
     private fun Panel.otherClientsSection() {
-        val userHome = System.getProperty("user.home")
-        val windows = SystemInfo.isWindows
-        val json = devrigStdioMcpConfigJson(Path.of(userHome), windows)
-        val commandLine = devrigMcpCommandLine(userHome, windows)
+        val json = devrigStdioMcpConfigJson(Path.of(System.getProperty("user.home")), SystemInfo.isWindows)
         collapsibleGroup(OTHER_CLIENTS_SECTION_TITLE) {
             row {
                 text(
@@ -288,12 +299,6 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 button("Copy JSON") { event ->
                     copyWithFeedback(json, event.source as? JComponent)
                 }
-            }
-            row {
-                text("Or register devrig as an MCP server with the following command line:")
-            }.topGap(TopGap.SMALL)
-            row {
-                cell(copyableTextField(commandLine)).align(AlignX.FILL)
             }
             row {
                 comment(

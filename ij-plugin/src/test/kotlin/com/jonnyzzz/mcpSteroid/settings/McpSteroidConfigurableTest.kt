@@ -109,10 +109,26 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                     texts.any { it.contains(expected) },
                 )
 
-                // Besides the JSON, the same section offers the bare command line — the real absolute
-                // launcher plus the `mcp` subcommand — for clients that ask for a command instead of a
-                // file. Rendered in a copyable field, so display and clipboard are the same string.
-                assertContainsText(texts, "register devrig as an MCP server with the following command line")
+                // The bare command line — the real absolute launcher plus the `mcp` subcommand, for
+                // clients that ask for a command instead of a file — is its own row directly UNDER the
+                // agent rows, not buried inside the collapsed JSON section below the snippet (owner
+                // click-testing feedback). Rendered in a copyable field, so display and clipboard are
+                // the same string.
+                assertContainsText(texts, "Register devrig as an MCP server in")
+                val leadInIndex = texts.indexOfFirst { it.contains("Register devrig as an MCP server in") }
+                val lastAgentIndex = texts.indexOfFirst {
+                    it.contains("${AiAgentCli.entries.last().displayName}:")
+                }
+                val otherClientsIndex = texts.indexOfFirst {
+                    it.contains(McpSteroidConfigurable.OTHER_CLIENTS_SECTION_TITLE)
+                }
+                assertTrue(
+                    "the command-line row must sit under the agent rows (last agent label at index " +
+                        "$lastAgentIndex) and before the collapsed " +
+                        "'${McpSteroidConfigurable.OTHER_CLIENTS_SECTION_TITLE}' section (at index " +
+                        "$otherClientsIndex); its lead-in was at index $leadInIndex in:\n$joined",
+                    leadInIndex in (lastAgentIndex + 1) until otherClientsIndex,
+                )
                 val commandLine = devrigMcpCommandLine(System.getProperty("user.home"), SystemInfo.isWindows)
                 val fields = collectValueFields(component).map { it.text }
                 assertTrue(
@@ -131,6 +147,10 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 assertFalse(
                     "Without devrig the stdio snippet would name a launcher that does not exist; found:\n$joined",
                     joined.contains(McpSteroidConfigurable.OTHER_CLIENTS_SECTION_TITLE),
+                )
+                assertFalse(
+                    "Without devrig the command line would name a launcher that does not exist; found:\n$joined",
+                    joined.contains("Register devrig as an MCP server in"),
                 )
                 assertFalse(
                     "devrig is missing — registering an agent is not yet the next step; found:\n$joined",
