@@ -66,6 +66,14 @@ Agents whose CLI is absent are answered from a PATH lookup alone, so opening the
 per **installed** agent, not one per agent we support. Success is quiet — the row flipping to *Registered*
 is the confirmation; only a failure gets a balloon, carrying devrig's own first line.
 
+**Copying says so.** Every copy control — both **Copy JSON** buttons and the in-field copy icons — shows a
+short *Copied* balloon above itself. Copying is the only action here with no visible consequence, and a
+JetBrains button cannot answer for itself: `DarculaButtonUI` paints **no pressed state at all** (the theme
+defines no pressed colour, and `JBUI.CurrentTheme.Button`'s palette takes no state parameter), so a press
+looks exactly like a hover. That is platform-wide behaviour, identical for a plain `JButton` — verified by
+rendering both pressed and unpressed: zero differing pixels. Nothing in the Kotlin UI DSL changes it; the
+DSL only creates the `JButton`. The receipt is ours to give, so we give it.
+
 **Any other MCP client** — Cursor, Windsurf, anything configured through an `mcpServers` JSON file — gets a
 collapsed **Another MCP client (Cursor, Windsurf, …)** group with the same server as a copyable stdio
 snippet: devrig's stable launcher plus its `mcp` subcommand. So a client devrig has no CLI for is a paste

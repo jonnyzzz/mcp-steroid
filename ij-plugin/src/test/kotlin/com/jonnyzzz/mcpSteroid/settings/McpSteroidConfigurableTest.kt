@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.settings
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -13,6 +14,8 @@ import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import java.nio.file.Path
 import java.awt.Component
 import java.awt.Container
+import java.awt.datatransfer.DataFlavor
+import javax.swing.JButton
 import javax.swing.AbstractButton
 import javax.swing.JLabel
 import javax.swing.JTabbedPane
@@ -186,6 +189,25 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
         }
         walk(component)
         return found
+    }
+
+    /**
+     * Copying is the one action on this page with no visible consequence, and a JetBrains button cannot
+     * answer for itself: `DarculaButtonUI` paints no pressed state at all. So the copy must both land on
+     * the clipboard and be confirmed — and must not blow up when the component is not on screen, which is
+     * exactly the case here (and before the Settings dialog is shown).
+     */
+    fun `test copying puts the content on the clipboard and survives an off-screen component`() {
+        val button = JButton("Copy JSON")
+        assertFalse("the test component must not be showing", button.isShowing)
+
+        copyWithFeedback("{\"mcpServers\": {}}", button)
+
+        assertEquals(
+            "{\"mcpServers\": {}}",
+            CopyPasteManager.getInstance().getContents<String>(DataFlavor.stringFlavor),
+        )
+        assertEquals("Copied", COPIED_HINT)
     }
 
     private fun assertContainsText(texts: List<String>, expected: String) {

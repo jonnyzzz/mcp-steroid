@@ -6,6 +6,10 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.BoundConfigurable
+import com.intellij.openapi.ui.MessageType
+import com.intellij.openapi.ui.popup.Balloon
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.util.CheckedDisposable
@@ -35,9 +39,39 @@ import com.jonnyzzz.mcpSteroid.onboarding.DevrigStateListener
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import java.awt.datatransfer.StringSelection
 import java.nio.file.Path
+import javax.swing.JComponent
 import javax.swing.text.AbstractDocument
 import javax.swing.text.AttributeSet
 import javax.swing.text.DocumentFilter
+
+/** What the confirmation says. Short on purpose: it is a receipt, not a message. */
+const val COPIED_HINT = "Copied"
+
+/**
+ * Put [content] on the clipboard and say so, next to [source].
+ *
+ * A copy button is the one control on this page that changes nothing you can see: the field keeps its
+ * text, no panel is rebuilt, no progress starts. And a JetBrains button cannot answer for itself either —
+ * `DarculaButtonUI` paints no pressed state at all (the theme defines no pressed colour, and
+ * `JBUI.CurrentTheme.Button`'s palette takes no state), so pressing one looks identical to hovering over
+ * it. Without a hint, "did that work?" has no answer anywhere on screen.
+ *
+ * A balloon above the button is the platform's own gesture for this, so nothing new is invented — and it
+ * is skipped when the component is not on screen (a panel built in a test, or before the dialog is shown),
+ * where asking for a screen location would throw.
+ */
+fun copyWithFeedback(content: String, source: JComponent?) {
+    CopyPasteManager.getInstance().setContents(StringSelection(content))
+    if (source == null || !source.isShowing) return
+    JBPopupFactory.getInstance()
+        .createHtmlTextBalloonBuilder(COPIED_HINT, MessageType.INFO, null)
+        .setFadeoutTime(COPIED_HINT_FADEOUT_MS)
+        .createBalloon()
+        .show(RelativePoint.getCenterOf(source), Balloon.Position.above)
+}
+
+/** Long enough to read one word, short enough to never be in the way. */
+private const val COPIED_HINT_FADEOUT_MS = 2000L
 
 /**
  * Application-level settings page: Settings | Tools | Devrig — MCP Steroid.
@@ -242,8 +276,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 cell(JBScrollPane(textArea)).align(Align.FILL)
             }.topGap(TopGap.NONE)
             row {
-                button("Copy JSON") {
-                    CopyPasteManager.getInstance().setContents(StringSelection(json))
+                button("Copy JSON") { event ->
+                    copyWithFeedback(json, event.source as? JComponent)
                 }
             }
             row {
@@ -394,8 +428,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                         cell(JBScrollPane(textArea)).align(Align.FILL)
                     }.topGap(TopGap.NONE)
                     row {
-                        button("Copy JSON Config") {
-                            CopyPasteManager.getInstance().setContents(StringSelection(json))
+                        button("Copy JSON Config") { event ->
+                            copyWithFeedback(json, event.source as? JComponent)
                         }
                     }
                 }
@@ -443,7 +477,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 AllIcons.General.InlineCopyHover,
                 "Copy to clipboard"
             ) {
-                CopyPasteManager.getInstance().setContents(StringSelection(content))
+                // Same receipt as the buttons: the icon swaps to its hover variant and nothing else on
+                // screen moves, so a copy that worked and a click that missed look the same.
+                copyWithFeedback(content, this)
             })
         }
 
