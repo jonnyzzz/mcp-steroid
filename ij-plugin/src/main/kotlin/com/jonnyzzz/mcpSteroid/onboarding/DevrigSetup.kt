@@ -36,53 +36,43 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.nio.file.Files
 import java.nio.file.Path
-import com.jonnyzzz.mcpSteroid.devrig.DEVRIG_HOME_DIR_NAME
-import com.jonnyzzz.mcpSteroid.devrig.devrigLauncherFileName
-import com.jonnyzzz.mcpSteroid.devrig.devrigStdioMcpCommand
+import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
+import com.jonnyzzz.mcpSteroid.devrig.DevrigUserLauncher
+import com.jonnyzzz.mcpSteroid.devrig.resolveHomePaths
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-/** devrig's home, the one both halves of the product agree on. */
-fun devrigHome(userHome: Path): Path = userHome.resolve(DEVRIG_HOME_DIR_NAME)
-
 /**
- * The stable devrig launcher path for this OS. Built from the same names as the user-visible rendering
- * (`devrigLauncherDisplayPath` in `:ai-agents`), so what the settings page shows is the file this checks.
+ * The stable devrig launcher path for this OS — [DevrigUserLauncher.path] over the shared home layout
+ * ([resolveHomePaths]), parameterized by [userHome] for tests. Delegation only: the launcher-path logic
+ * has exactly one home, `:devrig-common`, so what the settings page renders
+ * (`devrigLauncherDisplayPath`), what devrig registers, and the file this module checks cannot drift.
  */
 fun devrigBinPath(userHome: Path, windows: Boolean): Path =
-    devrigHome(userHome).resolve("bin").resolve(devrigLauncherFileName(windows))
+    DevrigUserLauncher.path(resolveHomePaths(userHome), windows)
 
 /**
  * The `mcpServers` snippet that points an MCP client at this machine's devrig over stdio — for the clients
  * devrig has no CLI for (Cursor, Windsurf, anything configured by an `mcp.json`-style file).
  *
- * Built from the same [devrigStdioMcpCommand] that devrig itself registers with, so what the settings page
- * offers to copy and what `devrig install <agent>` writes cannot drift. The settings-page twin of
- * `devrig install config`.
+ * Built from the same [DevrigUserLauncher.invocation] that devrig itself registers with (and that
+ * `devrig install config` prints), so what the settings page offers to copy and what
+ * `devrig install <agent>` writes cannot drift. The settings-page twin of `devrig install config`.
  */
 fun devrigStdioMcpConfigJson(userHome: Path, windows: Boolean): String =
-    stdioMcpServersJson(devrigStdioMcpCommand(devrigBinPath(userHome, windows).toString(), windows))
-
-/**
- * devrig's update-coordination directory (`HomePaths.updateDir`). The IDE participates in the same
- * scheme rather than inventing its own: see [DevrigSetupRunner].
- */
-fun devrigUpdateDir(userHome: Path): Path = devrigHome(userHome).resolve("update")
+    stdioMcpServersJson(DevrigUserLauncher.invocation(resolveHomePaths(userHome), listOf("mcp"), windows))
 
 /**
  * Marker the claude-plugin's own install wrapper writes on failure (`bin/install-devrig`), read by its
  * SessionStart hook and `/devrig:status`. The IDE-side install writes the SAME marker, so a failure is
- * visible from the agent side no matter which half of the product attempted the install.
+ * visible from the agent side no matter which half of the product attempted the install. Lives in the
+ * plugin↔devrig marker directory ([PidMarker.markerDirectory]).
  */
 fun devrigInstallFailedMarker(userHome: Path): Path =
-    devrigHome(userHome).resolve("markers").resolve("bootstrap-install.failed")
-
-/** Where the installer stages its in-flight downloads (`.tmp.*` under `binaries/`). */
-private fun devrigBinariesDir(userHome: Path): Path =
-    devrigHome(userHome).resolve("binaries")
+    PidMarker.markerDirectory(userHome).resolve("bootstrap-install.failed")
 
 /**
  * Download the published installer for this OS. Returns the script file, or null on any failure —
@@ -267,7 +257,7 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
         windows: Boolean,
         onFinished: (() -> Unit)?,
     ): Boolean {
-        val coordination = UpdateCoordination(devrigUpdateDir(userHome))
+        val coordination = UpdateCoordination(resolveHomePaths(userHome).updateDir)
         if (coordination.anyLiveInProgressMarker()) {
             // Not a failure, and not something the user did wrong — devrig got there first.
             notify(
@@ -387,7 +377,7 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
     }
 
     private fun stagedBytes(userHome: Path): Long {
-        val dir = devrigBinariesDir(userHome)
+        val dir = resolveHomePaths(userHome).binariesDir
         if (!Files.isDirectory(dir)) return 0
         return dir.listDirectoryEntries(".tmp.*").sumOf { entry ->
             try {

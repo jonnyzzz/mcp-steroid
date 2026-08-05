@@ -25,11 +25,9 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds
 
 class DevrigSetupTest {
-    @Test
-    fun `the update directory is devrig's own, so both halves see the same markers`() {
-        val home = Path.of("/home/u")
-        assertEquals(Path.of("/home/u/.mcp-steroid/update"), devrigUpdateDir(home))
-    }
+    // The update directory needs no test of its own here anymore: the installer uses
+    // `resolveHomePaths(userHome).updateDir` directly, and that layout is pinned in
+    // devrig-common's HomePathsTest — both halves share it by construction.
 
     @Test
     fun `devrig bin path is per-OS`() {

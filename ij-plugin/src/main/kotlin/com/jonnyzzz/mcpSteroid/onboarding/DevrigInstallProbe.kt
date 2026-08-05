@@ -41,11 +41,9 @@ private fun readTextOrNull(path: Path): String? = try {
     null
 }
 
-/** True iff the stable devrig launcher exists under ~/.mcp-steroid/bin for this OS. */
-fun devrigInstalled(userHome: Path, windows: Boolean): Boolean {
-    val name = if (windows) "devrig.cmd" else "devrig"
-    return Files.isRegularFile(userHome.resolve(".mcp-steroid").resolve("bin").resolve(name))
-}
+/** True iff the stable devrig launcher ([devrigBinPath], `~/.mcp-steroid/bin`) exists for this OS. */
+fun devrigInstalled(userHome: Path, windows: Boolean): Boolean =
+    Files.isRegularFile(devrigBinPath(userHome, windows))
 
 /** `exec "<path>"` (POSIX) / `call "<path>"` (Windows `.cmd`) — the install-tree launcher the wrapper runs. */
 private val LAUNCHER_TARGET = Regex("""(?:^|\s)(?:exec|call)\s+"([^"]+)"""", RegexOption.MULTILINE)

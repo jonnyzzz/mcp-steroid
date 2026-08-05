@@ -22,6 +22,14 @@ class HomePathsTest {
     }
 
     @Test
+    fun `the explicit user-home overload resolves the same dot mcp-steroid layout`() {
+        assertEquals(
+            Path.of("/home/u/.mcp-steroid"),
+            resolveHomePaths(Path.of("/home/u")).home,
+        )
+    }
+
+    @Test
     fun `derived paths use the required managed backend layout`(
         @TempDir tempDir: Path,
     ) {
@@ -34,6 +42,8 @@ class HomePathsTest {
         assertEquals(tempDir.resolve("state"), paths.stateDir)
         assertEquals(tempDir.resolve("runs"), paths.executionStorageDir)
         assertEquals(tempDir.resolve("update"), paths.updateDir)
+        assertEquals(tempDir.resolve("bin"), paths.binDir)
+        assertEquals(tempDir.resolve("binaries"), paths.binariesDir)
         assertEquals(tempDir.resolve("backends/idea-community-2025.3.3"), paths.backendDir("idea-community-2025.3.3"))
         assertEquals(tempDir.resolve("caches/idea-community-2025.3.3"), paths.cacheDir("idea-community-2025.3.3"))
         assertEquals(tempDir.resolve("state/idea-community-2025.3.3.pid"), paths.pidFile("idea-community-2025.3.3"))

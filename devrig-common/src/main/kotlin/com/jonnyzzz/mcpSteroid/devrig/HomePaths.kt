@@ -40,6 +40,14 @@ class HomePaths(val home: Path) {
     val binDir: Path get() = home.resolve("bin")
 
     /**
+     * Where the installer scripts stage in-flight downloads (`.tmp.*`) and keep the content-addressed
+     * install trees (`devrig-<key>-<version>-<sha12>/`). The installers OWN this directory; devrig and
+     * the IDE plugin only read it (the plugin sums the `.tmp.*` staging files for install progress).
+     * Not part of [mkdirsAll]: the installer creates it itself.
+     */
+    val binariesDir: Path get() = home.resolve("binaries")
+
+    /**
      * Directory where the IDE plugin writes per-pid markers and devrig reads them from — always
      * `~/.mcp-steroid/markers`, the same fixed location [home] resolves to. This is the plugin↔devrig
      * contract for marker discovery, so it must never be relocated.
@@ -68,8 +76,14 @@ class HomePaths(val home: Path) {
  * override (it was removed; the plugin↔devrig marker contract pins the location anyway). To sandbox the
  * home in a test, launch the devrig process with a redirected `HOME` (which sets the JVM's `user.home`).
  */
-fun resolveHomePaths(): HomePaths =
-    HomePaths(Path.of(System.getProperty("user.home"), DEVRIG_HOME_DIR_NAME).toAbsolutePath().normalize())
+fun resolveHomePaths(): HomePaths = resolveHomePaths(Path.of(System.getProperty("user.home")))
+
+/**
+ * The devrig home layout under an explicit [userHome] — the overload tests (and any code already holding
+ * the user home) go through, so nothing ever spells `userHome/.mcp-steroid` by hand.
+ */
+fun resolveHomePaths(userHome: Path): HomePaths =
+    HomePaths(userHome.resolve(DEVRIG_HOME_DIR_NAME).toAbsolutePath().normalize())
 
 fun resolveHomePathsOrDie(): HomePaths {
     try {
