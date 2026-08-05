@@ -96,6 +96,10 @@ Three independent audits found the same agent-facing gaps:
   complete until a real Codex task-only Docker run passes; model reviews are not treated as runtime proof.
 - The post-rebase matrix passed the focused server and devrig contracts, 16 prompt tests (including both
   type-hierarchy KtBlock cases), and eight pure experiment methods with zero failures, errors, or skips.
+- File-scoped IDE inspections ran on every changed production Kotlin file. They found no actionable
+  changed-line diagnostic, but the `OpenProjectTool.kt` check is not called clean: two Kotlin/UAST
+  inspections crashed on `KtFakeSourceElementKind.PluginGenerated`, so `failedTools` correctly made it
+  `check_failed`. The reproducible inspection-engine follow-up is recorded in `TODO.md`.
 
 ## Claude iteration findings
 

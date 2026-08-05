@@ -86,6 +86,11 @@
     `coding-with-intellij-patterns.md` (3 sites).
 
 - [ ] **runInspectionsDirectly follow-ups (#69 ask 1)** — deliberately deferred, not work-in-progress.
+  - On IU-262/K2, `LoggingSimilarMessage` and `UnusedSymbol` can crash on a Kotlin file that references
+    generated prompt articles with `Cannot compute containing PSI for unknown source kind
+    KtFakeSourceElementKind.PluginGenerated`. Crash isolation preserves other findings and correctly
+    populates `failedTools`, but the file check remains `check_failed`; add a focused reproducer and fix or
+    filter the unsupported synthetic PSI path without hiding unrelated inspection failures.
   - *Deferred:* a `PsiFile`-accepting overload (and any richer per-file batch surface). It is a
     `McpScriptContext` surface growth — gated by PHILOSOPHY Tenet 3 / the 3-reviewer consensus, same
     as the explicit-`Project` overload (#94). Revisit only if that gate is cleared.
