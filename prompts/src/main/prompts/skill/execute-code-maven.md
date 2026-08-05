@@ -11,6 +11,14 @@ Before the first indexed semantic query, go directly to **Trigger and await Mave
 that recipe even when no POM was edited. Scheduling the update starts the import;
 `Observation.awaitConfiguration(project)` only awaits work, so calling it alone is not a trigger.
 
+A frontendless backend cannot show the yellow project-JDK banner. Check
+`ProjectRootManager.getInstance(project).projectSdk`, but a null project SDK is a warning, not automatic failure:
+imported project-local source PSI can still be valid. When the task needs JDK library resolution,
+compilation, inspections, or refactoring that resolves JDK symbols, inspect module SDKs and unresolved JDK
+references. Follow **Fix: "Project JDK is not defined" Banner** and trigger the import again only when the
+needed capability is absent or diagnostics identify the SDK. Do not mutate SDK configuration merely because
+the project-level value is null.
+
 ## Agent: Run One Maven Test Method (two-call pattern)
 
 When an agent task asks for "run one fast test through Maven" — pick a plain JUnit method, then run it through IntelliJ's Maven integration. **Do NOT shell out to `./mvnw` or `mvn` via the `Bash` tool**, and do NOT use `ProcessBuilder("./mvnw")` inside `steroid_execute_code`. Both bypass the IDE entirely and defeat the value of MCP Steroid.
@@ -221,60 +229,78 @@ Maven builds and inspections will fail. Fix it immediately before doing any othe
 typically whatever `JAVA_HOME` is set to. Using a different JDK can cause language-level
 mismatches and re-import failures.
 
-**Step 1: Check existing registered SDKs first**
+**Step 1: Reuse an unambiguous module or Maven-environment SDK**
 
-IntelliJ may already have a Java SDK registered from a previous session or auto-detection.
-Reuse it instead of scanning the filesystem:
+Prefer a Java SDK already assigned to the project's modules. Otherwise match an existing registration to
+`JAVA_HOME`, or create that exact SDK. Never choose the first global registration: it may belong to another
+project or language level. When neither source is unambiguous, determine the required JDK from the POM and set
+`explicitJdkPath` before running the recipe.
 
 ```kotlin[IU]
 import com.intellij.openapi.projectRoots.JavaSdk
 import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.projectRoots.impl.SdkConfigurationUtil
 import com.intellij.openapi.projectRoots.ex.JavaSdkUtil
+import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.application.edtWriteAction
+import com.intellij.openapi.util.io.FileUtil
 import com.intellij.platform.backend.observation.Observation
 import org.jetbrains.idea.maven.project.MavenProjectsManager
 import org.jetbrains.idea.maven.buildtool.MavenSyncSpec
 
-// 1. Use already-registered Java SDK if available (preferred — no filesystem scan needed)
-// getSdksOfType() is the correct API; allJdks includes all types (JavaScript, Python, etc.)
-val registeredSdk = ProjectJdkTable.getInstance().getSdksOfType(JavaSdk.getInstance()).firstOrNull()
+// 1. Prefer one Java SDK already assigned consistently across modules.
+val javaSdkType = JavaSdk.getInstance()
+val (registeredSdks, moduleJavaSdks, currentSdk) = readAction {
+    val registered = ProjectJdkTable.getInstance().getSdksOfType(javaSdkType).toList()
+    val moduleSdks = ModuleManager.getInstance(project).modules
+        .mapNotNull { module -> ModuleRootManager.getInstance(module).sdk }
+        .filter { it.sdkType == javaSdkType }
+        .distinctBy { it.homePath ?: it.name }
+    Triple(registered, moduleSdks, ProjectRootManager.getInstance(project).projectSdk)
+}
+val moduleSdk = moduleJavaSdks.singleOrNull()
 
-// 2. Otherwise: find JDK on disk — same JDK Maven uses (JAVA_HOME), then scan /usr/lib/jvm/
-val jdkPath = if (registeredSdk == null) {
-    val candidates = listOfNotNull(
-        System.getenv("JAVA_HOME"),
-        *java.io.File("/usr/lib/jvm").listFiles()
-            ?.filter { it.isDirectory }?.sortedByDescending { it.name }
-            ?.map { it.absolutePath }?.toTypedArray() ?: emptyArray(),
-        System.getProperty("java.home"),   // IntelliJ JBR — always present, last resort
-    )
-    candidates.firstOrNull { java.io.File(it, "bin/java").exists() }
-} else null
+// 2. Otherwise use an explicit project requirement, or the exact Maven environment JDK. Set the
+// explicit path only after reading the POM/compiler level; never guess from a global registration.
+val explicitJdkPath: String? = null // TODO: set when the project requirement is known
+val desiredJdkPath = (explicitJdkPath ?: System.getenv("JAVA_HOME"))
+    ?.let(FileUtil::toCanonicalPath)
+    ?.takeIf { javaSdkType.isValidSdkHome(it) }
+val registeredDesiredSdk = readAction {
+    desiredJdkPath?.let { desired ->
+        registeredSdks.firstOrNull { sdk ->
+            sdk.homePath?.let(FileUtil::toCanonicalPath) == desired
+        }
+    }
+}
 
-val currentSdk = ProjectRootManager.getInstance(project).projectSdk
 when {
     currentSdk != null -> println("Project SDK already set: ${currentSdk.name}")
-    registeredSdk != null -> {
-        edtWriteAction { JavaSdkUtil.applyJdkToProject(project, registeredSdk) }
-        println("Applied registered SDK: ${registeredSdk.name}")
+    moduleSdk != null -> {
+        edtWriteAction { JavaSdkUtil.applyJdkToProject(project, moduleSdk) }
+        println("Applied the modules' Java SDK: ${moduleSdk.name}")
     }
-    jdkPath != null -> {
-        // Check for duplicate before creating (createAndAddSDK does NOT deduplicate by path)
-        val existing = ProjectJdkTable.getInstance().getSdksOfType(JavaSdk.getInstance())
-            .firstOrNull { it.homePath == jdkPath }
-        val sdk = existing ?: edtWriteAction { SdkConfigurationUtil.createAndAddSDK(jdkPath, JavaSdk.getInstance()) }
+    moduleJavaSdks.size > 1 -> {
+        println("Modules already use multiple Java SDKs; preserving their per-module assignments")
+    }
+    desiredJdkPath != null -> {
+        val sdk = registeredDesiredSdk
+            ?: edtWriteAction { SdkConfigurationUtil.createAndAddSDK(desiredJdkPath, javaSdkType) }
         if (sdk != null) {
             edtWriteAction { JavaSdkUtil.applyJdkToProject(project, sdk) }
-            println("Applied SDK from: $jdkPath (${sdk.name})")
-        } else println("ERROR: createAndAddSDK returned null for $jdkPath")
+            println("Applied SDK from: $desiredJdkPath (${sdk.name})")
+        } else error("createAndAddSDK returned null for $desiredJdkPath")
     }
-    else -> println("ERROR: No JDK found. Contents of /usr/lib/jvm: ${java.io.File("/usr/lib/jvm").list()?.toList()}")
+    else -> error(
+        "No unambiguous Java SDK: modules have none and JAVA_HOME/explicitJdkPath does not identify one"
+    )
 }
 
 // 3. Trigger Maven re-sync — initial import may have failed without a JDK
-if (ProjectRootManager.getInstance(project).projectSdk != null) {
+val configuredProjectSdk = readAction { ProjectRootManager.getInstance(project).projectSdk }
+if (configuredProjectSdk != null) {
     MavenProjectsManager.getInstance(project)
         .scheduleUpdateAllMavenProjects(MavenSyncSpec.full("after-jdk-fix", explicit = true))
     Observation.awaitConfiguration(project)
@@ -282,7 +308,10 @@ if (ProjectRootManager.getInstance(project).projectSdk != null) {
 }
 ```
 
-**When to run this**: Before any Maven or inspection call if the editor shows the JDK banner.
+**When to run this**: Before any Maven or inspection call if the editor shows the JDK banner. In a
+frontendless backend with a null `ProjectRootManager.getInstance(project).projectSdk`, run it only when the
+task needs JDK-dependent capabilities or diagnostics show missing SDK/JDK resolution; first inspect module
+SDKs instead of blindly choosing the first registered JDK.
 **Why same JDK as Maven**: Maven was configured for `JAVA_HOME` — using a different JDK causes
 language-level mismatches and re-import failures.
 
