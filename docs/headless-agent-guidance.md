@@ -68,7 +68,7 @@ Three independent audits found the same agent-facing gaps:
 - [x] Reconcile the branch with current `origin/main` and preserve the new generated-CLI contracts while
   resolving conflicts.
 - [x] Rerun the focused post-rebase server, devrig, prompt/KtBlock, and pure experiment validation.
-- [ ] Push the rebased branch and update PR #441 and its CI status.
+- [x] Push the rebased branch, update PR #441, and obtain green compile plus Linux/Windows installer checks.
 
 ## Validation status
 
@@ -96,6 +96,8 @@ Three independent audits found the same agent-facing gaps:
   complete until a real Codex task-only Docker run passes; model reviews are not treated as runtime proof.
 - The post-rebase matrix passed the focused server and devrig contracts, 16 prompt tests (including both
   type-hierarchy KtBlock cases), and eight pure experiment methods with zero failures, errors, or skips.
+- PR #441 is mergeable and its compile, Linux PowerShell Docker, and Windows PowerShell checks passed on
+  the rebased branch head.
 - File-scoped IDE inspections ran on every changed production Kotlin file. They found no actionable
   changed-line diagnostic, but the `OpenProjectTool.kt` check is not called clean: two Kotlin/UAST
   inspections crashed on `KtFakeSourceElementKind.PluginGenerated`, so `failedTools` correctly made it
