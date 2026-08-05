@@ -88,8 +88,11 @@ class DevrigSetupTest {
                 polls.incrementAndGet()
                 50L * 1024 * 1024
             }
-            waitUntil("the poller reports the staged fraction") { indicator.fractionValue == 0.5 }
-            assertEquals("50 MB of 100 MB", indicator.text2Value)
+            // Wait on text2, the LAST field the poller writes: waiting on fraction raced the poller
+            // between its two indicator writes and could observe text2 still null. text2 is a volatile
+            // write after the fraction write, so seeing it guarantees the fraction is visible too.
+            waitUntil("the poller reports the staged size") { indicator.text2Value == "50 MB of 100 MB" }
+            assertEquals(0.5, indicator.fractionValue, 0.0)
 
             // The while(isActive) + delay loop must end on cancel, not spin on — this join hangs if it does.
             withTimeout(10_000) { poller.cancelAndJoin() }
