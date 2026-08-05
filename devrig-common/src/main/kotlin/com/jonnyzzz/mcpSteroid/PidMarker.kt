@@ -1,5 +1,6 @@
 package com.jonnyzzz.mcpSteroid
 
+import com.jonnyzzz.mcpSteroid.devrig.DEVRIG_HOME_DIR_NAME
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.nio.file.Path
@@ -42,7 +43,7 @@ data class PidMarker(
 
         /** Directory the plugin writes markers into: `<userHome>/.mcp-steroid/markers`. */
         fun markerDirectory(userHome: Path): Path =
-            userHome.resolve(".mcp-steroid").resolve("markers")
+            userHome.resolve(DEVRIG_HOME_DIR_NAME).resolve("markers")
 
         /** Filename inside [markerDirectory] for a running IDE pid. */
         fun markerFileNameFor(pid: Long): String = "$pid.mcp-steroid"

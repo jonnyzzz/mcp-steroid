@@ -6,6 +6,17 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.system.exitProcess
 
+/**
+ * Name of the devrig home directory under the user's home: `~/.mcp-steroid`.
+ *
+ * The ONLY place production code spells the home directory literal. Every path under the devrig
+ * home resolves through [resolveHomePaths] / [HomePaths], or through [PidMarker.markerDirectory]
+ * (which uses this constant) for the plugin-side marker contract. The `.mcp-steroid` marker
+ * FILENAME suffix in [PidMarker] is a separate contract (a file extension, not this directory)
+ * and deliberately stays spelled there.
+ */
+const val DEVRIG_HOME_DIR_NAME: String = ".mcp-steroid"
+
 class HomePaths(val home: Path) {
     val logsDir: Path get() = home.resolve("logs")
     val backendsDir: Path get() = home.resolve("backends")
@@ -58,7 +69,7 @@ class HomePaths(val home: Path) {
  * home in a test, launch the devrig process with a redirected `HOME` (which sets the JVM's `user.home`).
  */
 fun resolveHomePaths(): HomePaths =
-    HomePaths(Path.of(System.getProperty("user.home"), ".mcp-steroid").toAbsolutePath().normalize())
+    HomePaths(Path.of(System.getProperty("user.home"), DEVRIG_HOME_DIR_NAME).toAbsolutePath().normalize())
 
 fun resolveHomePathsOrDie(): HomePaths {
     try {

@@ -5,6 +5,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.registry.Registry
+import com.jonnyzzz.mcpSteroid.devrig.resolveHomePaths
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -50,7 +51,8 @@ class StoragePaths(private val project: Project) {
                 return@run Path.of(customPath)
             }
 
-            return@run Path.of(System.getProperty("user.home"), ".mcp-steroid", "runs")
+            // The devrig home layout is owned by :devrig-common — `~/.mcp-steroid/runs`.
+            return@run resolveHomePaths().executionStorageDir
         }
 
         Files.createDirectories(path)
