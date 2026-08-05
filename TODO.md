@@ -116,6 +116,10 @@
     tune the 180-second readiness bound and the caller-cancellation behavior before widening support.
   - Put the pure Remote Development NDJSON parser/workflow contracts on a normal CI-backed task; the
     experimental task's direct-invocation guard currently keeps them out of aggregate CI runs.
+  - Redact Remote Development join-link fragments (`#jt=...`) from preserved managed-backend logs.
+    The Codex artifact review found one after the backend had stopped; the current sanitizer and invariant
+    cover `Authorization`/Bearer, `_ijt`, and `x-ijt` credentials only. Extend the pure sanitizer tests and
+    keep the shell artifact scan aligned before treating those logs as generally safe to publish.
   - Stream download progress to the agent (downloads can take minutes; CLI is silent until done).
   - Add bounded retry-on-read-timeout to the shared IDE downloader. It already resumes a pre-existing
     `.tmp` with `Range`, but a socket stall currently waits 15 minutes and fails the whole Gradle test or
@@ -129,11 +133,6 @@
   ignores unknown key; new devrig falls back to the singular `plugin` field), devrig-side id→kind
   classification, PidMarker contract-test updates. Spec in the #88 closing comments.
 
-- [ ] **Fix the pre-existing `:prompts:test` failure** (broken on `main` since before 2026-06-09):
-  `MarkdownArticleContractTest.testNoNonKotlinFences` fails on
-  `debugger/debug-attach-remote-jvm.md` (5 ```text fences at lines 10/26/66/101/123). The contract
-  bans non-kotlin fences; rewrite those blocks as prose/inline code or ```kotlin. Until fixed, every
-  prompts contract run reports this one failure (sessions treat it as "green if sole failure" — debt).
 - [ ] **devrig-naming.md id-scheme drift**: the naming-contract doc still specifies the old
   slug/bootHash exposed ids (`IntelliJ_IDEA_2025.3.3-AbC4Df01`) while the implementation has moved to
   `productCode-hash8` backend_names (`iu-9fk2a0xQ`) and pid-salted project names. The plugins[] section
@@ -185,7 +184,8 @@
   pinned by `CliErrorEnvelopeTest`. It affected EVERY tool-side argument rejection, not just an absent
   `project_name`, so it would have outlived the inference work.
 
-- [ ] **Agent harnesses must gate the first task turn on MCP initialization**: initialize instructions
+- [ ] **Deferred, non-gating: agent harnesses must gate the first task turn on MCP initialization**:
+  initialize instructions
   solve deferred-schema discovery only after the devrig MCP server reaches ready state. A Claude Code
   run can still begin while the server is `pending`, see no `steroid_*` names or instructions, and commit
   to shell text search before initialization completes. This is a client/harness readiness problem; add
