@@ -11,9 +11,6 @@ import java.util.concurrent.TimeUnit
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
-internal fun isWindows(): Boolean =
-    System.getProperty("os.name").lowercase().contains("windows")
-
 /**
  * Undocumented escape hatch governing the on-each-start launcher self-heal ([ensureBinLauncher]).
  * Intentionally NOT mentioned in `devrig --help` / docs — it exists for tests and for power users who

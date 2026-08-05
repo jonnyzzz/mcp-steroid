@@ -10,7 +10,7 @@ import java.nio.file.Path
  * built).
  *
  * The launcher — POSIX `devrig`; Windows `devrig.cmd` (a self-contained batch, no PowerShell) — is the
- * self-healing wrapper that [ensureBinLauncher] writes on every devrig start. It always sets
+ * self-healing wrapper that `ensureBinLauncher` (in the devrig CLI) writes on every devrig start. It always sets
  * `DEVRIG_JAVA_HOME` to the JDK devrig runs under, so **no caller needs to deal with JAVA_HOME**. Pointing
  * registrations/docs at this stable path (rather than a content-addressed install tree that changes on
  * every upgrade) is what lets the wrapper repoint underneath without re-registering the agent.

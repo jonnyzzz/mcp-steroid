@@ -69,23 +69,4 @@ class HomePathsTest {
         assertEquals(first, second)
         assertTrue(second.isDirectory())
     }
-
-    @Test
-    fun `migrateLegacyArchives moves old archive files into downloads and is idempotent`(
-        @TempDir tempDir: Path,
-    ) {
-        val paths = HomePaths(tempDir.resolve("home"))
-        val legacyDir = paths.cachesDir.resolve("_archives")
-        val archiveName = "ideaIC-2025.3.3.tar.gz"
-        Files.createDirectories(legacyDir)
-        Files.writeString(legacyDir.resolve(archiveName), "archive bytes")
-
-        migrateLegacyArchives(paths)
-        migrateLegacyArchives(paths)
-
-        val migratedArchive = paths.downloadsDir.resolve(archiveName)
-        assertTrue(Files.isRegularFile(migratedArchive), "archive should move into downloads/")
-        assertEquals("archive bytes", Files.readString(migratedArchive))
-        assertTrue(!Files.exists(legacyDir), "empty legacy archive directory should be deleted")
-    }
 }

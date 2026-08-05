@@ -653,6 +653,7 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
 
             //our binaires
             "lib/ai-agents-$pluginVersion.jar",
+            "lib/devrig-common-$pluginVersion.jar",
             "lib/ij-plugin-$pluginVersion.jar",
             "lib/kotlin-cli-$pluginVersion.jar",
             "lib/ocr-common-$pluginVersion.jar",

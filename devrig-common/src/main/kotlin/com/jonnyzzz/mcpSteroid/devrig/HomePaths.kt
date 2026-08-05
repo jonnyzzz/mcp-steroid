@@ -23,7 +23,7 @@ class HomePaths(val home: Path) {
     /**
      * Directory holding the stable, user-facing devrig launcher (`bin/devrig` on POSIX, `bin/devrig.cmd`
      * on Windows). The devrig binary OWNS this directory: it (re)writes the launcher on every start (see
-     * [ensureBinLauncher]) and points agent MCP registrations + the user-PATH symlink at `bin/devrig`,
+     * `ensureBinLauncher` in the devrig CLI) and points agent MCP registrations + the user-PATH symlink at `bin/devrig`,
      * never at the content-addressed install tree (which changes on every upgrade).
      */
     val binDir: Path get() = home.resolve("bin")

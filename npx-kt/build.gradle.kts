@@ -558,6 +558,7 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
             "lib/devrig-$devrigVersion-classpath.jar",
             "lib/ai-agents-$devrigVersion.jar",
             "lib/closeable-stack-$devrigVersion.jar",
+            "lib/devrig-common-$devrigVersion.jar",
             "lib/execution-storage-$devrigVersion.jar",
             "lib/intellij-downloader-$devrigVersion.jar",
             "lib/mcp-core-$devrigVersion.jar",

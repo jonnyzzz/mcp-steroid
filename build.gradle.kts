@@ -289,6 +289,7 @@ val promptsSubprojects = setOf(
  */
 val pluginCoreSubprojects = setOf(
     "ij-plugin",
+    "devrig-common",
     "mcp-core",
     "mcp-http",
     "mcp-stdio",

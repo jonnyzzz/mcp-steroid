@@ -109,6 +109,7 @@ class NoForbiddenPluginImportsTest : BasePlatformTestCase() {
          */
         private val PRODUCTION_SOURCE_ROOTS = listOf(
             "ij-plugin/src/main/kotlin",
+            "devrig-common/src/main/kotlin",
             "mcp-core/src/main/kotlin",
             "mcp-http/src/main/kotlin",
             "mcp-stdio/src/main/kotlin",

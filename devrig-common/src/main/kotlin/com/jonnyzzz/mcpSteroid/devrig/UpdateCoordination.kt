@@ -173,7 +173,7 @@ val UPDATE_LOG_RETENTION: Duration = 30.days
 /** User opt-out for the active updater; the passive notice remains. */
 const val ENV_DEVRIG_NO_AUTO_UPDATE = "DEVRIG_NO_AUTO_UPDATE"
 
-/** `yes/true/1/on` → true (same spellings as [ENV_BIN_NO_AUTO_REGISTER]). */
+/** `yes/true/1/on` → true (same spellings as `ENV_BIN_NO_AUTO_REGISTER` in the devrig CLI). */
 fun parseUpdateEnvFlag(value: String?): Boolean = when (value?.trim()?.lowercase()) {
     "yes", "true", "1", "on" -> true
     else -> false
