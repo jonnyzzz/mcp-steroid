@@ -32,8 +32,8 @@ import com.intellij.util.ui.launchOnShow
 import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
-import com.jonnyzzz.mcpSteroid.aiAgents.devrigHomeDisplayPath
-import com.jonnyzzz.mcpSteroid.aiAgents.devrigMcpCommandLine
+import com.jonnyzzz.mcpSteroid.devrig.devrigHomeDisplayPath
+import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigAgentRegistrationService

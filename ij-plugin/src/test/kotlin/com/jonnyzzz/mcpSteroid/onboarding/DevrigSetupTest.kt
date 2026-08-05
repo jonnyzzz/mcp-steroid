@@ -5,7 +5,7 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
-import com.jonnyzzz.mcpSteroid.aiAgents.devrigLauncherDisplayPath
+import com.jonnyzzz.mcpSteroid.devrig.devrigLauncherDisplayPath
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

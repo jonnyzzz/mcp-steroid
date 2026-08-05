@@ -36,9 +36,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.nio.file.Files
 import java.nio.file.Path
-import com.jonnyzzz.mcpSteroid.aiAgents.DEVRIG_HOME_DIR_NAME
-import com.jonnyzzz.mcpSteroid.aiAgents.devrigLauncherFileName
-import com.jonnyzzz.mcpSteroid.aiAgents.devrigStdioMcpCommand
+import com.jonnyzzz.mcpSteroid.devrig.DEVRIG_HOME_DIR_NAME
+import com.jonnyzzz.mcpSteroid.devrig.devrigLauncherFileName
+import com.jonnyzzz.mcpSteroid.devrig.devrigStdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
