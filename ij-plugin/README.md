@@ -78,13 +78,14 @@ DSL only creates the `JButton`. The receipt is ours to give, so we give it.
 collapsed **Another MCP client (Cursor, Windsurf, …)** group with the same server as a copyable stdio
 snippet: devrig's stable launcher plus its `mcp` subcommand. So a client devrig has no CLI for is a paste
 away rather than a dead end. It is the settings-page twin of `devrig install config`, and both build the
-command through `devrigStdioMcpCommand` in `:ai-agents`, so what you copy cannot drift from what
+command through `DevrigUserLauncher.invocation` in `:devrig-common`, so what you copy cannot drift from what
 **Register** writes. Shown only once devrig is installed — before that, the snippet would name a launcher
 that is not there.
 
-That devrig block is the only part rebuilt while the page is open — an install finishes in the background
-and the page follows it (`DEVRIG_STATE_CHANGED`), instead of going on offering to install what is already
-there.
+That devrig block is the only part rebuilt while the page is open — the install's completion callback
+(`onFinished` on `DevrigSetupRunner.runInstall`) re-probes and re-applies the block, instead of going on
+offering to install what is already there. A callback of a button the user pressed, not a monitoring
+pipeline.
 
 This page is the offer's home on purpose. It is the one surface with room to say why installing a separate
 binary is worth it, and a user who opens it is asking.
