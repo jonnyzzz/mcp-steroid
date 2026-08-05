@@ -144,8 +144,10 @@
   `execute_code` and `take_screenshot`, and implemented by `renderWithOut` in `CliToolSupport.kt` (verified end to end —
   `devrig take_screenshot --out=<path>` writes the PNG and prints `Saved --out: <path>`). `--wait` is
   **not**: it parses, and a generic guard in `GeneratedToolRuntime.kt` then refuses with exit 64
-  (`--wait is accepted by the command line but no runtime acts on it yet`). Implement it as a
-  `list_windows` poll until the project reports initialized, and delete that guard plus its test.
+  (`--wait is accepted by the command line but no runtime acts on it yet`). Implement it as a project-list
+  poll until the target path appears; a frontendless Remote Development backend has no window. If a
+  frontend window exists, additionally poll its modal/indexing/initialized flags. Then delete the guard
+  plus its test.
 
 - [ ] **`--json` parse-time usage errors emit nothing on stdout (#284)**: a parse failure becomes
   `DevrigCommandParseError`, which prints to stderr and answers 64 with no `--json` envelope — the KDoc

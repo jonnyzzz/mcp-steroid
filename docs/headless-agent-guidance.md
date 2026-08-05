@@ -60,10 +60,15 @@ Three independent audits found the same agent-facing gaps:
   iterate on the observed frontendless-readiness and hierarchy-classification gaps.
 - [ ] Run the Codex scenario in a fresh container and review its `<<<IMPROVEMENTS>>>` artifact. Codex
   remains locally blocked: `codex login status` reports not logged in and neither `OPENAI_API_KEY` nor
-  `CODEX_API_KEY` is available; the test remains enabled and unweakened.
-- [ ] Resolve the final adversarial review, rerun focused validation, and obtain a go recommendation.
-- [ ] Reconcile the branch with current `origin/main`, rerun CI, commit the current iteration atomically,
-  and update PR #441.
+  `CODEX_API_KEY` is available; the test remains enabled and unweakened. TeamCity has a credentialed
+  Keycloak Codex build, but its fixed filter also selects two older heavy scenarios and cannot be narrowed
+  for a custom build; focused validation would require a separate TeamCity/`jb` change.
+- [x] Run the final adversarial review and close its hierarchy-oracle finding. Its verdict remains no-go
+  only until the real Codex task-only Docker scenario supplies the missing runtime evidence.
+- [x] Reconcile the branch with current `origin/main` and preserve the new generated-CLI contracts while
+  resolving conflicts.
+- [x] Rerun the focused post-rebase server, devrig, prompt/KtBlock, and pure experiment validation.
+- [ ] Push the rebased branch and update PR #441 and its CI status.
 
 ## Validation status
 
@@ -71,7 +76,8 @@ Three independent audits found the same agent-facing gaps:
   schema contracts.
 - Passed markdown/payload round-trip, per-IDE availability, Maven/Gradle first-open import, and the changed
   type-hierarchy Kotlin block against IDEA stable and IDEA 2026.2 EAP.
-- Passed `:test-experiments:compileTestKotlin`, workflow helper tests, and the task-prompt purity method.
+- Passed `:test-experiments:compileTestKotlin`, workflow helper tests, the task-prompt purity method, and
+  the implementing-class scoring/final-marker rejection regressions.
 - Passed the live Claude task-only Docker scenario in 7m53s. Claude autonomously discovered the empty
   backend state, listed downloads, installed IU 2026.2.0.1, relied on `steroid_open_project` auto-start,
   routed the project without a frontend, triggered and awaited Maven import for 136 modules, then found
@@ -86,6 +92,10 @@ Three independent audits found the same agent-facing gaps:
   answer contained the intended 70 named classes, and every backend/process assertion and teardown passed.
 - Independent reviews completed with the repository subagent quorum, `run-agent.sh` Codex, Claude Opus 5,
   and Claude Fable 5. Their findings were iterated into the current wording and assertions.
+- The final adversarial review explicitly remains no-go for claiming the whole Claude-and-Codex goal
+  complete until a real Codex task-only Docker run passes; model reviews are not treated as runtime proof.
+- The post-rebase matrix passed the focused server and devrig contracts, 16 prompt tests (including both
+  type-hierarchy KtBlock cases), and eight pure experiment methods with zero failures, errors, or skips.
 
 ## Claude iteration findings
 
@@ -101,7 +111,7 @@ concrete classes, and anonymous/local classes together. The hierarchy article no
 reports unnamed counts separately, and keeps abstract classes unless the task requests concrete-only
 implementations. The fetch-resource routing description uses the exhaustive wording “every direct +
 transitive subtype / implementor.” The E2E score now removes the base/sub-interface types from its class
-count and rejects either known sub-interface in final `SUBTYPE:` markers.
+count and rejects the base interface or either known sub-interface in final `SUBTYPE:` markers.
 
 The second reflection also suggested documenting stdout/stderr separation for `devrig backend download
 --json`. That suggestion was not adopted: the transcript shows the agent explicitly merged the streams

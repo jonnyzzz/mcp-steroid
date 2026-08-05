@@ -346,7 +346,8 @@ class DevrigToolBridgeClientTest {
         assertEquals(true, result.isError)
         val message = result.errorText()
         assertTrue(message.contains("devrig backend download --json"), message)
-        assertTrue(message.contains("retry steroid_open_project"), message)
+        assertTrue(message.contains("retry this open-project command"), message)
+        assertTrue("steroid_open_project" !in message, message)
         // No bridge call was made.
         assertEquals(null, receivedAuth)
         assertEquals(null, receivedBody)
