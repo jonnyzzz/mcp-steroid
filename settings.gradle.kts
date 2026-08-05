@@ -80,6 +80,8 @@ include(":prompts-api")
 include(":prompts")
 include(":intellij-downloader")
 
+include(":devrig-common")
+
 include(":ij-plugin")
 include(":mcp-core")
 include(":mcp-http")

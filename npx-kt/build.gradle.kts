@@ -53,6 +53,10 @@ dependencies {
     implementation(project(":closeable-stack"))
     implementation(project(":ai-agents"))
 
+    // Shared devrig home layout, update-marker coordination and user-launcher
+    // invocation — common ground between the devrig CLI and the IDE plugin.
+    implementation(project(":devrig-common"))
+
     // DevrigVersion (used by the generated version metadata and the update checker)
     implementation(project(":mcp-core"))
 

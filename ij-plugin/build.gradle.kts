@@ -213,6 +213,10 @@ dependencies {
     // AI agent MCP server configuration helpers
     implementation(project(":ai-agents"))
 
+    // Shared devrig home layout, update-marker coordination and user-launcher
+    // invocation — common ground between the devrig CLI and the IDE plugin.
+    implementation(project(":devrig-common"))
+
     // PostHog analytics
     implementation("com.posthog:posthog-server:2.3.0")
 

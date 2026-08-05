@@ -24,6 +24,10 @@ dependencies {
     // MCP protocol types (McpTool, ToolCallContext, JsonRpc*, PromptsContextProvider)
     api(project(":mcp-core"))
 
+    // PidMarker wire types (PidMarker, IdeInfo, PluginInfo, *ServerInfo) — re-exported so
+    // downstream consumers (ij-plugin, npx-kt, test-integration) keep their imports unchanged.
+    api(project(":devrig-common"))
+
     // Generated prompt articles for tool descriptions + FetchResourceToolHandler
     api(project(":prompts"))
 
