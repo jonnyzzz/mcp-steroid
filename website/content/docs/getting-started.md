@@ -40,13 +40,18 @@ Codex, or Gemini. The agent must be one of `claude`, `codex`, or `gemini`. See t
 In your JetBrains IDE, install **MCP Steroid** from the
 [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30019-mcp-steroid).
 
+This manual plugin step is for an IDE you already manage. When devrig downloads and starts a managed
+backend, it installs the matching MCP Steroid plugin into that isolated backend automatically.
+
 ### Requirements
 
 - A JetBrains IDE — IntelliJ IDEA, PyCharm, GoLand, WebStorm, Rider, CLion, or Android Studio
-- The IDE runs with a real display: the normal GUI on macOS/Windows, or under Xvfb (a virtual
-  X display) on Linux/CI. True headless launches (`-Djava.awt.headless=true`) are unsupported
-  (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)) — see
-  [Running devrig in CI](/docs/running-on-ci/)
+- A standard desktop IDE runs with a real display: the normal GUI on macOS/Windows, or under Xvfb (a
+  virtual X display) on Linux/CI. A devrig-managed IntelliJ IDEA Ultimate 2026.2 backend may instead run
+  as a supported frontendless Remote Development backend. Only plain non-backend headless mode is
+  unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)); Remote
+  Development product mode takes precedence over the raw AWT-headless flag. See
+  [Running devrig in CI](/docs/running-on-ci/).
 - An MCP-compatible AI agent (Claude Code, Codex, Gemini, or any MCP client)
 
 ## Verify the connection
@@ -63,6 +68,9 @@ gemini "List all open projects using steroid_list_projects"
 If you see your open IntelliJ projects, the connection works and your agent can now use all
 MCP Steroid capabilities. We recommend asking your agent to use IntelliJ APIs and the IDE
 while it works.
+
+An empty project list is valid when no IDE/project is open yet. The agent can discover downloadable
+backends, download one, and call `steroid_open_project`; managed backends start on demand.
 
 ## Troubleshooting
 
@@ -82,14 +90,19 @@ If port 6315 is in use, change it:
 4. Restart IntelliJ
 5. Update your MCP client with the new URL from `.idea/mcp-steroid.md`
 
-**Headless IDE (unsupported)**
+**Plain headless IDE (unsupported)**
 
 If `idea.log` contains the WARN `MCP Steroid is running in a headless IDE`, the IDE was
-launched without a UI (e.g. `-Djava.awt.headless=true`). Headless mode is unsupported
+classified as plain non-backend headless mode. That mode is unsupported
 (best-effort): long blocking waits and deadlocks in platform code have been observed — see
 [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177). Run the normal desktop GUI on
 macOS/Windows, or, on Linux/CI, start the IDE under Xvfb (a virtual X display) — see
 [Running devrig in CI](/docs/running-on-ci/).
+
+A frontendless Remote Development backend is different: it has no attached client window but is classified
+by Remote Development product mode before the raw AWT-headless flag is considered. It is supported for the
+managed IU-262 path documented in the [devrig CLI guide](/docs/devrig/); agents should wait for the project
+path and build-system import, not for a screenshot.
 
 ## Next Steps
 

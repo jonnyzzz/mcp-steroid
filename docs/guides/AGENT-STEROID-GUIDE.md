@@ -136,7 +136,9 @@ Provide feedback on execution results. Use after `steroid_execute_code` to rate 
 ### `steroid_open_project`
 Open a project in the IDE. This tool initiates the project opening process and returns quickly.
 
-**IMPORTANT**: Project opening is **ASYNCHRONOUS**. This tool returns immediately after initiating the open operation. You **MUST poll** `steroid_list_windows` to verify the project is fully ready.
+**IMPORTANT**: Project opening is **ASYNCHRONOUS**. A project route, an attended frontend window, and
+Maven/Gradle configuration are separate readiness signals. A Remote Development backend can be fully useful
+without any frontend window, so `steroid_list_windows` is never the universal completion gate.
 
 Parameters:
 - `project_path` (required): Absolute path to the project directory to open
@@ -146,16 +148,20 @@ Parameters:
 
 **Verification Workflow (Required):**
 1. Call `steroid_open_project` with the project path
-2. Poll `steroid_list_windows` every 2-3 seconds until:
-   - The project appears in the windows list
-   - `modalDialogShowing` is `false` (no dialogs blocking)
-   - `indexingInProgress` is `false` (indexing complete)
-   - `projectInitialized` is `true`
-3. If `modalDialogShowing` is `true`:
+2. Poll `steroid_list_projects` until the requested normalized path appears. Retain that entry's opaque
+   `project_name`; use it for subsequent project-scoped tools.
+3. If that backend has an attended frontend window, use `steroid_list_windows` to wait until
+   `modalDialogShowing=false`, `indexingInProgress=false`, and `projectInitialized=true`. If no window exists,
+   continue: that is normal for a frontendless Remote Development backend.
+4. If a visible window reports `modalDialogShowing=true`:
    - Call `steroid_take_screenshot` to see the dialog
    - Use `steroid_input` to interact with the dialog
-4. Use `steroid_take_screenshot` to visually confirm the project is loaded
-5. Verify with `steroid_list_projects` that the project appears
+5. Before compilation, inspections, refactoring, or indexed semantic queries, trigger and await the
+   project's Maven/Gradle import using `mcp-steroid://skill/execute-code-maven` or
+   `mcp-steroid://skill/execute-code-gradle`. IDE reachability alone does not prove the external model is
+   configured.
+
+Screenshots are diagnostics for a real frontend, not a required proof of project readiness.
 
 #### Choosing a backend (`backend_name`)
 
@@ -206,7 +212,8 @@ explicitly run backends, call the `devrig` CLI directly:
 
 - `devrig backend` — show three groups: running MCP Steroid IDEs /
   other running IDEs (no plugin) / installed managed IDEs not running.
-- `devrig backend download <id>` — fetch an IDE.
+- `devrig backend download --json` — on a clean machine, list the downloadable product/version catalog.
+- `devrig backend download <id>` — fetch an IDE selected from that catalog.
 - `devrig backend start <id>` / `devrig backend stop <id>` — explicit
   lifecycle control (not needed for `open_project`, which starts managed
   backends automatically).
@@ -215,6 +222,13 @@ explicitly run backends, call the `devrig` CLI directly:
 
 Run `devrig` — the stable launcher the devrig binary keeps current on
 your `PATH` (under `~/.mcp-steroid/bin`) — e.g. `devrig backend ...`.
+
+For unattended Java semantic work, IDEA Ultimate `2026.2.x` (baseline 262) uses the supported native
+Remote Development backend with the managed MCP Steroid plugin included. It is frontendless; the validated
+native IU-262 run logged `headless=false`. More generally, Remote Development product mode takes precedence
+over the raw AWT-headless flag, while only plain non-backend headless mode is unsupported. Do not wait for a
+window or invoke screenshot/input tools unless an attended frontend is actually present. Other
+products/build lines may use their standard managed launcher.
 
 See also: `mcp-steroid://open-project/managing-backends`.
 

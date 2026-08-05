@@ -103,8 +103,10 @@ devrig install plugin
 **Requirements**
 
 - A JetBrains IDE — IntelliJ IDEA, PyCharm, GoLand, WebStorm, Rider, CLion, or Android Studio.
-- The IDE runs with a real display: the normal GUI on macOS/Windows, or under **Xvfb** (a virtual X display) on Linux/CI. True AWT-headless launches (`-Djava.awt.headless=true`) are unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)). A frontendless Remote Development backend is supported and is not AWT-headless — see [Running devrig in CI](https://devrig.dev/docs/running-on-ci/).
+- A standard desktop IDE runs with a real display: the normal GUI on macOS/Windows, or under **Xvfb** (a virtual X display) on Linux/CI. Plain non-backend headless mode is unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)); a frontendless Remote Development backend is supported. Backend product mode, not the presence of a client window or the raw AWT-headless flag alone, determines that distinction — see [Running devrig in CI](https://devrig.dev/docs/running-on-ci/).
 - An MCP-compatible AI agent (Claude Code, Codex, or Gemini).
+
+For a clean machine with no IDE running, an agent can discover the download catalog with `devrig backend download --json`, install IDEA Ultimate 2026.2, and call `steroid_open_project`. The managed IU-262 backend starts on demand as a frontendless Remote Development backend with MCP Steroid included; no separate start command or client window is required. Readiness is the project path plus Maven/Gradle import, not a screenshot. See the [devrig CLI guide](https://devrig.dev/docs/devrig/#frontendless-intellij-idea-ultimate-20262).
 
 **Faster plugin updates (optional):** add `https://devrig.dev/updatePlugins.xml` in **Settings > Plugins > Gear icon > Manage Plugin Repositories...**. Or install a ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-steroid/releases) via **Install Plugin from Disk**.
 

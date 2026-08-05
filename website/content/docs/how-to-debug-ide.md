@@ -21,7 +21,7 @@ group: "Examples"
 This guide explains how an AI agent can debug an IntelliJ-based IDE (like CLion) by:
 1. Launching the IDE in debug mode from IntelliJ IDEA
 2. Using the MCP Steroid to interact with the debugged IDE
-3. Taking screenshots to observe UI state
+3. Taking screenshots when an attended frontend exists
 4. Using the debugger to inject code and inspect runtime state
 5. Testing plugin functionality programmatically
 
@@ -52,7 +52,8 @@ This guide explains how an AI agent can debug an IntelliJ-based IDE (like CLion)
 │                                     │
 │  - Running with -agentlib:jdwp      │
 │  - Plugin under test loaded         │
-│  - UI may be visible or headless    │
+│  - Frontend may be attached/absent  │
+│  - Run mode confirmed from idea.log │
 │  - Fully controllable via debugger  │
 │  - State inspectable                │
 └─────────────────────────────────────┘
@@ -328,7 +329,7 @@ tell application "System Events"
         end repeat
         return "Found " & winCount & " windows"
     else
-        return "No visible windows (headless mode)"
+        return "No visible windows"
     end if
 end tell
 EOF
@@ -336,7 +337,8 @@ EOF
 
 **Result tells you:**
 - Visible: Can use UI automation
-- Headless: Must use programmatic approaches only
+- Not visible: Use programmatic approaches. This does not identify the IDE run mode; check the
+  `IDE run mode: ...` log line because a supported Remote Development backend may have no window.
 
 ---
 
@@ -716,15 +718,16 @@ throw RuntimeException("Debug marker")
 
 ### No Visible Window
 
-**Reason:** Target IDE running headless (no GUI)
+**Reason:** Either a supported frontendless Remote Development backend or unsupported plain non-backend
+headless mode.
 
-**Support status:** headless IDEs are unsupported (best-effort) for MCP Steroid. The platform
-behaves differently without a UI and long blocking waits/deadlocks in platform code have been
-observed — see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177). On startup the plugin
-logs an `IDE run mode: ...` INFO line and, for a plain headless IDE, a
-`MCP Steroid is running in a headless IDE` WARN in `idea.log`. Give the IDE a real display instead: the normal GUI on
-macOS/Windows, or a virtual one via Xvfb on Linux/CI (see [Running devrig in CI](/docs/running-on-ci/)). The workarounds
-below are best-effort only.
+**Determine which mode first.** On startup the plugin logs `IDE run mode: ...`. A managed IU-262 backend
+reports remote development (backend) and may legitimately have no window; the validated native run also
+logged `headless=false`. The `MCP Steroid is running in a headless IDE` WARN is emitted only for plain
+non-backend headless mode; that mode is best-effort/unsupported because platform UI assumptions can cause
+long waits and deadlocks ([#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)). Give the latter a real
+GUI/Xvfb instead. Remote Development product mode takes precedence over the raw AWT-headless flag, so do not
+use that flag alone as the mode detector. See [Running devrig in CI](/docs/running-on-ci/).
 
 **Approach:**
 - Don't rely on UI automation
@@ -732,11 +735,17 @@ below are best-effort only.
 - Monitor logs
 - Use state file manipulation
 
-**Verify headless:**
+For a supported frontendless backend, prove readiness through MCP instead of a window: wait until the
+requested path appears in `steroid_list_projects`, retain its opaque `project_name`, then trigger and await
+Maven/Gradle configuration before indexed semantic work. `steroid_list_windows` and screenshots are optional
+diagnostics only when an attended frontend exists.
+
+**Check for a visible macOS window (not a mode detector):**
 
 ```bash
 osascript -e 'tell application "System Events" to get count of windows of (first process whose name is "java")'
-# Output: 0 = headless
+# Output 0 can mean supported Remote Development OR unsupported plain headless mode.
+# Use the idea.log run-mode/WARN lines above to distinguish them.
 ```
 
 ### Plugin Classes Not Found
@@ -851,7 +860,7 @@ Monitor logs -> Collect evidence -> Document results
 
 **Remember:**
 - Debugging is async - wait for readiness
-- Headless mode is common - adapt your approach
+- Frontendless Remote Development is supported; only plain non-backend headless mode is unsupported
 - Logs are your best friend
 - Multiple evidence sources = high confidence
 - Document everything for reproducibility

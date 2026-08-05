@@ -116,7 +116,8 @@
     tune the 180-second readiness bound and the caller-cancellation behavior before widening support.
   - Put the pure Remote Development NDJSON parser/workflow contracts on a normal CI-backed task; the
     experimental task's direct-invocation guard currently keeps them out of aggregate CI runs.
-  - Redact Remote Development join-link fragments (`#jt=...`) from preserved managed-backend logs.
+  - Redact Remote Development join-link fragments (`#jt=...`) from preserved managed-backend logs
+    ([#448](https://github.com/jonnyzzz/mcp-steroid/issues/448)).
     The Codex artifact review found one after the backend had stopped; the current sanitizer and invariant
     cover `Authorization`/Bearer, `_ijt`, and `x-ijt` credentials only. Extend the pure sanitizer tests and
     keep the shell artifact scan aligned before treating those logs as generally safe to publish.

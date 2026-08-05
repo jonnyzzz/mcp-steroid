@@ -22,7 +22,8 @@ version, build, and license tier; pass `--version <version>` to pin another rele
 version. For unattended Java/JVM work on the supported 2026.2 line, choose
 `devrig backend download idea-ultimate --version <version>`. IDEA Ultimate
 262 is launched as a **frontendless Remote Development backend** with MCP
-Steroid included; plain AWT headless mode is a different, unsupported mode.
+Steroid included. Plain non-backend headless mode is unsupported; Remote Development product mode takes
+precedence over the raw AWT-headless flag, so that flag alone is not a support detector.
 
 After the download, call `steroid_open_project` with the project path. When
 the installed backend is the sole candidate, omit `backend_name`: devrig

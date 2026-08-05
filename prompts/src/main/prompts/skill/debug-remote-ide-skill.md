@@ -17,7 +17,7 @@ Guide for AI agents on debugging IntelliJ-based IDEs (CLion, Rider, etc.) using 
 This guide explains how an AI agent can debug an IntelliJ-based IDE (like CLion) by:
 1. Launching the IDE in debug mode from IntelliJ IDEA
 2. Using MCP Steroid to interact with the debugged IDE
-3. Taking screenshots to observe UI state
+3. Taking screenshots when an attended frontend exists
 4. Using the debugger to inject code and inspect runtime state
 5. Testing plugin functionality programmatically
 
@@ -46,7 +46,8 @@ This guide explains how an AI agent can debug an IntelliJ-based IDE (like CLion)
 │                                     │
 │  - Running with -agentlib:jdwp      │
 │  - Plugin under test loaded         │
-│  - UI may be visible or headless    │
+│  - Frontend may be attached/absent  │
+│  - Run mode confirmed from idea.log │
 │  - Fully controllable via debugger  │
 │  - State inspectable                │
 └─────────────────────────────────────┘
@@ -262,7 +263,9 @@ val checkWindows = ProcessBuilder(listOf(
 val windowCount = checkWindows.inputStream.bufferedReader().readText().trim()
 checkWindows.waitFor()
 println("Window count: $windowCount")
-// Output: 0 = headless mode
+// Output 0 only means that no frontend window is visible.
+// It does not distinguish a supported Remote Development backend from
+// unsupported plain non-backend headless mode.
 ```
 
 ---
@@ -358,10 +361,29 @@ throw RuntimeException("Debug marker")
 
 ### No Visible Window
 
-Target IDE may be running headless. Use programmatic approaches:
+First distinguish the two modes:
+
+- A supported Remote Development backend can be **frontendless**: no client window is attached. Backend
+  product mode takes precedence over the raw AWT-headless flag, so commands such as `rdserver-headless`
+  remain supported backends.
+- Plain non-backend headless mode is best-effort and unsupported because platform UI assumptions can cause
+  long waits and deadlocks.
+
+Check the target `idea.log`: a managed IU-262 backend reports Remote Development backend mode (the validated
+native run logged `headless=false`). The explicit `MCP Steroid is running in a headless IDE` warning is
+emitted only for plain non-backend headless mode; restart that IDE with a real display or Xvfb. Do not use
+the raw `headless=` flag by itself as the mode detector.
+
+For a supported frontendless backend, prove readiness through MCP instead of a window: wait until the
+requested path appears in `steroid_list_projects`, retain its opaque `project_name`, then trigger and await
+Maven/Gradle configuration before indexed semantic work. `steroid_list_windows` and screenshots are optional
+diagnostics only when an attended frontend actually exists.
+
+Use programmatic approaches:
 - Monitor logs
-- Use state file manipulation
 - Query via debugger code injection
+- Query the target backend through MCP Steroid when it is installed
+- Use state file manipulation when appropriate
 
 ---
 
@@ -371,7 +393,8 @@ Target IDE may be running headless. Use programmatic approaches:
 2. **Wait for initialization** - Monitor logs for "Loaded bundled plugins"
 3. **Check logs first** - Before UI automation, verify IDE started correctly
 4. **Use multiple evidence sources** - Process status + debug connection + logs + state files
-5. **Document everything** - PID, debug port, log excerpts, screenshots
+5. **Document everything** - PID, debug port, log excerpts, MCP readiness evidence, and screenshots when a
+   frontend exists
 
 ### Evidence Checklist
 
@@ -394,7 +417,7 @@ State files updated
 2. Use MCP Steroid to execute code in the host IDE
 3. Inject code into target IDE via debugger "Evaluate Expression"
 4. Set breakpoints and inspect runtime state
-5. Take screenshots for visual verification
+5. Take screenshots for visual verification when a frontend exists
 6. Monitor logs in real-time
 7. Test plugins without UI automation
 8. Modify behavior during debugging
@@ -408,7 +431,7 @@ Monitor logs -> Collect evidence -> Document results
 
 **Remember:**
 - Debugging is async - wait for readiness
-- Headless mode is common - adapt your approach
+- Frontendless Remote Development is supported; only plain non-backend headless mode is unsupported
 - Logs are your best friend
 - Multiple evidence sources = high confidence
 - Document everything for reproducibility

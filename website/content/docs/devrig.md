@@ -167,6 +167,29 @@ devrig backend stop idea-community
 `devrig backend start <id>` / `devrig backend stop <id>` still exist for
 explicit lifecycle control when you prefer it.
 
+### Frontendless IntelliJ IDEA Ultimate 2026.2
+
+For unattended Java semantic work, devrig can run IntelliJ IDEA Ultimate 2026.2 (baseline 262) as a
+native Remote Development backend with MCP Steroid installed:
+
+```bash
+devrig backend download idea-ultimate --version 2026.2.0.1
+```
+
+After the download, call `steroid_open_project` normally. It starts the backend on demand, waits until MCP
+Steroid is reachable, and routes the requested project. No separate `devrig backend start` command and no
+Remote Development client window are required.
+
+This mode is **frontendless**. The validated native IU-262 run logged Remote Development backend mode with
+`headless=false`; more generally, backend product mode takes precedence over the raw AWT-headless flag, and
+only plain non-backend headless mode is unsupported. A window or screenshot is therefore not a readiness
+requirement: wait until the requested path appears in `steroid_list_projects`, keep its returned
+`project_name`, then trigger and await Maven/Gradle import before indexed semantic work. If an attended
+frontend exists, `steroid_list_windows` remains useful for dialogs and indexing progress.
+
+The native frontendless launcher is intentionally limited to IDEA Ultimate baseline 262. Other managed
+products/build lines currently use their standard launcher and may still need a display/Xvfb.
+
 ## Next Steps
 
 - [Getting Started](/docs/getting-started/) — install the MCP Steroid plugin and connect your AI Agent

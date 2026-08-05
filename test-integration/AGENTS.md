@@ -797,6 +797,23 @@ Credentials stored as `credentialsJSON:*` on the TC server, referenced via `Toke
 **Missing:** `GEMINI_API_KEY` — no `credentialsJSON` ref exists yet. `CliGeminiIntegrationTest` opts
 into `skipTestWhenKeyMissing` (see root CLAUDE.md → BANNED → Gemini exception).
 
+### Local agent credentials and LLM gateways
+
+Local Docker agent tests use the same standard environment contract as TeamCity. In addition to the API
+key, the session drivers honor `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` (fallback
+`OPENAI_API_BASE`), and Gemini's base-URL variants. `resolveContainerAgentBaseUrl` rewrites a loopback
+host to `host.docker.internal`, so a gateway bound on the host remains reachable from the agent container.
+
+An internal credential/gateway bootstrap helper may wrap the Gradle invocation, but that helper must remain
+outside this public repository. Do not copy it into production code, tests, Dockerfiles, or checked-in shell
+scripts; the test infrastructure stays vendor-neutral and sees only the standard environment variables.
+Before a long run, verify authentication and gateway liveness without printing the returned key.
+
+Forward credentials only to the external agent CLI process. They must not appear in the Docker IDE's launch
+environment, managed backend marker, or preserved logs; the frontendless Remote Development E2E asserts that
+isolation. Missing Claude/OpenAI credentials still fail hard. An unresolved TeamCity credential reference is
+also a configuration failure, not a reason to skip.
+
 ## Agent output filters & NDJSON quirks
 
 Each agent is invoked with specific flags to produce NDJSON output piped through `agent-output-filter`:

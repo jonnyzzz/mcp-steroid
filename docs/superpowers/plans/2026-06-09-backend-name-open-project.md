@@ -1,5 +1,11 @@
 # `backend_name` Routing Parameter for `steroid_open_project` — Implementation Plan
 
+> **Historical plan.** The implementation shipped and its readiness wording was later superseded by the
+> frontendless Remote Development flow. The current contract is in
+> [`docs/guides/AGENT-STEROID-GUIDE.md`](../../guides/AGENT-STEROID-GUIDE.md): poll
+> `steroid_list_projects` for the requested path, treat windows as optional, and await Maven/Gradle
+> configuration separately. Do not copy the mandatory-window recipe from this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let an agent talking to **devrig** choose *which discovered IDE backend* a project opens in, by passing an optional `backend_name` to `steroid_open_project`, where `backend_name` is the same stable backend identifier already surfaced by `steroid_list_projects` and `devrig backend/project --json`.

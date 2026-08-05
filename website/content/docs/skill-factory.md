@@ -70,7 +70,7 @@ You don't need to be an IntelliJ platform expert. The agent does the API explora
 
 The immediate focus is skill coverage -- more documented API patterns, more worked examples, more pre-built skills. The goal is to shrink the research phase for common tasks until it's nearly zero.
 
-Running in Docker and in CI already works today: the IDE runs against a real display -- the normal GUI on macOS/Windows, or a virtual one via Xvfb on Linux and CI (see [Running devrig in CI](/docs/running-on-ci/)). A true headless launch with no display (`-Djava.awt.headless=true`) is unsupported ([#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)). Longer term: event-driven skills (reacting to commits, test failures, inspection results).
+Running in Docker and CI already works today: use the normal GUI on macOS/Windows, Xvfb for an attended Linux IDE, or the supported frontendless IDEA Ultimate 2026.2 Remote Development backend (see [Running devrig in CI](/docs/running-on-ci/)). Remote Development product mode takes precedence over the raw AWT-headless flag; only plain non-backend headless mode is unsupported ([#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)). Longer term: event-driven skills (reacting to commits, test failures, inspection results).
 
 ---
 

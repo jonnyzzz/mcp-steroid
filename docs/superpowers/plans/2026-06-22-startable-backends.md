@@ -1,5 +1,11 @@
 # Startable backends + backend-listing simplification — Implementation Plan
 
+> **Historical plan.** Startable managed backends shipped; the later IU-262 Remote Development work added
+> a frontendless launcher and separated backend reachability, project-path routing, and build-system import.
+> Use [`docs/guides/AGENT-STEROID-GUIDE.md`](../../guides/AGENT-STEROID-GUIDE.md) and
+> [`docs/devrig-remote-development-backend-e2e.md`](../../devrig-remote-development-backend-e2e.md) for the
+> current behavior.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let `steroid_open_project` start a not-yet-running devrig-managed IDE (blocking until reachable) then open the project, and simplify the backend model around `ideHome` identity — deleting `BackendRow`, `BackendInfo`, `ListedBackendInfo`, and the `backends[]` array on the list tools.

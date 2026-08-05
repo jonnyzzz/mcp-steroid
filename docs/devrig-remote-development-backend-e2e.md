@@ -1,9 +1,8 @@
 # devrig Remote Development backend E2E
 
-Status: implementation complete; final review and PR in progress
-Owner branch: `feat/devrig-remote-backend-e2e`
-Worktree: `/Users/jonnyzzz/Work/mcp-steroid-wt-devrig-remote-backend`
-Started: 2026-07-31
+Status: shipped in [PR #411](https://github.com/jonnyzzz/mcp-steroid/pull/411); task-only
+Claude/Codex autonomy follow-up shipped in [PR #441](https://github.com/jonnyzzz/mcp-steroid/pull/441)
+Started: 2026-07-31; autonomy validation completed: 2026-08-05
 
 ## Goal
 
@@ -48,9 +47,10 @@ The work is complete only when all of these are demonstrated:
   development backend.
 - `steroid_open_project`, `steroid_list_projects`, and `steroid_execute_code` work against Keycloak
   without a frontend client.
-- The reused hierarchy scorer finds at least 40 inheritors of
-  `org.keycloak.authentication.Authenticator`, including:
-  `UsernamePasswordForm`, `OTPFormAuthenticator`, and `IdpConfirmLinkAuthenticator`.
+- The task-only hierarchy scorer finds at least 70 distinct named implementing-class FQNs for
+  `org.keycloak.authentication.Authenticator`, including `UsernamePasswordForm`,
+  `OTPFormAuthenticator`, and `IdpConfirmLinkAuthenticator`. The base interface and the two known
+  sub-interfaces do not count; unnamed/local implementations are reported separately.
 - All unit/contract tests and both Docker cases pass from the dedicated worktree, with no ignored warning
   or unexplained error in the relevant IDE/devrig logs.
 - A three-reviewer quorum, including Claude `claude-fable-5` and `claude-opus-5`, reports no blockers
@@ -151,7 +151,11 @@ Managed backend startup remains project-agnostic:
    bridge endpoint. Persist and return that marker PID, which may differ from the launcher PID.
 3. Route `steroid_open_project`; the managed backend already trusts user-requested project paths through
    `REMOTE_DEV_TRUST_PROJECTS=1`.
-4. Poll the project/window readiness surface and then run the semantic task.
+4. Poll `steroid_list_projects` until the requested path appears and retain its opaque `project_name`.
+   Poll `steroid_list_windows` only when an attended frontend exists; a frontendless backend normally has
+   no window.
+5. Trigger and await Maven/Gradle configuration before the first indexed semantic query. Backend reachability,
+   project routing, and external-system readiness are separate gates.
 
 This keeps the existing agent-facing contract and avoids duplicate project-open requests.
 
@@ -174,10 +178,12 @@ mandatory.
 The container receives local devrig installation artifacts and a persistent IDE archive download cache,
 but the user home and devrig managed state are new for every test method.
 
-Claude and Codex use the repository's real agent-session drivers and real API credentials. The prompt
-states the user task and required output markers, but does not hand the agent the hierarchy answer or a
-filesystem-grep recipe. Raw NDJSON is retained so the test can prove the agent called devrig/MCP rather
-than merely mentioning it.
+Claude and Codex use the repository's real agent-session drivers and agent-scoped API credentials. A local
+gateway may be supplied through the standard API-key/base-URL environment variables, but private bootstrap
+helpers remain outside this repository. The prompt states only the user outcome and required output markers:
+it does not name devrig, MCP tools, resource URIs, `ClassInheritorsSearch`, or the bootstrap recipe. Raw
+NDJSON is retained so the test can prove the agent called devrig/MCP rather than merely mentioning it, and
+the backend process environment is checked to prove agent credentials did not cross into IntelliJ.
 
 ## Test-first work plan
 
@@ -231,7 +237,9 @@ than merely mentioning it.
 
 - Resolved stable IntelliJ IDEA Ultimate `2026.2.0.1`, build `IU-262.8665.337`.
 - Started the native `bin/remote-dev-server run` process without a project argument or frontend.
-- Observed `IDE run mode: remote development (backend)` in the IDE log.
+- Observed `IDE run mode: remote development (backend)` with `headless=false` in the validated native
+  IU-262 IDE log. Remote Development product mode is the support boundary; another backend command such as
+  `rdserver-headless` can report a raw headless flag and still classify as a supported backend.
 - Confirmed the devrig state PID equals the MCP Steroid marker PID.
 - Opened Keycloak afterward through `steroid_open_project`.
 - Executed deep `ClassInheritorsSearch` for `org.keycloak.authentication.Authenticator` and received
@@ -299,9 +307,10 @@ than merely mentioning it.
   in-container JVM thread dumps were captured before they were allowed to continue. Both teardown
   paths stopped IU and left no Docker containers or managed backend processes.
 - Both preserved idea and launcher logs are sanitized for Bearer headers, IntelliJ `_ijt` URL tokens,
-  and `x-ijt` JSON header values while retaining safe diagnostics. The four artifacts from both passing
-  Docker runs were re-sanitized locally and verify at zero marker-credential matches. Production full-
-  marker logging remains tracked by [#405](https://github.com/jonnyzzz/mcp-steroid/issues/405).
+  and `x-ijt` JSON header values while retaining safe diagnostics. Production full-marker logging remains
+  tracked by [#405](https://github.com/jonnyzzz/mcp-steroid/issues/405). A later artifact audit found an
+  expired Remote Development `#jt` join fragment outside those patterns; [#448](https://github.com/jonnyzzz/mcp-steroid/issues/448)
+  tracks extending the sanitizer and shell scan. Do not publish raw backend logs until that follow-up lands.
 - A post-quorum Docker rerun reached the fresh-home fixture but could not launch Claude because this
   shell had none of `ANTHROPIC_API_KEY`, `CLAUDE_EVAL_API_KEY`, or `~/.anthropic`; the test failed hard
   as designed and no skip was added. A separate Docker process-scan probe then proved the new teardown
@@ -342,6 +351,28 @@ than merely mentioning it.
   duplicated diagnostics and generic hint belong to #91 rather than a new issue. Four independent
   auditors ultimately agreed exactly on the terminal census and mapping. No genuinely untracked defect
   remained, so no duplicate issue was created.
+
+### 2026-08-05 — task-only agent-autonomy follow-up
+
+- Replaced the scripted bootstrap task with a user-outcome-only prompt. Contract coverage rejects the
+  strings `devrig`, `steroid_`, `mcp-steroid://`, `ClassInheritorsSearch`, and
+  `Observation.awaitConfiguration` from the task itself.
+- Two fresh Claude containers passed in 7m53s and 5m16s. The final run used no window, screenshot, or
+  input tool, imported all 136 Maven modules, and completed the hierarchy in one successful semantic query.
+- A fresh Codex container passed in 5m26s (6m15s including the Gradle rebuild) through an approved local
+  OpenAI gateway. MCP initialization completed before its first call; it discovered the empty state, the
+  download catalog, IU `2026.2.0.1`, on-demand `steroid_open_project`, Maven readiness, and the hierarchy
+  recipe without those steps appearing in the task prompt.
+- Both agents observed 74 raw inheritors: 70 named implementing classes, two named sub-interfaces, and two
+  anonymous/local implementations without FQNs. Final answers contained the intended 70 class markers;
+  an independent `FilenameIndex`/`InheritanceUtil` scan matched Codex's 70-class set exactly.
+- Backend mode, managed plugin, trust/noninteractive flags, route liveness, agent-credential isolation,
+  stop, and process cleanup all passed. The final adversarial review returned GO.
+- The harness still intentionally uses a 70-FQN lower bound plus known indirect implementors. Pinning the
+  exact full oracle and deterministically gating the first task turn on MCP initialization remain separate
+  non-gating TODOs.
+- Detailed prompt findings and the maintained validation plan live in
+  [`headless-agent-guidance.md`](headless-agent-guidance.md).
 
 ## Review log
 

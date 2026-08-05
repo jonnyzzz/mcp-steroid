@@ -1,4 +1,4 @@
-# Headless IDE agent guidance
+# Frontendless Remote Development agent guidance
 
 ## Goal
 
@@ -24,13 +24,14 @@ From a fresh container with devrig registered but no IDE installed or running, e
 7. Leave evidence that the live IDE is the trusted, unattended IU-262 Remote Development backend with
    MCP Steroid installed and no agent credentials in its process environment.
 
-## Evidence from the merged scenario
+## Baseline before the autonomy follow-up
 
-The merged E2E proves the Remote Development launcher, plugin installation, process marker, trusted
-environment, project route, and semantic hierarchy query. It does not prove autonomous discovery: its
-prompt currently supplies the exact download/start commands, every MCP step, and the hierarchy recipe.
+PR #411 proved the Remote Development launcher, plugin installation, process marker, trusted environment,
+project route, and semantic hierarchy query. Its original scripted prompt supplied the exact download/start
+commands, every MCP step, and the hierarchy recipe, so that baseline alone did not prove autonomous
+discovery. PR #441 replaced it with the task-only workflow described below.
 
-Three independent audits found the same agent-facing gaps:
+Three independent audits of that baseline found the same agent-facing gaps:
 
 - The baseline `devrig backend` said only `No backends detected.` on a clean machine although initialization
   guidance claimed it listed available products. Bare `devrig backend download --json` is the real discovery path.
@@ -58,7 +59,7 @@ Three independent audits found the same agent-facing gaps:
 - [x] Run focused unit, prompt-generation, Kotlin-fence, and experimental harness contracts.
 - [x] Run two Claude scenarios in fresh containers, review their `<<<IMPROVEMENTS>>>` artifacts, and
   iterate on the observed frontendless-readiness and hierarchy-classification gaps.
-- [x] Run the Codex scenario in a fresh container through the local jb-central OpenAI route and review its
+- [x] Run the Codex scenario in a fresh container through an approved local OpenAI gateway and review its
   raw NDJSON plus `<<<IMPROVEMENTS>>>` artifact. The credential entered only the Codex CLI process; the
   backend-environment assertion proved it did not reach IntelliJ.
 - [x] Run the final adversarial artifact review and close its runtime gate. The reviewer returned GO after
@@ -98,8 +99,8 @@ Three independent audits found the same agent-facing gaps:
   set exactly, and the final answer emitted 70 unique class markers. Backend mode, managed plugin, trust and
   noninteractive flags, API-credential isolation, the current Bearer/`_ijt` marker-credential invariant,
   route liveness, stop, and process cleanup all passed. Artifact review found an expired Remote Development
-  `#jt` join fragment outside that sanitizer's coverage; `TODO.md` now tracks making preserved backend logs
-  generally publication-safe.
+  `#jt` join fragment outside that sanitizer's coverage; [#448](https://github.com/jonnyzzz/mcp-steroid/issues/448)
+  now tracks making preserved backend logs generally publication-safe.
 - Independent reviews completed with the repository subagent quorum, `run-agent.sh` Codex, Claude Opus 5,
   and Claude Fable 5. Their findings were iterated into the current wording and assertions.
 - The final adversarial artifact review returned GO for the full Claude-and-Codex goal. It kept the separate
@@ -112,8 +113,8 @@ Three independent audits found the same agent-facing gaps:
   edited Kotlin contract test is also clean under every enabled file-scoped inspection with no failed tools.
 - The final read-only review returned GO after verifying the conditional null-SDK behavior, module-aware
   selection, canonical home validation, post-write read action, contract coverage, and KtBlock results.
-- PR #441 is mergeable; compile, Linux PowerShell Docker, and Windows PowerShell checks passed after the
-  final rebase and prompt iteration.
+- PR #441 merged via rebase-and-merge; compile, Linux PowerShell Docker, and Windows PowerShell checks
+  passed on the final zero-behind head.
 - File-scoped IDE inspections ran on every changed production Kotlin file. They found no actionable
   changed-line diagnostic, but the `OpenProjectTool.kt` check is not called clean: two Kotlin/UAST
   inspections crashed on `KtFakeSourceElementKind.PluginGenerated`, so `failedTools` correctly made it
@@ -161,6 +162,26 @@ or diagnostics show it is absent, after inspecting module SDKs instead of blindl
 The executable repair recipe canonicalizes and validates an explicit home through IntelliJ APIs, refuses
 ambiguous candidates, and performs every project/module SDK model read under a read action.
 
+## Durable operational lessons
+
+- Treat readiness as three separate gates: MCP/backend reachability, the requested path appearing in
+  `steroid_list_projects`, and external-system configuration/indexing. A visible IDE window is optional;
+  a frontendless Remote Development backend normally has none.
+- A null project-level SDK is a capability warning, not proof that project-local PSI is incomplete. Repair
+  only when the requested work needs JDK symbols, compilation, inspections, or refactoring and the required
+  SDK is unambiguous. Prefer a consistent module SDK, then an exact validated environment/project path;
+  never apply the first global SDK registration.
+- Score agent behavior from raw NDJSON tool events and bound the first successful semantic result. Decoded
+  prose can echo fetched recipes and create false positives for tool-use assertions.
+- Keep API credentials in the agent CLI process only. Local gateways integrate through the standard
+  `*_API_KEY` plus `*_BASE_URL` variables; their private credential/bootstrap helpers stay outside this
+  repository. The E2E must continue proving those values do not enter the IntelliJ backend environment.
+- Preserved logs are diagnostic artifacts, not automatically publishable evidence. The current sanitizer
+  still needs the `#jt` join-fragment coverage tracked by [#448](https://github.com/jonnyzzz/mcp-steroid/issues/448)
+  before raw managed-backend logs may be shared.
+- The reproducible commands, artifacts, and one-Docker-test-at-a-time rules live in
+  `test-experiments/CLAUDE.md`; this file records conclusions rather than duplicating the runner playbook.
+
 ## Experiment discipline
 
 The Claude and Codex cases each use a new container; backend state is never shared. Assertions use raw
@@ -175,7 +196,7 @@ known sub-interfaces do not contribute to that count. It detects the observed st
 shallow searches, but it does not pin the entire upstream class set. The agent task still requires the full,
 untruncated named hierarchy; this E2E primarily gates autonomous backend discovery and IDE use.
 
-Docker agent runs are sequential. Local OpenAI access may come from direct credentials or the jb-central
-proxy wrapper used for this run; either way, credentials are injected only into the agent CLI process. If
-credentials are unavailable, the tests continue to fail hard as designed; no runtime skip or weakened
-assertion is permitted.
+Docker agent runs are sequential. Local OpenAI access may come from direct credentials or an approved
+gateway exposed through the standard API-key/base-URL variables; either way, credentials are injected only
+into the agent CLI process. If credentials are unavailable, the tests continue to fail hard as designed;
+no runtime skip or weakened assertion is permitted.

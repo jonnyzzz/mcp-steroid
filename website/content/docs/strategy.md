@@ -53,9 +53,11 @@ This validation loop is described in [Learning Methodology](/docs/learning-metho
 ### Phase 3: Scale -- self-contained runtime, SaaS, B2B
 
 The long-term target is a self-contained runtime, available both as SaaS and as an end-user product, that runs the IDE for
-AI agents without a developer's desktop session. That runtime still gives the IDE a real display -- the normal GUI on
-macOS/Windows, or a virtual one via Xvfb on Linux and CI; a true headless launch (`-Djava.awt.headless=true`) is
-unsupported (see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177) and [Running devrig in CI](/docs/running-on-ci/)).
+AI agents without a developer's desktop session. Today an attended IDE uses the normal GUI on macOS/Windows or Xvfb on
+Linux/CI; devrig also supports a frontendless IDEA Ultimate 2026.2 Remote Development backend. Remote Development
+product mode is supported regardless of whether a client window is attached and takes precedence over the raw AWT-headless
+flag; only plain non-backend headless mode is unsupported (see
+[#177](https://github.com/jonnyzzz/mcp-steroid/issues/177) and [Running devrig in CI](/docs/running-on-ci/)).
 
 ## Easy experimentation
 

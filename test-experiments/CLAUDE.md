@@ -44,6 +44,58 @@ the 1-minute rule and stuck-test debugging.
 invocation still works. Depends on `:test-integration` for the shared infrastructure (`IdeContainer`,
 `ConsoleDriver`, `XcvbDriver`, `AiAgentDriver`, `ConsolePumpingContainerDriver`).
 
+## Frontendless Remote Development Keycloak agent E2E
+
+`DevrigRemoteDevelopmentKeycloakTypeHierarchyTest` is the task-only clean-machine proof for Claude and
+Codex. Each method gets a fresh container, agent home, and `~/.mcp-steroid`; do not combine or parallelize
+them:
+
+```bash
+./gradlew :test-experiments:test \
+  --tests '*DevrigRemoteDevelopmentKeycloakTypeHierarchyTest.claude*' --rerun-tasks
+
+./gradlew :test-experiments:test \
+  --tests '*DevrigRemoteDevelopmentKeycloakTypeHierarchyTest.codex*' --rerun-tasks
+```
+
+The task prompt deliberately names only the Keycloak outcome. It must not reveal devrig, `steroid_*`, an
+`mcp-steroid://` URI, `ClassInheritorsSearch`, or the Maven readiness recipe; contract coverage pins that
+purity. The agent must discover the empty state, downloadable catalog, IU 2026.2 backend, on-demand project
+open, external-system readiness, and deep hierarchy itself.
+
+Readiness is frontendless: poll the requested path through `steroid_list_projects`, retain its opaque
+`project_name`, then trigger/await Maven configuration. Do not require `steroid_list_windows`, screenshots,
+or input; the native Remote Development backend normally has no window. The semantic result currently gates
+at least 70 named implementing-class FQNs plus known indirect implementations; sub-interfaces and unnamed
+implementations are classified separately. Exact full-oracle pinning remains in `TODO.md`.
+
+### Local credentials and gateways
+
+The agent drivers accept the normal vendor variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) and the
+corresponding `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL`. Loopback gateway URLs are rewritten for container
+reachability by the shared test helper. Private helpers that obtain or rotate gateway credentials must stay
+outside this public repository: invoke the helper around the Gradle command, never copy it into a Dockerfile,
+test, or checked-in script, and never print the token value.
+
+Credentials belong only to the external agent CLI process. The E2E must keep asserting that API keys/base
+URLs do not enter the managed IntelliJ backend environment. Missing Claude/OpenAI credentials fail hard;
+do not add a runtime skip or weaken the scenario.
+
+### Evidence and iteration
+
+- Raw tool evidence: `test-experiments/build/test-logs/test/run-*/agent-*-raw.ndjson`.
+- Decoded transcript: sibling `agent-*-decoded.txt` (useful to read, never authoritative for tool calls).
+- Agent reflection: `test-experiments/build/improvements/IMPROVEMENTS-headless-backend-<agent>.md`.
+- Backend/launcher/IDE logs remain private artifacts until the `#jt` join-fragment sanitizer gap tracked by
+  [#448](https://github.com/jonnyzzz/mcp-steroid/issues/448) is fixed; existing Bearer, `_ijt`, and `x-ijt`
+  sanitization is not sufficient for publication.
+
+Parse raw NDJSON to assert ordered download/open/list/execute calls and score the first successful semantic
+query. A decoded transcript can echo fetched prompt text and create false positives. If a run crosses the
+one-minute rule, collect the available process/thread/log evidence before stopping it; the absence of a
+frontend screenshot is expected here. Read `docs/headless-agent-guidance.md` for the measured Claude/Codex
+iterations and `docs/devrig-remote-development-backend-e2e.md` for the launcher contract.
+
 ## Remote-debugging (shared with :test-integration)
 
 Because the infra is shared, every `:test-experiments` Docker IDE also starts with a JDWP agent on
