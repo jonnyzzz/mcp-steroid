@@ -57,7 +57,7 @@ class FetchResourceToolHandler(
                 "Debugging? → $debuggerUri | " +
                 "Find duplicates / clones / copy-pasted code / DRY violations? → $findDuplicatesUri (copy ONLY the 'Primary recipe — PSI body comparison' block; the Cross-check inspection path silently returns 0 clusters in fresh sessions) | " +
                 "Run a named inspection + quick fix? → $inspectAndFixUri | " +
-                "Find direct + indirect subtypes / implementors? → $typeHierarchyUri | " +
+                "Find every direct + transitive subtype / implementor? → $typeHierarchyUri | " +
                 "First Maven/Gradle open or missing build model? → $executeCodeMavenUri / $executeCodeGradleUri | " +
                 "Managed backend lifecycle after opening a project? → $managingBackendsUri | " +
                 "Any IDE task? → $skillUri | " +

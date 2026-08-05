@@ -56,11 +56,14 @@ Three independent audits found the same agent-facing gaps:
 - [x] Rework initialization, open-project descriptions, prompt entry points, backend article, and
   hierarchy guidance consistently.
 - [x] Run focused unit, prompt-generation, Kotlin-fence, and experimental harness contracts.
-- [ ] Run Claude and Codex scenarios sequentially in fresh containers and review their
-  `<<<IMPROVEMENTS>>>` artifacts. Locally blocked: Docker is available, but all Anthropic/OpenAI agent
-  API-key environment variables are unset; the tests remain enabled and unweakened.
-- [x] Run final quorum review.
-- [x] Commit atomically, push the branch, and open PR #441.
+- [x] Run two Claude scenarios in fresh containers, review their `<<<IMPROVEMENTS>>>` artifacts, and
+  iterate on the observed frontendless-readiness and hierarchy-classification gaps.
+- [ ] Run the Codex scenario in a fresh container and review its `<<<IMPROVEMENTS>>>` artifact. Codex
+  remains locally blocked: `codex login status` reports not logged in and neither `OPENAI_API_KEY` nor
+  `CODEX_API_KEY` is available; the test remains enabled and unweakened.
+- [ ] Resolve the final adversarial review, rerun focused validation, and obtain a go recommendation.
+- [ ] Reconcile the branch with current `origin/main`, rerun CI, commit the current iteration atomically,
+  and update PR #441.
 
 ## Validation status
 
@@ -69,8 +72,41 @@ Three independent audits found the same agent-facing gaps:
 - Passed markdown/payload round-trip, per-IDE availability, Maven/Gradle first-open import, and the changed
   type-hierarchy Kotlin block against IDEA stable and IDEA 2026.2 EAP.
 - Passed `:test-experiments:compileTestKotlin`, workflow helper tests, and the task-prompt purity method.
+- Passed the live Claude task-only Docker scenario in 7m53s. Claude autonomously discovered the empty
+  backend state, listed downloads, installed IU 2026.2.0.1, relied on `steroid_open_project` auto-start,
+  routed the project without a frontend, triggered and awaited Maven import for 136 modules, then found
+  72 named inheritors and correctly reported 70 named implementing classes after excluding two
+  sub-interfaces.
+  The harness also proved the IU-262 Remote Development process, managed MCP Steroid plugin, marker,
+  trusted/noninteractive environment, credential isolation, live Keycloak route, and clean shutdown.
+- Passed the post-iteration Claude scenario in 5m16s. The agent made no window, screenshot, or input calls;
+  fetched only the Maven readiness recipe; imported all 136 modules; and completed the hierarchy in one
+  successful semantic query. The raw PSI search contained 74 inheritors: 70 named implementing classes,
+  two named sub-interfaces, and two anonymous/local implementations without qualified names. Its final
+  answer contained the intended 70 named classes, and every backend/process assertion and teardown passed.
 - Independent reviews completed with the repository subagent quorum, `run-agent.sh` Codex, Claude Opus 5,
   and Claude Fable 5. Their findings were iterated into the current wording and assertions.
+
+## Claude iteration findings
+
+The first live task-only run validated the intended discovery path but found one remaining runtime
+contradiction: the result returned by `steroid_open_project` still made `steroid_list_windows` and a
+screenshot mandatory, even though a frontendless Remote Development backend has neither. The result
+guidance now leads with path polling through `steroid_list_projects`, treats windows as an optional
+attended-frontend signal, and names Maven/Gradle import as a separate readiness phase.
+
+Claude also correctly noticed that `ClassInheritorsSearch` returns sub-interfaces, abstract classes,
+concrete classes, and anonymous/local classes together. The hierarchy article now teaches that
+`checkDeep=true` crosses interface → sub-interface → class edges, classifies the bounded named result,
+reports unnamed counts separately, and keeps abstract classes unless the task requests concrete-only
+implementations. The fetch-resource routing description uses the exhaustive wording “every direct +
+transitive subtype / implementor.” The E2E score now removes the base/sub-interface types from its class
+count and rejects either known sub-interface in final `SUBTYPE:` markers.
+
+The second reflection also suggested documenting stdout/stderr separation for `devrig backend download
+--json`. That suggestion was not adopted: the transcript shows the agent explicitly merged the streams
+with `2>&1`, then correctly parsed stdout on its next call. Recommending diagnostic suppression would hide
+useful failures without fixing a product-guidance gap.
 
 ## Experiment discipline
 
@@ -81,9 +117,10 @@ lists, article fetches, and recoverable failed opens are recorded as quality sig
 steps.
 
 The semantic score is a lower-bound regression oracle for the pinned Keycloak commit: at least 70 distinct
-reported FQNs plus known indirect/cross-module implementors. It detects the observed stale-import result and
+named implementing-class FQNs plus known indirect/cross-module implementors. The base interface and two
+known sub-interfaces do not contribute to that count. It detects the observed stale-import result and
 shallow searches, but it does not pin the entire upstream class set. The agent task still requires the full,
-untruncated hierarchy; this E2E primarily gates autonomous backend discovery and IDE use.
+untruncated named hierarchy; this E2E primarily gates autonomous backend discovery and IDE use.
 
 Docker agent runs are sequential. If local API credentials are unavailable, the tests continue to fail
 hard as designed; no runtime skip or weakened assertion is permitted.

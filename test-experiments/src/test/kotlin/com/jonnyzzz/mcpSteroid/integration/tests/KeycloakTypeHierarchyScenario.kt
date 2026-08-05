@@ -13,6 +13,11 @@ object KeycloakTypeHierarchyScenario {
         "org.keycloak.authentication.authenticators.broker.IdpConfirmLinkAuthenticator",
     )
 
+    val subInterfaces: Set<String> = setOf(
+        "org.keycloak.authentication.AuthenticationFlowCallback",
+        "org.keycloak.authentication.authenticators.conditional.ConditionalAuthenticator",
+    )
+
     fun mcpTaskInstructions(): String = buildString {
         appendLine("Task: list EVERY class that implements the interface `$INTERFACE_FQN`,")
         appendLine("INCLUDING transitive/indirect implementors (a class that extends an abstract base which")

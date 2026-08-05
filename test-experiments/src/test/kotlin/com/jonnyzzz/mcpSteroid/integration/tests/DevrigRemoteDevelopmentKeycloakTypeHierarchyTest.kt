@@ -28,6 +28,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -62,6 +64,42 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
         }
         for (required in listOf(PROJECT_DIR, IDE_VERSION, KeycloakTypeHierarchyScenario.INTERFACE_FQN)) {
             assertTrue(required in prompt) { "Task-only prompt must state the reproducible outcome '$required':\n$prompt" }
+        }
+        assertEquals(
+            1,
+            prompt.lineSequence().count { "Work autonomously with the capabilities already configured for you." in it },
+            "Task-only prompt must state its autonomy instruction exactly once:\n$prompt",
+        )
+    }
+
+    @Test
+    fun `keycloak hierarchy score counts implementing classes only`() {
+        val output = buildString {
+            appendLine("CLS: ${KeycloakTypeHierarchyScenario.INTERFACE_FQN}")
+            for (fqn in KeycloakTypeHierarchyScenario.subInterfaces) appendLine("SUBTYPE: $fqn")
+            for (fqn in KeycloakTypeHierarchyScenario.requiredTransitive) appendLine("CLS: $fqn")
+        }
+
+        val score = scoreKeycloakImplementingClasses(
+            output,
+            KeycloakTypeHierarchyScenario.requiredTransitive.size,
+        )
+
+        assertEquals(KeycloakTypeHierarchyScenario.requiredTransitive, score.reported)
+        assertEquals(KeycloakTypeHierarchyScenario.requiredTransitive.size, score.reportedCount)
+        assertTrue(score.complete)
+    }
+
+    @Test
+    fun `final subtype markers reject base and sub-interfaces`() {
+        val interfaces = KeycloakTypeHierarchyScenario.subInterfaces + KeycloakTypeHierarchyScenario.INTERFACE_FQN
+        for (fqn in interfaces) {
+            val failure = assertThrows(AssertionError::class.java) {
+                assertFinalSubtypeMarkersContainClassesOnly("SUBTYPE: $fqn")
+            }
+            assertTrue(fqn in failure.message.orEmpty()) {
+                "Failure must identify the interface reported as a class: ${failure.message}"
+            }
         }
     }
 
@@ -267,9 +305,8 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
         }
         val firstSuccessfulHierarchy = hierarchyExecutions.firstOrNull { it.call.hasSuccessfulResult() }
             ?: error("Every deep ClassInheritorsSearch execution failed. ${summarizeCalls(calls)}")
-        val hierarchyScore = scoreTypeHierarchy(
+        val hierarchyScore = scoreKeycloakImplementingClasses(
             firstSuccessfulHierarchy.call.result?.text.orEmpty(),
-            KeycloakTypeHierarchyScenario.requiredTransitive,
             E2E_MIN_TOTAL,
         )
         assertTrue(hierarchyScore.complete) {
@@ -392,16 +429,46 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
     private fun assertFinalAnswer(rawNdjson: String): TypeHierarchyScore {
         val finalResponse = decodeAgentFinalResponse(rawNdjson)
         assertTrue(finalResponse != null) { "Raw agent events do not contain a final user-visible response." }
-        val score = scoreTypeHierarchy(
-            finalResponse.orEmpty(),
-            KeycloakTypeHierarchyScenario.requiredTransitive,
-            E2E_MIN_TOTAL,
-        )
+        assertFinalSubtypeMarkersContainClassesOnly(finalResponse.orEmpty())
+        val score = scoreKeycloakImplementingClasses(finalResponse.orEmpty(), E2E_MIN_TOTAL)
         assertTrue(score.complete) {
             "The agent final response does not contain the complete hierarchy: " +
                 "reported=${score.reportedCount}, missing=${score.missingRequired}."
         }
         return score
+    }
+
+    private fun scoreKeycloakImplementingClasses(output: String, minTotal: Int): TypeHierarchyScore {
+        val markedClasses = IMPLEMENTING_CLASS_MARKER.findAll(output)
+            .map { it.groupValues[1].trim().trim('.') }
+            .toSet()
+        val scoreInput = if (markedClasses.isEmpty()) {
+            output
+        } else {
+            markedClasses.joinToString("\n") { "SUBTYPE: $it" }
+        }
+        val raw = scoreTypeHierarchy(
+            scoreInput,
+            KeycloakTypeHierarchyScenario.requiredTransitive,
+            minTotal,
+        )
+        val reportedClasses = raw.reported - KeycloakTypeHierarchyScenario.INTERFACE_FQN -
+            KeycloakTypeHierarchyScenario.subInterfaces
+        return raw.copy(
+            reported = reportedClasses,
+            reportedCount = reportedClasses.size,
+            complete = raw.missingRequired.isEmpty() && reportedClasses.size >= minTotal,
+        )
+    }
+
+    private fun assertFinalSubtypeMarkersContainClassesOnly(output: String) {
+        val markers = SUBTYPE_MARKER.findAll(output).map { it.groupValues[1].trim().trim('.') }.toSet()
+        assertTrue(markers.isNotEmpty()) { "Final answer has no SUBTYPE markers: $output" }
+        val interfaces = KeycloakTypeHierarchyScenario.subInterfaces + KeycloakTypeHierarchyScenario.INTERFACE_FQN
+        val wronglyReportedInterfaces = markers intersect interfaces
+        assertTrue(wronglyReportedInterfaces.isEmpty()) {
+            "Final SUBTYPE markers must contain implementing classes, not interfaces: $wronglyReportedInterfaces"
+        }
     }
 
     private fun successfulCommandIndex(calls: List<AgentToolCall>, vararg fragments: String): Int =
@@ -691,6 +758,9 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
         private val BEARER_CREDENTIAL = Regex("Bearer\\s+[$BEARER_TOKEN_CHARACTERS]+")
         private val IJT_QUERY_CREDENTIAL = Regex("([?&]_ijt=)[^&\"\\s]+")
         private val IJT_HEADER_CREDENTIAL = Regex("(\"x-ijt\"\\s*:\\s*\")[^\"]*(\")")
+        private val IMPLEMENTING_CLASS_MARKER =
+            Regex("""(?im)^\s*(?:CLS|SUBTYPE)\s*:\s*([\w.$]+)""")
+        private val SUBTYPE_MARKER = Regex("""(?im)^\s*SUBTYPE\s*:\s*([\w.$]+)""")
         val IMPROVEMENTS_BLOCK = Regex(
             pattern = """<<<\s*IMPROVEMENTS\s*>>>\s*\n([\s\S]*?)\n\s*<<<\s*END_IMPROVEMENTS\s*>>>""",
             options = setOf(RegexOption.IGNORE_CASE),

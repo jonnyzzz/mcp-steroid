@@ -194,3 +194,21 @@ interface OpenProjectToolHandler {
         callProgress: McpProgressReporter,
     ): ToolCallResult
 }
+
+val OPEN_PROJECT_VERIFICATION_WORKFLOW = """
+    Project opening initiated. The process runs in the background.
+
+    READINESS WORKFLOW:
+    1. Poll steroid_list_projects every 2-3 seconds until the target path appears. Keep its opaque project_name
+       and pass that routing key to project-scoped tools.
+    2. A frontendless Remote Development backend has no frontend window to wait for or screenshot. The project
+       listing is the routing signal; continue without steroid_list_windows.
+    3. If a frontend window exists, steroid_list_windows is an additional signal.
+       While polling, when modalDialogShowing is true, use steroid_take_screenshot and steroid_input to handle that dialog.
+       After handling any modal, keep polling until the project appears, indexingInProgress is false, and
+       projectInitialized is true.
+    4. Project listing and window flags prove IDE reachability, not Maven/Gradle build-model readiness. On a first
+       Maven/Gradle open, fetch ${ExecuteCodeMavenPromptArticle().uri} or
+       ${ExecuteCodeGradlePromptArticle().uri}, trigger and await configuration exactly as that recipe shows
+       (the Maven recipe uses Observation.awaitConfiguration(project)), then run indexed queries in smartReadAction.
+""".trimIndent()

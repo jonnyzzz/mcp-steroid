@@ -57,4 +57,33 @@ class OpenProjectToolSpecSchemaTest {
             "frontend window polling cannot be mandatory for a Remote Development backend: $description",
         )
     }
+
+    @Test
+    fun `post-open result guidance works with or without a frontend`() {
+        val guidance = OPEN_PROJECT_VERIFICATION_WORKFLOW
+
+        for (fact in listOf(
+            "Poll steroid_list_projects",
+            "opaque project_name",
+            "no frontend window",
+            "Maven/Gradle",
+            "Observation.awaitConfiguration",
+            "smartReadAction",
+            "when modalDialogShowing is true",
+        )) {
+            assertTrue(fact in guidance, "post-open result guidance must mention '$fact': $guidance")
+        }
+        assertFalse(
+            guidance.contains("MUST poll") && guidance.contains("steroid_list_windows"),
+            "frontend window polling cannot be mandatory in the tool result: $guidance",
+        )
+        assertFalse(
+            guidance.contains("Use steroid_take_screenshot to visually confirm"),
+            "a frontendless Remote Development backend has nothing to screenshot: $guidance",
+        )
+        assertFalse(
+            "Only then use" in guidance,
+            "modal handling must happen while polling, not after modalDialogShowing becomes false: $guidance",
+        )
+    }
 }

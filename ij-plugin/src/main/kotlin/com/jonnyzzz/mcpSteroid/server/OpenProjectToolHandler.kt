@@ -80,7 +80,7 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
                 }
             }
 
-            builder.addTextContent(VERIFICATION_WORKFLOW)
+            builder.addTextContent(OPEN_PROJECT_VERIFICATION_WORKFLOW)
             if (!openProjectParams.trustProject) {
                 builder.addTextContent(
                     """
@@ -100,21 +100,3 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
         return builder.build()
     }
 }
-
-private val VERIFICATION_WORKFLOW = """
-    Project opening initiated. The process runs in the background.
-
-    IMPORTANT: You MUST poll to verify the project is ready before using it.
-
-    VERIFICATION WORKFLOW:
-    1. Poll the window list every 2-3 seconds until:
-       - The project appears in the windows list
-       - modalDialogShowing is false
-       - indexingInProgress is false
-       - projectInitialized is true
-    2. If modalDialogShowing is true:
-       - Capture a screenshot to see the dialog
-       - Use the input tool or command to interact with the dialog
-    3. Capture a screenshot to visually confirm project is loaded
-    4. Verify with the project list that the project appears
-""".trimIndent()
