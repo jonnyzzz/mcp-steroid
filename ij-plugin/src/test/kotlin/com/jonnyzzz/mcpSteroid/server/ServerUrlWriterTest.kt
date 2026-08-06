@@ -15,7 +15,7 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
     override fun runInDispatchThread(): Boolean = false
 
     fun testWriteCreatesMarkerUnderManagedMarkersDirectory() = withTemporaryUserHome { userHome ->
-        val writer = ServerUrlWriter()
+        val writer = ServerUrlWriter(remoteDevelopmentBackend = true)
         try {
             writer.writeServerUrlToUserHome("http://localhost:6315/mcp")
 
@@ -24,6 +24,7 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
             assertTrue("marker should be written to $markerFile", Files.isRegularFile(markerFile))
             val marker = PidMarkerJson.decode(Files.readString(markerFile))
             assertEquals(pid, marker.pid)
+            assertTrue("marker should identify a Remote Development backend", marker.remoteDevelopmentBackend)
             assertEquals("http://localhost:6315/mcp", marker.mcpSteroidServer!!.mcpUrl)
             // The devrig bridge endpoint is advertised separately from the MCP endpoint: same Ktor base,
             // the /api/jonnyzzz/mcp-steroid/v1 prefix, and the bearer headers devrig must send.

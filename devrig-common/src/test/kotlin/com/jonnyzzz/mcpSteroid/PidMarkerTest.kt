@@ -1,6 +1,7 @@
 package com.jonnyzzz.mcpSteroid
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -161,6 +162,24 @@ class PidMarkerTest {
                "plugin":{"id":"p","name":"P","version":"v"},"createdAt":"t"}""".trimIndent()
         )
         assertNull(withoutHome.ideHome)
+    }
+
+    @Test
+    fun `remote development backend marker is encoded and defaults to false when absent`() {
+        val backendMarker = samplePidMarker().copy(remoteDevelopmentBackend = true)
+        val text = PidMarkerJson.encode(backendMarker)
+
+        assertTrue(
+            text.contains("\"remoteDevelopmentBackend\": true"),
+            "remoteDevelopmentBackend field missing: $text",
+        )
+        assertTrue(PidMarkerJson.decode(text).remoteDevelopmentBackend)
+
+        val olderMarker = PidMarkerJson.decode(
+            """{"schema":1,"pid":7,"ide":{"name":"X","version":"1","build":"IU-1"},
+               "plugin":{"id":"p","name":"P","version":"v"},"createdAt":"t"}""".trimIndent()
+        )
+        assertFalse(olderMarker.remoteDevelopmentBackend)
     }
 
     @Test

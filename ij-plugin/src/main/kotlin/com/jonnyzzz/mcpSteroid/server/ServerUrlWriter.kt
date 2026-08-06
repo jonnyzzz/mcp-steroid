@@ -35,7 +35,11 @@ import java.time.format.DateTimeFormatter
  * separately by [IdeaDescriptionWriter].
  */
 @Service(Service.Level.APP)
-class ServerUrlWriter : Disposable {
+class ServerUrlWriter(
+    private val remoteDevelopmentBackend: Boolean,
+) : Disposable {
+    constructor() : this(isRemoteDevBackend())
+
     private val log = thisLogger()
     private var markerFile: Path? = null
 
@@ -78,6 +82,7 @@ class ServerUrlWriter : Disposable {
             plugin = PluginInfo.ofCurrentPlugin(),
             createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
             ideHome = PathManager.getHomePath(),
+            remoteDevelopmentBackend = remoteDevelopmentBackend,
             intellijWebServer = buildIntelliJWebServerInfo(),
             intellijMcpServer = IntelliJMcpServerProbe.getInstanceOrNull()?.probe(),
         )

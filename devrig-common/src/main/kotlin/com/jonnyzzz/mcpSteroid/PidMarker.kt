@@ -16,8 +16,8 @@ import java.nio.file.Path
  * backwards-readable.
  *
  * The REQUIRED fields ([schema], [pid], [ide], [plugin], [createdAt]) have no defaults, so every writer
- * must set them and decoding rejects their omission. The OPTIONAL sub-objects default to `null`: this is
- * the backward/forward-compat hook — a marker written by an older or newer plugin that omits one of them
+ * must set them and decoding rejects their omission. OPTIONAL fields have safe defaults: this is the
+ * backward/forward-compat hook — a marker written by an older or newer plugin that omits one of them
  * still decodes (kotlinx.serialization treats a nullable field WITHOUT a default as required, which would
  * throw on absence). Writers still set them explicitly (`encodeDefaults = true` keeps them in the output).
  */
@@ -30,6 +30,8 @@ data class PidMarker(
     val createdAt: String,
     /** Absolute IDE install home (`PathManager.getHomePath()`); identifies the install across restarts. */
     val ideHome: String? = null,
+    /** True when this IDE process is a Remote Development backend. */
+    val remoteDevelopmentBackend: Boolean = false,
     // Both transports are optional and independent: the `/mcp` MCP-client endpoint and the devrig bridge
     // endpoint are split at the protocol level. A marker may advertise only one of them — e.g. only
     // [devrigEndpoint] with no [mcpSteroidServer]. devrig reads ONLY [devrigEndpoint] and never touches MCP.
