@@ -6,11 +6,6 @@ package com.jonnyzzz.mcpSteroid.devrig
  * both can see it: devrig returns these, and the IDE plugin's settings page reads them to decide what a
  * row says (`ij-plugin` `onboarding/AgentRegistration.kt`).
  *
- * The bare all-agents mode (`devrig install --check`, no agent) reuses them as the AGGREGATE answer —
- * [INSTALL_CHECK_DRIFT_EXIT_CODE] when install would change (or could not verify) anything for any agent,
- * [INSTALL_CHECK_DISABLED_EXIT_CODE] when the only finding is a switched-off registration — while the
- * per-agent answers ride on stdout (`InstallCheckAgentLine.kt`), because one exit code cannot carry three.
- *
  * Additive only. A plugin talking to an older devrig must degrade, never misreport: a devrig that predates
  * [INSTALL_CHECK_DISABLED_EXIT_CODE] simply never returns it.
  */

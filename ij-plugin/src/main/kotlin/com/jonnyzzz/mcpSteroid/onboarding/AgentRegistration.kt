@@ -16,8 +16,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DISABLED_EXIT_CODE
-import com.jonnyzzz.mcpSteroid.devrig.InstallCheckAgentStatus
-import com.jonnyzzz.mcpSteroid.devrig.parseInstallCheckAgentLines
+import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DRIFT_EXIT_CODE
 import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotificationKind
 import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
@@ -25,8 +24,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -51,22 +54,37 @@ enum class AgentRegistrationState {
 }
 
 /**
- * `devrig install <agent>` — the canonical per-agent registration verb, the one the Register button
- * runs. The IDE never re-implements the registration: it runs the same verb the docs tell users to
- * run, so there is exactly one implementation of what a canonical registration is.
+ * `devrig install <agent>`, or its read-only dry-run. The IDE never re-implements the registration: it
+ * runs the same verb the docs tell users to run, so there is exactly one implementation of what a
+ * canonical registration is.
  */
-fun devrigInstallAgentArgv(devrigBin: Path, agent: AiAgentCli): List<String> =
-    listOf(devrigBin.toString(), "install", agent.binary)
+fun devrigInstallAgentArgv(devrigBin: Path, agent: AiAgentCli, check: Boolean): List<String> =
+    buildList {
+        add(devrigBin.toString())
+        add("install")
+        add(agent.binary)
+        if (check) add("--check")
+    }
 
 /**
- * Bare `devrig install --check` — the all-agents read-only check: ONE spawn answers where EVERY agent
- * stands (including whether its CLI is on PATH), as one machine-readable stdout line per agent — the
- * `InstallCheckAgentLine.kt` contract in `devrig-common`, shared with the devrig side. The page used
- * to spawn `devrig install <agent> --check` per row — a JVM plus an IDE-reachability probe per agent,
- * the 2026-08-06 perf finding this argv exists to fix.
+ * Find an executable on PATH. Generic on purpose — every agent gets the same treatment, and the plugin
+ * has no business knowing which one is fashionable.
+ *
+ * The separator and the candidate extensions come from [windows] rather than the runtime OS, so the
+ * function is pure enough to test for either platform on any host.
  */
-fun devrigInstallCheckAllArgv(devrigBin: Path): List<String> =
-    listOf(devrigBin.toString(), "install", "--check")
+fun findOnPath(binary: String, pathEnv: String?, windows: Boolean): Path? {
+    val names = if (windows) listOf("$binary.exe", "$binary.cmd", "$binary.bat", binary) else listOf(binary)
+    val separator = if (windows) ';' else ':'
+    for (entry in pathEnv?.split(separator).orEmpty()) {
+        if (entry.isBlank()) continue
+        for (name in names) {
+            val candidate = Path.of(entry).resolve(name)
+            if (Files.isRegularFile(candidate)) return candidate
+        }
+    }
+    return null
+}
 
 /**
  * What a failed registration's notification says: the reason first — it is the one part that tells the
@@ -80,21 +98,23 @@ fun agentRegistrationFailureContent(agent: AiAgentCli, reason: String): String =
     "$reason<br>Or run the command <code>devrig install ${agent.binary}</code> in a terminal."
 
 /**
- * Map one agent's line of `devrig install --check`'s answer onto a row state.
+ * Map `devrig install <agent> --check`'s outcome onto a row state.
  *
- * [InstallCheckAgentStatus] is the wire enum of the all-agents check (`devrig-common`
- * `InstallCheckAgentLine.kt`); every value is an answer, including [InstallCheckAgentStatus.CHECK_FAILED]
- * — devrig saying it could not find out, which is not the same as "not registered" and must not be
- * reported as one. `null` means devrig answered nothing for this agent — an older binary that predates
- * the all-agents mode (it rejects the bare `--check` as a usage error and prints no lines) — which is
- * the same "failed to find out" fact on this side of the contract: degrade, never misreport.
+ * Exit 0 means the registration is already canonical; [INSTALL_CHECK_DRIFT_EXIT_CODE] (1) means install
+ * would change something — no entry, a stale command, duplicates, a custom name; and
+ * [INSTALL_CHECK_DISABLED_EXIT_CODE] (2) means it is registered but switched off in the agent's own
+ * config. All three are answers. Anything else, including a timeout, is us failing to find out, which is
+ * not the same as "not registered" and must not be reported as one.
+ *
+ * A devrig older than the disabled check never returns 2; it reports a disabled registration as canonical
+ * (0), which is what the page showed before this existed. Wrong, but not newly wrong.
  */
-fun agentStateFromCheckStatus(status: InstallCheckAgentStatus?): AgentRegistrationState = when (status) {
-    InstallCheckAgentStatus.REGISTERED -> AgentRegistrationState.REGISTERED
-    InstallCheckAgentStatus.DRIFT -> AgentRegistrationState.NOT_REGISTERED
-    InstallCheckAgentStatus.DISABLED -> AgentRegistrationState.DISABLED
-    InstallCheckAgentStatus.CLI_MISSING -> AgentRegistrationState.CLI_MISSING
-    InstallCheckAgentStatus.CHECK_FAILED, null -> AgentRegistrationState.CHECK_FAILED
+fun agentStateFromCheck(exitCode: Int, timedOut: Boolean): AgentRegistrationState = when {
+    timedOut -> AgentRegistrationState.CHECK_FAILED
+    exitCode == 0 -> AgentRegistrationState.REGISTERED
+    exitCode == INSTALL_CHECK_DRIFT_EXIT_CODE -> AgentRegistrationState.NOT_REGISTERED
+    exitCode == INSTALL_CHECK_DISABLED_EXIT_CODE -> AgentRegistrationState.DISABLED
+    else -> AgentRegistrationState.CHECK_FAILED
 }
 
 /**
@@ -133,59 +153,56 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
 
     /**
      * The whole onboarding picture, computed fresh on [Dispatchers.IO]: the devrig probe, then — only
-     * when the bridge is there — every agent's registration state, from ONE `devrig install --check`
-     * spawn for all rows ([checkAllLogged]). One process per page show, not one JVM per agent: devrig
-     * answers each agent (including whether its CLI is on PATH) on its own machine-readable stdout line,
-     * lists the agents' servers concurrently inside that one process, and probes IDE reachability once
-     * instead of once per row (the 2026-08-06 perf finding).
+     * when the bridge is there — every agent's registration state, checked concurrently (each check may
+     * spawn `devrig install <agent> --check`, and the page should wait for the slowest, not the sum).
+     *
+     * Agents whose CLI is absent are answered from a PATH lookup alone — no subprocess. That keeps the
+     * page honest and cheap: on a machine with one agent installed, opening this page starts exactly one
+     * process, not one per agent we happen to support.
      */
     suspend fun status(): OnboardingStatus = withContext(Dispatchers.IO) {
         if (!devrigInstalled()) return@withContext OnboardingStatus(devrigInstalled = false, agents = emptyMap())
-        OnboardingStatus(devrigInstalled = true, agents = checkAllLogged())
+        coroutineScope {
+            val states = AiAgentCli.entries.map { agent ->
+                async { agent to checkLogged(agent) }
+            }
+            OnboardingStatus(devrigInstalled = true, agents = states.awaitAll().toMap())
+        }
     }
 
     /**
-     * [checkAll], with every failure folded into [AgentRegistrationState.CHECK_FAILED] and the answers
+     * [check], with every failure folded into [AgentRegistrationState.CHECK_FAILED] and the answer
      * logged — one line per agent per page opening: cheap, and the only thing that tells us afterwards
      * whether a row stuck on "Checking…" never got an answer or never got it to the screen.
      */
-    private fun checkAllLogged(): Map<AiAgentCli, AgentRegistrationState> {
-        val states = try {
-            checkAll()
+    private fun checkLogged(agent: AiAgentCli): AgentRegistrationState {
+        val state = try {
+            check(agent)
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            log.warn("could not check the agent registrations", e)
-            AiAgentCli.entries.associateWith { AgentRegistrationState.CHECK_FAILED }
+            log.warn("could not check the ${agent.displayName} registration", e)
+            AgentRegistrationState.CHECK_FAILED
         }
-        for ((agent, state) in states) log.info("${agent.displayName} registration state: $state")
-        return states
+        log.info("${agent.displayName} registration state: $state")
+        return state
     }
 
-    /**
-     * One `devrig install --check` spawn answers every agent. The per-agent lines are parsed with the
-     * shared contract ([parseInstallCheckAgentLines]); an agent devrig did not answer for — an older
-     * devrig prints no lines at all — maps to [AgentRegistrationState.CHECK_FAILED] via the `null`
-     * branch of [agentStateFromCheckStatus]. A timeout keeps whatever lines made it out: the per-agent
-     * answers print before the IDE-reachability probe, so they are already facts when a later stage
-     * hangs — the rows that never got one fold into CHECK_FAILED the same way.
-     */
-    private fun checkAll(): Map<AiAgentCli, AgentRegistrationState> {
+    private fun check(agent: AiAgentCli): AgentRegistrationState {
         val userHome = Path.of(System.getProperty("user.home"))
         val windows = SystemInfo.isWindows
-        if (!devrigInstalled(userHome, windows)) {
-            return AiAgentCli.entries.associateWith { AgentRegistrationState.CHECK_FAILED }
+        if (!devrigInstalled(userHome, windows)) return AgentRegistrationState.CHECK_FAILED
+        if (findOnPath(agent.binary, System.getenv("PATH"), windows) == null) {
+            return AgentRegistrationState.CLI_MISSING
         }
-        val argv = devrigInstallCheckAllArgv(devrigBinPath(userHome, windows))
+        val argv = devrigInstallAgentArgv(devrigBinPath(userHome, windows), agent, check = true)
         val output = ExecUtil.execAndGetOutput(GeneralCommandLine(argv), CHECK_TIMEOUT_MS)
         if (output.isTimeout || output.exitCode > INSTALL_CHECK_DISABLED_EXIT_CODE) {
-            val outcome = if (output.isTimeout) "timed out" else "exited with ${output.exitCode}"
-            log.warn("`${argv.joinToString(" ")}` $outcome: ${output.stderr.take(2000)}")
+            log.warn("`${argv.joinToString(" ")}` exited with ${output.exitCode}: ${output.stderr.take(2000)}")
         }
-        val statuses = parseInstallCheckAgentLines(output.stdout)
-        return AiAgentCli.entries.associateWith { agentStateFromCheckStatus(statuses[it]) }
+        return agentStateFromCheck(output.exitCode, output.isTimeout)
     }
 
     /**
@@ -207,7 +224,7 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
                 indicator.isIndeterminate = true
                 val userHome = Path.of(System.getProperty("user.home"))
                 val windows = SystemInfo.isWindows
-                val argv = devrigInstallAgentArgv(devrigBinPath(userHome, windows), agent)
+                val argv = devrigInstallAgentArgv(devrigBinPath(userHome, windows), agent, check = false)
                 var ok = false
                 try {
                     val output = ExecUtil.execAndGetOutput(GeneralCommandLine(argv), REGISTER_TIMEOUT_MS)
@@ -235,11 +252,7 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
                         mapOf("agent" to agent.binary, "ok" to ok),
                     )
                     // Re-check rather than assume: the row must show what is actually there now.
-                    // The re-check is the same one-spawn all-agents check the page opens with —
-                    // there is deliberately no second, per-agent check implementation to drift.
-                    result.complete(
-                        if (ok) AgentRegistrationState.REGISTERED else checkAllLogged().getValue(agent),
-                    )
+                    result.complete(if (ok) AgentRegistrationState.REGISTERED else checkLogged(agent))
                 }
             }
         })
@@ -268,11 +281,7 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
     }
 
     companion object {
-        /**
-         * `install --check` asks every agent's own CLI to list its MCP servers, which is not always
-         * quick — but devrig runs those listings concurrently, so the one spawn costs the slowest
-         * agent, not the sum.
-         */
+        /** `--check` asks the agent's own CLI to list its MCP servers, which is not always quick. */
         const val CHECK_TIMEOUT_MS = 60_000
 
         /** Registration edits a config file after the same listing step. */

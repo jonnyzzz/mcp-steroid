@@ -2,94 +2,52 @@
 package com.jonnyzzz.mcpSteroid.onboarding
 
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
-import com.jonnyzzz.mcpSteroid.devrig.InstallCheckAgentStatus
-import com.jonnyzzz.mcpSteroid.devrig.parseInstallCheckAgentLines
-import com.jonnyzzz.mcpSteroid.devrig.renderInstallCheckAgentLine
+import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DISABLED_EXIT_CODE
+import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DRIFT_EXIT_CODE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.nio.file.Files
 import java.nio.file.Path
 
 class AgentRegistrationTest {
 
     @Test
-    fun `the register argv is devrig's own install verb, per agent`() {
+    fun `the argv is devrig's own install verb, per agent`() {
         val bin = Path.of("/home/u/.mcp-steroid/bin/devrig")
         assertEquals(
             listOf("/home/u/.mcp-steroid/bin/devrig", "install", "claude"),
-            devrigInstallAgentArgv(bin, AiAgentCli.CLAUDE),
+            devrigInstallAgentArgv(bin, AiAgentCli.CLAUDE, check = false),
         )
         assertEquals(
-            listOf("/home/u/.mcp-steroid/bin/devrig", "install", "codex"),
-            devrigInstallAgentArgv(bin, AiAgentCli.CODEX),
+            listOf("/home/u/.mcp-steroid/bin/devrig", "install", "codex", "--check"),
+            devrigInstallAgentArgv(bin, AiAgentCli.CODEX, check = true),
         )
         assertEquals(
             listOf("/home/u/.mcp-steroid/bin/devrig", "install", "gemini"),
-            devrigInstallAgentArgv(bin, AiAgentCli.GEMINI),
+            devrigInstallAgentArgv(bin, AiAgentCli.GEMINI, check = false),
         )
     }
 
     @Test
-    fun `the check argv is the bare all-agents verb - one spawn answers every row`() {
-        assertEquals(
-            listOf("/home/u/.mcp-steroid/bin/devrig", "install", "--check"),
-            devrigInstallCheckAllArgv(Path.of("/home/u/.mcp-steroid/bin/devrig")),
-        )
-    }
-
-    @Test
-    fun `check statuses map to states, and an unknown outcome is never reported as unregistered`() {
-        assertEquals(
-            AgentRegistrationState.REGISTERED,
-            agentStateFromCheckStatus(InstallCheckAgentStatus.REGISTERED),
-        )
+    fun `check outcomes map to states, and an unknown outcome is never reported as unregistered`() {
+        assertEquals(AgentRegistrationState.REGISTERED, agentStateFromCheck(0, timedOut = false))
         assertEquals(
             AgentRegistrationState.NOT_REGISTERED,
-            agentStateFromCheckStatus(InstallCheckAgentStatus.DRIFT),
+            agentStateFromCheck(INSTALL_CHECK_DRIFT_EXIT_CODE, timedOut = false),
         )
         // Registered but switched off in the agent's own config — its own state, because "Registered"
         // would be a lie about a bridge the agent will never use.
         assertEquals(
             AgentRegistrationState.DISABLED,
-            agentStateFromCheckStatus(InstallCheckAgentStatus.DISABLED),
+            agentStateFromCheck(INSTALL_CHECK_DISABLED_EXIT_CODE, timedOut = false),
         )
-        // devrig now owns the PATH answer too — the page never probes PATH itself.
-        assertEquals(
-            AgentRegistrationState.CLI_MISSING,
-            agentStateFromCheckStatus(InstallCheckAgentStatus.CLI_MISSING),
-        )
-        // devrig failing to find out is a different fact from "not registered"…
-        assertEquals(
-            AgentRegistrationState.CHECK_FAILED,
-            agentStateFromCheckStatus(InstallCheckAgentStatus.CHECK_FAILED),
-        )
-        // …and so is devrig answering nothing for the agent (an older devrig prints no lines at all):
-        // degrade, never misreport.
-        assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheckStatus(null))
-    }
-
-    /**
-     * The one-spawn wire format end to end: what devrig prints ([renderInstallCheckAgentLine], amid
-     * prose) parses back and maps onto row states — including the row devrig never answered for.
-     */
-    @Test
-    fun `one devrig stdout answers every row - an unanswered agent folds into CHECK_FAILED`() {
-        val stdout = buildString {
-            appendLine("Checking the 'mcp-steroid' MCP registration for every supported agent (read-only — nothing is changed).")
-            appendLine()
-            appendLine(renderInstallCheckAgentLine(AiAgentCli.CLAUDE, InstallCheckAgentStatus.REGISTERED))
-            appendLine(renderInstallCheckAgentLine(AiAgentCli.CODEX, InstallCheckAgentStatus.CLI_MISSING))
-            // No gemini line: e.g. a devrig killed between the lines and the reachability probe.
-            appendLine()
-            appendLine("IDE backends with the MCP Steroid plugin (read-only discovery, same scan as 'devrig backend'):")
-            appendLine("  1 of 1 discovered backend(s) reachable.")
-        }
-        val statuses = parseInstallCheckAgentLines(stdout)
-        val states = AiAgentCli.entries.associateWith { agentStateFromCheckStatus(statuses[it]) }
-        assertEquals(AgentRegistrationState.REGISTERED, states[AiAgentCli.CLAUDE])
-        assertEquals(AgentRegistrationState.CLI_MISSING, states[AiAgentCli.CODEX])
-        assertEquals(AgentRegistrationState.CHECK_FAILED, states[AiAgentCli.GEMINI])
+        // Anything else is us failing to find out — a different fact from "not registered".
+        assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheck(64, timedOut = false))
+        assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheck(-1, timedOut = false))
+        assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheck(0, timedOut = true))
     }
 
     /**
@@ -115,5 +73,31 @@ class AgentRegistrationTest {
                 perAgent.contains("log", ignoreCase = true),
             )
         }
+    }
+
+    @Test
+    fun `findOnPath scans PATH entries in order`() {
+        val first = Files.createTempDirectory("p1")
+        val second = Files.createTempDirectory("p2")
+        val claude = Files.createFile(second.resolve("claude"))
+
+        assertNull(findOnPath("claude", pathEnv = null, windows = false))
+        assertNull(findOnPath("claude", pathEnv = "", windows = false))
+        assertNull(findOnPath("claude", pathEnv = first.toString(), windows = false))
+        assertEquals(claude, findOnPath("claude", pathEnv = "$first:$second", windows = false))
+
+        // An earlier entry wins.
+        val shadow = Files.createFile(first.resolve("claude"))
+        assertEquals(shadow, findOnPath("claude", pathEnv = "$first:$second", windows = false))
+    }
+
+    @Test
+    fun `findOnPath uses the windows separator and executable extensions`() {
+        val dir = Files.createTempDirectory("p-win")
+        val cmd = Files.createFile(dir.resolve("gemini.cmd"))
+        // A ':' separator would parse "C:\dir" as two entries and find nothing.
+        assertEquals(cmd, findOnPath("gemini", pathEnv = "$dir;$dir", windows = true))
+        // The extensionless name is not what Windows would launch, so it must not be found on POSIX rules.
+        assertNull(findOnPath("gemini", pathEnv = dir.toString(), windows = false))
     }
 }
