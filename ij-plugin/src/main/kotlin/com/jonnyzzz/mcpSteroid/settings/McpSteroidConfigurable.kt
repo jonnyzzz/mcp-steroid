@@ -37,9 +37,8 @@ import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigAgentRegistrationService
-import com.jonnyzzz.mcpSteroid.onboarding.DevrigInstallState
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
-import com.jonnyzzz.mcpSteroid.onboarding.probeDevrigInstallState
+import com.jonnyzzz.mcpSteroid.onboarding.devrigInstalled
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -189,8 +188,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // on Dispatchers.IO.
         panel.launchOnShow("McpSteroidConfigurable devrig state") {
             installStatus?.component = checkingPanel()
-            val state = withContext(Dispatchers.IO) { probeDevrigInstallState() }
-            applyInstallState(state)
+            val installed = withContext(Dispatchers.IO) { devrigInstalled() }
+            applyInstallState(installed)
         }
         return panel
     }
@@ -203,18 +202,18 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     }
 
     /**
-     * Swap the devrig block for one built from [state]. EDT only; a no-op once the page is gone.
+     * Swap the devrig block for one built from [installed]. EDT only; a no-op once the page is gone.
      * Public so a test, whose panel is never physically showing, can drive the same populate path
      * the on-show launch takes.
      */
-    fun applyInstallState(state: DevrigInstallState) {
+    fun applyInstallState(installed: Boolean) {
         val expired = uiExpired ?: return
         if (expired.isDisposed) return
         val placeholder = installStatus ?: return
         // current() both asserts the EDT and names the dialog's own modality, which the async row
         // updates below must carry: a plain invokeLater inherits nonModal and would be withheld
         // until the (modal) Settings dialog closes — rows stuck on "Checking…" forever.
-        placeholder.component = installStatusPanel(state, expired, ModalityState.current())
+        placeholder.component = installStatusPanel(installed, expired, ModalityState.current())
     }
 
     /**
@@ -228,18 +227,18 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * async row update this panel starts — see [onEdt].
      */
     private fun installStatusPanel(
-        state: DevrigInstallState,
+        installed: Boolean,
         expired: CheckedDisposable,
         modality: ModalityState,
     ): DialogPanel = panel {
-        if (state.installed) {
+        if (installed) {
             row("devrig:") {
                 // A fixed medium width, not AlignX.FILL: stretched across the whole page the field
                 // dwarfed the agent value areas right below it (owner click-testing feedback). The
                 // status fields in this block all share STATUS_FIELD_COLUMNS so they line up as one
-                // column of answers.
-                cell(valueTextField("Installed" + (state.version?.let { " — version $it" } ?: "")))
-                    .columns(STATUS_FIELD_COLUMNS)
+                // column of answers. Plain "Installed" — devrig updates itself, so there is no
+                // version worth naming here.
+                cell(valueTextField("Installed")).columns(STATUS_FIELD_COLUMNS)
             }
             row {
                 text("<b>Point an agent at it</b> — once per machine, not once per project:")
@@ -292,7 +291,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     // the task's background thread and re-applies on the EDT.
                     DevrigSetupRunner.getInstance()
                         .runInstall(ProjectManager.getInstance().openProjects.firstOrNull()) {
-                            val fresh = probeDevrigInstallState()
+                            val fresh = devrigInstalled()
                             onEdt(expired, modality) { applyInstallState(fresh) }
                         }
                 }
@@ -531,7 +530,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      *
      * A bare label made the values hard to find — the label-and-value pairs ran together as one line of
      * prose, and nothing said which half was the answer. A field draws the boundary the reader is looking
-     * for, and being a text component it also lets a version string be selected and copied by hand.
+     * for, and being a text component it also lets the value be selected and copied by hand.
      *
      * Read-only via isEditable = false — the platform affordance. An earlier revision kept
      * isEditable = true and swallowed keystrokes with a DocumentFilter, claiming a non-editable field
@@ -582,7 +581,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         const val OTHER_CLIENTS_SECTION_TITLE = "Another MCP client (Cursor, Windsurf, …)"
 
         /**
-         * Width of every short status field in the devrig block ("Installed — version X", "Registered",
+         * Width of every short status field in the devrig block ("Installed", "Registered",
          * "Checking…"), in text-field columns. One shared constant, because these fields sit in adjacent
          * rows and must read as one column of answers: the installed-state field used to be AlignX.FILL
          * and spanned the entire page, dwarfing the agent value areas right below it (owner click-testing

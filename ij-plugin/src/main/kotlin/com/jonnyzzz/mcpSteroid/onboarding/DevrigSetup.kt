@@ -270,7 +270,9 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
         val target = getBuildVersion().value
         val info = UpdateStateInfo(
             pid = coordination.ownPid,
-            currentVersion = installedDevrigVersion(readLauncherText(userHome, windows)) ?: "none",
+            // Write-only debugging JSON by its own contract ([UpdateStateInfo]) — not worth parsing
+            // a version out of the launcher text just to fill it in.
+            currentVersion = "unknown",
             targetVersion = target,
             startedAt = System.currentTimeMillis(),
             scriptUrl = devrigInstallerUrl(windows),
@@ -467,15 +469,6 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
             )
         }
         return CommandResult(exitCode = handler.exitCode ?: -1, stdout = "", stderr = output, isTimeout = false)
-    }
-
-    /** Text of the stable launcher, for reading the installed version. Null when it is not there. */
-    private fun readLauncherText(userHome: Path, windows: Boolean): String? = try {
-        val launcher = devrigBinPath(userHome, windows)
-        if (Files.isRegularFile(launcher)) Files.readString(launcher) else null
-    } catch (e: Exception) {
-        log.debug("cannot read the devrig launcher: ${e.message}")
-        null
     }
 
     private fun writeFailureMarker(userHome: Path, reason: String) {

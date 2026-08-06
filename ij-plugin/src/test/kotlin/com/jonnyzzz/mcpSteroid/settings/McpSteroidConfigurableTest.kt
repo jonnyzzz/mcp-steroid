@@ -11,7 +11,7 @@ import com.intellij.ui.components.fields.ExtendableTextField
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
-import com.jonnyzzz.mcpSteroid.onboarding.probeDevrigInstallState
+import com.jonnyzzz.mcpSteroid.onboarding.devrigInstalled
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import java.nio.file.Path
 import java.awt.Component
@@ -63,7 +63,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
 
             // A test panel is never physically showing, so the launchOnShow block never runs here.
             // Drive the same populate path it takes, with the same probe it uses.
-            configurable.applyInstallState(probeDevrigInstallState())
+            configurable.applyInstallState(devrigInstalled())
 
             val texts = collectTexts(component)
             val joined = texts.joinToString("\n")
@@ -101,7 +101,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // Exactly one of the two state-dependent blocks, never both: the install button has nothing
             // to offer someone who already has devrig, and the registration commands mean nothing to
             // someone who does not. Asserted against the real state so this holds on any machine.
-            val installed = probeDevrigInstallState().installed
+            val installed = devrigInstalled()
             if (installed) {
                 // One row per agent devrig can register — never just Claude.
                 for (agent in AiAgentCli.entries) {
@@ -319,7 +319,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
         val configurable = McpSteroidConfigurable()
         try {
             val component = configurable.createComponent()
-            configurable.applyInstallState(probeDevrigInstallState())
+            configurable.applyInstallState(devrigInstalled())
             val joined = collectTexts(component).joinToString("\n")
             assertFalse(
                 "every hint must name its action, never the IDE log; found:\n$joined",

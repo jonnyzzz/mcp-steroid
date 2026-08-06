@@ -79,18 +79,15 @@ class DevrigPromotion(scope: CoroutineScope) {
 
     private suspend fun maybePromote() {
         if (!devrigPromotionEnabled()) return
-        val state = withContext(Dispatchers.IO) { probeDevrigInstallState() }
+        val installed = withContext(Dispatchers.IO) { devrigInstalled() }
         // Any open project only anchors the balloon; the offer is about this machine, not a project.
         val project = ProjectManager.getInstance().openProjects.firstOrNull { !it.isDisposed }
         analyticsBeacon.capture(
             "devrig_state_at_startup",
             project,
-            buildMap {
-                put("devrig_installed", state.installed)
-                state.version?.let { put("devrig_version", it) }
-            },
+            mapOf("devrig_installed" to installed),
         )
-        if (state.installed) return
+        if (installed) return
         offerInstall(project)
     }
 
