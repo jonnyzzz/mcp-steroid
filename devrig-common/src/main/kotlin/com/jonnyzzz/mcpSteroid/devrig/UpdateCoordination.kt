@@ -136,22 +136,22 @@ class UpdateCoordination(
         }
     }
 
-    private fun writeJsonAtomically(target: Path, content: String) {
-        Files.createDirectories(updateDir)
+    private fun writeJsonAtomically(target: Path, content: String) =
         writeTextAtomically(target, content, stagingPid = ownPid)
-    }
 }
 
 /**
  * Write [content] (UTF-8) so [target] is never observed half-written: stage into a
  * `.tmp.<pid>.<target-name>` sibling — the SAME directory, because a rename is only atomic within one
  * file system — then move it over the target, falling back to a plain move where the file system
- * cannot do an atomic replace. Content-agnostic: the update markers and the agents' own config files
+ * cannot do an atomic replace. Creates [target]'s parent directory itself, so callers never have to
+ * pre-create it. Content-agnostic: the update markers and the agents' own config files
  * (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`) all go through here. The
  * staging name matches [parseStagingFilePid], so a crash leftover inside the update dir is swept by
  * [UpdateCoordination.gc].
  */
 fun writeTextAtomically(target: Path, content: String, stagingPid: Long = ProcessHandle.current().pid()) {
+    target.parent?.let { Files.createDirectories(it) }
     val tmp = target.resolveSibling(".tmp.$stagingPid.${target.name}")
     try {
         Files.writeString(tmp, content)

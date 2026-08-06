@@ -117,6 +117,17 @@ class UpdateCoordinationTest {
         assertEquals(4242L, parseStagingFilePid(".tmp.4242.config.json"))
     }
 
+    @Test
+    fun `writeTextAtomically creates the target's parent directory itself`(@TempDir dir: Path) {
+        // Callers (marker writes, agent-config patches) must not have to pre-create the directory.
+        val target = dir.resolve("not").resolve("yet").resolve("config.json")
+        assertFalse(target.parent.exists())
+
+        writeTextAtomically(target, "content", stagingPid = 4242L)
+
+        assertEquals("content", Files.readString(target))
+    }
+
     // ── completion record ────────────────────────────────────────────────────────────────────────
 
     @Test
