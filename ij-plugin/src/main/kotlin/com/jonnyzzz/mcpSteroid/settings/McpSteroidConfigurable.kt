@@ -214,6 +214,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * has devrig, and the registration commands mean nothing to someone who does not.
      */
     private fun installStatusPanel(uiScope: CoroutineScope, devrigInstalled: Boolean): DialogPanel = panel {
+        // The one raw fact every path below derives from. Read once; everything path-shaped is then
+        // built by devrig-common's renderers / resolveHomePaths over this value — never joined by hand.
+        val userHome = System.getProperty("user.home")
         if (devrigInstalled) {
             row("devrig:") {
                 // A fixed medium width, not AlignX.FILL: stretched across the whole page the field
@@ -234,10 +237,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             // command could not (owner direction, 2026-08-06). Built through
             // [devrigInstallAgentCommandLine] (real absolute launcher, quoted when the path holds a
             // space), copyable so display and clipboard are the same string.
-            val home = System.getProperty("user.home")
             for (agent in AiAgentCli.entries) {
                 row("${agent.displayName}:") {
-                    cell(copyableTextField(devrigInstallAgentCommandLine(home, SystemInfo.isWindows, agent)))
+                    cell(copyableTextField(devrigInstallAgentCommandLine(userHome, SystemInfo.isWindows, agent)))
                         .align(AlignX.FILL)
                 }
             }
@@ -252,7 +254,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 text("Register devrig as an MCP server in <b>any other client</b> with:")
             }.topGap(TopGap.SMALL)
             row {
-                cell(copyableTextField(devrigMcpCommandLine(System.getProperty("user.home"), SystemInfo.isWindows)))
+                cell(copyableTextField(devrigMcpCommandLine(userHome, SystemInfo.isWindows)))
                     .align(AlignX.FILL)
             }
             row {
@@ -261,7 +263,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                         "running agent session to pick one up."
                 )
             }
-            otherClientsSection()
+            otherClientsSection(Path.of(userHome))
         } else {
             row {
                 text("<b>devrig is not installed yet.</b>")
@@ -284,7 +286,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             row {
                 // The real home, never `~` — on Windows a tilde is a placeholder the OS will not expand,
                 // and this page's policy is that a displayed path is the literal path on disk.
-                val home = devrigHomeDisplayPath(System.getProperty("user.home"), SystemInfo.isWindows)
+                val home = devrigHomeDisplayPath(userHome, SystemInfo.isWindows)
                 comment(
                     "Downloads about 611 MB (a pinned JDK plus devrig) into <code>$home</code> and " +
                         "puts <code>devrig</code> on your PATH. It registers nothing with your agents — " +
@@ -306,8 +308,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * JSON is built through [devrigStdioMcpCommand], so it cannot drift from what
      * `devrig install <agent>` writes.
      */
-    private fun Panel.otherClientsSection() {
-        val json = devrigStdioMcpConfigJson(Path.of(System.getProperty("user.home")), SystemInfo.isWindows)
+    private fun Panel.otherClientsSection(userHome: Path) {
+        val json = devrigStdioMcpConfigJson(userHome, SystemInfo.isWindows)
         collapsibleGroup(OTHER_CLIENTS_SECTION_TITLE) {
             row {
                 text(
