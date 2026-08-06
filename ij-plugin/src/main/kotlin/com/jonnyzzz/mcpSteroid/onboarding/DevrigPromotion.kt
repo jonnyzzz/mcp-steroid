@@ -22,6 +22,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.random.Random
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -52,8 +55,9 @@ fun devrigInstallOfferBody(devrigHome: String): String =
  * as a constructor side effect, so [com.jonnyzzz.mcpSteroid.server.SteroidsMcpServerStartupActivity]
  * calls [startPromotion] by name on every project open; the [started] guard turns every call after
  * the first into a no-op, and the application service being one-per-IDE-run makes that guard
- * once-per-run. The launched coroutine waits out [PROMOTION_DELAY] (past the noisy project-open
- * moment), computes the state on a background dispatcher BEFORE showing anything, and only then
+ * once-per-run. The launched coroutine waits out a random delay from [PROMOTION_DELAY_RANGE]
+ * (past the noisy project-open moment), computes the state on a background dispatcher BEFORE
+ * showing anything, and only then
  * fires one non-sticky balloon whose single action is the existing install flow
  * ([DevrigSetupRunner.runInstall]). If the balloon auto-hides unseen, nothing is lost: the same
  * offer lives on the settings page, and the message stays in the Notifications tool window.
@@ -68,7 +72,7 @@ class DevrigPromotion(private val scope: CoroutineScope) {
     fun startPromotion() {
         if (!started.compareAndSet(false, true)) return
         scope.launch {
-            delay(PROMOTION_DELAY)
+            delay(randomPromotionDelay(Random.Default))
             try {
                 maybePromote()
             } catch (e: ProcessCanceledException) {
@@ -117,10 +121,23 @@ class DevrigPromotion(private val scope: CoroutineScope) {
 
     companion object {
         /**
-         * How long past startup the promotion waits. Long enough that project open and indexing
-         * have the screen to themselves; short enough that the balloon still reads as "on start".
+         * The range the per-run promotion delay is drawn from, uniformly at random (owner-specified:
+         * random 12-35 seconds). The lower bound keeps the balloon past the noisy project-open and
+         * indexing moment; the upper bound keeps it reading as "on start". Randomizing within that
+         * window keeps the balloon off the fixed instant every other timed on-start surface fires at.
          */
-        val PROMOTION_DELAY = 12.seconds
+        val PROMOTION_DELAY_RANGE: ClosedRange<Duration> = 12.seconds..35.seconds
+
+        /**
+         * Draws the per-run delay uniformly from [PROMOTION_DELAY_RANGE] (millisecond granularity,
+         * both bounds inclusive). [random] is a parameter so a test can pin the draw with a seeded
+         * [Random]; production passes [Random.Default].
+         */
+        fun randomPromotionDelay(random: Random): Duration =
+            random.nextLong(
+                PROMOTION_DELAY_RANGE.start.inWholeMilliseconds,
+                PROMOTION_DELAY_RANGE.endInclusive.inWholeMilliseconds + 1,
+            ).milliseconds
 
         fun getInstance(): DevrigPromotion = service()
     }
