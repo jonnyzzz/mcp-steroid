@@ -377,6 +377,195 @@ class InstallCommandTest {
         assertContains(r.stdout, "none discovered")
     }
 
+    // ── bare install --check (the all-agents mode: one spawn answers every agent) ──
+
+    /**
+     * A runner keyed by agent binary: the all-agents check spawns each agent's own `mcp list`, so a
+     * fixture must answer per agent. Agents without an entry throw [AgentCliNotLaunchableException] —
+     * the real runner's answer for a binary that cannot be spawned.
+     */
+    private class PerAgentRunner(
+        private val listResults: Map<AiAgentCli, AiAgentCliResult>,
+    ) : AiAgentCliRunner {
+        val invocations = java.util.concurrent.CopyOnWriteArrayList<AiAgentCliInvocation>()
+        override fun run(invocation: AiAgentCliInvocation): AiAgentCliResult {
+            invocations += invocation
+            val agent = AiAgentCli.parse(invocation.binary)
+                ?: error("unexpected binary: ${invocation.binary}")
+            return listResults[agent] ?: throw com.jonnyzzz.mcpSteroid.aiAgents.AgentCliNotLaunchableException(
+                invocation.binary,
+                java.io.IOException("Cannot run program \"${invocation.binary}\": error=2, No such file or directory"),
+            )
+        }
+    }
+
+    private fun runCheckAll(
+        runner: AiAgentCliRunner,
+        cliPresent: Set<AiAgentCli> = AiAgentCli.entries.toSet(),
+        disabled: Set<AiAgentCli> = emptySet(),
+        reachability: IdeReachabilityReport = IdeReachabilityReport(reachable = 0, discovered = 0),
+        missingLauncherPath: Path? = null,
+        probeCounter: java.util.concurrent.atomic.AtomicInteger = java.util.concurrent.atomic.AtomicInteger(),
+    ): CheckRunResult {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val exitCode = runInstallCheckAllCommand(
+            mcpCommand = mcpCommand,
+            out = PrintStream(stdout, true, Charsets.UTF_8),
+            err = PrintStream(stderr, true, Charsets.UTF_8),
+            runner = runner,
+            ideReachability = { probeCounter.incrementAndGet(); reachability },
+            missingLauncherPath = missingLauncherPath,
+            agentCliPresent = { it in cliPresent },
+            disabledRegistration = { agent -> DisabledRegistration("off in a config").takeIf { agent in disabled } },
+        )
+        return CheckRunResult(
+            exitCode = exitCode,
+            invocations = (runner as? PerAgentRunner)?.invocations ?: emptyList(),
+            stdout = stdout.toString(Charsets.UTF_8).replace("\r\n", "\n"),
+            stderr = stderr.toString(Charsets.UTF_8).replace("\r\n", "\n"),
+        )
+    }
+
+    @Test
+    fun `check-all prints one machine-readable line per agent, parseable by the shared contract`() {
+        val r = runCheckAll(
+            PerAgentRunner(
+                mapOf(
+                    AiAgentCli.CLAUDE to AiAgentCliResult(0, claudeCanonicalList),
+                    AiAgentCli.CODEX to AiAgentCliResult(0, codexListJson), // stale command → drift
+                ),
+            ),
+            cliPresent = setOf(AiAgentCli.CLAUDE, AiAgentCli.CODEX), // no gemini CLI
+        )
+        // The stdout IS the contract: what the command prints must round-trip through the shared parser
+        // (devrig-common), because that parser is what the IDE plugin renders the page rows from.
+        assertEquals(
+            mapOf(
+                AiAgentCli.CLAUDE to InstallCheckAgentStatus.REGISTERED,
+                AiAgentCli.CODEX to InstallCheckAgentStatus.DRIFT,
+                AiAgentCli.GEMINI to InstallCheckAgentStatus.CLI_MISSING,
+            ),
+            parseInstallCheckAgentLines(r.stdout),
+        )
+        assertContains(r.stdout, "install-check: claude=registered")
+        assertContains(r.stdout, "install-check: codex=drift")
+        assertContains(r.stdout, "install-check: gemini=cli-missing")
+    }
+
+    @Test
+    fun `check-all exits 0 when every present agent is canonical - missing CLIs are nothing to do`() {
+        val r = runCheckAll(
+            PerAgentRunner(mapOf(AiAgentCli.CLAUDE to AiAgentCliResult(0, claudeCanonicalList))),
+            cliPresent = setOf(AiAgentCli.CLAUDE),
+        )
+        assertEquals(0, r.exitCode)
+        assertContains(r.stdout, "No drift")
+    }
+
+    @Test
+    fun `check-all aggregates any drift into the drift exit code`() {
+        val r = runCheckAll(
+            PerAgentRunner(
+                mapOf(
+                    AiAgentCli.CLAUDE to AiAgentCliResult(0, claudeCanonicalList),
+                    AiAgentCli.CODEX to AiAgentCliResult(0, codexListJson),
+                    AiAgentCli.GEMINI to AiAgentCliResult(0, claudeCanonicalList),
+                ),
+            ),
+        )
+        assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
+        assertContains(r.stdout, "'devrig install codex'")
+    }
+
+    @Test
+    fun `check-all reports disabled-only with the disabled exit code`() {
+        val r = runCheckAll(
+            PerAgentRunner(mapOf(AiAgentCli.CLAUDE to AiAgentCliResult(0, claudeCanonicalList))),
+            cliPresent = setOf(AiAgentCli.CLAUDE),
+            disabled = setOf(AiAgentCli.CLAUDE),
+        )
+        assertEquals(INSTALL_CHECK_DISABLED_EXIT_CODE, r.exitCode)
+        assertContains(r.stdout, "install-check: claude=disabled")
+        assertContains(r.stdout, "Registered but disabled")
+    }
+
+    @Test
+    fun `check-all folds one agent's failed check into its own row - the others still answer`() {
+        // Present on PATH but not spawnable (the Windows .cmd npm shim shape): the aggregate command
+        // owes a line per agent, so this is check-failed for that row, never an abort of the run —
+        // unlike the single-agent check, where the typed exception propagates to runCli's guidance.
+        val r = runCheckAll(
+            PerAgentRunner(mapOf(AiAgentCli.CLAUDE to AiAgentCliResult(0, claudeCanonicalList))),
+        )
+        assertEquals(
+            mapOf(
+                AiAgentCli.CLAUDE to InstallCheckAgentStatus.REGISTERED,
+                AiAgentCli.CODEX to InstallCheckAgentStatus.CHECK_FAILED,
+                AiAgentCli.GEMINI to InstallCheckAgentStatus.CHECK_FAILED,
+            ),
+            parseInstallCheckAgentLines(r.stdout),
+        )
+        // A state that could not be verified is repairable, so it aggregates like drift.
+        assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
+        assertContains(r.stderr, "could not check Codex")
+    }
+
+    @Test
+    fun `check-all never mutates and never spawns an absent CLI`() {
+        val runner = PerAgentRunner(
+            mapOf(
+                AiAgentCli.CLAUDE to AiAgentCliResult(0, claudeListWithBothNames),
+                AiAgentCli.CODEX to AiAgentCliResult(0, codexListJson),
+            ),
+        )
+        runCheckAll(runner, cliPresent = setOf(AiAgentCli.CLAUDE, AiAgentCli.CODEX))
+        assertTrue(runner.invocations.all { it.args.contains("list") }, runner.invocations.toString())
+        assertFalse(
+            runner.invocations.any { it.binary == AiAgentCli.GEMINI.binary },
+            "an absent CLI must be answered from PATH, not by spawning it: ${runner.invocations}",
+        )
+    }
+
+    @Test
+    fun `check-all probes IDE reachability exactly once - not once per agent`() {
+        val probes = java.util.concurrent.atomic.AtomicInteger()
+        val r = runCheckAll(
+            PerAgentRunner(
+                mapOf(
+                    AiAgentCli.CLAUDE to AiAgentCliResult(0, claudeCanonicalList),
+                    AiAgentCli.CODEX to AiAgentCliResult(0, codexCanonicalJson),
+                    AiAgentCli.GEMINI to AiAgentCliResult(0, claudeCanonicalList),
+                ),
+            ),
+            reachability = IdeReachabilityReport(reachable = 2, discovered = 3),
+            probeCounter = probes,
+        )
+        assertEquals(1, probes.get())
+        assertContains(r.stdout, "2 of 3 discovered backend(s) reachable")
+    }
+
+    @Test
+    fun `check-all reports the launcher is absent when it does not exist yet`() {
+        val r = runCheckAll(
+            PerAgentRunner(mapOf(AiAgentCli.CLAUDE to AiAgentCliResult(0, claudeCanonicalList))),
+            cliPresent = setOf(AiAgentCli.CLAUDE),
+            missingLauncherPath = Path.of(launcherPath),
+        )
+        assertContains(r.stdout, "does not exist yet")
+        assertContains(r.stdout, launcherPath)
+    }
+
+    @Test
+    fun `check-all treats an unreadable list as drift - the state cannot be verified`() {
+        val r = runCheckAll(
+            PerAgentRunner(mapOf(AiAgentCli.CLAUDE to AiAgentCliResult(exitCode = 2, output = "boom: cannot list\n"))),
+            cliPresent = setOf(AiAgentCli.CLAUDE),
+        )
+        assertContains(r.stdout, "install-check: claude=drift")
+        assertEquals(INSTALL_CHECK_DRIFT_EXIT_CODE, r.exitCode)
+    }
+
     private fun runCheck(
         agent: AiAgentCli,
         runner: RecordingRunner,

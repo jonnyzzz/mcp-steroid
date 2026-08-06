@@ -13,6 +13,11 @@ import com.jonnyzzz.mcpSteroid.aiAgents.mcpRemoveInvocation
 import java.io.PrintStream
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 
 private const val DEVRIG_MCP_SERVER_NAME = "mcp-steroid"
 private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
@@ -388,11 +393,7 @@ fun runInstallCheckCommand(
     }
     out.println()
 
-    // Canonical = exactly one devrig-owned entry, under the canonical name, launching the exact command
-    // install would register. Anything else — stale launcher/subcommand, duplicates, a custom name, no
-    // entry, or an unreadable list — is drift.
-    val canonical = listReadable &&
-        detected.singleOrNull()?.let { it.name == DEVRIG_MCP_SERVER_NAME && it.commandLine == renderedCommand } == true
+    val canonical = isCanonicalDevrigRegistration(detected, listReadable, renderedCommand)
 
     out.println("What 'devrig install ${agent.binary}' would change:")
     if (canonical) {
@@ -439,6 +440,161 @@ fun runInstallCheckCommand(
             out.println("Drift detected — run 'devrig install ${agent.binary}' to repair.")
             INSTALL_CHECK_DRIFT_EXIT_CODE
         }
+    }
+}
+
+/**
+ * Canonical = exactly one devrig-owned entry, under the canonical name, launching the exact command
+ * install would register. Anything else — stale launcher/subcommand, duplicates, a custom name, no
+ * entry, or an unreadable list — is drift. The ONE definition, shared by the single-agent check and
+ * the all-agents check so the two modes can never disagree about what canonical means.
+ */
+fun isCanonicalDevrigRegistration(
+    detected: List<McpServerRef>,
+    listReadable: Boolean,
+    renderedCommand: String,
+): Boolean = listReadable &&
+    detected.singleOrNull()?.let { it.name == DEVRIG_MCP_SERVER_NAME && it.commandLine == renderedCommand } == true
+
+fun DevrigServices.runInstallCheckAllCommand(runner: AiAgentCliRunner = ProcessAiAgentCliRunner()): Int {
+    val launcherFile = DevrigUserLauncher.path(homePaths)
+    return runInstallCheckAllCommand(
+        mcpCommand = DevrigUserLauncher.invocation(homePaths, listOf("mcp")),
+        missingLauncherPath = launcherFile.takeUnless { it.isRegularFile() },
+        out = mcpStdout,
+        err = System.err,
+        runner = runner,
+        ideReachability = { collectIdeReachability() },
+    )
+}
+
+/**
+ * The all-agents mode of [runInstallCheckCommand]: bare `devrig install --check`. ONE process answers
+ * where EVERY supported agent stands, so a consumer that needs the whole picture — the IDE settings
+ * page renders one row per agent on every show — costs one devrig spawn instead of one JVM per agent,
+ * each of which also re-ran the IDE-reachability probe; here it runs ONCE (the 2026-08-06 perf finding).
+ *
+ * Per agent the classification is the single-agent check's, minus the prose: the same read-only
+ * `mcp list`, the same canonical predicate ([isCanonicalDevrigRegistration], shared so the two modes
+ * cannot drift apart), the same disabled probe. The answer is one machine-readable
+ * [renderInstallCheckAgentLine] line per agent (`devrig-common` `InstallCheckAgentLine.kt` — the
+ * stdout contract the IDE plugin parses back), because one process exit code cannot carry three
+ * agents' answers. A missing CLI is answered from a PATH scan ([findCliOnPath]) without spawning
+ * anything, and any failure of one agent's check — including a CLI that is present but not spawnable
+ * ([AgentCliNotLaunchableException], e.g. a Windows `.cmd` npm shim) — folds into
+ * [InstallCheckAgentStatus.CHECK_FAILED] for that row (logged on stderr) instead of aborting the
+ * others: this command must always print a line per agent.
+ *
+ * The agent checks run concurrently — the caller waits for the slowest agent CLI, not the sum.
+ *
+ * The exit code is the aggregate ([INSTALL_CHECK_DRIFT_EXIT_CODE] when install would change — or the
+ * check could not verify — anything, [INSTALL_CHECK_DISABLED_EXIT_CODE] when the only finding is a
+ * switched-off registration, 0 otherwise); missing CLIs count as nothing to do. Read-only like the
+ * single-agent mode: nothing is written, so concurrent runs are safe (Tenet 3).
+ */
+fun runInstallCheckAllCommand(
+    mcpCommand: StdioMcpCommand,
+    out: PrintStream,
+    err: PrintStream,
+    runner: AiAgentCliRunner,
+    ideReachability: () -> IdeReachabilityReport,
+    /** Non-null = the devrig launcher does not exist yet at this path (reported as a diagnostic). */
+    missingLauncherPath: Path? = null,
+    /** Seam: is the agent's CLI on PATH? Production takes [findCliOnPath]'s live answer. */
+    agentCliPresent: (AiAgentCli) -> Boolean = { findCliOnPath(it.binary) != null },
+    /** Seam: reads the agent's own config for a switched-off registration. */
+    disabledRegistration: (AiAgentCli) -> DisabledRegistration? = { disabledRegistrationFor(it) },
+): Int {
+    out.println(
+        "Checking the '$DEVRIG_MCP_SERVER_NAME' MCP registration for every supported agent " +
+            "(read-only — nothing is changed).",
+    )
+    out.println()
+
+    if (missingLauncherPath != null) {
+        out.println(
+            "Note: the devrig launcher ($missingLauncherPath) does not exist yet — " +
+                "'devrig install <agent>' will create it before registering.",
+        )
+        out.println()
+    }
+
+    val statuses: Map<AiAgentCli, InstallCheckAgentStatus> = runBlocking {
+        AiAgentCli.entries.map { agent ->
+            async(Dispatchers.IO) {
+                agent to checkAgentRegistrationStatus(agent, mcpCommand, runner, agentCliPresent, disabledRegistration, err)
+            }
+        }.awaitAll().toMap()
+    }
+
+    for ((agent, status) in statuses) out.println(renderInstallCheckAgentLine(agent, status))
+    out.println()
+
+    reportIdeReachability(out, err, ideReachability)
+    out.println()
+
+    val repairable = statuses.filterValues {
+        it == InstallCheckAgentStatus.DRIFT || it == InstallCheckAgentStatus.CHECK_FAILED
+    }.keys
+    val disabled = statuses.filterValues { it == InstallCheckAgentStatus.DISABLED }.keys
+    return when {
+        repairable.isNotEmpty() -> {
+            out.println(
+                "Install would change something (or the state could not be verified) — run " +
+                    repairable.joinToString(" / ") { "'devrig install ${it.binary}'" } + " to repair.",
+            )
+            INSTALL_CHECK_DRIFT_EXIT_CODE
+        }
+        disabled.isNotEmpty() -> {
+            out.println(
+                "Registered but disabled — run " +
+                    disabled.joinToString(" / ") { "'devrig install ${it.binary}'" } + " to switch it back on.",
+            )
+            INSTALL_CHECK_DISABLED_EXIT_CODE
+        }
+        else -> {
+            out.println(
+                "No drift — every agent CLI found on PATH has the canonical '$DEVRIG_MCP_SERVER_NAME' registration.",
+            )
+            0
+        }
+    }
+}
+
+/**
+ * One agent's answer for [runInstallCheckAllCommand]. Never throws: the aggregate command owes its
+ * caller a line per agent, so a failed check is an answer ([InstallCheckAgentStatus.CHECK_FAILED],
+ * logged on stderr with the agent's name), not an abort — unlike the single-agent check, which lets
+ * [AgentCliNotLaunchableException] propagate to `runCli`'s central guidance because its whole run IS
+ * that one agent.
+ */
+private fun checkAgentRegistrationStatus(
+    agent: AiAgentCli,
+    mcpCommand: StdioMcpCommand,
+    runner: AiAgentCliRunner,
+    agentCliPresent: (AiAgentCli) -> Boolean,
+    disabledRegistration: (AiAgentCli) -> DisabledRegistration?,
+    err: PrintStream,
+): InstallCheckAgentStatus {
+    try {
+        if (!agentCliPresent(agent)) return InstallCheckAgentStatus.CLI_MISSING
+        val listResult = runner.run(mcpListInvocation(agent))
+        val listReadable = listResult.exitCode == 0
+        val listed = if (listReadable) parseMcpServerList(agent, listResult.output) else emptyList()
+        val detected = listed.filter { it.isDevrigOwned() }
+        val renderedCommand = "${mcpCommand.command} ${mcpCommand.args.joinToString(" ")}"
+        if (!isCanonicalDevrigRegistration(detected, listReadable, renderedCommand)) {
+            return InstallCheckAgentStatus.DRIFT
+        }
+        return if (disabledRegistration(agent) != null) InstallCheckAgentStatus.DISABLED
+        else InstallCheckAgentStatus.REGISTERED
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        err.println(
+            "devrig install --check: could not check ${agent.displayName}: ${e.message ?: e::class.simpleName}",
+        )
+        return InstallCheckAgentStatus.CHECK_FAILED
     }
 }
 
