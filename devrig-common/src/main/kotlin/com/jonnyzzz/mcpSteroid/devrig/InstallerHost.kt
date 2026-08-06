@@ -17,6 +17,17 @@ const val DEVRIG_INSTALL_PS1_URL = "https://devrig.dev/install.ps1"
 /** The installer to fetch for this OS. */
 fun devrigInstallerUrl(isWin: Boolean): String = if (isWin) DEVRIG_INSTALL_PS1_URL else DEVRIG_INSTALL_SH_URL
 
+/**
+ * The canonical install one-liner for this OS, VERBATIM as the website publishes it
+ * (`website/layouts/partials/install-cta.html`, the header comments of `install.sh.tmpl` /
+ * `install.ps1.tmpl`, README). Everywhere the product shows a user "how to install devrig" — the
+ * IDE settings page, docs, prompts — must show exactly this string, so what a user copies from any
+ * surface is the same command the docs promote, running the same [devrigInstallerUrl] script the
+ * IDE's own Install button fetches through [downloadInstallerScript].
+ */
+fun devrigInstallOneLiner(isWin: Boolean): String =
+    if (isWin) "irm $DEVRIG_INSTALL_PS1_URL | iex" else "curl -fsSL $DEVRIG_INSTALL_SH_URL | sh"
+
 /** Most reliable first: absolute System32 PowerShell (agents often carry stripped PATHs), then PATH lookups. */
 fun windowsInstallerHostCandidates(systemRoot: String? = System.getenv("SystemRoot")): List<String> {
     val root = systemRoot?.takeIf { it.isNotBlank() } ?: "C:\\Windows"

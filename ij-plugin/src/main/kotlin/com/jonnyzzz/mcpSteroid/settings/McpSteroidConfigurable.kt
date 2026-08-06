@@ -30,8 +30,8 @@ import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import com.jonnyzzz.mcpSteroid.devrig.DevrigUserLauncher
-import com.jonnyzzz.mcpSteroid.devrig.devrigHomeDisplayPath
 import com.jonnyzzz.mcpSteroid.devrig.devrigInstallAgentCommandLine
+import com.jonnyzzz.mcpSteroid.devrig.devrigInstallOneLiner
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.devrig.resolveHomePaths
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
@@ -237,11 +237,17 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             }
             otherClientsSection(Path.of(userHome))
         } else {
-            row {
-                text("<b>devrig is not installed yet.</b>")
-            }
-            row {
-                button("Install devrig") {
+            // The install block is fully transparent (owner direction, 2026-08-06): only the install
+            // action, with the CLI path promoted as THE way in. The copyable field carries the exact
+            // one-liner the website publishes ([devrigInstallOneLiner], pinned verbatim in
+            // devrig-common), and the Install button beside it visibly does the very same thing the
+            // text shows — fetch that script (the shared devrig-common downloadInstallerScript) and
+            // run it, inside the existing cancellable progress task ([DevrigSetupRunner]). Same URL,
+            // same script, one behavior with two triggers; nothing else is kept in the block.
+            row("To install:") {
+                cell(copyableTextField(devrigInstallOneLiner(SystemInfo.isWindows)))
+                    .align(AlignX.FILL)
+                button("Install") {
                     // Application-level page: any open project just anchors the progress bar, and none
                     // is fine too (the task then runs at IDE level). The install itself is a background
                     // task the user must be able to see through to the end; this coroutine — the
@@ -254,16 +260,6 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                         applyDevrigInstalled(uiScope, withContext(Dispatchers.IO) { DevrigSetupRunner.devrigInstalled() })
                     }
                 }
-            }
-            row {
-                // The real home, never `~` — on Windows a tilde is a placeholder the OS will not expand,
-                // and this page's policy is that a displayed path is the literal path on disk.
-                val home = devrigHomeDisplayPath(userHome, SystemInfo.isWindows)
-                comment(
-                    "Downloads about 611 MB (a pinned JDK plus devrig) into <code>$home</code> and " +
-                        "puts <code>devrig</code> on your PATH. It registers nothing with your agents — " +
-                        "that is the next step, and it appears here once devrig is in place."
-                )
             }
         }
     }

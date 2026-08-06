@@ -12,6 +12,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import com.jonnyzzz.mcpSteroid.devrig.devrigInstallAgentCommandLine
+import com.jonnyzzz.mcpSteroid.devrig.devrigInstallOneLiner
 import com.jonnyzzz.mcpSteroid.devrig.devrigLauncherDisplayPath
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
@@ -103,13 +104,6 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                     texts.indexOfFirst { it.contains("What is devrig?") },
             )
 
-            // The by-hand installer one-liners are gone: the button is the way to install devrig from the
-            // IDE, and a copyable `curl … | sh` next to it only invited a second, unmanaged install.
-            assertFalse(
-                "The page must not print installer one-liners any more; found:\n$joined",
-                joined.contains("install.sh") || joined.contains("install.ps1") || joined.contains("| iex"),
-            )
-
             // Exactly one of the two state-dependent blocks, never both: the install button has nothing
             // to offer someone who already has devrig, and the registration commands mean nothing to
             // someone who does not. Asserted against the real state so this holds on any machine.
@@ -164,11 +158,20 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
 
                 assertFalse(
                     "devrig is installed — the panel must not offer to install it again; found:\n$joined",
-                    joined.contains("devrig is not installed"),
+                    joined.contains("To install:"),
+                )
+                // With devrig installed there is no install offer, so no installer one-liner either: a
+                // copyable `curl … | sh` here would only invite a second, unmanaged install.
+                assertFalse(
+                    "an installed page must not print installer one-liners; found:\n$joined",
+                    joined.contains("install.sh") || joined.contains("install.ps1") || joined.contains("| iex"),
                 )
             } else {
-                assertContainsText(texts, "devrig is not installed")
-                assertContainsText(texts, "Install devrig")
+                // The install block is transparent: the CLI one-liner is promoted, the Install button
+                // beside it does the same thing. The exact per-OS string and the button wiring are
+                // pinned in their own test below.
+                assertContainsText(texts, "To install:")
+                assertContainsText(texts, "Install")
                 assertFalse(
                     "Without devrig the stdio snippet would name a launcher that does not exist; found:\n$joined",
                     joined.contains(McpSteroidConfigurable.OTHER_CLIENTS_SECTION_TITLE),
@@ -420,6 +423,58 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             assertFalse(
                 "no Register/Enable buttons may remain; buttons: $buttons",
                 buttons.any { it == "Register" || it == "Enable" },
+            )
+        } finally {
+            uiScope.cancel()
+            configurable.disposeUIResources()
+        }
+    }
+
+    /**
+     * The install block is fully transparent (owner direction, 2026-08-06): the CLI path is promoted —
+     * the canonical one-liner the website publishes, rendered read-only and copyable, VERBATIM for this
+     * OS — and the adjacent Install button does visibly the same thing (fetch that script via the shared
+     * devrig-common download, run it under the progress task). Nothing else may live in the block: no
+     * state prose, no cost paragraph, no second path. The panel renders the branch it is handed, so both
+     * sides are deterministic on any machine.
+     */
+    fun `test the install block promotes the CLI one-liner next to a trivial Install button`() {
+        val configurable = McpSteroidConfigurable()
+        val uiScope = CoroutineScope(Job())
+        try {
+            val component = configurable.createComponent()
+            configurable.applyDevrigInstalled(uiScope, devrigInstalled = false)
+
+            // The one-liner: this OS's canonical form, verbatim, in the page's copyable field style.
+            val oneLiner = devrigInstallOneLiner(SystemInfo.isWindows)
+            val fields = collectValueFields(component).map { it.text }
+            assertTrue(
+                "the install row must render '$oneLiner' verbatim in a copyable field; fields: $fields",
+                fields.any { it == oneLiner },
+            )
+            assertContainsText(collectTexts(component), "To install:")
+
+            // The Install button sits right next to it — the same install, one press instead of a paste.
+            val buttons = collectButtons(component).mapNotNull { it.text }
+            assertTrue("expected an Install button; buttons: $buttons", buttons.any { it == "Install" })
+
+            // Transparency means ONLY the install action: the old prose block is gone.
+            val joined = collectTexts(component).joinToString("\n")
+            assertFalse(
+                "the install block keeps only the install action; found stale prose in:\n$joined",
+                joined.contains("devrig is not installed") || joined.contains("Downloads about 611 MB"),
+            )
+
+            // Once installed, both the one-liner and the button disappear together.
+            configurable.applyDevrigInstalled(uiScope, devrigInstalled = true)
+            val installedFields = collectValueFields(component).map { it.text }
+            assertFalse(
+                "an installed page must not render the installer one-liner; fields: $installedFields",
+                installedFields.any { it == oneLiner },
+            )
+            assertFalse(
+                "an installed page must not render an Install button",
+                collectButtons(component).mapNotNull { it.text }.any { it == "Install" },
             )
         } finally {
             uiScope.cancel()
