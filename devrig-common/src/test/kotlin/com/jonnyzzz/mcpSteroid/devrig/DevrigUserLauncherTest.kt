@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import kotlin.test.assertEquals
@@ -95,6 +96,46 @@ class DevrigUserLauncherTest {
         assertEquals(
             "\"C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd\" mcp",
             devrigMcpCommandLine("C:\\Users\\First Last", windows = true),
+        )
+    }
+
+    // The per-agent registration command the IDE settings page displays: the absolute launcher plus
+    // devrig's own canonical, idempotent 'install <agent>' verb (issue #399) — never a bare 'devrig',
+    // which would silently depend on PATH.
+
+    @Test
+    fun `devrigInstallAgentCommandLine is the absolute launcher plus install claude on POSIX`() {
+        assertEquals(
+            "/home/user/.mcp-steroid/bin/devrig install claude",
+            devrigInstallAgentCommandLine("/home/user", windows = false, agent = AiAgentCli.CLAUDE),
+        )
+    }
+
+    @Test
+    fun `devrigInstallAgentCommandLine names every agent by its CLI binary on POSIX`() {
+        assertEquals(
+            "/home/user/.mcp-steroid/bin/devrig install codex",
+            devrigInstallAgentCommandLine("/home/user", windows = false, agent = AiAgentCli.CODEX),
+        )
+        assertEquals(
+            "/home/user/.mcp-steroid/bin/devrig install gemini",
+            devrigInstallAgentCommandLine("/home/user", windows = false, agent = AiAgentCli.GEMINI),
+        )
+    }
+
+    @Test
+    fun `devrigInstallAgentCommandLine names the cmd shim with backslashes on Windows`() {
+        assertEquals(
+            "C:\\Users\\me\\.mcp-steroid\\bin\\devrig.cmd install claude",
+            devrigInstallAgentCommandLine("C:\\Users\\me", windows = true, agent = AiAgentCli.CLAUDE),
+        )
+    }
+
+    @Test
+    fun `devrigInstallAgentCommandLine quotes a launcher path containing a space`() {
+        assertEquals(
+            "\"C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd\" install gemini",
+            devrigInstallAgentCommandLine("C:\\Users\\First Last", windows = true, agent = AiAgentCli.GEMINI),
         )
     }
 }

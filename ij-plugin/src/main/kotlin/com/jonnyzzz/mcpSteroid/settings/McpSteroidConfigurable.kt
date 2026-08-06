@@ -21,7 +21,6 @@ import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.COLUMNS_MEDIUM
 import com.intellij.ui.dsl.builder.Panel
 import com.intellij.ui.dsl.builder.Placeholder
-import com.intellij.ui.dsl.builder.Row
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
@@ -30,16 +29,17 @@ import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
 import com.jonnyzzz.mcpSteroid.devrig.devrigHomeDisplayPath
+import com.jonnyzzz.mcpSteroid.devrig.devrigInstallAgentCommandLine
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
-import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
-import com.jonnyzzz.mcpSteroid.onboarding.DevrigAgentRegistrationService
+import com.jonnyzzz.mcpSteroid.onboarding.devrigInstalled
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
-import com.jonnyzzz.mcpSteroid.onboarding.OnboardingStatus
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.awt.datatransfer.StringSelection
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -76,14 +76,6 @@ fun copyWithFeedback(content: String, source: JComponent?) {
 private const val COPIED_HINT_FADEOUT_MS = 2000L
 
 /**
- * The receipt under a Register/Enable button. It leads with "runs command:" so the boundary between the
- * label and the command itself is unambiguous — "runs devrig install claude" read as one sentence, and a
- * user could not tell where the prose ended and the command began.
- */
-fun agentRegisterCommandComment(agent: AiAgentCli): String =
-    "runs command: <code>devrig install ${agent.binary}</code>"
-
-/**
  * Application-level settings page: Settings | Tools | Devrig — MCP Steroid.
  *
  * Purely informational — no persistent state, no mutable options. The page exists so users
@@ -91,6 +83,11 @@ fun agentRegisterCommandComment(agent: AiAgentCli): String =
  *
  * 1. **Devrig** — the whole recommended path in one group, read top to bottom: why it is worth a separate
  *    binary, then devrig's own state plus whatever the next step is: install it, or point an agent at it.
+ *    The per-agent registrations are DISPLAY-ONLY: one long copyable command per agent, the same
+ *    `<launcher> install <agent>` the docs promote, for the user to run in a terminal. The IDE neither
+ *    checks an agent's registration state nor runs the registration itself — an earlier revision did
+ *    both, and the state machine (per-agent probes, Register/Enable buttons, failure notifications with
+ *    Retry) broke in practice where a printed command could not (owner direction, 2026-08-06).
  * 2. **Direct HTTP (deprecated)**, collapsed and last: the in-IDE server's live state (a cheap
  *    [SteroidsMcpServer.port] read from an in-memory atomic, no background work on the settings thread),
  *    its URL, per-agent `mcp add` commands, generic `mcpServers` JSON, registry keys. Nobody should start
@@ -99,10 +96,10 @@ fun agentRegisterCommandComment(agent: AiAgentCli): String =
  *
  * **The EDT never touches the disk here, and the panel is dumb.** The devrig block starts as a
  * "Checking…" placeholder; [launchOnShow] re-runs the populate every time the page becomes showing —
- * ask [DevrigAgentRegistrationService.status] (all I/O inside the service), render the answer — and
- * cancels it when the page is hidden. Button-started awaits are children of that same dialog-scoped
- * coroutine, so they die with the dialog too, while the work they wait on (a background install
- * task) runs to completion regardless. There is no cached state: every show computes reality
+ * read the one remaining fact ([devrigInstalled], file I/O on [Dispatchers.IO]), render the answer —
+ * and cancels it when the page is hidden. The install button's await is a child of that same
+ * dialog-scoped coroutine, so it dies with the dialog too, while the work it waits on (a background
+ * install task) runs to completion regardless. There is no cached state: every show computes reality
  * afresh, so there is also nothing to invalidate and nothing to listen to. (Precedents: the
  * platform's own MCP-server settings page and the Terminal's shell-path detection use the same
  * on-show idiom.)
@@ -177,9 +174,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // I/O runs inside the service.
         panel.launchOnShow("McpSteroidConfigurable devrig state") {
             installStatus?.component = checkingPanel()
-            applyStatus(this, DevrigAgentRegistrationService.getInstance().status())
-            // The scope must outlive the populate: the buttons just rendered launch their
-            // await-and-render children on it, and those must be dialog-scoped the same way the
+            applyDevrigInstalled(this, withContext(Dispatchers.IO) { devrigInstalled() })
+            // The scope must outlive the populate: the install button just rendered launches its
+            // await-and-render child on it, and that must be dialog-scoped the same way the
             // populate is. launchOnShow cancels this coroutine when the panel stops showing and
             // restarts it on re-show — which is exactly the populate-on-show contract.
             awaitCancellation()
@@ -195,18 +192,18 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     }
 
     /**
-     * Swap the devrig block for one rendering [status]. EDT only; a no-op once the page is gone.
-     * Public so a test, whose panel is never physically showing, can drive the same populate path
-     * the on-show launch takes — and hand it any status, because the panel just renders what it is
+     * Swap the devrig block for one rendering [devrigInstalled]. EDT only; a no-op once the page is
+     * gone. Public so a test, whose panel is never physically showing, can drive the same populate path
+     * the on-show launch takes — and hand it either answer, because the panel just renders what it is
      * given.
      *
-     * [uiScope] carries every await a button on the rendered block starts: in production it is the
-     * on-show coroutine's own scope, so a row update launched from a press is cancelled with the
-     * dialog exactly like the populate itself — while the awaited work (a background task) runs on.
+     * [uiScope] carries the await the install button starts: in production it is the on-show
+     * coroutine's own scope, so a block update launched from a press is cancelled with the dialog
+     * exactly like the populate itself — while the awaited work (a background task) runs on.
      */
-    fun applyStatus(uiScope: CoroutineScope, status: OnboardingStatus) {
+    fun applyDevrigInstalled(uiScope: CoroutineScope, devrigInstalled: Boolean) {
         val placeholder = installStatus ?: return
-        placeholder.component = installStatusPanel(uiScope, status)
+        placeholder.component = installStatusPanel(uiScope, devrigInstalled)
     }
 
     /**
@@ -216,28 +213,35 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * Showing exactly one of the two is the point. The button has nothing to offer someone who already
      * has devrig, and the registration commands mean nothing to someone who does not.
      */
-    private fun installStatusPanel(uiScope: CoroutineScope, status: OnboardingStatus): DialogPanel = panel {
-        if (status.devrigInstalled) {
+    private fun installStatusPanel(uiScope: CoroutineScope, devrigInstalled: Boolean): DialogPanel = panel {
+        if (devrigInstalled) {
             row("devrig:") {
                 // A fixed medium width, not AlignX.FILL: stretched across the whole page the field
-                // dwarfed the agent value areas right below it (owner click-testing feedback). The
-                // status fields in this block all share STATUS_FIELD_COLUMNS so they line up as one
-                // column of answers. Plain "Installed" — devrig updates itself, so there is no
-                // version worth naming here.
+                // dwarfed the agent value areas right below it (owner click-testing feedback). Plain
+                // "Installed" — devrig updates itself, so there is no version worth naming here.
                 cell(valueTextField("Installed")).columns(STATUS_FIELD_COLUMNS)
             }
             row {
-                text("<b>Point an agent at it</b> — once per machine, not once per project:")
+                text(
+                    "<b>Point an agent at it</b> — run its command in a terminal, once per machine, " +
+                        "not once per project. Re-running one is safe: it repairs and never duplicates."
+                )
             }.topGap(TopGap.SMALL)
-            // The states arrive with the status: the service already ran every check before this block
-            // was built, so a row never waits on its own — it renders the answer it was handed.
-            for ((agent, state) in status.agents) {
+            // Display-only, one long copyable command per agent — the same field style as the
+            // command-line rows below. The IDE deliberately neither checks an agent's registration
+            // state nor runs the registration itself: the earlier per-agent state machine
+            // (Checking…/Registered/Register/Enable buttons) broke in practice where a printed
+            // command could not (owner direction, 2026-08-06). Built through
+            // [devrigInstallAgentCommandLine] (real absolute launcher, quoted when the path holds a
+            // space), copyable so display and clipboard are the same string.
+            val home = System.getProperty("user.home")
+            for (agent in AiAgentCli.entries) {
                 row("${agent.displayName}:") {
-                    val placeholder = placeholder()
-                    placeholder.component = agentRow(uiScope, agent, state, placeholder)
+                    cell(copyableTextField(devrigInstallAgentCommandLine(home, SystemInfo.isWindows, agent)))
+                        .align(AlignX.FILL)
                 }
             }
-            // The registration devrig has no button for, right under the three it does: any client with an
+            // The registration devrig has no verb for, right under the three it does: any client with an
             // "add MCP server" dialog takes this one command line. It used to hide inside the collapsed
             // "Another MCP client" group below the JSON snippet, where nobody wiring such a client would
             // look first (owner click-testing feedback) — the agent rows are where "point a client at
@@ -273,7 +277,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     uiScope.launch {
                         DevrigSetupRunner.getInstance()
                             .install(ProjectManager.getInstance().openProjects.firstOrNull())
-                        applyStatus(uiScope, DevrigAgentRegistrationService.getInstance().status())
+                        applyDevrigInstalled(uiScope, withContext(Dispatchers.IO) { devrigInstalled() })
                     }
                 }
             }
@@ -330,81 +334,6 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 )
             }
         }.topGap(TopGap.SMALL)
-    }
-
-    /**
-     * One agent's cell: what we know, and a button only where pressing one would achieve something.
-     *
-     * The states are not interchangeable. "Register" is offered when devrig would actually change
-     * something; an already-registered agent gets no button, because a button on a finished step reads as
-     * an unfinished setup. A missing CLI says so instead of offering a press that could only fail, and a
-     * check we could not complete says *that* — reporting it as "not registered" would be a guess.
-     */
-    private fun agentRow(
-        uiScope: CoroutineScope,
-        agent: AiAgentCli,
-        state: AgentRegistrationState,
-        placeholder: Placeholder,
-    ): DialogPanel = panel {
-        row {
-            when (state) {
-                // The two states that are pure fact get the same value field as the rows above them — same
-                // shape, same STATUS_FIELD_COLUMNS width, so the devrig row and the agent rows read as one
-                // column of answers. The rest are an action plus a reason, and a field would only dress up
-                // a button.
-                AgentRegistrationState.CHECKING ->
-                    cell(valueTextField("Checking…")).columns(STATUS_FIELD_COLUMNS)
-                AgentRegistrationState.REGISTERED ->
-                    cell(valueTextField("Registered")).columns(STATUS_FIELD_COLUMNS)
-                AgentRegistrationState.NOT_REGISTERED -> {
-                    registerButton(uiScope, agent, "Register", placeholder)
-                    comment(agentRegisterCommandComment(agent))
-                }
-                // Registered and switched off in the agent's own config. Same fix, different word: the
-                // user is not missing a registration, theirs is turned off — and no `mcp list` mentions
-                // it, which is why saying "Registered" here would be actively misleading.
-                AgentRegistrationState.DISABLED -> {
-                    registerButton(uiScope, agent, "Enable", placeholder)
-                    comment("registered, but switched off for this agent")
-                }
-                AgentRegistrationState.CLI_MISSING ->
-                    comment("no <code>${agent.binary}</code> on your PATH — install the agent first")
-                // We failed to find out, which is a different fact from "not registered" — and the fix
-                // is the same button: `devrig install` writes the canonical registration whatever the
-                // unreadable state was. The receipt names the action; pointing at the IDE log instead
-                // would hand the user homework where a press does the job.
-                AgentRegistrationState.CHECK_FAILED -> {
-                    registerButton(uiScope, agent, "Register", placeholder)
-                    comment("could not read the current state — ${agentRegisterCommandComment(agent)}")
-                }
-            }
-        }
-    }
-
-    /**
-     * The button behind every actionable state. One verb does all of them — `devrig install <agent>`
-     * registers, repairs a stale entry, and switches a disabled one back on — so the label changes with
-     * the situation while the action stays single.
-     *
-     * The press launches on [uiScope] — the dialog-scoped on-show coroutine — so the await-and-render
-     * is cancelled with the dialog while the registration itself (a background task inside the service)
-     * runs to completion; the launch inherits the UI dispatcher and the dialog's own modality from that
-     * scope, so the row update lands on the EDT while the (modal) Settings dialog is still up.
-     */
-    private fun Row.registerButton(
-        uiScope: CoroutineScope,
-        agent: AiAgentCli,
-        label: String,
-        placeholder: Placeholder,
-    ) {
-        button(label) {
-            placeholder.component = agentRow(uiScope, agent, AgentRegistrationState.CHECKING, placeholder)
-            uiScope.launch {
-                val result = DevrigAgentRegistrationService.getInstance()
-                    .register(agent, ProjectManager.getInstance().openProjects.firstOrNull())
-                placeholder.component = agentRow(uiScope, agent, result, placeholder)
-            }
-        }
     }
 
     /**
@@ -542,12 +471,12 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         const val OTHER_CLIENTS_SECTION_TITLE = "Another MCP client (Cursor, Windsurf, …)"
 
         /**
-         * Width of every short status field in the devrig block ("Installed", "Registered",
-         * "Checking…"), in text-field columns. One shared constant, because these fields sit in adjacent
-         * rows and must read as one column of answers: the installed-state field used to be AlignX.FILL
-         * and spanned the entire page, dwarfing the agent value areas right below it (owner click-testing
-         * feedback). COLUMNS_MEDIUM is the DSL's own standard value-field width; long copyable content
-         * (URLs, command lines) keeps AlignX.FILL because it exists to be read in full.
+         * Width of every short status field in the devrig block ("Installed", "Checking…"), in
+         * text-field columns. One shared constant, so these fields read as one column of answers: the
+         * installed-state field used to be AlignX.FILL and spanned the entire page, dwarfing the value
+         * areas right below it (owner click-testing feedback). COLUMNS_MEDIUM is the DSL's own standard
+         * value-field width; long copyable content (URLs, command lines) keeps AlignX.FILL because it
+         * exists to be read in full.
          */
         const val STATUS_FIELD_COLUMNS = COLUMNS_MEDIUM
 

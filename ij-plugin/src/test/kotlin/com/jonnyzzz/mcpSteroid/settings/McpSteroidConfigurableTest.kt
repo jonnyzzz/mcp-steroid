@@ -9,9 +9,9 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import com.jonnyzzz.mcpSteroid.devrig.devrigInstallAgentCommandLine
+import com.jonnyzzz.mcpSteroid.devrig.devrigLauncherDisplayPath
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
-import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
-import com.jonnyzzz.mcpSteroid.onboarding.OnboardingStatus
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.onboarding.devrigInstalled
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
@@ -69,9 +69,9 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
 
             // A test panel is never physically showing, so the launchOnShow block never runs here.
             // Drive the same populate path it takes: the real devrig probe decides the branch, and the
-            // agent rows are pinned to Checking… — the panel is dumb and renders whatever status it is
-            // handed, so no per-agent subprocess ever spawns in this test and the rows are deterministic.
-            configurable.applyStatus(uiScope, statusWithCheckingRows())
+            // panel is dumb — it renders the answer it is handed, so no subprocess ever spawns here.
+            val installed = devrigInstalled()
+            configurable.applyDevrigInstalled(uiScope, installed)
 
             val texts = collectTexts(component)
             val joined = texts.joinToString("\n")
@@ -109,7 +109,6 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // Exactly one of the two state-dependent blocks, never both: the install button has nothing
             // to offer someone who already has devrig, and the registration commands mean nothing to
             // someone who does not. Asserted against the real state so this holds on any machine.
-            val installed = devrigInstalled()
             if (installed) {
                 // One row per agent devrig can register — never just Claude.
                 for (agent in AiAgentCli.entries) {
@@ -228,11 +227,9 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 )
 
                 // Owner click-testing feedback: the installed-state field must not stretch across the
-                // whole page. It and the agent status fields ("Checking…", "Registered") share one fixed
-                // column width, so the devrig block reads as one column of answers. The applied status
-                // pinned every agent row to Checking…, so all of them are here deterministically.
+                // whole page — short status answers keep one fixed column width.
                 val statusFields = collectValueFields(component).filter {
-                    it.text.startsWith("Installed") || it.text == "Registered" || it.text == "Checking…"
+                    it.text.startsWith("Installed") || it.text == "Checking…"
                 }
                 assertTrue(
                     "expected at least the Installed field among: $fieldTexts",
@@ -275,23 +272,6 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             uiScope.cancel()
             configurable.disposeUIResources()
         }
-    }
-
-    /**
-     * The status the on-show populate would render on this machine, minus the subprocess spawns: the
-     * real [devrigInstalled] probe decides which branch the block shows, and every agent row is pinned
-     * to [AgentRegistrationState.CHECKING] — the state each row starts in before its answer arrives.
-     */
-    private fun statusWithCheckingRows(): OnboardingStatus {
-        val installed = devrigInstalled()
-        return OnboardingStatus(
-            devrigInstalled = installed,
-            agents = if (installed) {
-                AiAgentCli.entries.associateWith { AgentRegistrationState.CHECKING }
-            } else {
-                emptyMap()
-            },
-        )
     }
 
     /** The read-only fields the page renders every value in — statuses, URLs and commands alike. */
@@ -337,39 +317,20 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
     /**
      * Owner rule: every hint on this page names a concrete action — a button, a command, a registry
      * key — never "see the IDE log". A log pointer reports a problem and hands the user homework, which
-     * is worse than saying nothing. The panel renders whatever status it is handed, so this walks BOTH
-     * populate branches and every agent-row state — including every "could not read" hint — plus the
-     * deprecated-HTTP hints, deterministically on any machine, and rejects any pointer at the log.
+     * is worse than saying nothing. The panel renders whatever answer it is handed, so this walks BOTH
+     * populate branches plus the deprecated-HTTP hints, deterministically on any machine, and rejects
+     * any pointer at the log.
      */
     fun `test no rendered hint points at the IDE log`() {
         val configurable = McpSteroidConfigurable()
         val uiScope = CoroutineScope(Job())
         try {
             val component = configurable.createComponent()
-            val statuses = listOf(
-                OnboardingStatus(devrigInstalled = false, agents = emptyMap()),
-                OnboardingStatus(
-                    devrigInstalled = true,
-                    agents = mapOf(
-                        AiAgentCli.CLAUDE to AgentRegistrationState.NOT_REGISTERED,
-                        AiAgentCli.CODEX to AgentRegistrationState.DISABLED,
-                        AiAgentCli.GEMINI to AgentRegistrationState.CHECK_FAILED,
-                    ),
-                ),
-                OnboardingStatus(
-                    devrigInstalled = true,
-                    agents = mapOf(
-                        AiAgentCli.CLAUDE to AgentRegistrationState.CLI_MISSING,
-                        AiAgentCli.CODEX to AgentRegistrationState.REGISTERED,
-                        AiAgentCli.GEMINI to AgentRegistrationState.CHECKING,
-                    ),
-                ),
-            )
-            for (status in statuses) {
-                configurable.applyStatus(uiScope, status)
+            for (installed in listOf(false, true)) {
+                configurable.applyDevrigInstalled(uiScope, installed)
                 val joined = collectTexts(component).joinToString("\n")
                 assertFalse(
-                    "every hint must name its action, never the IDE log; with $status found:\n$joined",
+                    "every hint must name its action, never the IDE log; with installed=$installed found:\n$joined",
                     joined.contains("IDE log", ignoreCase = true) || joined.contains("Show Log"),
                 )
             }
@@ -380,22 +341,70 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
     }
 
     /**
-     * The receipt under a Register/Enable button must draw the boundary between the label and the command:
-     * "runs devrig install claude" read as one sentence, and where the prose ended was anyone's guess
-     * (manual click-testing feedback). One explicit method per pinned property — no parameterized tests.
+     * The agent rows are DISPLAY-ONLY (owner direction, 2026-08-06): one long read-only copyable field
+     * per agent, carrying the exact platform-correct command the user runs in a terminal — the absolute
+     * stable launcher plus devrig's canonical, idempotent 'install <agent>' verb (issue #399 contract).
+     * No state checking, no Register/Enable buttons: the panel renders the installed branch it is
+     * handed, so this is deterministic on any machine. The per-OS path forms (POSIX vs `.cmd`,
+     * backslashes, space-quoting) are pinned in devrig-common's DevrigUserLauncherTest; here the page
+     * must render THIS OS's form, verbatim, one field per agent.
      */
-    fun `test the register receipt leads with 'runs command' before the command itself`() {
-        for (agent in AiAgentCli.entries) {
-            val receipt = agentRegisterCommandComment(agent)
-            assertTrue(
-                "the receipt must lead with 'runs command:' for ${agent.displayName}; got '$receipt'",
-                receipt.startsWith("runs command: "),
+    fun `test each agent gets a display-only copyable field with the absolute install command`() {
+        val configurable = McpSteroidConfigurable()
+        val uiScope = CoroutineScope(Job())
+        try {
+            val component = configurable.createComponent()
+            configurable.applyDevrigInstalled(uiScope, devrigInstalled = true)
+
+            val fields = collectValueFields(component).map { it.text }
+            val launcher = devrigLauncherDisplayPath(System.getProperty("user.home"), SystemInfo.isWindows)
+            for (agent in AiAgentCli.entries) {
+                val command = devrigInstallAgentCommandLine(
+                    System.getProperty("user.home"), SystemInfo.isWindows, agent,
+                )
+                assertTrue(
+                    "the ${agent.displayName} row must render '$command' verbatim; fields: $fields",
+                    fields.any { it == command },
+                )
+                assertTrue(
+                    "the command must lead with the absolute launcher path, never a bare 'devrig'; got '$command'",
+                    command.startsWith(launcher) || command.startsWith("\"$launcher\""),
+                )
+                assertTrue(
+                    "the command must end with devrig's canonical install verb; got '$command'",
+                    command.endsWith(" install ${agent.binary}"),
+                )
+            }
+
+            // Display-only means NO registration machinery: no Register/Enable buttons and no live
+            // per-agent state words anywhere on the page.
+            val joined = collectTexts(component).joinToString("\n")
+            for (gone in listOf("Registered", "not registered", "switched off", "Checking…", "on your PATH")) {
+                assertFalse(
+                    "the page must not render per-agent registration state; found '$gone' in:\n$joined",
+                    joined.contains(gone),
+                )
+            }
+            val buttons = collectButtons(component).mapNotNull { it.text }
+            assertFalse(
+                "no Register/Enable buttons may remain; buttons: $buttons",
+                buttons.any { it == "Register" || it == "Enable" },
             )
-            assertTrue(
-                "the receipt must name the exact command for ${agent.displayName}; got '$receipt'",
-                receipt.contains("<code>devrig install ${agent.binary}</code>"),
-            )
+        } finally {
+            uiScope.cancel()
+            configurable.disposeUIResources()
         }
+    }
+
+    /** Buttons only — [collectTexts] also picks up links and labels, which may share words. */
+    private fun collectButtons(component: Component): List<JButton> {
+        val found = mutableListOf<JButton>()
+        fun walk(c: Component) {
+            if (c is JButton) found.add(c)
+            if (c is Container) c.components.forEach { walk(it) }
+        }
+        walk(component)
+        return found
     }
 
     /**

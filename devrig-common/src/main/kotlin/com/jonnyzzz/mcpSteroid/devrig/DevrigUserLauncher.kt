@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import java.nio.file.Path
 
@@ -83,14 +84,28 @@ fun devrigLauncherDisplayPath(userHome: String, windows: Boolean): String =
 
 /**
  * The one-line command that runs devrig as a stdio MCP server — what a user types into an MCP client that
- * asks for a command line instead of reading an `mcpServers` file. The launcher path follows the
+ * asks for a command line instead of reading an `mcpServers` file.
+ */
+fun devrigMcpCommandLine(userHome: String, windows: Boolean): String =
+    devrigCommandLine(userHome, windows, "mcp")
+
+/**
+ * The one-line command that registers devrig with [agent]'s CLI — `<launcher> install <agent>`, the
+ * canonical, idempotent registration verb (issue #399: re-running it repairs and consolidates, never
+ * duplicates). This is what the IDE settings page displays for the user to run in a terminal.
+ */
+fun devrigInstallAgentCommandLine(userHome: String, windows: Boolean, agent: AiAgentCli): String =
+    devrigCommandLine(userHome, windows, "install ${agent.binary}")
+
+/**
+ * The stable launcher plus [arguments], as one copy-pasteable line. The launcher path follows the
  * [devrigLauncherDisplayPath] policy (real absolute home, OS-native separators) and is quoted when it
  * contains a space, because every shell and client splits an unquoted `C:\Users\First Last\…` in two.
  */
-fun devrigMcpCommandLine(userHome: String, windows: Boolean): String {
+fun devrigCommandLine(userHome: String, windows: Boolean, arguments: String): String {
     val launcher = devrigLauncherDisplayPath(userHome, windows)
     val quoted = if (' ' in launcher) "\"$launcher\"" else launcher
-    return "$quoted mcp"
+    return "$quoted $arguments"
 }
 
 private fun displayPath(userHome: String, windows: Boolean, vararg segments: String): String {

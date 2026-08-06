@@ -28,7 +28,7 @@ class McpSteroidNotificationsTest : BasePlatformTestCase() {
 
     fun `test the single notification group is registered and auto-hides`() {
         // ONE group for everything the plugin says: plugin updates, the devrig promotion, and
-        // install/register results. Plain BALLOON — the promotion balloon may disappear (owner call);
+        // install results. Plain BALLOON — the promotion balloon may disappear (owner call);
         // anything missed stays in the Notifications tool window.
         val group = NotificationGroupManager.getInstance()
             .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
@@ -86,13 +86,13 @@ class McpSteroidNotificationsTest : BasePlatformTestCase() {
     fun `test expiring the superseded notification does not untrack its successor`() {
         // The whenExpired cleanup uses the two-arg remove on purpose: when a successor already replaced
         // the map entry, the OLD notification's expiry must not remove the NEW one.
-        val first = show(McpSteroidNotificationKind.AGENT_REGISTRATION, "first")
-        val second = show(McpSteroidNotificationKind.AGENT_REGISTRATION, "second")
+        val first = show(McpSteroidNotificationKind.PLUGIN_UPDATE, "first")
+        val second = show(McpSteroidNotificationKind.PLUGIN_UPDATE, "second")
         first.expire() // idempotent: notify() already expired it
         assertSame(
             "the successor must stay tracked after the superseded one expires",
             second,
-            McpSteroidNotifications.getInstance().pendingNotification(McpSteroidNotificationKind.AGENT_REGISTRATION),
+            McpSteroidNotifications.getInstance().pendingNotification(McpSteroidNotificationKind.PLUGIN_UPDATE),
         )
     }
 }

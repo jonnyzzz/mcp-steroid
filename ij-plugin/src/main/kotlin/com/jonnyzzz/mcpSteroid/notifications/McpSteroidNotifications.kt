@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The plugin's ONE notification group, shared by everything the plugin says: the plugin-update
- * notification, the devrig promotion, and the install/register results and failures. Plain `BALLOON`
+ * notification, the devrig promotion, and the install results and failures. Plain `BALLOON`
  * on purpose: every message here may auto-hide — a balloon is a nudge, and everything it said stays
  * reachable in the Notifications tool window. Must match `plugin.xml`.
  */
@@ -26,9 +26,6 @@ const val MCP_STEROID_NOTIFICATION_GROUP = "jonnyzzz.mcp.steroid.updates"
 enum class McpSteroidNotificationKind {
     /** The devrig install flow's outcome: installed, already being installed elsewhere, or failed. */
     DEVRIG_INSTALL,
-
-    /** A `devrig install <agent>` registration failure, reported from the settings page's button. */
-    AGENT_REGISTRATION,
 
     /** The once-per-run "Install devrig to connect an AI agent" promotion. */
     DEVRIG_INSTALL_OFFER,
