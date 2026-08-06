@@ -1,7 +1,13 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import kotlin.io.path.exists
 
 /** The published installers. Both halves of the product install devrig by running exactly these. */
@@ -35,4 +41,48 @@ fun installerCommands(script: Path, isWin: Boolean): List<List<String>> = when {
         listOf(it, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script.toString())
     }
     else -> listOf(listOf("/bin/sh", script.toString()))
+}
+
+/**
+ * Download the install script at [url] into [target]; false on any failure — never throws, each
+ * caller reports and retries its own way (devrig's updater on its next tick, the IDE via its
+ * failure notification's Retry).
+ *
+ * The ONE download implementation for both halves of the product, next to the URLs it fetches and
+ * the [installerCommands] that run the result. Fetching the script and running the file — rather
+ * than piping `curl … | sh` / `irm … | iex` — needs no `curl` and lets the run fall back across
+ * PowerShell hosts on Windows. Plain JDK HTTP on purpose: this module links into the `:ij-plugin`
+ * runtime classpath, where devrig's Ktor client does not exist.
+ *
+ * [userAgent] identifies the calling half in the server logs (`devrig/<v>` vs the IDE plugin).
+ */
+fun downloadInstallerScript(url: String, target: Path, userAgent: String): Boolean {
+    // Cache-buster: a retry must see a server-side fix, not Cloudflare's cached copy
+    // (query strings bypass the edge cache — same pattern as the release verification).
+    val request = HttpRequest.newBuilder(URI.create("$url?_=${System.currentTimeMillis()}"))
+        .timeout(Duration.ofSeconds(60))
+        .header("User-Agent", userAgent)
+        .header("Cache-Control", "no-cache")
+        .GET()
+        .build()
+    return try {
+        HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build()
+            .use { client ->
+                val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+                if (response.statusCode() !in 200..299) {
+                    System.err.println("[mcp-steroid] GET $url returned ${response.statusCode()}")
+                    return false
+                }
+                Files.createDirectories(target.parent)
+                Files.writeString(target, response.body())
+                true
+            }
+    } catch (e: Exception) {
+        if (e is InterruptedException) Thread.currentThread().interrupt()
+        System.err.println("[mcp-steroid] could not download $url: $e")
+        false
+    }
 }

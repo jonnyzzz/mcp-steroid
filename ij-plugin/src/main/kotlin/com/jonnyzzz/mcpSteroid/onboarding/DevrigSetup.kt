@@ -20,11 +20,11 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.SystemInfo
-import com.intellij.util.io.HttpRequests
 import com.jonnyzzz.mcpSteroid.getBuildVersion
 import com.jonnyzzz.mcpSteroid.devrig.UpdateCoordination
 import com.jonnyzzz.mcpSteroid.devrig.UpdateStateInfo
 import com.jonnyzzz.mcpSteroid.devrig.devrigInstallerUrl
+import com.jonnyzzz.mcpSteroid.devrig.downloadInstallerScript
 import com.jonnyzzz.mcpSteroid.devrig.installerCommands
 import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotificationKind
 import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
@@ -76,31 +76,6 @@ fun devrigStdioMcpConfigJson(userHome: Path, windows: Boolean): String =
  */
 fun devrigInstallFailedMarker(userHome: Path): Path =
     PidMarker.markerDirectory(userHome).resolve("bootstrap-install.failed")
-
-/**
- * Download the published installer for this OS. Returns the script file, or null on any failure —
- * the caller reports it; there is no retry here (the notification offers one).
- *
- * Fetching the script and running the file is devrig's own shape (`AutoUpdater`), not `curl … | sh`:
- * it needs no `curl`, and it lets the run fall back across PowerShell hosts on Windows
- * ([installerCommands]) instead of depending on one being on PATH.
- */
-fun downloadInstaller(target: Path, windows: Boolean): Path? {
-    val url = devrigInstallerUrl(windows)
-    return try {
-        // Cache-buster, as in devrig's updater: a retry must see a server-side fix, not a cached copy.
-        val body = HttpRequests.request("$url?_=${System.currentTimeMillis()}")
-            .connectTimeout(10_000)
-            .readTimeout(60_000)
-            .readString()
-        Files.createDirectories(target.parent)
-        Files.writeString(target, body)
-        target
-    } catch (e: Exception) {
-        setupLog().warn("could not download $url", e)
-        null
-    }
-}
 
 private fun setupLog(): Logger = Logger.getInstance("com.jonnyzzz.mcpSteroid.onboarding.DevrigSetup")
 
@@ -278,14 +253,15 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
 
         indicator.isIndeterminate = true
         indicator.text = "Downloading the devrig installer…"
-        val script = downloadInstaller(coordination.scriptFile(windows), windows)
-        if (script == null) {
-            writeFailureMarker(userHome, "could not download ${devrigInstallerUrl(windows)}")
-            notifyFailure(
-                project,
-                "Could not download the devrig installer from ${devrigInstallerUrl(windows)}.",
-                onFinished,
-            )
+        // The shared download (`:devrig-common`, [downloadInstallerScript]) — the very code devrig's
+        // own updater runs, so the URL, the cache-buster and the fetch-then-run shape cannot drift
+        // between the two halves. Failures are reported here (there is no retry inside; the
+        // notification offers one), with the User-Agent naming this half in the server logs.
+        val url = devrigInstallerUrl(windows)
+        val script = coordination.scriptFile(windows)
+        if (!downloadInstallerScript(url, script, userAgent = "mcp-steroid/${getBuildVersion().value}")) {
+            writeFailureMarker(userHome, "could not download $url")
+            notifyFailure(project, "Could not download the devrig installer from $url.", onFinished)
             return false
         }
 
