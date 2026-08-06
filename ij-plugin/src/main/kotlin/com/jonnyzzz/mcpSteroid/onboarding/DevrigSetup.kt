@@ -7,10 +7,12 @@ import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
@@ -221,8 +223,11 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
                     if (!installDevrig(project, indicator, userHome, windows, onFinished)) return
                     notify(
                         project, NotificationType.INFORMATION, "devrig is installed",
-                        "Register your agent with it to bridge this IDE — see Settings | Tools | " +
-                            "${McpSteroidConfigurable.DISPLAY_NAME}.",
+                        // The next step lives on the settings page — the action below takes the user
+                        // there. A "see Settings | Tools | …" menu path in prose is the same dead end
+                        // as "see the IDE log": directions to walk instead of a button to press.
+                        "Register your agent with it to bridge this IDE.",
+                        openSettingsAction(project),
                     )
                 } catch (e: ProcessCanceledException) {
                     throw e
@@ -260,10 +265,12 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
     ): Boolean {
         val coordination = UpdateCoordination(resolveHomePaths(userHome).updateDir)
         if (coordination.anyLiveInProgressMarker()) {
-            // Not a failure, and not something the user did wrong — devrig got there first.
+            // Not a failure, and not something the user did wrong — devrig got there first. The settings
+            // page is where "is it ready yet?" gets answered, so that is the action this one carries.
             notify(
                 project, NotificationType.INFORMATION, "devrig is already being installed",
                 "Another process is installing devrig right now. It will be ready shortly.",
+                openSettingsAction(project),
             )
             log.info("devrig install skipped: another process holds a live update marker")
             return false
@@ -521,25 +528,41 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
      * so a new message replaces the pending one instead of stacking next to it. The message reports an
      * action the user just triggered and is watching, and the same fact is on the settings page a moment
      * later; anything missed stays in the Notifications tool window.
+     *
+     * Every message here carries at least one [action][actions] — a notification that only points
+     * somewhere else ("see the IDE log") reports a problem and hands the user homework, which is worse
+     * than saying nothing.
      */
-    private fun notify(project: Project?, type: NotificationType, title: String, content: String) {
+    private fun notify(
+        project: Project?,
+        type: NotificationType,
+        title: String,
+        content: String,
+        vararg actions: AnAction,
+    ) {
         McpSteroidNotifications.getInstance()
-            .notify(McpSteroidNotificationKind.DEVRIG_INSTALL, project, type, title, content)
+            .notify(McpSteroidNotificationKind.DEVRIG_INSTALL, project, type, title, content, *actions)
     }
+
+    /** Opens Settings | Tools | Devrig — the page where every next step of this flow lives. */
+    private fun openSettingsAction(project: Project?): AnAction =
+        NotificationAction.createSimpleExpiring("Open settings") {
+            ShowSettingsUtil.getInstance().showSettingsDialog(project, McpSteroidConfigurable::class.java)
+        }
 
     /**
      * Report a failed install. The reason comes from the installer itself (`ERROR: …` — a sha mismatch, a
      * dead mirror, no space), which is the only wording that tells the user whether retrying is worth it,
-     * so it leads. Retry is offered right here because most of these are transient and the alternative is
-     * making the user find the button again; it keeps [onFinished] so the retried run reports back to the
-     * same surface that started the original.
+     * so it is the whole message — it stays copyable from the Notifications tool window. Retry is offered
+     * right here because most of these are transient and the alternative is making the user find the
+     * button again; it keeps [onFinished] so the retried run reports back to the same surface that
+     * started the original.
      */
     private fun notifyFailure(project: Project?, reason: String, onFinished: (() -> Unit)? = null) {
         McpSteroidNotifications.getInstance().notify(
             McpSteroidNotificationKind.DEVRIG_INSTALL, project, NotificationType.ERROR,
             "devrig install failed",
-            // The reason is a sentence of its own — keep the follow-up on its own line so they do not merge.
-            "$reason<br>See the IDE log for details.",
+            reason,
             NotificationAction.createSimpleExpiring("Retry") { runInstall(project, onFinished) },
         )
     }

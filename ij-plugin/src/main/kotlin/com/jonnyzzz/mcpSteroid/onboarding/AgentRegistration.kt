@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.onboarding
 
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.util.ExecUtil
+import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -80,6 +81,17 @@ fun findOnPath(binary: String, pathEnv: String?, windows: Boolean): Path? {
     }
     return null
 }
+
+/**
+ * What a failed registration's notification says: the reason first — it is the one part that tells the
+ * user whether retrying is worth it — then the terminal fallback, the action that still works when the
+ * IDE-side flow itself is what is broken. No pointer at the IDE log: a notification either carries what
+ * the user needs or it is not worth showing (the Retry button rides next to this text).
+ */
+fun agentRegistrationFailureContent(agent: AiAgentCli, reason: String): String =
+    // "run the command:" and not just "run": the boundary between the prose and the command
+    // must be unambiguous — the same rule as the settings page's register receipt.
+    "$reason<br>Or run the command <code>devrig install ${agent.binary}</code> in a terminal."
 
 /**
  * Map `devrig install <agent> --check`'s outcome onto a row state.
@@ -181,7 +193,7 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
                                 ?: "it exited with code ${output.exitCode}"
                         }
                         log.warn("`${argv.joinToString(" ")}` failed: ${output.stderr.take(2000)}")
-                        notifyFailure(project, agent, reason)
+                        notifyFailure(project, agent, reason, onFinished)
                     }
                 } catch (e: ProcessCanceledException) {
                     throw e
@@ -189,7 +201,7 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
                     throw e
                 } catch (e: Exception) {
                     log.warn("could not register ${agent.displayName}", e)
-                    notifyFailure(project, agent, e.message ?: e.javaClass.simpleName)
+                    notifyFailure(project, agent, e.message ?: e.javaClass.simpleName, onFinished)
                 } finally {
                     analyticsBeacon.capture(
                         "devrig_agent_registered", project,
@@ -202,14 +214,23 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
         })
     }
 
-    private fun notifyFailure(project: Project?, agent: AiAgentCli, reason: String) {
+    /**
+     * Report a failed registration with its two ways forward: Retry — most of these are transient, and
+     * the alternative is making the user find the row's button again — and the terminal command in the
+     * text ([agentRegistrationFailureContent]). Retry keeps [onFinished], so a retried registration
+     * reports back to the same settings row that started the original.
+     */
+    private fun notifyFailure(
+        project: Project?,
+        agent: AiAgentCli,
+        reason: String,
+        onFinished: (AgentRegistrationState) -> Unit,
+    ) {
         McpSteroidNotifications.getInstance().notify(
             McpSteroidNotificationKind.AGENT_REGISTRATION, project, NotificationType.ERROR,
             "Could not register ${agent.displayName}",
-            // "run the command:" and not just "run": the boundary between the prose and the command
-            // must be unambiguous — the same rule as the settings page's register receipt.
-            "$reason<br>See the IDE log for details, or run the command " +
-                "<code>devrig install ${agent.binary}</code> in a terminal.",
+            agentRegistrationFailureContent(agent, reason),
+            NotificationAction.createSimpleExpiring("Retry") { register(agent, project, onFinished) },
         )
     }
 

@@ -390,9 +390,13 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 }
                 AgentRegistrationState.CLI_MISSING ->
                     comment("no <code>${agent.binary}</code> on your PATH — install the agent first")
+                // We failed to find out, which is a different fact from "not registered" — and the fix
+                // is the same button: `devrig install` writes the canonical registration whatever the
+                // unreadable state was. The receipt names the action; pointing at the IDE log instead
+                // would hand the user homework where a press does the job.
                 AgentRegistrationState.CHECK_FAILED -> {
                     registerButton(agent, "Register", placeholder, expired, modality)
-                    comment("could not read the current state — see the IDE log")
+                    comment("could not read the current state — ${agentRegisterCommandComment(agent)}")
                 }
             }
         }
@@ -472,9 +476,13 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     cell(valueTextField("Not running")).align(AlignX.FILL)
                 }
                 row {
+                    // The one fix a user can apply from here is named outright: a taken port is the
+                    // usual reason the bind fails, and the key to move it is on this very page. "Check
+                    // the IDE log for bind errors" was homework in place of that action.
                     comment(
-                        "The server normally starts at IDE startup. Check the IDE log (Help | Show Log in Finder/Explorer) " +
-                            "for bind errors, or adjust the registry keys below."
+                        "The server normally starts at IDE startup; a taken port is the usual reason it " +
+                            "could not. Set <code>mcp.steroid.server.port</code> via the registry keys " +
+                            "below and restart the IDE."
                     )
                 }
             }

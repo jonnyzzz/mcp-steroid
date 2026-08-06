@@ -5,7 +5,9 @@ import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DISABLED_EXIT_CODE
 import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DRIFT_EXIT_CODE
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
@@ -46,6 +48,31 @@ class AgentRegistrationTest {
         assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheck(64, timedOut = false))
         assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheck(-1, timedOut = false))
         assertEquals(AgentRegistrationState.CHECK_FAILED, agentStateFromCheck(0, timedOut = true))
+    }
+
+    /**
+     * A failure notification must carry what the user needs, not point at the IDE log: the reason leads
+     * (it is what says whether retrying is worth it), and the terminal command follows — the action that
+     * still works when the IDE-side flow itself is broken. The Retry button rides next to this text.
+     */
+    @Test
+    fun `the failure notification leads with the reason and names the terminal command, never the log`() {
+        val content = agentRegistrationFailureContent(AiAgentCli.CLAUDE, "it timed out")
+        assertEquals(
+            "it timed out<br>Or run the command <code>devrig install claude</code> in a terminal.",
+            content,
+        )
+        for (agent in AiAgentCli.entries) {
+            val perAgent = agentRegistrationFailureContent(agent, "reason")
+            assertTrue(
+                "the fallback must name the exact per-agent command; got '$perAgent'",
+                perAgent.contains("<code>devrig install ${agent.binary}</code>"),
+            )
+            assertFalse(
+                "a notification must carry an action, not homework; got '$perAgent'",
+                perAgent.contains("log", ignoreCase = true),
+            )
+        }
     }
 
     @Test

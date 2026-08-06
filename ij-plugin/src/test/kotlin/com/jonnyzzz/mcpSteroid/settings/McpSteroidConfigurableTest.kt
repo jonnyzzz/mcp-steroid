@@ -310,6 +310,27 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
     }
 
     /**
+     * Owner rule: every hint on this page names a concrete action — a button, a command, a registry
+     * key — never "see the IDE log". A log pointer reports a problem and hands the user homework, which
+     * is worse than saying nothing. This walks every rendered text in both populate states (whichever
+     * the machine is in), including the deprecated-HTTP hints, and rejects any pointer at the log.
+     */
+    fun `test no rendered hint points at the IDE log`() {
+        val configurable = McpSteroidConfigurable()
+        try {
+            val component = configurable.createComponent()
+            configurable.applyInstallState(probeDevrigInstallState())
+            val joined = collectTexts(component).joinToString("\n")
+            assertFalse(
+                "every hint must name its action, never the IDE log; found:\n$joined",
+                joined.contains("IDE log", ignoreCase = true) || joined.contains("Show Log"),
+            )
+        } finally {
+            configurable.disposeUIResources()
+        }
+    }
+
+    /**
      * The receipt under a Register/Enable button must draw the boundary between the label and the command:
      * "runs devrig install claude" read as one sentence, and where the prose ended was anyone's guess
      * (manual click-testing feedback). One explicit method per pinned property — no parameterized tests.
