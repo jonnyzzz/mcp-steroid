@@ -22,49 +22,29 @@ GitHub** link last, because it is never the next step:
 
 | Block | Holds, top to bottom |
 |---|---|
-| **Devrig** | why a separate binary is worth it and a **What is devrig?** link; then where both ends of the connection stand — the server's state (running, and on which port) and, directly below it, devrig's plus whatever the next step is |
-| **Direct HTTP connection (deprecated)** | collapsed, last, and deprecated in its own title and first line: the server URL, the per-agent `mcp add` commands, the generic `mcpServers` JSON, the registry keys |
+| **Devrig** | why a separate binary is worth it and a **What is devrig?** link; then the one state-dependent block — install devrig, or, once it is there, point an agent at it |
+| **Direct HTTP connection (deprecated)** | collapsed, last, and deprecated in its own title and first line: the in-IDE server's state (running, and on which port — a fact only someone wiring HTTP by hand needs), the server URL, the per-agent `mcp add` commands, the generic `mcpServers` JSON, the registry keys |
 
-Both states sit in one group because they answer one question — "can an agent reach this IDE?": the server
-is the IDE end, devrig the agent end. Each value is a **read-only field**, not a bare label: a label ran
-together with the label naming it and left nothing to mark which half was the answer.
+Each value is a **read-only field**, not a bare label: a bare value ran together with the label naming it
+and left nothing to mark which half was the answer.
 
 The devrig block shows **exactly one of two states**, because only one of them is ever actionable:
 
 | devrig | What the block shows |
 |---|---|
 | missing | "devrig is not installed yet", an **Install devrig** button, and in plain words what pressing it does: downloads about 611 MB (a pinned JDK plus devrig) into `~/.mcp-steroid`, puts `devrig` on PATH, and **registers nothing with any agent** |
-| installed | the version, then the next step — one row per agent (Claude, Codex, Gemini), each showing where that agent stands and a **Register** button only where pressing one would change something |
+| installed | "Installed", then the next step — one long read-only **copyable command per agent** (Claude, Codex, Gemini): the absolute stable launcher plus devrig's canonical `install <agent>` verb, for the user to run in a terminal |
 
-The agent rows are the second half of that: **Register** runs `devrig install <agent>` — the same verb the
-docs publish, so there is one implementation of what a canonical registration is — in a background task,
-then re-reads the row. Four states, and they are not interchangeable:
-
-| Row shows | Means | Button |
-|---|---|---|
-| Checking… | `devrig install <agent> --check` is running | — |
-| Registered | the registration is already canonical and switched on (`--check` exit 0) | none — a button on a finished step reads as an unfinished setup |
-| **Register** | devrig would change something: no entry, a stale command, duplicates, a custom name (exit 1) | runs it |
-| registered, but switched off — **Enable** | the entry is canonical and disabled in the agent's own config (exit 2) | runs the same verb; only the word changes |
-| no `<agent>` on your PATH | the agent's CLI is not on this machine | none — the press could only fail |
-| could not read the current state | the check itself failed or timed out | offered anyway; this is not the same fact as "not registered" |
-
-**Registered is not the same as in use.** Every agent can keep an MCP server configured and switched off,
-and **none of them reports that in `mcp list`** — `claude mcp list` and even `claude mcp get <name>` show a
-server disabled for the current project as `✔ Connected`. That makes it the worst state to be in: every
-visible answer says "all good" while the bridge does nothing. devrig therefore reads each agent's own
-config for it, and `devrig install <agent>` clears it — which is the only way to undo it, since none of the
-three CLIs has an enable verb.
-
-| Agent | Off means | File |
-|---|---|---|
-| Claude Code | the name is in `projects.<path>.disabledMcpServers` — **per project** | `~/.claude.json` |
-| Codex | `enabled = false` in the `[mcp_servers.<name>]` table | `~/.codex/config.toml` |
-| Gemini | the name is in `mcp.excluded`, or `mcp.allowed` exists without it | `~/.gemini/settings.json` |
-
-Agents whose CLI is absent are answered from a PATH lookup alone, so opening the page starts one process
-per **installed** agent, not one per agent we support. Success is quiet — the row flipping to *Registered*
-is the confirmation; only a failure gets a balloon, carrying devrig's own first line.
+The agent rows are **display-only** (owner direction, 2026-08-06). An earlier revision checked each
+agent's registration state and ran the registration from the page — per-row `--check` probes,
+Register/Enable buttons, exit-code mapping, failure notifications with Retry — and owner click-testing
+found that flow broken in practice. A printed command cannot break the same way: `devrig install <agent>`
+is idempotent (issue #399 — re-running repairs and consolidates, never duplicates), the terminal shows
+what it did, and the IDE neither checks an agent's state nor registers anything itself. Each command is
+built in `:devrig-common` (`devrigInstallAgentCommandLine`) from the same launcher-path policy devrig
+registers with, so the display cannot drift from reality; the per-OS forms — `.cmd` shim, backslashes,
+real absolute home (never `~`), PowerShell call-operator quoting when the profile path holds a space —
+are pinned in `DevrigUserLauncherTest`.
 
 **Copying says so.** Every copy control — both **Copy JSON** buttons and the in-field copy icons — shows a
 short *Copied* balloon above itself. Copying is the only action here with no visible consequence, and a
@@ -74,86 +54,57 @@ looks exactly like a hover. That is platform-wide behaviour, identical for a pla
 rendering both pressed and unpressed: zero differing pixels. Nothing in the Kotlin UI DSL changes it; the
 DSL only creates the `JButton`. The receipt is ours to give, so we give it.
 
-**Any other MCP client** — Cursor, Windsurf, anything configured through an `mcpServers` JSON file — gets a
-collapsed **Another MCP client (Cursor, Windsurf, …)** group with the same server as a copyable stdio
-snippet: devrig's stable launcher plus its `mcp` subcommand. So a client devrig has no CLI for is a paste
-away rather than a dead end. It is the settings-page twin of `devrig install config`, and both build the
-command through `DevrigUserLauncher.invocation` in `:devrig-common`, so what you copy cannot drift from what
-**Register** writes. Shown only once devrig is installed — before that, the snippet would name a launcher
-that is not there.
+**Any other MCP client** gets the same server two ways, right after the agent rows: a copyable
+`<launcher> mcp` command line for any client with an "add MCP server" dialog, and — collapsed, in
+**Another MCP client (Cursor, Windsurf, …)** — the stdio `mcpServers` JSON snippet for clients configured
+through a file. It is the settings-page twin of `devrig install config`, and both build the command
+through `DevrigUserLauncher.invocation` in `:devrig-common`, so what you copy cannot drift from what
+`devrig install <agent>` writes. Shown only once devrig is installed — before that, the snippet would name
+a launcher that is not there.
 
-That devrig block is the only part rebuilt while the page is open — the install's completion callback
-(`onFinished` on `DevrigSetupRunner.runInstall`) re-probes and re-applies the block, instead of going on
-offering to install what is already there. A callback of a button the user pressed, not a monitoring
-pipeline.
+That devrig block is the only part rebuilt while the page is open. It populates on show, off the EDT —
+the one fact read is the `devrigInstalled()` file probe, on `Dispatchers.IO` — and the install button
+awaits the background install to stop offering one that just succeeded. The completion of a button the
+user pressed, not a monitoring pipeline; there is no cached state, so every show computes reality afresh.
 
 This page is the offer's home on purpose. It is the one surface with room to say why installing a separate
 binary is worth it, and a user who opens it is asking.
 
-### Status bar and startup notification — off by default
+### Startup promotion — off by default
 
-Both live behind the registry key **`mcp.steroid.devrig.widget.enabled`** (default `false`). Status-bar
-space and a balloon at project open are the IDE's scarcest attention budget, and taking either uninvited is
-what gets a plugin flagged. We also do not yet know when a startup offer is worth the interruption — every
-run is clearly wrong — so the key exists to run with it on ourselves and find out.
+Behind the registry key **`mcp.steroid.devrig.widget.enabled`** (default `false`; the id predates the
+since-deleted status-bar widget and stays stable so machines that flipped it keep their choice). A balloon
+at startup is the IDE's scarcest attention budget, and taking it uninvited is what gets a plugin flagged;
+the settings page carries the same offer with room to explain it.
 
-With the key on, the **devrig** widget appears whenever there is something to act on and removes itself
-once devrig is installed and current, so it never becomes a fixture. It returns if that regresses (devrig
-deleted, a newer release published); the check runs when the IDE window regains focus, which is what lets
-it come back within the same session rather than only after a restart. Clicking it opens a small popup: a
-title, one short line, a **Learn more** link, and one button.
-
-**Removing it for good** is the platform's own gesture, not something the plugin reimplements: right-click
-the status bar and hide the **devrig** widget, or use the status-bar widget list in
-**Settings | Appearance & Behavior | Appearance**. The choice is persisted by the platform, and the
-plugin's own re-checks never override it.
-
-| State | Status bar | Popup line | Button → what it does |
-|---|---|---|---|
-| devrig not installed | `devrig: not installed` | It lets an AI agent run, debug and refactor in this IDE. | **Install devrig** → runs the canonical installer |
-| installed devrig is behind the published release | `devrig: update available` | Installed 0.100, current 0.101. | **Update devrig** → re-runs the installer (it always fetches the current release) |
-| installed and current | *(no widget — it removes itself)* | devrig 0.101 can bridge your agent to this IDE. | **Open settings** → Settings \| Tools \| MCP Steroid |
-
-The tooltip states the same situation in one line and ends with "click for details".
-
-The copy is deliberately minimal — the title states the situation, the button states the action, and the
-line adds only what neither says. Explanations, install sizes and next steps live in the docs behind
-**Learn more**; `DevrigWidgetPopupContentTest` enforces a 70-character budget so they cannot creep back in.
+With the key on, `DevrigPromotion` runs **at most once per IDE run**: started from an explicit platform
+callback (never a constructor side effect), it waits out a random 12–35 s delay (past the noisy
+project-open moment), probes for devrig off the EDT, and — only when devrig is missing — shows one
+non-sticky balloon whose single action is the existing install flow. If it auto-hides unseen, nothing is
+lost: the offer lives on the settings page, and the message stays in the Notifications tool window. There
+is nothing to snooze and nothing to monitor.
 
 ### Notifications
 
-Two groups, because stickiness has to be earned:
+One group (`jonnyzzz.mcp.steroid.updates`) and one owner: every balloon the plugin shows goes through
+`McpSteroidNotifications.notify`, which keeps **at most one live notification per kind** — a retry's
+failure supersedes the original instead of stacking next to it. Plain `BALLOON`, never sticky (owner
+call): a balloon is a nudge, and anything missed stays reachable in the Notifications tool window.
 
-| Group | Display | Carries |
+| Kind | When | Actions |
 |---|---|---|
-| `jonnyzzz.mcp.steroid.onboarding` | **`STICKY_BALLOON`** | what the user must not miss: the startup offer, and every failure |
-| `jonnyzzz.mcp.steroid.onboarding.results` | `BALLOON` (auto-hides) | the outcome of an install the user started and is watching |
-
-The first two rows below only appear with `mcp.steroid.devrig.widget.enabled` on; the rest report an
-install the user started, and appear whether or not the key is set.
-
-| When | Title | Body | Actions |
-|---|---|---|---|
-| devrig missing (startup, key on) | Install devrig to connect an AI agent | devrig bridges Claude Code, Codex or Gemini to this IDE — so an agent can run, debug, refactor and inspect it. | **Install devrig**, **Later** |
-| installed devrig is stale (startup, key on) | Update devrig | devrig 0.100 is behind 0.101. Updating keeps the IDE bridge — and the plugin it carries — current. | **Update**, **Later** |
-| the install succeeded | devrig is installed | Register your agent with it to bridge this IDE — see Settings \| Tools \| Devrig — MCP Steroid. | — |
-| the install failed | devrig install failed | *&lt;the installer's own reason&gt;*. See the IDE log for details. | **Retry** |
-
-**`Later` means later.** It snoozes the startup offer for 14 days (`OFFER_SNOOZE_DAYS`, stored
-application-wide in `PropertiesComponent`), so a dismissal the user made is a dismissal the product honours.
-It used to suppress nothing — the same balloon returned at every project open until the user gave in, which
-is how an interruption stops being worth its attention. Snoozing hides nothing: the state and the same
-button stay on the settings page, and on the widget when it is enabled.
+| `DEVRIG_INSTALL_OFFER` | the once-per-run promotion (key on, devrig missing) | **Install devrig** |
+| `DEVRIG_INSTALL` | the outcome of an install the user started: installed, already being installed by another process, or failed | **Open settings**; **Retry** on failure, carrying the installer's own reason |
+| `PLUGIN_UPDATE` | the periodic plugin-update check | **Download** (the releases page) |
 
 Cancelling an install produces **no** notification — it is a choice, not a failure, and the user already
 knows what they did.
 
-**No error ever reports an action the user did not start.** Every failure balloon above follows a button
-press; the startup state check logs and says nothing. Keep it that way — if any of this is ever triggered
-automatically, the reporting has to change with it.
-
-Plugin updates are a separate group (`jonnyzzz.mcp.steroid.updates`, "MCP Steroid plugin update
-available").
+**No error ever reports an action the user did not start.** Every failure balloon follows a button press;
+the startup probe logs and says nothing. Keep it that way — if any of this is ever triggered
+automatically, the reporting has to change with it. And every message carries at least one action: a
+notification that only points somewhere else ("see the IDE log") reports a problem and hands the user
+homework, which is worse than saying nothing.
 
 ### How the install runs
 
@@ -205,12 +156,11 @@ failure too. A successful install clears it.
 
 | Concern | File |
 |---|---|
-| State every surface reads (computed on demand, not cached) | `onboarding/DevrigConnectionState.kt` |
-| Decision + version comparison (pure) | `onboarding/OnboardingDecision.kt` |
-| Settings page (the offer's home) | `settings/McpSteroidConfigurable.kt` |
-| Status-bar widget + popup, and the registry key gating both surfaces | `onboarding/DevrigStatusBarWidget.kt`, `onboarding/DevrigWidgetPopupContent.kt` |
-| Notifications | `onboarding/DevrigOnboardingService.kt` |
+| Settings page (the offer's home; display-only agent commands) | `settings/McpSteroidConfigurable.kt` |
+| Is devrig installed? (the one probe, a file check) | `onboarding/DevrigInstallProbe.kt` |
 | Installer run, progress, markers | `onboarding/DevrigSetup.kt`, `onboarding/InstallerProgress.kt` |
-| Per-agent registration (`devrig install <agent>`, `--check` states) | `onboarding/AgentRegistration.kt` |
-| Detecting and clearing a switched-off registration (devrig side) | `:npx-kt` `devrig/AgentMcpEnablement.kt`; exit codes in `:mcp-core` `devrig/InstallCheckExitCodes.kt` |
-| Shared with devrig's updater: coordination markers, installer hosts, version comparison | `:mcp-core` `devrig/UpdateCoordination.kt`, `devrig/InstallerHost.kt`, `util/text/DevrigVersion.kt` |
+| Once-per-run startup promotion and its registry key | `onboarding/DevrigPromotion.kt` |
+| Notifications (single group, one-per-kind policy) | `notifications/McpSteroidNotifications.kt` |
+| The agent registration commands the page displays (launcher path policy, per-OS quoting) | `:devrig-common` `devrig/DevrigUserLauncher.kt` |
+| The registration itself, its `--check` doctor and exit codes, switched-off detection (devrig side) | `:npx-kt` `devrig/InstallCommand.kt`, `devrig/InstallCheckExitCodes.kt`, `devrig/AgentMcpEnablement.kt` |
+| Shared with devrig's updater: coordination markers, installer download, version comparison | `:devrig-common` `devrig/UpdateCoordination.kt`, `devrig/InstallerHost.kt`; `:mcp-core` `util/text/DevrigVersion.kt` |

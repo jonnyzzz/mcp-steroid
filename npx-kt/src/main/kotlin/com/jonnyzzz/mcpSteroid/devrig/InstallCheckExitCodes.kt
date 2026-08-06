@@ -2,11 +2,13 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 /**
- * The exit codes of `devrig install <agent> --check` — a contract between two processes, so it lives where
- * both can see it: devrig returns these, and the IDE plugin's settings page reads them to decide what a
- * row says (`ij-plugin` `onboarding/AgentRegistration.kt`).
+ * The exit codes of `devrig install <agent> --check`, the single-agent dry-run doctor
+ * ([runInstallCheckCommand] in `InstallCommand.kt`, its one producer) — for a user or script asking
+ * "would re-running install change anything?" without changing anything. The IDE settings page does NOT
+ * read these: its agent rows are display-only (one copyable `install <agent>` command each), so the codes
+ * live here next to the command, not in `:devrig-common`.
  *
- * Additive only. A plugin talking to an older devrig must degrade, never misreport: a devrig that predates
+ * Additive only. A caller talking to an older devrig must degrade, never misreport: a devrig that predates
  * [INSTALL_CHECK_DISABLED_EXIT_CODE] simply never returns it.
  */
 

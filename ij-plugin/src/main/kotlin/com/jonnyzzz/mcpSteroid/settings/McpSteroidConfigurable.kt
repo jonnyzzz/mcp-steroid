@@ -170,8 +170,8 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // Populate on show, recompute on every re-show. The block starts on the UI dispatcher under the
         // panel's own modality whenever the panel becomes showing, and is cancelled when it is hidden —
         // the platform's own settings pages (MCP server clients detection, Terminal shell-path detection)
-        // use the same idiom for slow disk answers. The EDT only launches, awaits and applies; all the
-        // I/O runs inside the service.
+        // use the same idiom for slow disk answers. The EDT only launches, awaits and applies; the one
+        // fact read is the devrigInstalled() file probe, on Dispatchers.IO.
         panel.launchOnShow("McpSteroidConfigurable devrig state") {
             installStatus?.component = checkingPanel()
             applyDevrigInstalled(this, withContext(Dispatchers.IO) { devrigInstalled() })
@@ -329,7 +329,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             }
             row {
                 comment(
-                    "The same registration the buttons above write, so it survives devrig updates too. " +
+                    "The same stable launcher as every command above, so it survives devrig updates too. " +
                         "<code>devrig install config</code> prints this in a terminal."
                 )
             }

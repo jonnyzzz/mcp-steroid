@@ -93,6 +93,8 @@ class DevrigUserLauncherTest {
     @Test
     fun `devrigMcpCommandLine quotes a launcher path containing a space`() {
         // An unquoted "C:\Users\First Last\..." splits into two arguments in every shell and client.
+        // No PowerShell call operator: this line goes into an MCP client's command field, and the
+        // client spawns the process from it directly — a leading '&' would be read as the program path.
         assertEquals(
             "\"C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd\" mcp",
             devrigMcpCommandLine("C:\\Users\\First Last", windows = true),
@@ -132,9 +134,12 @@ class DevrigUserLauncherTest {
     }
 
     @Test
-    fun `devrigInstallAgentCommandLine quotes a launcher path containing a space`() {
+    fun `devrigInstallAgentCommandLine renders a spaced launcher path in PowerShell call-operator form`() {
+        // A terminal command, unlike the client-field mcp line above. PowerShell — the default shell of
+        // Windows Terminal and the IDE terminal — parses a bare quoted leading token as a string
+        // expression, so the copy-pasted command needs the call operator to actually run.
         assertEquals(
-            "\"C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd\" install gemini",
+            "& \"C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd\" install gemini",
             devrigInstallAgentCommandLine("C:\\Users\\First Last", windows = true, agent = AiAgentCli.GEMINI),
         )
     }

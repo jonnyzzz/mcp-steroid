@@ -289,7 +289,7 @@ private fun emitAgentOutput(result: AiAgentCliResult, err: PrintStream) {
  * (always, so the re-add is clean even if the listing missed it), plus the legacy name when the agent's
  * list could not be read.
  */
-internal fun installRemovalNames(detected: List<McpServerRef>, listReadable: Boolean): Set<String> {
+fun installRemovalNames(detected: List<McpServerRef>, listReadable: Boolean): Set<String> {
     val names = LinkedHashSet<String>()
     detected.forEach { names += it.name }
     names += DEVRIG_MCP_SERVER_NAME

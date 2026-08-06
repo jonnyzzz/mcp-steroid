@@ -80,7 +80,7 @@
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.PromptsContextHandlerIJ"/>
 
         <!-- The plugin's single notification group: plugin-update notifications, the once-per-run devrig
-             promotion, and install/register results and failures. Plain BALLOON on purpose (owner call):
+             promotion, and devrig-install results and failures. Plain BALLOON on purpose (owner call):
              every message here may auto-hide — a balloon is a nudge, and anything missed stays reachable
              in the Notifications tool window. The id predates the merge (it was the update checker's) and
              is kept stable so users' notification settings survive. Must match

@@ -85,6 +85,10 @@ fun devrigLauncherDisplayPath(userHome: String, windows: Boolean): String =
 /**
  * The one-line command that runs devrig as a stdio MCP server — what a user types into an MCP client that
  * asks for a command line instead of reading an `mcpServers` file.
+ *
+ * No PowerShell call operator here, unlike [devrigInstallAgentCommandLine]: this line goes into a
+ * client's own command field, and the client spawns the process from it directly — a leading `&` would
+ * be read as part of the program path, not shell syntax.
  */
 fun devrigMcpCommandLine(userHome: String, windows: Boolean): String =
     devrigCommandLine(userHome, windows, "mcp")
@@ -93,16 +97,28 @@ fun devrigMcpCommandLine(userHome: String, windows: Boolean): String =
  * The one-line command that registers devrig with [agent]'s CLI — `<launcher> install <agent>`, the
  * canonical, idempotent registration verb (issue #399: re-running it repairs and consolidates, never
  * duplicates). This is what the IDE settings page displays for the user to run in a terminal.
+ *
+ * A terminal command, so a quoted Windows launcher takes PowerShell's call operator:
+ * `& "C:\Users\First Last\…\devrig.cmd" install claude`. To PowerShell — the default shell of Windows
+ * Terminal and of the IDE's terminal — a quoted leading token is a string expression, not a command, so
+ * the bare quoted form is a parse error exactly where users will paste this. The `&` form does not run
+ * in cmd.exe, but no single form serves both shells once the path holds a space, so the default shell
+ * wins; the space-free launcher (the overwhelmingly common home) stays unquoted, which every shell runs.
  */
-fun devrigInstallAgentCommandLine(userHome: String, windows: Boolean, agent: AiAgentCli): String =
-    devrigCommandLine(userHome, windows, "install ${agent.binary}")
+fun devrigInstallAgentCommandLine(userHome: String, windows: Boolean, agent: AiAgentCli): String {
+    val line = devrigCommandLine(userHome, windows, "install ${agent.binary}")
+    return if (windows && line.startsWith("\"")) "& $line" else line
+}
 
 /**
  * The stable launcher plus [arguments], as one copy-pasteable line. The launcher path follows the
  * [devrigLauncherDisplayPath] policy (real absolute home, OS-native separators) and is quoted when it
  * contains a space, because every shell and client splits an unquoted `C:\Users\First Last\…` in two.
+ *
+ * Private: the two blessed verbs above are the whole command-line surface, and each documents its own
+ * quoting semantics (client field vs terminal) — a third caller would have to pick one knowingly.
  */
-fun devrigCommandLine(userHome: String, windows: Boolean, arguments: String): String {
+private fun devrigCommandLine(userHome: String, windows: Boolean, arguments: String): String {
     val launcher = devrigLauncherDisplayPath(userHome, windows)
     val quoted = if (' ' in launcher) "\"$launcher\"" else launcher
     return "$quoted $arguments"

@@ -368,7 +368,10 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 )
                 assertTrue(
                     "the command must lead with the absolute launcher path, never a bare 'devrig'; got '$command'",
-                    command.startsWith(launcher) || command.startsWith("\"$launcher\""),
+                    command.startsWith(launcher) ||
+                        // The quoted Windows forms — with PowerShell's call operator, since this is a
+                        // terminal command (pinned per-OS in DevrigUserLauncherTest).
+                        command.startsWith("\"$launcher\"") || command.startsWith("& \"$launcher\""),
                 )
                 assertTrue(
                     "the command must end with devrig's canonical install verb; got '$command'",
