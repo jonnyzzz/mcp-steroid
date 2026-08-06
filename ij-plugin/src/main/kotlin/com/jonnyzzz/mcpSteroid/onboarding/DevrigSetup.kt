@@ -6,7 +6,6 @@ import com.intellij.execution.process.OSProcessHandler
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -25,6 +24,8 @@ import com.jonnyzzz.mcpSteroid.devrig.UpdateCoordination
 import com.jonnyzzz.mcpSteroid.devrig.UpdateStateInfo
 import com.jonnyzzz.mcpSteroid.devrig.devrigInstallerUrl
 import com.jonnyzzz.mcpSteroid.devrig.installerCommands
+import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotificationKind
+import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
 import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
@@ -515,15 +516,15 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
     private fun elapsedMs(startNanos: Long): Long = (System.nanoTime() - startNanos) / 1_000_000
 
     /**
-     * Report the outcome of an install the user started, in the plugin's single auto-hiding group.
-     * The message reports an action the user just triggered and is watching, and the same fact is on
-     * the settings page a moment later; anything missed stays in the Notifications tool window.
+     * Report the outcome of an install the user started, via [McpSteroidNotifications]. One kind for the
+     * whole install flow ([McpSteroidNotificationKind.DEVRIG_INSTALL]): its latest outcome is the truth,
+     * so a new message replaces the pending one instead of stacking next to it. The message reports an
+     * action the user just triggered and is watching, and the same fact is on the settings page a moment
+     * later; anything missed stays in the Notifications tool window.
      */
     private fun notify(project: Project?, type: NotificationType, title: String, content: String) {
-        NotificationGroupManager.getInstance()
-            .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
-            .createNotification(title, content, type)
-            .notify(project)
+        McpSteroidNotifications.getInstance()
+            .notify(McpSteroidNotificationKind.DEVRIG_INSTALL, project, type, title, content)
     }
 
     /**
@@ -534,12 +535,13 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
      * same surface that started the original.
      */
     private fun notifyFailure(project: Project?, reason: String, onFinished: (() -> Unit)? = null) {
-        NotificationGroupManager.getInstance()
-            .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
+        McpSteroidNotifications.getInstance().notify(
+            McpSteroidNotificationKind.DEVRIG_INSTALL, project, NotificationType.ERROR,
+            "devrig install failed",
             // The reason is a sentence of its own — keep the follow-up on its own line so they do not merge.
-            .createNotification("devrig install failed", "$reason<br>See the IDE log for details.", NotificationType.ERROR)
-            .addAction(NotificationAction.createSimpleExpiring("Retry") { runInstall(project, onFinished) })
-            .notify(project)
+            "$reason<br>See the IDE log for details.",
+            NotificationAction.createSimpleExpiring("Retry") { runInstall(project, onFinished) },
+        )
     }
 
     companion object {

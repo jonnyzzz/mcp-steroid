@@ -3,7 +3,6 @@ package com.jonnyzzz.mcpSteroid.updates
 
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationInfo
@@ -13,7 +12,8 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.util.io.HttpRequests
 import com.jonnyzzz.mcpSteroid.getBuildVersion
-import com.jonnyzzz.mcpSteroid.onboarding.MCP_STEROID_NOTIFICATION_GROUP
+import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotificationKind
+import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
 import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
 import kotlinx.coroutines.*
 import kotlinx.coroutines.delay
@@ -122,20 +122,18 @@ class UpdateChecker(
     }
 
     private fun showUpdateNotification(currentVersion: String, newVersion: String) {
-        val notificationGroup = NotificationGroupManager.getInstance()
-            .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
-
-        notificationGroup.createNotification(
+        McpSteroidNotifications.getInstance().notify(
+            McpSteroidNotificationKind.PLUGIN_UPDATE, null, NotificationType.INFORMATION,
             "MCP Steroid plugin update available",
             "A new version of MCP Steroid is available: $newVersion (current: ${
                 extractBaseVersion(
                     currentVersion
                 )
             })",
-            NotificationType.INFORMATION
-        ).addAction(NotificationAction.createSimpleExpiring("Download") {
-            BrowserUtil.browse("https://devrig.dev/releases/")
-        }).notify(null)
+            NotificationAction.createSimpleExpiring("Download") {
+                BrowserUtil.browse("https://devrig.dev/releases/")
+            },
+        )
     }
 
     private fun buildUserAgent(pluginVersion: String, ijBuild: String): String {

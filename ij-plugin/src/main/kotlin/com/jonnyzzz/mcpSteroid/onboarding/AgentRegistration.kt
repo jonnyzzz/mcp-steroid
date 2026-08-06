@@ -3,7 +3,6 @@ package com.jonnyzzz.mcpSteroid.onboarding
 
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.util.ExecUtil
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -17,6 +16,8 @@ import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DISABLED_EXIT_CODE
 import com.jonnyzzz.mcpSteroid.devrig.INSTALL_CHECK_DRIFT_EXIT_CODE
+import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotificationKind
+import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -202,17 +203,14 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
     }
 
     private fun notifyFailure(project: Project?, agent: AiAgentCli, reason: String) {
-        NotificationGroupManager.getInstance()
-            .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
-            .createNotification(
-                "Could not register ${agent.displayName}",
-                // "run the command:" and not just "run": the boundary between the prose and the command
-                // must be unambiguous — the same rule as the settings page's register receipt.
-                "$reason<br>See the IDE log for details, or run the command " +
-                    "<code>devrig install ${agent.binary}</code> in a terminal.",
-                NotificationType.ERROR,
-            )
-            .notify(project)
+        McpSteroidNotifications.getInstance().notify(
+            McpSteroidNotificationKind.AGENT_REGISTRATION, project, NotificationType.ERROR,
+            "Could not register ${agent.displayName}",
+            // "run the command:" and not just "run": the boundary between the prose and the command
+            // must be unambiguous — the same rule as the settings page's register receipt.
+            "$reason<br>See the IDE log for details, or run the command " +
+                "<code>devrig install ${agent.binary}</code> in a terminal.",
+        )
     }
 
     companion object {

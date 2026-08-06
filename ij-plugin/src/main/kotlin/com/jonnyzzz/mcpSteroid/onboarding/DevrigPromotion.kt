@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.onboarding
 
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -13,6 +12,8 @@ import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.registry.Registry
 import com.jonnyzzz.mcpSteroid.devrig.devrigHomeDisplayPath
+import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotificationKind
+import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -21,14 +22,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.seconds
-
-/**
- * The plugin's ONE notification group, shared by the plugin-update notification, the devrig
- * promotion, and the install/register results and failures. Plain `BALLOON` on purpose: every
- * message here may auto-hide — a balloon is a nudge, and everything it said stays reachable in
- * the Notifications tool window. Must match `plugin.xml`.
- */
-const val MCP_STEROID_NOTIFICATION_GROUP = "jonnyzzz.mcp.steroid.updates"
 
 /**
  * Registry key gating the once-per-run devrig promotion. Off by default: a startup balloon is not
@@ -101,25 +94,22 @@ class DevrigPromotion(scope: CoroutineScope) {
         offerInstall(project)
     }
 
-    /** `Notification.notify` is thread-safe, so this stays on the background coroutine. */
+    /** [McpSteroidNotifications.notify] is thread-safe, so this stays on the background coroutine. */
     private fun offerInstall(project: Project?) {
         val home = devrigHomeDisplayPath(System.getProperty("user.home"), SystemInfo.isWindows)
-        NotificationGroupManager.getInstance()
-            .getNotificationGroup(MCP_STEROID_NOTIFICATION_GROUP)
-            .createNotification(
-                "Install devrig to connect an AI agent",
-                devrigInstallOfferBody(home),
-                NotificationType.INFORMATION,
-            )
-            .addAction(NotificationAction.createSimpleExpiring("Install devrig") {
+        McpSteroidNotifications.getInstance().notify(
+            McpSteroidNotificationKind.DEVRIG_INSTALL_OFFER, project, NotificationType.INFORMATION,
+            "Install devrig to connect an AI agent",
+            devrigInstallOfferBody(home),
+            NotificationAction.createSimpleExpiring("Install devrig") {
                 analyticsBeacon.capture(
                     "devrig_onboarding_action",
                     project,
                     mapOf("action" to "install"),
                 )
                 DevrigSetupRunner.getInstance().runInstall(project)
-            })
-            .notify(project)
+            },
+        )
         analyticsBeacon.capture("devrig_onboarding_offered", project, emptyMap())
     }
 

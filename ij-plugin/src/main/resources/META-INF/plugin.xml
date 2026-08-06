@@ -84,7 +84,7 @@
              every message here may auto-hide — a balloon is a nudge, and anything missed stays reachable
              in the Notifications tool window. The id predates the merge (it was the update checker's) and
              is kept stable so users' notification settings survive. Must match
-             MCP_STEROID_NOTIFICATION_GROUP in DevrigPromotion.kt. -->
+             MCP_STEROID_NOTIFICATION_GROUP in notifications/McpSteroidNotifications.kt. -->
         <notificationGroup id="jonnyzzz.mcp.steroid.updates"
                            displayType="BALLOON"/>
 
