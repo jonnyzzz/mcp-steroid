@@ -42,7 +42,23 @@ class DevrigPromotionTest : BasePlatformTestCase() {
     fun `test the promotion is registry-gated off by default`() {
         assertFalse(
             "the promotion must stay opt-in until the owner ships it on",
-            devrigPromotionEnabled(),
+            DevrigPromotion.devrigPromotionEnabled(),
         )
+    }
+
+    // --- the balloon body: the cost disclosure a one-click install surface owes the user ---
+    // The Install button starts a ~611 MB download into the devrig home; the settings page disclosed
+    // that cost and destination, so the balloon — an identical one-click surface — must too.
+
+    fun `test the install offer balloon discloses the download size and destination`() {
+        val body = DevrigPromotion.devrigInstallOfferBody("/home/user/.mcp-steroid")
+        assertTrue(body, body.contains("Downloads ~611 MB into <code>/home/user/.mcp-steroid</code>."))
+    }
+
+    fun `test the balloon still says what devrig is for`() {
+        // The disclosure is appended, not a replacement: the body must keep explaining the value first.
+        val body = DevrigPromotion.devrigInstallOfferBody("/home/user/.mcp-steroid")
+        assertTrue(body, body.contains("bridges"))
+        assertTrue(body, body.indexOf("bridges") < body.indexOf("Downloads"))
     }
 }

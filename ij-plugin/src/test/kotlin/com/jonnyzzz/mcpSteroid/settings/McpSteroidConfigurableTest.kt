@@ -9,12 +9,16 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
+import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
+import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import com.jonnyzzz.mcpSteroid.devrig.devrigInstallAgentCommandLine
 import com.jonnyzzz.mcpSteroid.devrig.devrigLauncherDisplayPath
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
-import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
-import com.jonnyzzz.mcpSteroid.onboarding.devrigInstalled
+import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
+import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable.Companion.COPIED_HINT
+import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable.Companion.copyWithFeedback
+import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable.Companion.devrigStdioMcpConfigJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -70,7 +74,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             // A test panel is never physically showing, so the launchOnShow block never runs here.
             // Drive the same populate path it takes: the real devrig probe decides the branch, and the
             // panel is dumb — it renders the answer it is handed, so no subprocess ever spawns here.
-            val installed = devrigInstalled()
+            val installed = DevrigSetupRunner.devrigInstalled()
             configurable.applyDevrigInstalled(uiScope, installed)
 
             val texts = collectTexts(component)
@@ -312,6 +316,30 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             CopyPasteManager.getInstance().getContents<String>(DataFlavor.stringFlavor),
         )
         assertEquals("Copied", COPIED_HINT)
+    }
+
+    /**
+     * What the settings page offers to paste into Cursor (or any other client devrig has no CLI for) must
+     * be the registration devrig itself writes — same launcher, same `mcp` subcommand — or the manual path
+     * silently stops matching the automatic one. Lives here because the page's companion owns the snippet.
+     */
+    fun `test the stdio snippet points at the stable launcher and matches what devrig registers`() {
+        val home = Path.of("/home/u")
+
+        val posix = devrigStdioMcpConfigJson(home, windows = false)
+        assertEquals(
+            stdioMcpServersJson(StdioMcpCommand("/home/u/.mcp-steroid/bin/devrig", listOf("mcp"))),
+            posix,
+        )
+
+        // The Windows case pins the cmd.exe wrapping and the quoting, not the path separator: this test
+        // also runs on POSIX, where Path.resolve joins with '/'. Separators are the bin-path test's job.
+        val winHome = Path.of("C:\\Users\\u")
+        val launcher = DevrigSetupRunner.devrigBinPath(winHome, windows = true).toString()
+        assertEquals(
+            stdioMcpServersJson(StdioMcpCommand("cmd.exe", listOf("/d", "/c", "\"$launcher\" mcp"))),
+            devrigStdioMcpConfigJson(winHome, windows = true),
+        )
     }
 
     /**

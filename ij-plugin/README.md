@@ -157,8 +157,7 @@ failure too. A successful install clears it.
 | Concern | File |
 |---|---|
 | Settings page (the offer's home; display-only agent commands) | `settings/McpSteroidConfigurable.kt` |
-| Is devrig installed? (the one probe, a file check) | `onboarding/DevrigInstallProbe.kt` |
-| Installer run, progress, markers | `onboarding/DevrigSetup.kt`, `onboarding/InstallerProgress.kt` |
+| Installer run, progress parsing, markers, the is-it-installed probe (all under `DevrigSetupRunner`) | `onboarding/DevrigSetup.kt` |
 | Once-per-run startup promotion and its registry key | `onboarding/DevrigPromotion.kt` |
 | Notifications (single group, one-per-kind policy) | `notifications/McpSteroidNotifications.kt` |
 | The agent registration commands the page displays (launcher path policy, per-OS quoting) | `:devrig-common` `devrig/DevrigUserLauncher.kt` |

@@ -41,120 +41,12 @@ import kotlinx.coroutines.launch
 import java.nio.file.Files
 import java.nio.file.Path
 import com.jonnyzzz.mcpSteroid.PidMarker
-import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import com.jonnyzzz.mcpSteroid.devrig.DevrigUserLauncher
 import com.jonnyzzz.mcpSteroid.devrig.resolveHomePaths
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-
-/**
- * The stable devrig launcher path for this OS — [DevrigUserLauncher.path] over the shared home layout
- * ([resolveHomePaths]), parameterized by [userHome] for tests. Delegation only: the launcher-path logic
- * has exactly one home, `:devrig-common`, so what the settings page renders
- * (`devrigLauncherDisplayPath`), what devrig registers, and the file this module checks cannot drift.
- */
-fun devrigBinPath(userHome: Path, windows: Boolean): Path =
-    DevrigUserLauncher.path(resolveHomePaths(userHome), windows)
-
-/**
- * The `mcpServers` snippet that points an MCP client at this machine's devrig over stdio — for the clients
- * devrig has no CLI for (Cursor, Windsurf, anything configured by an `mcp.json`-style file).
- *
- * Built from the same [DevrigUserLauncher.invocation] that devrig itself registers with (and that
- * `devrig install config` prints), so what the settings page offers to copy and what
- * `devrig install <agent>` writes cannot drift. The settings-page twin of `devrig install config`.
- */
-fun devrigStdioMcpConfigJson(userHome: Path, windows: Boolean): String =
-    stdioMcpServersJson(DevrigUserLauncher.invocation(resolveHomePaths(userHome), listOf("mcp"), windows))
-
-/**
- * Marker the claude-plugin's own install wrapper writes on failure (`bin/install-devrig`), read by its
- * SessionStart hook and `/devrig:status`. The IDE-side install writes the SAME marker, so a failure is
- * visible from the agent side no matter which half of the product attempted the install. Lives in the
- * plugin↔devrig marker directory ([PidMarker.markerDirectory]).
- */
-fun devrigInstallFailedMarker(userHome: Path): Path =
-    PidMarker.markerDirectory(userHome).resolve("bootstrap-install.failed")
-
-private fun setupLog(): Logger = Logger.getInstance("com.jonnyzzz.mcpSteroid.onboarding.DevrigSetup")
-
-private const val MIB = 1024L * 1024L
-
-/**
- * Polls how much of the announced artifact size has landed on disk, once per [pollInterval], until
- * cancelled. The installer stages every download as `binaries/.tmp.*` before moving it into place
- * (`install.sh.tmpl`), so [stagedBytes] sums those as the bytes-so-far for the current phase; [total]
- * comes from the installer's own log line and 0 means "no download announced yet — nothing to report".
- *
- * A coroutine, not a `ScheduledExecutorService` task, on purpose: `scheduleWithFixedDelay` stops
- * scheduling **forever** after any exception escapes one run — including a rethrown
- * [ProcessCanceledException] — per its own contract, so one bad poll froze the progress bar for the rest
- * of a 30-minute install with no signal anywhere. In a coroutine the failure handling is the loop's own
- * (log and keep polling), and PCE/[CancellationException] mean exactly what they should: this poller is
- * being cancelled, so it ends. Same shape as the platform's `JVMStatsToOTelReporter` (`launch` + `delay`
- * loop).
- */
-fun CoroutineScope.startDownloadPoller(
-    indicator: ProgressIndicator,
-    total: AtomicLong,
-    pollInterval: Duration = 1.seconds,
-    stagedBytes: () -> Long,
-): Job = launch(Dispatchers.IO) {
-    while (isActive) {
-        delay(pollInterval)
-        try {
-            val expected = total.get()
-            if (expected <= 0) continue
-            val staged = stagedBytes()
-            indicator.fraction = (staged.toDouble() / expected).coerceIn(0.0, 1.0)
-            indicator.text2 = "${staged / MIB} MB of ${expected / MIB} MB"
-        } catch (e: ProcessCanceledException) {
-            throw e
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            setupLog().debug("download progress poll failed: ${e.message}")
-        }
-    }
-}
-
-/**
- * Reassembles a process's output chunks into lines. `onTextAvailable` delivers arbitrary chunks (curl's
- * progress bar is not even newline-terminated), so [append] buffers until a newline and hands every
- * completed line to [onLine]. [flush] then hands over whatever is left once the stream is done: the
- * installer's **last** line — its `ERROR: …` reason, on the failures that matter most — can arrive with
- * no trailing newline, and before the flush existed it was silently dropped, leaving the user a generic
- * exit-code message instead of the reason.
- */
-class ProcessLineBuffer(private val onLine: (String) -> Unit) {
-    private val pending = StringBuilder()
-
-    /** Buffers [text] and emits every line it completes. Safe to call from the process-reader threads. */
-    fun append(text: String) {
-        synchronized(pending) {
-            pending.append(text)
-            while (true) {
-                val nl = pending.indexOf("\n")
-                if (nl < 0) break
-                val line = pending.substring(0, nl)
-                pending.delete(0, nl + 1)
-                onLine(line)
-            }
-        }
-    }
-
-    /** Emits the trailing newline-less line, if any. Call once the process is done; further calls no-op. */
-    fun flush() {
-        synchronized(pending) {
-            if (pending.isNotEmpty()) {
-                onLine(pending.toString())
-                pending.setLength(0)
-            }
-        }
-    }
-}
 
 /**
  * Installs devrig from the IDE, in a cancellable background progress task.
@@ -174,6 +66,11 @@ class ProcessLineBuffer(private val onLine: (String) -> Unit) {
  *
  * An application service, so the install's helper coroutines (the download poller) have a structured
  * parent: the platform-injected [scope] dies with the plugin, and every child launched on it dies too.
+ *
+ * The service is also the HOME of every setup helper the plugin's devrig surfaces share — the
+ * [devrigInstalled] probe, the [devrigBinPath] launcher path, the [parseInstallerLine] progress parser —
+ * grouped in the companion so "how does the IDE half install and find devrig" has one address instead of
+ * a scatter of top-level functions.
  */
 @Service(Service.Level.APP)
 class DevrigSetupRunner(
@@ -559,10 +456,205 @@ class DevrigSetupRunner(
         )
     }
 
+    /**
+     * One recognised step of the canonical installer, derived from a single output line by
+     * [parseInstallerLine].
+     *
+     * @param text what to show the user in the progress indicator.
+     * @param totalBytes the size of the artifact this step downloads, when the line carries it — the
+     *        denominator for the download fraction. Null for steps that download nothing.
+     * @param isError true for the installer's own `ERROR:` line, so the caller can surface the reason
+     *        instead of a generic exit-code message.
+     */
+    data class InstallerStep(
+        val text: String,
+        val totalBytes: Long? = null,
+        val isError: Boolean = false,
+    )
+
+    /**
+     * Reassembles a process's output chunks into lines. `onTextAvailable` delivers arbitrary chunks (curl's
+     * progress bar is not even newline-terminated), so [append] buffers until a newline and hands every
+     * completed line to [onLine]. [flush] then hands over whatever is left once the stream is done: the
+     * installer's **last** line — its `ERROR: …` reason, on the failures that matter most — can arrive with
+     * no trailing newline, and before the flush existed it was silently dropped, leaving the user a generic
+     * exit-code message instead of the reason.
+     */
+    class ProcessLineBuffer(private val onLine: (String) -> Unit) {
+        private val pending = StringBuilder()
+
+        /** Buffers [text] and emits every line it completes. Safe to call from the process-reader threads. */
+        fun append(text: String) {
+            synchronized(pending) {
+                pending.append(text)
+                while (true) {
+                    val nl = pending.indexOf("\n")
+                    if (nl < 0) break
+                    val line = pending.substring(0, nl)
+                    pending.delete(0, nl + 1)
+                    onLine(line)
+                }
+            }
+        }
+
+        /** Emits the trailing newline-less line, if any. Call once the process is done; further calls no-op. */
+        fun flush() {
+            synchronized(pending) {
+                if (pending.isNotEmpty()) {
+                    onLine(pending.toString())
+                    pending.setLength(0)
+                }
+            }
+        }
+    }
+
     companion object {
         fun getInstance(): DevrigSetupRunner = service()
 
         /** How long a single wait slice is; also the worst-case delay before Cancel takes effect. */
         private const val CANCEL_POLL_MS = 200L
+
+        private const val MIB = 1024L * 1024L
+
+        /** For the companion's own helpers ([startDownloadPoller]); instances log via [thisLogger]. */
+        private val LOG: Logger = Logger.getInstance(DevrigSetupRunner::class.java)
+
+        /**
+         * The stable devrig launcher path for this OS — [DevrigUserLauncher.path] over the shared home
+         * layout ([resolveHomePaths]), parameterized by [userHome] for tests. Delegation only: the
+         * launcher-path logic has exactly one home, `:devrig-common`, so what the settings page renders
+         * (`devrigLauncherDisplayPath`), what devrig registers, and the file this module checks cannot
+         * drift.
+         */
+        fun devrigBinPath(userHome: Path, windows: Boolean): Path =
+            DevrigUserLauncher.path(resolveHomePaths(userHome), windows)
+
+        /**
+         * The one fact the plugin's devrig surfaces render: is the bridge installed — true iff the stable
+         * launcher ([devrigBinPath], `~/.mcp-steroid/bin`) exists for this OS.
+         *
+         * Deliberately nothing else. There is no version to show and no "outdated" axis — devrig updates
+         * itself (its supervisor re-runs the installer, see `docs/updates-check/devrig-auto-update.md`), so
+         * the IDE never has a reason to name or nag about the build it found. And there is no cache: every
+         * surface computes this fresh, off the EDT, at the one moment it is about to be shown.
+         *
+         * **Does file I/O — background threads only.** Parameters exist for tests; production callers take
+         * the defaults.
+         */
+        fun devrigInstalled(
+            userHome: Path = Path.of(System.getProperty("user.home")),
+            windows: Boolean = SystemInfo.isWindows,
+        ): Boolean = Files.isRegularFile(devrigBinPath(userHome, windows))
+
+        /**
+         * Marker the claude-plugin's own install wrapper writes on failure (`bin/install-devrig`), read by
+         * its SessionStart hook and `/devrig:status`. The IDE-side install writes the SAME marker, so a
+         * failure is visible from the agent side no matter which half of the product attempted the install.
+         * Lives in the plugin↔devrig marker directory ([PidMarker.markerDirectory]).
+         */
+        fun devrigInstallFailedMarker(userHome: Path): Path =
+            PidMarker.markerDirectory(userHome).resolve("bootstrap-install.failed")
+
+        /**
+         * Polls how much of the announced artifact size has landed on disk, once per [pollInterval], until
+         * cancelled. The installer stages every download as `binaries/.tmp.*` before moving it into place
+         * (`install.sh.tmpl`), so [stagedBytes] sums those as the bytes-so-far for the current phase;
+         * [total] comes from the installer's own log line and 0 means "no download announced yet — nothing
+         * to report".
+         *
+         * A coroutine, not a `ScheduledExecutorService` task, on purpose: `scheduleWithFixedDelay` stops
+         * scheduling **forever** after any exception escapes one run — including a rethrown
+         * [ProcessCanceledException] — per its own contract, so one bad poll froze the progress bar for the
+         * rest of a 30-minute install with no signal anywhere. In a coroutine the failure handling is the
+         * loop's own (log and keep polling), and PCE/[CancellationException] mean exactly what they should:
+         * this poller is being cancelled, so it ends. Same shape as the platform's `JVMStatsToOTelReporter`
+         * (`launch` + `delay` loop).
+         */
+        fun CoroutineScope.startDownloadPoller(
+            indicator: ProgressIndicator,
+            total: AtomicLong,
+            pollInterval: Duration = 1.seconds,
+            stagedBytes: () -> Long,
+        ): Job = launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(pollInterval)
+                try {
+                    val expected = total.get()
+                    if (expected <= 0) continue
+                    val staged = stagedBytes()
+                    indicator.fraction = (staged.toDouble() / expected).coerceIn(0.0, 1.0)
+                    indicator.text2 = "${staged / MIB} MB of ${expected / MIB} MB"
+                } catch (e: ProcessCanceledException) {
+                    throw e
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    LOG.debug("download progress poll failed: ${e.message}")
+                }
+            }
+        }
+
+        /**
+         * Every line the installer prints carries this prefix (`log()` in `install.sh.tmpl` /
+         * `Write-Log` in `install.ps1.tmpl`), on **stderr**. Lines without it are not ours (curl's progress
+         * bar, shell noise) and are ignored.
+         */
+        private const val INSTALLER_PREFIX = "[mcp-steroid] "
+
+        /**
+         * The size-carrying download line, and the only source of a download *fraction*.
+         *
+         * It is emitted by `install.sh.tmpl` / `install.ps1.tmpl` only from the installer-progress work
+         * (`stack/1-installer-progress`, #363) onward, and — since [DevrigSetupRunner] runs the
+         * **published** `https://devrig.dev/install.sh`, not the template in this repository — it reaches
+         * users only once a release republishes the website. Against an older published installer, which
+         * prints `downloading <kind> (<url>)...`, this and [RETRY] simply never match: the bar stays
+         * indeterminate and shows the step labels the other lines produce. That degradation is expected,
+         * not a defect.
+         */
+        private val DOWNLOADING = Regex("""^downloading (\S+) \(~(\d+) MB\)""")
+        private val RETRY = Regex("""^attempt (\d+)/(\d+) failed""")
+        private val PLATFORM = Regex("""^platform: (\S+)""")
+
+        /**
+         * Map one installer output line to a progress step, or null when the line is not a step we report.
+         *
+         * Only the lines that tell the user something actionable are mapped; the installer's help text
+         * (missing tools, "to register devrig with your agents…") is deliberately ignored here — the caller
+         * reports failures from the exit code plus the `ERROR:` line.
+         */
+        fun parseInstallerLine(rawLine: String): InstallerStep? {
+            val line = rawLine.trim()
+            if (!line.startsWith(INSTALLER_PREFIX)) return null
+            val body = line.removePrefix(INSTALLER_PREFIX).trim()
+            if (body.isEmpty()) return null
+
+            if (body.startsWith("ERROR: ")) {
+                return InstallerStep(body.removePrefix("ERROR: ").trim(), isError = true)
+            }
+
+            DOWNLOADING.find(body)?.let { m ->
+                val kind = m.groupValues[1]
+                val megabytes = m.groupValues[2].toLongOrNull()
+                return InstallerStep(
+                    text = "Downloading $kind" + (megabytes?.let { " (~$it MB)" } ?: "") + "…",
+                    totalBytes = megabytes?.let { it * 1024 * 1024 },
+                )
+            }
+            RETRY.find(body)?.let { m ->
+                return InstallerStep("Download attempt ${m.groupValues[1]}/${m.groupValues[2]} failed — retrying…")
+            }
+            PLATFORM.find(body)?.let { m ->
+                return InstallerStep("Detected platform ${m.groupValues[1]}…")
+            }
+            return when {
+                body.startsWith("SHA-256 verified") -> InstallerStep("Verifying the download…")
+                body.startsWith("already installed:") -> InstallerStep("Already downloaded — reusing it…")
+                body.startsWith("another install finished first") -> InstallerStep("Another install finished first — reusing it…")
+                body.startsWith("registering devrig") -> InstallerStep("Registering devrig…")
+                body.startsWith("devrig binary is ready") -> InstallerStep("devrig is installed.")
+                else -> null
+            }
+        }
     }
 }

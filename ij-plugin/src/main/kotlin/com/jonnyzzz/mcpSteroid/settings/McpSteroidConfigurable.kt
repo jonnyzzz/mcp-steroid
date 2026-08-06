@@ -28,11 +28,12 @@ import com.intellij.util.ui.launchOnShow
 import com.intellij.openapi.util.SystemInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
+import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
+import com.jonnyzzz.mcpSteroid.devrig.DevrigUserLauncher
 import com.jonnyzzz.mcpSteroid.devrig.devrigHomeDisplayPath
 import com.jonnyzzz.mcpSteroid.devrig.devrigInstallAgentCommandLine
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
-import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
-import com.jonnyzzz.mcpSteroid.onboarding.devrigInstalled
+import com.jonnyzzz.mcpSteroid.devrig.resolveHomePaths
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import kotlinx.coroutines.CoroutineScope
@@ -45,35 +46,6 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import javax.swing.JComponent
-
-/** What the confirmation says. Short on purpose: it is a receipt, not a message. */
-const val COPIED_HINT = "Copied"
-
-/**
- * Put [content] on the clipboard and say so, next to [source].
- *
- * A copy button is the one control on this page that changes nothing you can see: the field keeps its
- * text, no panel is rebuilt, no progress starts. And a JetBrains button cannot answer for itself either —
- * `DarculaButtonUI` paints no pressed state at all (the theme defines no pressed colour, and
- * `JBUI.CurrentTheme.Button`'s palette takes no state), so pressing one looks identical to hovering over
- * it. Without a hint, "did that work?" has no answer anywhere on screen.
- *
- * A balloon above the button is the platform's own gesture for this, so nothing new is invented — and it
- * is skipped when the component is not on screen (a panel built in a test, or before the dialog is shown),
- * where asking for a screen location would throw.
- */
-fun copyWithFeedback(content: String, source: JComponent?) {
-    CopyPasteManager.getInstance().setContents(StringSelection(content))
-    if (source == null || !source.isShowing) return
-    JBPopupFactory.getInstance()
-        .createHtmlTextBalloonBuilder(COPIED_HINT, MessageType.INFO, null)
-        .setFadeoutTime(COPIED_HINT_FADEOUT_MS)
-        .createBalloon()
-        .show(RelativePoint.getCenterOf(source), Balloon.Position.above)
-}
-
-/** Long enough to read one word, short enough to never be in the way. */
-private const val COPIED_HINT_FADEOUT_MS = 2000L
 
 /**
  * Application-level settings page: Settings | Tools | Devrig — MCP Steroid.
@@ -96,7 +68,7 @@ private const val COPIED_HINT_FADEOUT_MS = 2000L
  *
  * **The EDT never touches the disk here, and the panel is dumb.** The devrig block starts as a
  * "Checking…" placeholder; [launchOnShow] re-runs the populate every time the page becomes showing —
- * read the one remaining fact ([devrigInstalled], file I/O on [Dispatchers.IO]), render the answer —
+ * read the one remaining fact ([DevrigSetupRunner.devrigInstalled], file I/O on [Dispatchers.IO]), render the answer —
  * and cancels it when the page is hidden. The install button's await is a child of that same
  * dialog-scoped coroutine, so it dies with the dialog too, while the work it waits on (a background
  * install task) runs to completion regardless. There is no cached state: every show computes reality
@@ -174,7 +146,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // fact read is the devrigInstalled() file probe, on Dispatchers.IO.
         panel.launchOnShow("McpSteroidConfigurable devrig state") {
             installStatus?.component = checkingPanel()
-            applyDevrigInstalled(this, withContext(Dispatchers.IO) { devrigInstalled() })
+            applyDevrigInstalled(this, withContext(Dispatchers.IO) { DevrigSetupRunner.devrigInstalled() })
             // The scope must outlive the populate: the install button just rendered launches its
             // await-and-render child on it, and that must be dialog-scoped the same way the
             // populate is. launchOnShow cancels this coroutine when the panel stops showing and
@@ -192,7 +164,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     }
 
     /**
-     * Swap the devrig block for one rendering [devrigInstalled]. EDT only; a no-op once the page is
+     * Swap the devrig block for one rendering [DevrigSetupRunner.devrigInstalled]. EDT only; a no-op once the page is
      * gone. Public so a test, whose panel is never physically showing, can drive the same populate path
      * the on-show launch takes — and hand it either answer, because the panel just renders what it is
      * given.
@@ -279,7 +251,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                     uiScope.launch {
                         DevrigSetupRunner.getInstance()
                             .install(ProjectManager.getInstance().openProjects.firstOrNull())
-                        applyDevrigInstalled(uiScope, withContext(Dispatchers.IO) { devrigInstalled() })
+                        applyDevrigInstalled(uiScope, withContext(Dispatchers.IO) { DevrigSetupRunner.devrigInstalled() })
                     }
                 }
             }
@@ -305,7 +277,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      *
      * Collapsed, and only shown once devrig is installed, because the snippet names a launcher path that
      * has to exist to be worth copying. This is the settings-page twin of `devrig install config`; the
-     * JSON is built through [devrigStdioMcpCommand], so it cannot drift from what
+     * JSON is built through [devrigStdioMcpConfigJson], so it cannot drift from what
      * `devrig install <agent>` writes.
      */
     private fun Panel.otherClientsSection(userHome: Path) {
@@ -504,5 +476,45 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
         const val FEEDBACK_URL = "https://github.com/jonnyzzz/mcp-steroid/issues"
 
+        /** What the confirmation says. Short on purpose: it is a receipt, not a message. */
+        const val COPIED_HINT = "Copied"
+
+        /** Long enough to read one word, short enough to never be in the way. */
+        private const val COPIED_HINT_FADEOUT_MS = 2000L
+
+        /**
+         * Put [content] on the clipboard and say so, next to [source].
+         *
+         * A copy button is the one control on this page that changes nothing you can see: the field keeps
+         * its text, no panel is rebuilt, no progress starts. And a JetBrains button cannot answer for
+         * itself either — `DarculaButtonUI` paints no pressed state at all (the theme defines no pressed
+         * colour, and `JBUI.CurrentTheme.Button`'s palette takes no state), so pressing one looks identical
+         * to hovering over it. Without a hint, "did that work?" has no answer anywhere on screen.
+         *
+         * A balloon above the button is the platform's own gesture for this, so nothing new is invented —
+         * and it is skipped when the component is not on screen (a panel built in a test, or before the
+         * dialog is shown), where asking for a screen location would throw.
+         */
+        fun copyWithFeedback(content: String, source: JComponent?) {
+            CopyPasteManager.getInstance().setContents(StringSelection(content))
+            if (source == null || !source.isShowing) return
+            JBPopupFactory.getInstance()
+                .createHtmlTextBalloonBuilder(COPIED_HINT, MessageType.INFO, null)
+                .setFadeoutTime(COPIED_HINT_FADEOUT_MS)
+                .createBalloon()
+                .show(RelativePoint.getCenterOf(source), Balloon.Position.above)
+        }
+
+        /**
+         * The `mcpServers` snippet that points an MCP client at this machine's devrig over stdio — for the
+         * clients devrig has no CLI for (Cursor, Windsurf, anything configured by an `mcp.json`-style
+         * file). This page is its only consumer: the settings-page twin of `devrig install config`.
+         *
+         * Built from the same [DevrigUserLauncher.invocation] that devrig itself registers with (and that
+         * `devrig install config` prints), so what the settings page offers to copy and what
+         * `devrig install <agent>` writes cannot drift.
+         */
+        fun devrigStdioMcpConfigJson(userHome: Path, windows: Boolean): String =
+            stdioMcpServersJson(DevrigUserLauncher.invocation(resolveHomePaths(userHome), listOf("mcp"), windows))
     }
 }

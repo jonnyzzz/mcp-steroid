@@ -28,25 +28,6 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Registry key gating the once-per-run devrig promotion. Off by default: a startup balloon is not
- * ours to take uninvited, and the settings page carries the same offer with room to explain it.
- * The key id predates the (since deleted) status-bar widget and is kept stable so machines that
- * already flipped it keep their choice.
- */
-const val DEVRIG_PROMOTION_REGISTRY_KEY = "mcp.steroid.devrig.widget.enabled"
-
-fun devrigPromotionEnabled(): Boolean = Registry.`is`(DEVRIG_PROMOTION_REGISTRY_KEY, false)
-
-/**
- * The promotion balloon's body. A pure function so a test can pin the one fact a one-click install
- * surface owes the user before the click: the button starts a ~611 MB download, and where it lands.
- * [devrigHome] follows the display policy of [devrigHomeDisplayPath]: the real absolute home, never `~`.
- */
-fun devrigInstallOfferBody(devrigHome: String): String =
-    "devrig bridges Claude Code, Codex or Gemini to this IDE — so an agent can run, debug, " +
-        "refactor and inspect it.<br>Downloads ~611 MB into <code>$devrigHome</code>."
-
-/**
  * Offers, at most once per IDE run, to install devrig. The promotion has exactly ONE reason to
  * exist: devrig is not installed. A stale devrig is not this service's business — devrig updates
  * itself (see `docs/updates-check/devrig-auto-update.md`).
@@ -88,7 +69,7 @@ class DevrigPromotion(private val scope: CoroutineScope) {
 
     private suspend fun maybePromote() {
         if (!devrigPromotionEnabled()) return
-        val installed = withContext(Dispatchers.IO) { devrigInstalled() }
+        val installed = withContext(Dispatchers.IO) { DevrigSetupRunner.devrigInstalled() }
         // Any open project only anchors the balloon; the offer is about this machine, not a project.
         val project = ProjectManager.getInstance().openProjects.firstOrNull { !it.isDisposed }
         analyticsBeacon.capture(
@@ -120,6 +101,26 @@ class DevrigPromotion(private val scope: CoroutineScope) {
     }
 
     companion object {
+        /**
+         * Registry key gating the once-per-run devrig promotion. Off by default: a startup balloon is not
+         * ours to take uninvited, and the settings page carries the same offer with room to explain it.
+         * The key id predates the (since deleted) status-bar widget and is kept stable so machines that
+         * already flipped it keep their choice.
+         */
+        const val DEVRIG_PROMOTION_REGISTRY_KEY = "mcp.steroid.devrig.widget.enabled"
+
+        fun devrigPromotionEnabled(): Boolean = Registry.`is`(DEVRIG_PROMOTION_REGISTRY_KEY, false)
+
+        /**
+         * The promotion balloon's body. A pure function so a test can pin the one fact a one-click install
+         * surface owes the user before the click: the button starts a ~611 MB download, and where it lands.
+         * [devrigHome] follows the display policy of [devrigHomeDisplayPath]: the real absolute home,
+         * never `~`.
+         */
+        fun devrigInstallOfferBody(devrigHome: String): String =
+            "devrig bridges Claude Code, Codex or Gemini to this IDE — so an agent can run, debug, " +
+                "refactor and inspect it.<br>Downloads ~611 MB into <code>$devrigHome</code>."
+
         /**
          * The range the per-run promotion delay is drawn from, uniformly at random (owner-specified:
          * random 12-35 seconds). The lower bound keeps the balloon past the noisy project-open and
