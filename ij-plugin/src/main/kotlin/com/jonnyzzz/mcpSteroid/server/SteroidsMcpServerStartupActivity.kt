@@ -36,7 +36,7 @@ class SteroidsMcpServerStartupActivity : ProjectActivity {
         analyticsBeacon.runHeartbeat()
         analyticsBeacon.capture("plugin_startup_per_project")
 
-        // Touch-to-arm: the service's own init owns the once-per-IDE-run, delayed promotion one-shot.
-        DevrigPromotion.getInstance()
+        // Explicit start from the platform callback; the service guards its once-per-IDE-run one-shot.
+        DevrigPromotion.getInstance().startPromotion()
     }
 }

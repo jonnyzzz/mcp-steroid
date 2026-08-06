@@ -6,10 +6,14 @@ import kotlin.time.Duration.Companion.seconds
 
 // The notification-group tests live with the group's owner: McpSteroidNotificationsTest.
 class DevrigPromotionTest : BasePlatformTestCase() {
-    fun `test promotion service instantiates`() {
-        // Instantiating the service arms its one-shot coroutine; with the registry gate off (the
-        // default) and the 12s delay, nothing is shown from a test.
-        assertNotNull(DevrigPromotion.getInstance())
+    fun `test promotion starts explicitly and repeated starts are no-ops`() {
+        // Instantiating the service is side-effect free; the startup activity starts the one-shot
+        // by name. With the registry gate off (the default) and the 12s delay, nothing is shown
+        // from a test. The second call exercises the once-per-run guard.
+        val promotion = DevrigPromotion.getInstance()
+        assertNotNull(promotion)
+        promotion.startPromotion()
+        promotion.startPromotion()
     }
 
     fun `test the promotion waits 10 to 15 seconds, as specified`() {

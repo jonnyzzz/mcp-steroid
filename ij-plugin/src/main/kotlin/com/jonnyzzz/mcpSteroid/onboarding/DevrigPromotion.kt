@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -47,21 +48,25 @@ fun devrigInstallOfferBody(devrigHome: String): String =
  * exist: devrig is not installed. A stale devrig is not this service's business — devrig updates
  * itself (see `docs/updates-check/devrig-auto-update.md`).
  *
- * The whole policy is the `init` block. The container instantiates an application service exactly
- * once per IDE run, so the service's single launched coroutine IS the once-per-run guard — no
- * flag, no atomics. [com.jonnyzzz.mcpSteroid.server.SteroidsMcpServerStartupActivity] touches
- * [getInstance] to arm it; every later project open is a no-op by construction. The coroutine
- * waits out [PROMOTION_DELAY] (past the noisy project-open moment), computes the state on a
- * background dispatcher BEFORE showing anything, and only then fires one non-sticky balloon whose
- * single action is the existing install flow ([DevrigSetupRunner.runInstall]). If the balloon
- * auto-hides unseen, nothing is lost: the same offer lives on the settings page, and the message
- * stays in the Notifications tool window. There is nothing to snooze and nothing to monitor.
+ * The whole policy is [startPromotion]. Activities start from an explicit platform callback, never
+ * as a constructor side effect, so [com.jonnyzzz.mcpSteroid.server.SteroidsMcpServerStartupActivity]
+ * calls [startPromotion] by name on every project open; the [started] guard turns every call after
+ * the first into a no-op, and the application service being one-per-IDE-run makes that guard
+ * once-per-run. The launched coroutine waits out [PROMOTION_DELAY] (past the noisy project-open
+ * moment), computes the state on a background dispatcher BEFORE showing anything, and only then
+ * fires one non-sticky balloon whose single action is the existing install flow
+ * ([DevrigSetupRunner.runInstall]). If the balloon auto-hides unseen, nothing is lost: the same
+ * offer lives on the settings page, and the message stays in the Notifications tool window.
+ * There is nothing to snooze and nothing to monitor.
  */
 @Service(Service.Level.APP)
-class DevrigPromotion(scope: CoroutineScope) {
+class DevrigPromotion(private val scope: CoroutineScope) {
     private val log = thisLogger()
+    private val started = AtomicBoolean(false)
 
-    init {
+    /** Starts the once-per-run promotion one-shot; every call after the first is a no-op. */
+    fun startPromotion() {
+        if (!started.compareAndSet(false, true)) return
         scope.launch {
             delay(PROMOTION_DELAY)
             try {
