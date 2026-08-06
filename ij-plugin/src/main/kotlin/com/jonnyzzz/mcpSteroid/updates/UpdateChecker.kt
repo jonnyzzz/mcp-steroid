@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.updates
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
-import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -15,10 +14,12 @@ import com.jonnyzzz.mcpSteroid.getBuildVersion
 import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotificationKind
 import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
 import com.jonnyzzz.mcpSteroid.util.text.DevrigVersion
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -34,23 +35,24 @@ import kotlin.time.Duration.Companion.seconds
  *
  * The check continues running even after an update is detected, but the notification
  * is shown only once per IDE run.
+ *
+ * The network stays sealed inside this service: the whole public surface is [startUpdates], which
+ * only launches the polling loop on the injected background [scope] — no caller can pull the fetch
+ * onto its own thread, so nothing here can ever run on (or block) the EDT.
  */
 @Service(Service.Level.APP)
 class UpdateChecker(
-    parentScope: CoroutineScope
-) : Disposable {
-    private val log = thisLogger()
-
     /**
-     * The polling loop's scope, a **child** of the injected one. A bare `SupervisorJob()` would not be:
-     * `+` replaces the context's Job with the new, parentless one, so cancelling the injected scope would
-     * never stop the poller. Passing the parent Job explicitly makes this scope die with the service.
-     * (The platform's named `childScope(name, ...)` overload is still `@ApiStatus.Experimental` on 261,
-     * so it is avoided.)
+     * The platform-injected service scope, used as-is. It is already a supervisor —
+     * `ComponentManagerImpl.instanceCoroutineScope` creates one fresh scope per service instance via
+     * `childScope(pluginClass.name)`, whose `supervisor` parameter defaults to `true` — so one failed
+     * check cannot cancel sibling coroutines, and the platform cancels the scope when the plugin
+     * unloads. A hand-rolled `SupervisorJob` child of it would duplicate both guarantees, which is
+     * why this service has no scope of its own and no `dispose()`.
      */
-    private val scope = CoroutineScope(
-        parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]) + Dispatchers.IO
-    )
+    private val scope: CoroutineScope,
+) {
+    private val log = thisLogger()
 
     /** Whether we've already shown the update notification in this IDE session */
     private val notificationShown = AtomicBoolean(false)
@@ -58,7 +60,7 @@ class UpdateChecker(
     /**
      * Fetch the published `version-base` from version.json, or null when the request or parse fails.
      */
-    suspend fun fetchLatestBaseVersion(): String? {
+    private suspend fun fetchLatestBaseVersion(): String? {
         val currentVersion = getBuildVersion()
         val ijBuild = ApplicationInfo.getInstance().build.asString()
         val url = "https://devrig.dev/version.json?intellij-version=$ijBuild"
@@ -86,7 +88,7 @@ class UpdateChecker(
         return versionInfo.versionBase
     }
 
-    suspend fun checkForUpdates() {
+    private suspend fun checkForUpdates() {
         val currentVersion = getBuildVersion()
         val remoteVersion = fetchLatestBaseVersion() ?: return
 
@@ -140,16 +142,17 @@ class UpdateChecker(
         return "MCP-Steroid/$pluginVersion (IntelliJ/$ijBuild)"
     }
 
-    override fun dispose() {
-        scope.cancel()
-    }
-
     private val updateIsStarted = AtomicBoolean(false)
 
+    /**
+     * Starts the periodic update poll — the service's only public method, called explicitly from the
+     * platform startup callback. Idempotent: the first call launches the loop on the service [scope]
+     * (on [Dispatchers.IO], off the EDT), every later call is a no-op.
+     */
     fun startUpdates() {
         if (!updateIsStarted.compareAndSet(false, true)) return
 
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
             // Initial delay: wait a bit for IDE to fully start
             delay(30.seconds)
 

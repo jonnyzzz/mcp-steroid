@@ -30,7 +30,8 @@ class UpdateCheckerTest : BasePlatformTestCase() {
 
     /**
      * The notification gate: shown iff the promoted version is strictly newer than the
-     * current build. Exercises the production gate [UpdateChecker.checkForUpdates] calls.
+     * current build. Exercises the production gate `UpdateChecker.checkForUpdates` calls
+     * (private — the network stays sealed inside the service, so the gate is tested via its input).
      */
     fun testUpdateNotificationGate() {
         fun updateAvailable(promotedBase: String, current: String) = DevrigVersion.isUpdateAvailable(

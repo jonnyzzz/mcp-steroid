@@ -176,7 +176,17 @@ class ProcessLineBuffer(private val onLine: (String) -> Unit) {
  * parent: the platform-injected [scope] dies with the plugin, and every child launched on it dies too.
  */
 @Service(Service.Level.APP)
-class DevrigSetupRunner(private val scope: CoroutineScope) {
+class DevrigSetupRunner(
+    /**
+     * The platform-injected service scope, used as-is. It is already a supervisor —
+     * `ComponentManagerImpl.instanceCoroutineScope` creates one fresh scope per service instance via
+     * `childScope(pluginClass.name)`, whose `supervisor` parameter defaults to `true` — so a failed
+     * download poller cannot cancel sibling coroutines or block the next install from launching, and
+     * the platform cancels the scope when the plugin unloads. No hand-rolled `SupervisorJob` wrapper
+     * is needed; [com.jonnyzzz.mcpSteroid.updates.UpdateChecker] relies on the same contract.
+     */
+    private val scope: CoroutineScope,
+) {
     private val log = thisLogger()
 
     /**
