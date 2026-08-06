@@ -21,8 +21,12 @@ import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotificationKind
 import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
@@ -114,40 +118,76 @@ fun agentStateFromCheck(exitCode: Int, timedOut: Boolean): AgentRegistrationStat
 }
 
 /**
+ * Everything the settings page renders about the devrig bridge, as one snapshot: is the bridge installed,
+ * and — only when it is — where each agent stands with it. [agents] is empty when [devrigInstalled] is
+ * false (there is nothing to check a registration against) and holds every [AiAgentCli], in declaration
+ * order, when it is true.
+ *
+ * A value, not a live object: every page show computes a fresh one ([DevrigAgentRegistrationService.status]),
+ * so there is no cache to invalidate and nothing to listen to.
+ */
+data class OnboardingStatus(
+    val devrigInstalled: Boolean,
+    val agents: Map<AiAgentCli, AgentRegistrationState>,
+)
+
+/**
  * Runs `devrig install <agent>` on behalf of the settings page, and answers what state each agent is in.
  *
- * **Both entry points are user-initiated**: [checkAsync] because the user opened the page, [register]
+ * **Both entry points are user-initiated**: [status] because the user opened the page, [register]
  * because they pressed a button. Nothing here runs on its own — the same rule the install flow follows
  * (see [DevrigSetupRunner]), and the reason a failure may be reported at all.
+ *
+ * Both are suspend request/response calls: the settings page launches them from its own dialog-scoped
+ * coroutine and just renders the answer. All I/O happens inside this service, off the caller's thread.
+ *
+ * [scope] is the platform-injected service scope — already a supervisor
+ * (`ComponentManagerImpl.instanceCoroutineScope` hands out `childScope(supervisor = true)`), so a failed
+ * child can never block later launches and no hand-rolled `SupervisorJob` copy is needed. It only carries
+ * the Retry action of a failure notification, which must not die with whatever dialog started the
+ * original attempt.
  */
 @Service(Service.Level.APP)
 class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
     private val log = thisLogger()
 
     /**
-     * Answer [onResult] (on a background thread) with the current state of [agent].
+     * The whole onboarding picture, computed fresh on [Dispatchers.IO]: the devrig probe, then — only
+     * when the bridge is there — every agent's registration state, checked concurrently (each check may
+     * spawn `devrig install <agent> --check`, and the page should wait for the slowest, not the sum).
      *
      * Agents whose CLI is absent are answered from a PATH lookup alone — no subprocess. That keeps the
      * page honest and cheap: on a machine with one agent installed, opening this page starts exactly one
      * process, not one per agent we happen to support.
      */
-    fun checkAsync(agent: AiAgentCli, onResult: (AgentRegistrationState) -> Unit) {
-        scope.launch {
-            val state = try {
-                withContext(Dispatchers.IO) { check(agent) }
-            } catch (e: ProcessCanceledException) {
-                throw e
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.warn("could not check the ${agent.displayName} registration", e)
-                AgentRegistrationState.CHECK_FAILED
+    suspend fun status(): OnboardingStatus = withContext(Dispatchers.IO) {
+        if (!devrigInstalled()) return@withContext OnboardingStatus(devrigInstalled = false, agents = emptyMap())
+        coroutineScope {
+            val states = AiAgentCli.entries.map { agent ->
+                async { agent to checkLogged(agent) }
             }
-            // One line per agent per page opening: cheap, and the only thing that tells us afterwards
-            // whether a row stuck on "Checking…" never got an answer or never got it to the screen.
-            log.info("${agent.displayName} registration state: $state")
-            onResult(state)
+            OnboardingStatus(devrigInstalled = true, agents = states.awaitAll().toMap())
         }
+    }
+
+    /**
+     * [check], with every failure folded into [AgentRegistrationState.CHECK_FAILED] and the answer
+     * logged — one line per agent per page opening: cheap, and the only thing that tells us afterwards
+     * whether a row stuck on "Checking…" never got an answer or never got it to the screen.
+     */
+    private fun checkLogged(agent: AiAgentCli): AgentRegistrationState {
+        val state = try {
+            check(agent)
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("could not check the ${agent.displayName} registration", e)
+            AgentRegistrationState.CHECK_FAILED
+        }
+        log.info("${agent.displayName} registration state: $state")
+        return state
     }
 
     private fun check(agent: AiAgentCli): AgentRegistrationState {
@@ -166,14 +206,18 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
     }
 
     /**
-     * Register [agent] with devrig, in a background progress task. [onFinished] receives the resulting
-     * state so the row that was pressed can show it.
+     * Register [agent] with devrig and answer the resulting state, so the row that was pressed can show
+     * it. The work runs in a background progress [Task.Backgroundable] — a press must run to completion
+     * even when the Settings dialog closes over it — and this suspend call just awaits the task's answer:
+     * a cancelled caller (the dialog closing) stops listening, never the registration itself, and the
+     * next page show recomputes the truth via [status].
      *
      * The success case is deliberately quiet: the row flipping to "Registered" is the confirmation, and a
      * balloon on top of it would be noise. A failure does get one — the user asked for this — carrying
      * devrig's own first line, which is the part that says whether retrying is worth it.
      */
-    fun register(agent: AiAgentCli, project: Project?, onFinished: (AgentRegistrationState) -> Unit) {
+    suspend fun register(agent: AiAgentCli, project: Project?): AgentRegistrationState {
+        val result = CompletableDeferred<AgentRegistrationState>()
         val title = "Registering ${agent.displayName} with devrig…"
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, true) {
             override fun run(indicator: ProgressIndicator) {
@@ -193,7 +237,7 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
                                 ?: "it exited with code ${output.exitCode}"
                         }
                         log.warn("`${argv.joinToString(" ")}` failed: ${output.stderr.take(2000)}")
-                        notifyFailure(project, agent, reason, onFinished)
+                        notifyFailure(project, agent, reason)
                     }
                 } catch (e: ProcessCanceledException) {
                     throw e
@@ -201,36 +245,38 @@ class DevrigAgentRegistrationService(private val scope: CoroutineScope) {
                     throw e
                 } catch (e: Exception) {
                     log.warn("could not register ${agent.displayName}", e)
-                    notifyFailure(project, agent, e.message ?: e.javaClass.simpleName, onFinished)
+                    notifyFailure(project, agent, e.message ?: e.javaClass.simpleName)
                 } finally {
                     analyticsBeacon.capture(
                         "devrig_agent_registered", project,
                         mapOf("agent" to agent.binary, "ok" to ok),
                     )
                     // Re-check rather than assume: the row must show what is actually there now.
-                    onFinished(if (ok) AgentRegistrationState.REGISTERED else check(agent))
+                    result.complete(if (ok) AgentRegistrationState.REGISTERED else checkLogged(agent))
                 }
             }
         })
+        return result.await()
     }
 
     /**
      * Report a failed registration with its two ways forward: Retry — most of these are transient, and
      * the alternative is making the user find the row's button again — and the terminal command in the
-     * text ([agentRegistrationFailureContent]). Retry keeps [onFinished], so a retried registration
-     * reports back to the same settings row that started the original.
+     * text ([agentRegistrationFailureContent]). Retry runs on the service's own [scope], not the dialog's:
+     * a notification outlives the Settings page, so its action must too. The retried run reports the same
+     * way — a failure re-notifies here, a success is quiet — and whatever it left behind is what the next
+     * page show renders ([status]).
      */
     private fun notifyFailure(
         project: Project?,
         agent: AiAgentCli,
         reason: String,
-        onFinished: (AgentRegistrationState) -> Unit,
     ) {
         McpSteroidNotifications.getInstance().notify(
             McpSteroidNotificationKind.AGENT_REGISTRATION, project, NotificationType.ERROR,
             "Could not register ${agent.displayName}",
             agentRegistrationFailureContent(agent, reason),
-            NotificationAction.createSimpleExpiring("Retry") { register(agent, project, onFinished) },
+            NotificationAction.createSimpleExpiring("Retry") { scope.launch { register(agent, project) } },
         )
     }
 

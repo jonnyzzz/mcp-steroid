@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.settings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.ui.MessageType
@@ -13,8 +12,6 @@ import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
-import com.intellij.openapi.util.CheckedDisposable
-import com.intellij.openapi.util.Disposer
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.fields.ExtendableTextComponent
@@ -38,10 +35,11 @@ import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigAgentRegistrationService
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
-import com.jonnyzzz.mcpSteroid.onboarding.devrigInstalled
+import com.jonnyzzz.mcpSteroid.onboarding.OnboardingStatus
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import java.awt.datatransfer.StringSelection
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -99,28 +97,23 @@ fun agentRegisterCommandComment(agent: AiAgentCli): String =
  *    here; the setups that already did still need to look their own configuration up — and the server row
  *    lives with them, because a port on this single IDE only matters to someone wiring HTTP by hand.
  *
- * **The EDT never touches the disk here.** The devrig block starts as a "Checking…" placeholder;
- * [launchOnShow] re-runs the populate every time the page becomes showing — probe on
- * [Dispatchers.IO], apply on the UI dispatcher under the panel's own modality — and cancels it when
- * the page is hidden. There is no cached state: every show computes reality afresh, so there is
- * also nothing to invalidate and nothing to listen to. (Precedents: the platform's own MCP-server
- * settings page and the Terminal's shell-path detection use the same on-show idiom.)
+ * **The EDT never touches the disk here, and the panel is dumb.** The devrig block starts as a
+ * "Checking…" placeholder; [launchOnShow] re-runs the populate every time the page becomes showing —
+ * ask [DevrigAgentRegistrationService.status] (all I/O inside the service), render the answer — and
+ * cancels it when the page is hidden. Button-started awaits are children of that same dialog-scoped
+ * coroutine, so they die with the dialog too, while the work they wait on (a background install
+ * task) runs to completion regardless. There is no cached state: every show computes reality
+ * afresh, so there is also nothing to invalidate and nothing to listen to. (Precedents: the
+ * platform's own MCP-server settings page and the Terminal's shell-path detection use the same
+ * on-show idiom.)
  */
 class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
     /** The one state-dependent block, swapped in place as its state is computed. EDT-confined. */
     private var installStatus: Placeholder? = null
 
-    /**
-     * Marks one opening of the dialog; async row updates check it (on the EDT) before touching Swing.
-     * Registered on [disposable], so the platform's own disposal of this page expires it. EDT-written;
-     * background callers never read it — they capture it on the EDT at build time.
-     */
-    private var uiExpired: CheckedDisposable? = null
-
     override fun disposeUIResources() {
         installStatus = null
-        uiExpired = null
         super.disposeUIResources()
     }
 
@@ -136,10 +129,6 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // with no bound port (server not running) it degrades to a generic phrase instead of "port 0".
         // No hard-coded default here — 6315 lives solely in the registry config.
         val portPhrase = if (port > 0) "on port <b>$port</b>" else "on its HTTP port"
-
-        val expired = Disposer.newCheckedDisposable()
-        Disposer.register(disposable!!, expired)
-        uiExpired = expired
 
         val panel = panel {
             // No pitch row. Whoever opens this page has already installed the plugin, so "AI agents work
@@ -184,12 +173,16 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // Populate on show, recompute on every re-show. The block starts on the UI dispatcher under the
         // panel's own modality whenever the panel becomes showing, and is cancelled when it is hidden —
         // the platform's own settings pages (MCP server clients detection, Terminal shell-path detection)
-        // use the same idiom for slow disk answers. The EDT only launches and applies; the file reads run
-        // on Dispatchers.IO.
+        // use the same idiom for slow disk answers. The EDT only launches, awaits and applies; all the
+        // I/O runs inside the service.
         panel.launchOnShow("McpSteroidConfigurable devrig state") {
             installStatus?.component = checkingPanel()
-            val installed = withContext(Dispatchers.IO) { devrigInstalled() }
-            applyInstallState(installed)
+            applyStatus(this, DevrigAgentRegistrationService.getInstance().status())
+            // The scope must outlive the populate: the buttons just rendered launch their
+            // await-and-render children on it, and those must be dialog-scoped the same way the
+            // populate is. launchOnShow cancels this coroutine when the panel stops showing and
+            // restarts it on re-show — which is exactly the populate-on-show contract.
+            awaitCancellation()
         }
         return panel
     }
@@ -202,18 +195,18 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
     }
 
     /**
-     * Swap the devrig block for one built from [installed]. EDT only; a no-op once the page is gone.
+     * Swap the devrig block for one rendering [status]. EDT only; a no-op once the page is gone.
      * Public so a test, whose panel is never physically showing, can drive the same populate path
-     * the on-show launch takes.
+     * the on-show launch takes — and hand it any status, because the panel just renders what it is
+     * given.
+     *
+     * [uiScope] carries every await a button on the rendered block starts: in production it is the
+     * on-show coroutine's own scope, so a row update launched from a press is cancelled with the
+     * dialog exactly like the populate itself — while the awaited work (a background task) runs on.
      */
-    fun applyInstallState(installed: Boolean) {
-        val expired = uiExpired ?: return
-        if (expired.isDisposed) return
+    fun applyStatus(uiScope: CoroutineScope, status: OnboardingStatus) {
         val placeholder = installStatus ?: return
-        // current() both asserts the EDT and names the dialog's own modality, which the async row
-        // updates below must carry: a plain invokeLater inherits nonModal and would be withheld
-        // until the (modal) Settings dialog closes — rows stuck on "Checking…" forever.
-        placeholder.component = installStatusPanel(installed, expired, ModalityState.current())
+        placeholder.component = installStatusPanel(uiScope, status)
     }
 
     /**
@@ -222,16 +215,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      *
      * Showing exactly one of the two is the point. The button has nothing to offer someone who already
      * has devrig, and the registration commands mean nothing to someone who does not.
-     *
-     * [expired] and [modality] are captured on the EDT while the dialog is up, and carried into every
-     * async row update this panel starts — see [onEdt].
      */
-    private fun installStatusPanel(
-        installed: Boolean,
-        expired: CheckedDisposable,
-        modality: ModalityState,
-    ): DialogPanel = panel {
-        if (installed) {
+    private fun installStatusPanel(uiScope: CoroutineScope, status: OnboardingStatus): DialogPanel = panel {
+        if (status.devrigInstalled) {
             row("devrig:") {
                 // A fixed medium width, not AlignX.FILL: stretched across the whole page the field
                 // dwarfed the agent value areas right below it (owner click-testing feedback). The
@@ -243,18 +229,12 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             row {
                 text("<b>Point an agent at it</b> — once per machine, not once per project:")
             }.topGap(TopGap.SMALL)
-            for (agent in AiAgentCli.entries) {
+            // The states arrive with the status: the service already ran every check before this block
+            // was built, so a row never waits on its own — it renders the answer it was handed.
+            for ((agent, state) in status.agents) {
                 row("${agent.displayName}:") {
                     val placeholder = placeholder()
-                    placeholder.component = agentRow(agent, AgentRegistrationState.CHECKING, placeholder, expired, modality)
-                    // Answered in the background: the check runs the agent's own CLI, which is not
-                    // instant, and a settings page must not wait on it. The callback arrives on a
-                    // background thread; onEdt carries it back under the dialog's modality.
-                    DevrigAgentRegistrationService.getInstance().checkAsync(agent) { result ->
-                        onEdt(expired, modality) {
-                            placeholder.component = agentRow(agent, result, placeholder, expired, modality)
-                        }
-                    }
+                    placeholder.component = agentRow(uiScope, agent, state, placeholder)
                 }
             }
             // The registration devrig has no button for, right under the three it does: any client with an
@@ -285,15 +265,16 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             row {
                 button("Install devrig") {
                     // Application-level page: any open project just anchors the progress bar, and none
-                    // is fine too (the task then runs at IDE level). The onFinished callback — the
-                    // completion of a button the user pressed, not a monitoring pipeline — is the one
-                    // way this open page stops offering an install that just succeeded: it re-probes on
-                    // the task's background thread and re-applies on the EDT.
-                    DevrigSetupRunner.getInstance()
-                        .runInstall(ProjectManager.getInstance().openProjects.firstOrNull()) {
-                            val fresh = devrigInstalled()
-                            onEdt(expired, modality) { applyInstallState(fresh) }
-                        }
+                    // is fine too (the task then runs at IDE level). The install itself is a background
+                    // task the user must be able to see through to the end; this coroutine — the
+                    // completion of a button the user pressed, not a monitoring pipeline — only awaits
+                    // it to stop offering an install that just succeeded, and dies with the dialog
+                    // while the task keeps going.
+                    uiScope.launch {
+                        DevrigSetupRunner.getInstance()
+                            .install(ProjectManager.getInstance().openProjects.firstOrNull())
+                        applyStatus(uiScope, DevrigAgentRegistrationService.getInstance().status())
+                    }
                 }
             }
             row {
@@ -360,11 +341,10 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * check we could not complete says *that* — reporting it as "not registered" would be a guess.
      */
     private fun agentRow(
+        uiScope: CoroutineScope,
         agent: AiAgentCli,
         state: AgentRegistrationState,
         placeholder: Placeholder,
-        expired: CheckedDisposable,
-        modality: ModalityState,
     ): DialogPanel = panel {
         row {
             when (state) {
@@ -377,14 +357,14 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 AgentRegistrationState.REGISTERED ->
                     cell(valueTextField("Registered")).columns(STATUS_FIELD_COLUMNS)
                 AgentRegistrationState.NOT_REGISTERED -> {
-                    registerButton(agent, "Register", placeholder, expired, modality)
+                    registerButton(uiScope, agent, "Register", placeholder)
                     comment(agentRegisterCommandComment(agent))
                 }
                 // Registered and switched off in the agent's own config. Same fix, different word: the
                 // user is not missing a registration, theirs is turned off — and no `mcp list` mentions
                 // it, which is why saying "Registered" here would be actively misleading.
                 AgentRegistrationState.DISABLED -> {
-                    registerButton(agent, "Enable", placeholder, expired, modality)
+                    registerButton(uiScope, agent, "Enable", placeholder)
                     comment("registered, but switched off for this agent")
                 }
                 AgentRegistrationState.CLI_MISSING ->
@@ -394,7 +374,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                 // unreadable state was. The receipt names the action; pointing at the IDE log instead
                 // would hand the user homework where a press does the job.
                 AgentRegistrationState.CHECK_FAILED -> {
-                    registerButton(agent, "Register", placeholder, expired, modality)
+                    registerButton(uiScope, agent, "Register", placeholder)
                     comment("could not read the current state — ${agentRegisterCommandComment(agent)}")
                 }
             }
@@ -405,45 +385,26 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * The button behind every actionable state. One verb does all of them — `devrig install <agent>`
      * registers, repairs a stale entry, and switches a disabled one back on — so the label changes with
      * the situation while the action stays single.
+     *
+     * The press launches on [uiScope] — the dialog-scoped on-show coroutine — so the await-and-render
+     * is cancelled with the dialog while the registration itself (a background task inside the service)
+     * runs to completion; the launch inherits the UI dispatcher and the dialog's own modality from that
+     * scope, so the row update lands on the EDT while the (modal) Settings dialog is still up.
      */
     private fun Row.registerButton(
+        uiScope: CoroutineScope,
         agent: AiAgentCli,
         label: String,
         placeholder: Placeholder,
-        expired: CheckedDisposable,
-        modality: ModalityState,
     ) {
         button(label) {
-            placeholder.component = agentRow(agent, AgentRegistrationState.CHECKING, placeholder, expired, modality)
-            DevrigAgentRegistrationService.getInstance()
-                .register(agent, ProjectManager.getInstance().openProjects.firstOrNull()) { result ->
-                    onEdt(expired, modality) {
-                        placeholder.component = agentRow(agent, result, placeholder, expired, modality)
-                    }
-                }
+            placeholder.component = agentRow(uiScope, agent, AgentRegistrationState.CHECKING, placeholder)
+            uiScope.launch {
+                val result = DevrigAgentRegistrationService.getInstance()
+                    .register(agent, ProjectManager.getInstance().openProjects.firstOrNull())
+                placeholder.component = agentRow(uiScope, agent, result, placeholder)
+            }
         }
-    }
-
-    /**
-     * Run a UI update on the EDT **while the Settings dialog is still up**, and skip it if this page is
-     * already gone.
-     *
-     * [modality] is the whole point: it is `ModalityState.current()` captured on the EDT while the
-     * (modal) Settings dialog was up. A plain `invokeLater` from a background thread inherits
-     * `ModalityState.nonModal()`, so the platform would hold the runnable until every modal dialog
-     * closes — agent rows stuck on "Checking…" forever, results that could not reach the screen.
-     * Dispatching under the dialog's own modality delivers while it is open; if the dialog has since
-     * closed, the runnable still runs (a modality only delays, never drops) and [expired] makes it a
-     * no-op. Both values are captured into the closure on the EDT at build time, so no field is read
-     * from a background thread.
-     */
-    private fun onEdt(expired: CheckedDisposable, modality: ModalityState, update: () -> Unit) {
-        ApplicationManager.getApplication().invokeLater({
-            // A CheckedDisposable knows its own state; Disposer.isDisposed(Disposable) is deprecated
-            // precisely because asking the Disposer about an arbitrary disposable is the unreliable way.
-            if (expired.isDisposed) return@invokeLater
-            update()
-        }, modality)
     }
 
     /**

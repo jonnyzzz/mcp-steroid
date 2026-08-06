@@ -10,9 +10,14 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
+import com.jonnyzzz.mcpSteroid.onboarding.AgentRegistrationState
+import com.jonnyzzz.mcpSteroid.onboarding.OnboardingStatus
 import com.jonnyzzz.mcpSteroid.onboarding.devrigStdioMcpConfigJson
 import com.jonnyzzz.mcpSteroid.onboarding.devrigInstalled
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import java.nio.file.Path
 import java.awt.Component
 import java.awt.Container
@@ -50,6 +55,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
 
     fun `test panel promotes devrig, renders statuses as value fields, and deprecates direct HTTP`() {
         val configurable = McpSteroidConfigurable()
+        val uiScope = CoroutineScope(Job())
         try {
             val component = configurable.createComponent()
 
@@ -62,8 +68,10 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
             )
 
             // A test panel is never physically showing, so the launchOnShow block never runs here.
-            // Drive the same populate path it takes, with the same probe it uses.
-            configurable.applyInstallState(devrigInstalled())
+            // Drive the same populate path it takes: the real devrig probe decides the branch, and the
+            // agent rows are pinned to Checking… — the panel is dumb and renders whatever status it is
+            // handed, so no per-agent subprocess ever spawns in this test and the rows are deterministic.
+            configurable.applyStatus(uiScope, statusWithCheckingRows())
 
             val texts = collectTexts(component)
             val joined = texts.joinToString("\n")
@@ -221,9 +229,8 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
 
                 // Owner click-testing feedback: the installed-state field must not stretch across the
                 // whole page. It and the agent status fields ("Checking…", "Registered") share one fixed
-                // column width, so the devrig block reads as one column of answers. The agent fields are
-                // asserted opportunistically — a background check may already have swapped one for a
-                // button state — but the Installed field is always there in this branch.
+                // column width, so the devrig block reads as one column of answers. The applied status
+                // pinned every agent row to Checking…, so all of them are here deterministically.
                 val statusFields = collectValueFields(component).filter {
                     it.text.startsWith("Installed") || it.text == "Registered" || it.text == "Checking…"
                 }
@@ -265,8 +272,26 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
                 assertContainsText(texts, serverUrl)
             }
         } finally {
+            uiScope.cancel()
             configurable.disposeUIResources()
         }
+    }
+
+    /**
+     * The status the on-show populate would render on this machine, minus the subprocess spawns: the
+     * real [devrigInstalled] probe decides which branch the block shows, and every agent row is pinned
+     * to [AgentRegistrationState.CHECKING] — the state each row starts in before its answer arrives.
+     */
+    private fun statusWithCheckingRows(): OnboardingStatus {
+        val installed = devrigInstalled()
+        return OnboardingStatus(
+            devrigInstalled = installed,
+            agents = if (installed) {
+                AiAgentCli.entries.associateWith { AgentRegistrationState.CHECKING }
+            } else {
+                emptyMap()
+            },
+        )
     }
 
     /** The read-only fields the page renders every value in — statuses, URLs and commands alike. */
@@ -312,20 +337,44 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
     /**
      * Owner rule: every hint on this page names a concrete action — a button, a command, a registry
      * key — never "see the IDE log". A log pointer reports a problem and hands the user homework, which
-     * is worse than saying nothing. This walks every rendered text in both populate states (whichever
-     * the machine is in), including the deprecated-HTTP hints, and rejects any pointer at the log.
+     * is worse than saying nothing. The panel renders whatever status it is handed, so this walks BOTH
+     * populate branches and every agent-row state — including every "could not read" hint — plus the
+     * deprecated-HTTP hints, deterministically on any machine, and rejects any pointer at the log.
      */
     fun `test no rendered hint points at the IDE log`() {
         val configurable = McpSteroidConfigurable()
+        val uiScope = CoroutineScope(Job())
         try {
             val component = configurable.createComponent()
-            configurable.applyInstallState(devrigInstalled())
-            val joined = collectTexts(component).joinToString("\n")
-            assertFalse(
-                "every hint must name its action, never the IDE log; found:\n$joined",
-                joined.contains("IDE log", ignoreCase = true) || joined.contains("Show Log"),
+            val statuses = listOf(
+                OnboardingStatus(devrigInstalled = false, agents = emptyMap()),
+                OnboardingStatus(
+                    devrigInstalled = true,
+                    agents = mapOf(
+                        AiAgentCli.CLAUDE to AgentRegistrationState.NOT_REGISTERED,
+                        AiAgentCli.CODEX to AgentRegistrationState.DISABLED,
+                        AiAgentCli.GEMINI to AgentRegistrationState.CHECK_FAILED,
+                    ),
+                ),
+                OnboardingStatus(
+                    devrigInstalled = true,
+                    agents = mapOf(
+                        AiAgentCli.CLAUDE to AgentRegistrationState.CLI_MISSING,
+                        AiAgentCli.CODEX to AgentRegistrationState.REGISTERED,
+                        AiAgentCli.GEMINI to AgentRegistrationState.CHECKING,
+                    ),
+                ),
             )
+            for (status in statuses) {
+                configurable.applyStatus(uiScope, status)
+                val joined = collectTexts(component).joinToString("\n")
+                assertFalse(
+                    "every hint must name its action, never the IDE log; with $status found:\n$joined",
+                    joined.contains("IDE log", ignoreCase = true) || joined.contains("Show Log"),
+                )
+            }
         } finally {
+            uiScope.cancel()
             configurable.disposeUIResources()
         }
     }

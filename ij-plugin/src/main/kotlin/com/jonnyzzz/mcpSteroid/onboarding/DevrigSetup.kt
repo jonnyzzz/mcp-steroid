@@ -31,6 +31,7 @@ import com.jonnyzzz.mcpSteroid.notifications.McpSteroidNotifications
 import com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -218,6 +219,18 @@ class DevrigSetupRunner(private val scope: CoroutineScope) {
                 }
             }
         })
+    }
+
+    /**
+     * [runInstall], awaitable: suspends until the install task ends, however it ended. The install
+     * itself stays on its background [Task] — cancelling the awaiting coroutine (a Settings page
+     * closing over it) only stops the listening, never a download the user asked for. The settings
+     * page awaits this to stop offering an install that just succeeded.
+     */
+    suspend fun install(project: Project?) {
+        val finished = CompletableDeferred<Unit>()
+        runInstall(project) { finished.complete(Unit) }
+        finished.await()
     }
 
     /**
