@@ -12,11 +12,12 @@ This document is a concise architecture map. For authoritative details, see `AGE
 - OCR helper: external `ocr-tesseract` app invoked via process client.
 - Kotlin compilation: bundled Kotlin Build Tools implementation jars (`kotlinc/` in the plugin dist), driven in-process via the Build Tools API in an isolated classloader.
 - Storage: execution logs/artifacts (append-only, under `~/.mcp-steroid/runs/` by default).
-- **devrig CLI** (`npx-kt/`): stateless stdio MCP server + `backend` /
-  `project` CLI that discovers IntelliJ instances on the host and
-  routes tool calls to them. Project / IDE naming is governed by the
-  [`docs/devrig-naming.md`](devrig-naming.md) spec; on-demand routing
-  rationale lives in
+- **devrig CLI** (`npx-kt/`): stateless stdio MCP server plus one Clikt command tree for installation,
+  backend lifecycle, and schema-generated direct MCP-tool commands. `list_projects` is canonical;
+  `projects` / `project` are aliases. The CLI discovers IntelliJ instances on the host and routes tool
+  calls to them. Grammar, help, and output are governed by
+  [`docs/devrig-cli-contract.md`](devrig-cli-contract.md); project / IDE naming is governed by
+  [`docs/devrig-naming.md`](devrig-naming.md); on-demand routing rationale lives in
   [`docs/devrig-scanning-research.md`](devrig-scanning-research.md).
 
 ## Request Flow (exec_code)
@@ -55,5 +56,7 @@ This document is a concise architecture map. For authoritative details, see `AGE
 - [`devrig-naming.md`](devrig-naming.md): canonical contract for
   project and backend (IDE) names across the devrig CLI and the
   devrig stdio MCP server
+- [`devrig-cli-contract.md`](devrig-cli-contract.md): canonical command grammar, focused help,
+  generated-tool dispatch, human/JSON output, and direct-tool readiness semantics
 - [`devrig-scanning-research.md`](devrig-scanning-research.md):
   on-demand `rebuildSnapshot()` decision record

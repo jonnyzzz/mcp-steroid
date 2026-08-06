@@ -21,6 +21,8 @@ Long-form contract documents owned by `docs/` (read these directly
 rather than mirroring their contents into per-folder guides):
 
 - [`PHILOSOPHY.md`](PHILOSOPHY.md) — the four design tenets.
+- [`devrig-cli-contract.md`](devrig-cli-contract.md) — canonical devrig command grammar, generated-tool
+  CLI, help/recovery, human and JSON output, `open_project --wait`, and agent-validation contract.
 - [`devrig-naming.md`](devrig-naming.md) — devrig CLI + stdio MCP
   project/backend naming contract (slug rule, `bootHash`,
   `archiveSha256`, `actions[].argv`, on-demand routing).

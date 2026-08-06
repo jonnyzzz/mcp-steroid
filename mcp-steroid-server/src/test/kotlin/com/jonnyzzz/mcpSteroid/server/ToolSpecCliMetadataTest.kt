@@ -83,12 +83,12 @@ class ToolSpecCliMetadataTest {
 
     @Test
     fun `fetch_resource exposes the prompt alias and maps uri to a bare positional`() {
-        // bindPositional (SchemaCliBinding.kt) registers a Clikt argument, never an option, for a
-        // cliPositional parameter, so `--uri` is not part of the actual grammar here even though the
-        // spec still carries its default cliFlag value — that field is simply unused once positional.
+        // bindPositional (SchemaCliBinding.kt) makes the bare URI canonical and visible in help.
+        // The generated command separately retains hidden `--uri` compatibility for existing scripts;
+        // this metadata test pins only the advertised positional form.
         assertTrue(fetchResource.cli.aliases.contains("prompt"), "fetch_resource should alias 'prompt'")
         val uri = fetchResource.schema.asCliParams().single { it.name == "uri" }
-        assertTrue(uri.cliPositional, "fetch_resource uri must be a bare positional, not a --uri flag")
+        assertTrue(uri.cliPositional, "fetch_resource must advertise its uri as a bare positional")
     }
 
     @Test

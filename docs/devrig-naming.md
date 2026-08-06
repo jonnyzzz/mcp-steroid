@@ -4,6 +4,10 @@ This is the canonical spec for how the **devrig** binary names projects
 and IDEs in every output it produces (CLI text, CLI JSON, devrig stdio
 MCP).
 
+The command grammar, aliases, focused-help behavior, JSON envelope, and direct-tool readiness contract
+live in [`devrig-cli-contract.md`](devrig-cli-contract.md). This document owns only the identifiers and
+routing data carried by those surfaces.
+
 ## Scope
 
 devrig is an **independent binary**. Its output is consumed by:
@@ -1048,4 +1052,5 @@ The invariants above are pinned by:
 
 - `docs/PHILOSOPHY.md` — the design tenets that gate every change in
   this repo.
+- `docs/devrig-cli-contract.md` — the command/help/output contract that carries these names.
 - `docs/ARCHITECTURE.md` — the broader request-flow picture.

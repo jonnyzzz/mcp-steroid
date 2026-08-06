@@ -87,7 +87,8 @@ Install devrig and provision or connect to an IDE exactly as on a developer mach
   integration tests the IDE runs inside a Docker container on Linux under Xvfb with a window
   manager — see the post linked below.
 - Everything else is unchanged from a local run: `devrig install <agent>` registration, the
-  `devrig mcp` bridge, and `devrig backend download|start|stop` all work identically once a
+  `devrig mcp` bridge, plus `devrig backend download`, `devrig backend start`, and
+  `devrig backend stop` all work identically once a
   backend is reachable.
 
 ## Related

@@ -19,6 +19,11 @@
 | MavenRunnerAdoptionTest | Agent uses exec_code for tests (not Bash) | Created, untested |
 | ResourceReadingTest | Agent reads mcp-steroid:// resources | Created, untested |
 
+### devrig direct CLI validation
+| Test | What it validates | Status |
+|------|------------------|--------|
+| CliDevrigToolsIntegrationTest | Packaged direct CLI: full `list_windows --json` envelope, `open_project --wait` route verified through `list_projects`, and real screenshot `--out` PNG | PASS (3/3) |
+
 ### Known Issues
 - **dialog_killer too aggressive**: Kills Maven runner's `JobProviderWithOwnerContext` progress dialog, cancelling the Maven execution. Needs whitelist for build runner progress tasks.
 - **"Resolving SDKs" false positive**: `UnknownSdkTracker` fires during build, causing `Build errors: true` when compilation actually succeeded. Partially fixed by `mcpResolveUnknownSdks()` step.
@@ -37,7 +42,16 @@
 |------|------------------|--------|
 | FetchResourceToolTest | steroid_fetch_resource returns resource content | Created |
 
-## test-experiments (DPAIA arena)
+## test-experiments
+
+### devrig CLI and frontendless agent validation
+| Test | What it validates | Status |
+|------|------------------|--------|
+| DevrigCliCommandNormalizationTest | 16 safe raw/Codex transport normalization and rejection cases | PASS |
+| DevrigCliAgentUsabilityExperimentTest | Claude + Codex task-first, help-to-missing-values-to-action, outcome-only, and lifecycle-help routes without MCP registration | PASS |
+| DevrigRemoteDevelopmentKeycloakTypeHierarchyTest | Frontendless backend discovery, project routing, Maven readiness, and semantic hierarchy result | PASS |
+
+### DPAIA arena
 
 17 scenarios × 3 agents (claude, codex, gemini) × 2 modes (mcp, none).
 See `docs/arena-3pass-results.md` for full comparison table.

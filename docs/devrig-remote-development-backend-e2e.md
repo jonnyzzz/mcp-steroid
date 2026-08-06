@@ -159,6 +159,18 @@ Managed backend startup remains project-agnostic:
 
 This keeps the existing agent-facing contract and avoids duplicate project-open requests.
 
+### Direct CLI wait contract
+
+The normalized direct-tool CLI from PR #450 exposes the same route as
+`devrig open_project --project_path="PROJECT_PATH" --task_id="TASK_ID" --reason="REASON" --wait --json`.
+`--wait` succeeds when the canonical requested path appears through `list_projects`; its result carries
+the fresh `project_name`, `backend_name`, and canonical `path`. `task_id` and `reason` survive forwarding.
+
+That result proves routing only. It does not promise a frontend window, completed indexing, or configured
+Maven/Gradle models. A frontendless Remote Development backend normally has no window, so `list_windows`
+remains optional; external-system configuration remains the next explicit readiness gate. See
+[`devrig-cli-contract.md`](devrig-cli-contract.md) for the full CLI/output contract.
+
 ### Docker fixture
 
 The scenario uses Keycloak 26.6.4 at commit `dc1bfc54bf1462f7e79822adb4c59aba7e25d50f`

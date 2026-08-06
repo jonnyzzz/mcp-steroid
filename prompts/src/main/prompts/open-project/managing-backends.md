@@ -14,13 +14,13 @@ If no IDE is installed or reachable, use the devrig binary on your PATH:
 
 ```
 devrig backend download --json
-devrig backend download <product-id> --version <version>
+devrig backend download idea-ultimate --version 2026.2.0.1
 ```
 
 The first command lists downloadable product ids with each product's latest stable
-version, build, and license tier; pass `--version <version>` to pin another released
+version, build, and license tier; pass a listed product id and `--version <version>` to pin another released
 version. For unattended Java/JVM work on the supported 2026.2 line, choose
-`devrig backend download idea-ultimate --version <version>`. IDEA Ultimate
+`devrig backend download idea-ultimate --version 2026.2.0.1`. IDEA Ultimate
 262 is launched as a **frontendless Remote Development backend** with MCP
 Steroid included. Plain non-backend headless mode is unsupported; Remote Development product mode takes
 precedence over the raw AWT-headless flag, so that flag alone is not a support detector.

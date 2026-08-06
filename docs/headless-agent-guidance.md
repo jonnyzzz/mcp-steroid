@@ -162,6 +162,22 @@ or diagnostics show it is absent, after inspecting module SDKs instead of blindl
 The executable repair recipe canonicalizes and validates an explicit home through IntelliJ APIs, refuses
 ambiguous candidates, and performs every project/module SDK model read under a read action.
 
+## Normalized CLI usability findings
+
+PR #442 introduced direct schema-generated MCP-tool commands; PR #450 completed their normalization and
+tested the command surface independently with Claude and Codex. Both agents completed task-first and
+help-first routes: they discovered commands from an outcome, followed root help into focused help,
+recovered from missing required values, used
+`list_projects` and its aliases correctly, called the positional `devrig prompt <uri>` route, and drove
+safe backend lifecycle actions. Outcome-only runs also recovered from a Kotlin script that printed nothing
+by adding explicit `println`, matching the `steroid_execute_code` output contract.
+
+These experiments reinforce the frontendless lesson rather than changing it. The CLI can make a project
+routable and return `project_name`, `backend_name`, and canonical `path`; it cannot collapse external-system
+configuration into that routing result. Human color and structured agent output are separate presentation
+modes, with `--json` kept ANSI-free. Exact commands and regression buckets live in
+[`devrig-cli-contract.md`](devrig-cli-contract.md).
+
 ## Durable operational lessons
 
 - Treat readiness as three separate gates: MCP/backend reachability, the requested path appearing in

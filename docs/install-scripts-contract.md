@@ -34,9 +34,15 @@ If 'devrig' is not found, add ~/.mcp-steroid/bin to PATH.
 
 Next steps:
   devrig install plugin                 install the MCP Steroid plugin into your running JetBrains IDEs
-  devrig install claude|codex|gemini    connect devrig to your AI agent
+  devrig install claude                 connect devrig to Claude Code
+  devrig install codex                  connect devrig to Codex
+  devrig install gemini                 connect devrig to Gemini
   devrig install config                 print the mcp.json snippet for any other MCP client
 ```
+
+Each displayed command must be directly copyable. Do not compress mutually exclusive choices with `|` in
+a shell-looking line: POSIX shells interpret it as a pipeline. The production-output alignment is tracked
+in `TODO.md`.
 
 The scripts print no next-steps block of their own — devrig's message is the single source, so the
 guidance can never drift between the script and the binary.

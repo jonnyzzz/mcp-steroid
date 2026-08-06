@@ -44,6 +44,31 @@ the 1-minute rule and stuck-test debugging.
 invocation still works. Depends on `:test-integration` for the shared infrastructure (`IdeContainer`,
 `ConsoleDriver`, `XcvbDriver`, `AiAgentDriver`, `ConsolePumpingContainerDriver`).
 
+## devrig CLI normalization experiments
+
+`DevrigCliCommandNormalizationTest` pins how raw Claude/Codex shell calls are recognized: global/trailing
+`--json`, positional prompt URIs, inline code quoting, and supported Codex bash transports are accepted;
+control syntax, expansion, appended commands, and unrelated wrappers are rejected. It is the narrow
+normalization bucket and does not need a live agent.
+
+`DevrigCliAgentUsabilityExperimentTest` launches real Claude and Codex sessions for four routes per agent:
+task-first discovery, help → missing values → action, outcome-only discovery, and lifecycle help → every
+safe action. Keep all eight cases explicit. The experiment must verify the raw shell/tool events, aliases,
+focused help, generated-tool calls, positional `prompt`, and no-output recovery; prose summaries alone are
+not evidence. The agent sessions intentionally receive no MCP registration, so every IDE action proves the
+packaged CLI route rather than a direct MCP-tool shortcut. The long-lived `devrig mcp` action remains in
+protocol integration tests; the usability experiment exercises only its help.
+
+Run one method at a time, never alongside another Docker integration/experiment test:
+
+```bash
+./gradlew :test-experiments:test \
+  --tests '*DevrigCliAgentUsabilityExperimentTest.codex follows help through missing values to an action*' \
+  --rerun-tasks
+```
+
+The canonical expected behavior is [`docs/devrig-cli-contract.md`](../docs/devrig-cli-contract.md).
+
 ## Frontendless Remote Development Keycloak agent E2E
 
 `DevrigRemoteDevelopmentKeycloakTypeHierarchyTest` is the task-only clean-machine proof for Claude and

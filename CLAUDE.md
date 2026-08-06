@@ -205,6 +205,15 @@ well (JetBrains Marketplace).
 - **Modules**: see `settings.gradle.kts`. Plugin code lives in `ij-plugin/`; prompt resources in `prompts/`;
   Docker IDE smoke tests in `test-integration/`; experimental/long-running tests in `test-experiments/`.
 
+### devrig CLI contributor contract
+
+[`docs/devrig-cli-contract.md`](docs/devrig-cli-contract.md) is authoritative for command grammar, help,
+human/JSON output, direct MCP-tool commands, and `open_project --wait`. Keep one Clikt parser and derive
+tool commands from their schemas. Use canonical `list_projects`; `projects` and `project` are compatibility
+aliases. Missing/invalid parameters must route to focused help with allowed values, and parse validation
+must happen before backend, file/stdin, or `--out` side effects. Agent-facing changes require the unit,
+stable Docker, and Claude/Codex experiment buckets named in that contract.
+
 ## Technology Stack
 
 Gradle 9.6.1 / Kotlin 2.3.20 / Java 25 toolchain / IntelliJ Platform 2026.1+ / Ktor 3.3.2 (CIO+SSE) / kotlinx.serialization

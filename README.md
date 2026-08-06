@@ -62,6 +62,24 @@ your machine at once — each open on a different project — and can download a
 We continuously measure IDE-access vs plain-shell agents on real codebases. See the
 [experiment findings](https://devrig.dev/docs/experiment-findings/) for the evidence-based results.
 
+### Explore the CLI
+
+The command tree is discoverable from either direction:
+
+```bash
+devrig --help
+devrig help execute_code
+devrig list_projects --json
+devrig open_project --project_path="$PWD" --task_id=demo-open --reason="open current project from CLI" --wait --json
+devrig prompt mcp-steroid://prompt/skill --project_name="PROJECT_NAME_FROM_LIST_PROJECTS" --json
+```
+
+`list_projects` is canonical (`projects` and `project` are compatibility aliases). Human output is
+readable and may use terminal color; commands that advertise `--json` emit one ANSI-free document for
+agents and scripts. Incomplete commands print focused help with every missing value. See the
+[devrig CLI guide](https://devrig.dev/docs/devrig/) or the contributor
+[CLI contract](docs/devrig-cli-contract.md).
+
 ---
 
 ## Install

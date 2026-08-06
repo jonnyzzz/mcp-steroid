@@ -159,17 +159,8 @@
   IDE failing its `/windows` fetch errors the whole call (`coroutineScope` + `error(...)`), unlike
   `list_projects` which degrades per-backend. Return partial windows + a per-backend error marker.
 - [ ] **list_windows human presentation (#284 follow-up)**: console mode still prints the tool's
-  JSON payload as one minified line. Add a structured, colorful human renderer while preserving the
-  current ANSI-free `--json` envelope for agents.
-
-- [ ] **`--json` parse-time usage errors emit nothing on stdout (#284)**: a parse failure becomes
-  `DevrigCommandParseError`, which prints to stderr and answers 64 with no `--json` envelope — the KDoc
-  argues the failure precedes the command's options so the `--json` intent is unknowable, yet the sibling
-  help path already sniffs `--json`/`--debug` off the raw tokens (`Array<String>.jsonRequested()` in
-  `Cli.kt`). The same sniff could drive a parse-error envelope for machine consumers. Decide whether the
-  envelope is wanted; if yes, re-introduce a `commandName` recovery that survives non-boolean pre-command
-  flags (`--out` falsified the old raw-token scan — see `DevrigCommandParseError`'s KDoc), and pin the
-  contract either way (it is untested today).
+  JSON payload as pretty-printed JSON, but still lacks a purpose-built, colorful windows/tasks renderer.
+  Add that renderer while preserving the current ANSI-free `--json` envelope for agents.
 
 - [ ] **`--project_name` is not inferred from the current directory (#284)**: `resolveProjectFromCwd`
   in `npx-kt/.../devrig/server/CwdProjectResolver.kt` is fully written and unit-tested (`One` / `None` /
@@ -205,31 +196,22 @@
   implementors. Capture the canonical full set (or query it independently after the agent run) so future
   Keycloak fixture changes can distinguish exact completeness from a strong workflow regression signal.
 
-- [ ] **Harden the CLI tool-spec metadata layer (#284 follow-up)**: three review findings deferred from
-  PR #356. (1) `CliToolSpec.schema` exposes the mutable `ToolSchema` — any consumer can call
+- [ ] **Harden the CLI tool-spec metadata layer (#284 follow-up)**: remaining review findings after
+  PR #450. (1) `CliToolSpec.schema` exposes the mutable `ToolSchema` — any consumer can call
   `register()` after registration and change the advertised `inputSchema`; expose a read-only view
-  (interface with `asMcpJson()`/`asCliParams()` only). (2) No declaration-time flag-collision
-  validation: a parameter flag, its `cliFileSource` flag, and a tool-level `CliExtraOption` flag can
-  collide — builder checks are order-dependent (`.cliFileSource("--x").cliFlag("--x")` passes) and a
-  bare `--` is accepted as a flag; validate per-tool flag/alias uniqueness at registration or pin it
-  with a `devrigToolSpecs()`-wide test. (3) Wire bounds declared via the `extra {}` closure
+  (interface with `asMcpJson()`/`asCliParams()` only). (2) Collision checks now cover parameter,
+  file-source, tool-extra, framework, command-token, and alias names at command construction, but strict
+  option-name grammar still needs a declaration-time guard (for example, reject a bare `--`). (3) Wire
+  bounds declared via the `extra {}` closure
   (`success_rating` 0..1) are invisible to `asCliParams()`, while `timeout` carries a CLI-only
   `cliMinimum` — the generated CLI cannot enforce the wire bound without parsing `asMcpJson()`; also
   `cliSynopsis` hardcodes "(default 600)" where the MCP description interpolates the constant, so the
   two can silently diverge.
 
-- [ ] **Harvest test coverage from the abandoned `issue-284-schema-driven-cli-phase-b` branch (#284)**: that
-  parallel branch (superseded by `issue-284-cli-engine`, not merged) carries ~12 test classes this branch
-  lacks — MCP-as-CLI contract/parse tests, per-command tests (execute_code / fetch_resource / feedback /
-  screenshot), a layered `help execute_code` topic test, and a Docker live-IDE MCP-as-CLI smoke
-  (`CliDevrigToolsIntegrationTest`). They assert against phase-b's command-class architecture, so port the
-  INTENT into the generated-runtime structure, don't copy the files.
-
-- [ ] **The `devrig --help` banner does not list `install plugin` / `install devrig` (#284)**: the curated
-  `LIFECYCLE_COMMANDS` in `HelpCommand.kt` documents `install [claude|codex|gemini]` and `install config`
-  (pinned by `DevrigCommandOutputTest` + `McpToolsCliHelpTest`), but the `install plugin` and `install devrig`
-  subcommands have no banner entry (main did not document them either — pre-existing, not a Phase B
-  regression). Add their one-line descriptions to the curated banner and extend the pinned test head.
+- [ ] **Make agent-choice commands shell-safe in devrig output (#284 follow-up)**: `InstallCommand` and
+  `InstallConfigCommand` still render `devrig install claude|codex|gemini`, which a shell interprets as a
+  pipeline rather than as alternatives. Print separate concrete commands (or one concrete command plus
+  prose naming the replacements) and pin that no copyable command uses shell alternation as notation.
 
 - [ ] **red-code reporter false-positives on Kotlin files**: `reportProjectRedCode` (PSI reference scan,
   `mcp-steroid-import.kt`) reports Kotlin stdlib/operator references (`mutableMapOf`, `runCatching`,

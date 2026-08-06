@@ -81,7 +81,8 @@ the `installer-epic` memory for the full delivered list. Still open:
    vendor + in-IDE notice + trademark line, `docs/devrig.md`, release notes 0.100. Still MISSING (all
    required): (1) `README.md` has NO disclosure — and its line-1 badge currently reads as an *official
    JetBrains incubator* project, directly contradicting the requirement (fix the badge too); (2) the devrig
-   `--version`/`--help` banner (`HelpCommand.kt`); (3) the dist `npx-kt/src/main/dist/licenses/README.md`;
+   `--version`/`--help` output (`DevrigRootCommand` / help rendering in `npx-kt/.../Cli.kt`, plus
+   `printVersion`); (3) the dist `npx-kt/src/main/dist/licenses/README.md`;
    (4) a positive independence statement in EULA (it only names JetBrains as a non-party); (5) a
    release-checklist item; (6) a build-time guard/test asserting the disclosure. (Backlog; wording TBD.)
 
@@ -93,17 +94,6 @@ the `installer-epic` memory for the full delivered list. Still open:
     - (5) **devrig-owned DTOs** — give devrig its own copy of the marker + bridge request/result DTOs (today it
       reuses `mcp-steroid-server`'s classes via tolerant decode) so the two evolve independently and only the
       JSON wire shape is shared.
-
-11. **0.101 release gate — reconcile closed-but-not-on-`main` work (tracked in #102).** The 2026-06-19
-    triage found issues marked done/closed whose code was reverted (commit `30236610`, "Revert the 0.101
-    work batch") and never re-landed on `main`:
-    - **#93 / #94 / #69** — `runInspectionsDirectly` on `main` is still a bare `InspectionEngine.inspectEx`
-      (`McpScriptContextImpl.kt`): no per-tool crash isolation, no invalid-PSI tolerance, no `Project`
-      param / structured findings.
-    - **#99 / #100** — `devrig prompt` and `devrig exec-code --file` exist only on `0101-cli-commands`, not
-      `main` (`Cli.kt` has only mcp/backend/project/install/help/version).
-    Before 0.101: either re-land these onto `main` or re-open the issues so their state matches reality.
-    Release gate **#92** (same-named-project routing) is also still open/unverified.
 
 ## startable-backends follow-ups (PR #139 shipped the core)
 

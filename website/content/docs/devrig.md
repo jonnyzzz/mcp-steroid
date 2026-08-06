@@ -24,7 +24,8 @@ It does three jobs:
    IntelliJ-based IDEs running on your machine — across projects — and routes the
    agent's MCP Steroid calls to any of them through a single connection. One
    bridge, every IDE.
-3. **Provisions an IDE.** `devrig backend download|start|stop` downloads and runs
+3. **Provisions an IDE.** `devrig backend download`, `devrig backend start`, and
+   `devrig backend stop` download and run
    a managed IntelliJ backend under devrig's home directory, so an agent can spin
    up an IDE with no manual setup.
 
@@ -67,6 +68,11 @@ help such as `devrig install --help` and `devrig backend download --help`.
 The equivalent discoverable route is `devrig help <command>`, including nested
 paths such as `devrig help backend download`.
 
+If required values are missing, devrig prints that focused help and identifies all missing values in one
+pass, including allowed enum values and alternatives such as `--code` / `--code-file`. Human output may
+use terminal color. Commands that advertise `--json` emit one ANSI-free JSON document for agents and
+scripts.
+
 ```text
 devrig
 ├── mcp
@@ -84,7 +90,9 @@ devrig
 │   ├── stop [<id>] [--version <v>] [--json]
 │   └── provision [<id>] [--json]
 ├── install [--json]
-│   ├── claude|codex|gemini [--check]
+│   ├── claude [--check]
+│   ├── codex [--check]
+│   ├── gemini [--check]
 │   ├── config [--json]
 │   ├── devrig
 │   └── plugin [--check]
@@ -136,19 +144,20 @@ a second command definition.
 | `devrig list_projects` | Lists open projects and the routing keys accepted by `--project_name`. |
 | `devrig list_windows` | Lists IDE windows, readiness, and background tasks. |
 | `devrig execute_code` | Runs Kotlin in an IDE. Requires `--project_name`, `--task_id`, `--reason`, and either `--code` or `--code-file`; accepts `--modal`, `--timeout`, and `--out`. Quote inline Kotlin for the shell, for example `--code='println("hello")'`, or prefer `--code-file`; use `--code-file=-` for stdin. |
-| `devrig execute_feedback` | Rates an execution. Requires `--project_name`, `--task_id`, `--success_rating`, and `--explanation`; code can also come from `--code-file`. |
+| `devrig execute_feedback` | Rates an execution. Requires `--project_name`, `--task_id`, `--success_rating`, and `--explanation`; accepts the exact optional `--execution_id`, and code can also come from `--code-file`. |
 | `devrig take_screenshot` | Captures an IDE image. Requires `--project_name`, `--task_id`, and `--reason`; accepts `--window_id` and `--out`. |
 | `devrig input` | Sends keyboard and mouse steps to a window. Requires `--project_name`, `--task_id`, `--reason`, `--window_id`, and `--sequence`. |
 | `devrig fetch_resource` | Fetches an `mcp-steroid://` guide given as a positional URI plus `--project_name`. `devrig prompt` is an alias; the former `--uri` spelling remains accepted for existing scripts. |
-| `devrig open_project` | Opens `--project_path`. When one backend already owns that path, devrig reuses it automatically; use `--backend_name` to choose among candidates for a new or multiply-open path. `--trust_project` is on by default and `--no-trust_project` disables it. `--wait` polls for up to 300 seconds and returns the opened project's opaque `project_name`, `backend_name`, and canonical path. |
+| `devrig open_project` | Opens `--project_path`. When one backend already owns that path, devrig reuses it automatically; use `--backend_name` to choose among candidates for a new or multiply-open path. `--trust_project` is on by default and `--no-trust_project` disables it. `--wait` polls for up to 300 seconds and returns the opened project's opaque `project_name`, `backend_name`, and canonical path. This proves routing, not window or Maven/Gradle readiness. |
 
 Use command-scoped help for the authoritative grammar, for example:
 
 ```console
 $ devrig execute_code --help
 $ devrig list_projects --json
-$ devrig execute_code --project_name <routing-key> --code='println("hello")' --task_id demo --reason 'verify IDE access' --json
-$ devrig prompt mcp-steroid://prompt/skill --project_name <routing-key> --json
+$ devrig open_project --project_path="$PWD" --task_id=demo-open --reason="open current project from CLI" --wait --json
+$ devrig execute_code --project_name="PROJECT_NAME_FROM_LIST_PROJECTS" --code='println("hello")' --task_id demo --reason 'verify IDE access' --json
+$ devrig prompt mcp-steroid://prompt/skill --project_name="PROJECT_NAME_FROM_LIST_PROJECTS" --json
 ```
 
 Generated tool commands do not repair the launcher or write to `PATH`; they
@@ -160,7 +169,7 @@ while stdout remains human output or one clean JSON envelope.
 With no target, lists every install target and detects which agent CLIs are on
 `PATH`. `--json` emits the same inventory as a `targets` array.
 
-### `devrig install claude|codex|gemini [--check]`
+### `devrig install <agent> [--check]`
 
 Registers this devrig binary as the `mcp-steroid` stdio MCP server in the
 selected agent. `--check` is read-only: it reports registration drift and IDE
@@ -239,7 +248,8 @@ Options:
   `list_projects` (also `projects` and legacy `project`), `install`, `install config`, `version`, backend lifecycle commands,
   and every schema-generated MCP tool command.
 - `--help`, `-h` prints command-scoped help and exits.
-- `--version`, `-v` prints the devrig version and exits.
+- Root `devrig --version` / `devrig -v` prints the devrig version and exits. Backend lifecycle
+  `--version <v>` options select an IDE version instead.
 
 Environment variables:
 

@@ -29,6 +29,17 @@ Read [`docs/PHILOSOPHY.md`](../docs/PHILOSOPHY.md) before proposing
 changes that would expand the tool surface or the script-context
 surface.
 
+## Stable devrig direct-tool CLI smoke
+
+`CliDevrigToolsIntegrationTest` is the stable Docker proof for the schema-generated CLI against a real
+IDE. It covers the full `list_windows --json` envelope, opens an initially unopened path through
+`open_project --wait`, verifies that path through `list_projects --json`, and writes a real PNG through
+`take_screenshot --out`. The open assertion locates the project by canonical path, never by array order.
+
+Keep this class deterministic and product-facing. Parser/help normalization and live Claude/Codex
+discovery belong in `:test-experiments`; frontendless Remote Development has its own experiment there.
+The durable command and readiness contract is [`docs/devrig-cli-contract.md`](../docs/devrig-cli-contract.md).
+
 ## Researching IntelliJ APIs — Use MCP Steroid + Debugger
 
 **The IntelliJ project is open in the IDE (`~/Work/intellij`).** Use `steroid_execute_code`
