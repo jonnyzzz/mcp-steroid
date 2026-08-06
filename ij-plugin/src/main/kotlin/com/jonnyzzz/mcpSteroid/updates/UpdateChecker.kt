@@ -45,8 +45,8 @@ class UpdateChecker(
      * The polling loop's scope, a **child** of the injected one. A bare `SupervisorJob()` would not be:
      * `+` replaces the context's Job with the new, parentless one, so cancelling the injected scope would
      * never stop the poller. Passing the parent Job explicitly makes this scope die with the service.
-     * Same pattern and full rationale as [com.jonnyzzz.mcpSteroid.server.ServerUrlWriter]. (The platform's
-     * named `childScope(name, ...)` overload is still `@ApiStatus.Experimental` on 261, so it is avoided.)
+     * (The platform's named `childScope(name, ...)` overload is still `@ApiStatus.Experimental` on 261,
+     * so it is avoided.)
      */
     private val scope = CoroutineScope(
         parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]) + Dispatchers.IO
