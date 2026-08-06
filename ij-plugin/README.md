@@ -32,7 +32,7 @@ The devrig block shows **exactly one of two states**, because only one of them i
 
 | devrig | What the block shows |
 |---|---|
-| missing | "devrig is not installed yet", an **Install devrig** button, and in plain words what pressing it does: downloads about 611 MB (a pinned JDK plus devrig) into `~/.mcp-steroid`, puts `devrig` on PATH, and **registers nothing with any agent** |
+| missing | one row, only the install action: **To install:** + a read-only copyable field with the canonical one-liner the website publishes (`curl -fsSL https://devrig.dev/install.sh \| sh` on POSIX, `irm https://devrig.dev/install.ps1 \| iex` on Windows; built by `:devrig-common`'s `devrigInstallOneLiner`, pinned verbatim in `InstallerHostTest`) + an **Install** button beside it that visibly does the same thing the text shows — fetch that script and run it under the existing progress task |
 | installed | "Installed", then the next step — one long read-only **copyable command per agent** (Claude, Codex, Gemini): the absolute stable launcher plus devrig's canonical `install <agent>` verb, for the user to run in a terminal |
 
 The agent rows are **display-only** (owner direction, 2026-08-06). An earlier revision checked each

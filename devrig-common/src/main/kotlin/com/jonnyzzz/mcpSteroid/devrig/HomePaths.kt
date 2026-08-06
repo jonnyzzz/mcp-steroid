@@ -49,8 +49,11 @@ class HomePaths(val home: Path) {
 
     /**
      * Directory where the IDE plugin writes per-pid markers and devrig reads them from — always
-     * `~/.mcp-steroid/markers`, the same fixed location [home] resolves to. This is the plugin↔devrig
-     * contract for marker discovery, so it must never be relocated.
+     * `~/.mcp-steroid/markers` under the REAL `user.home`, deliberately IGNORING this instance's [home].
+     * The plugin and devrig discover each other only through this fixed location, so it must never
+     * relocate — not even for a [resolveHomePaths] call handed an explicit (e.g. sandboxed test) home.
+     * Tests that need an isolated marker dir get it through a seam instead
+     * (`DevrigServices.markersDir`), never by moving this one.
      */
     val markersDir: Path get() = PidMarker.markerDirectory(Path.of(System.getProperty("user.home")))
 

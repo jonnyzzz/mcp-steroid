@@ -316,7 +316,7 @@ internal fun ensurePosixPathSymlink(binDir: Path, binDevrig: Path, userHome: Pat
     }
     System.err.println(
         "[mcp-steroid] devrig is installed at $target but no writable PATH dir under \$HOME was found; " +
-            "add it to PATH manually: export PATH=\"\$HOME/.mcp-steroid/bin:\$PATH\"",
+            "add it to PATH manually: export PATH=\"\$HOME/$DEVRIG_HOME_DIR_NAME/bin:\$PATH\"",
     )
 }
 

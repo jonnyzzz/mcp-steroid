@@ -516,8 +516,13 @@ class DevrigSetupRunner(
 
         private const val MIB = 1024L * 1024L
 
-        /** For the companion's own helpers ([startDownloadPoller]); instances log via [thisLogger]. */
-        private val LOG: Logger = Logger.getInstance(DevrigSetupRunner::class.java)
+        /**
+         * For the companion's own helpers ([startDownloadPoller]); instances log via [thisLogger].
+         * The explicit string keeps the debug category the poller had before the helpers moved into
+         * this companion — so the grouping is diagnostics-invisible, and an existing
+         * `com.jonnyzzz.mcpSteroid.onboarding.DevrigSetup` debug-log setup keeps working.
+         */
+        private val LOG: Logger = Logger.getInstance("com.jonnyzzz.mcpSteroid.onboarding.DevrigSetup")
 
         /**
          * The stable devrig launcher path for this OS — [DevrigUserLauncher.path] over the shared home

@@ -186,10 +186,11 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * has devrig, and the registration commands mean nothing to someone who does not.
      */
     private fun installStatusPanel(uiScope: CoroutineScope, devrigInstalled: Boolean): DialogPanel = panel {
-        // The one raw fact every path below derives from. Read once; everything path-shaped is then
-        // built by devrig-common's renderers / resolveHomePaths over this value — never joined by hand.
-        val userHome = System.getProperty("user.home")
         if (devrigInstalled) {
+            // The one raw fact every path in this branch derives from (the not-installed branch renders
+            // no path at all — its one-liner is URL-only). Read once; everything path-shaped is then
+            // built by devrig-common's renderers / resolveHomePaths over this value — never joined by hand.
+            val userHome = System.getProperty("user.home")
             row("devrig:") {
                 // A fixed medium width, not AlignX.FILL: stretched across the whole page the field
                 // dwarfed the agent value areas right below it (owner click-testing feedback). Plain

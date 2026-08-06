@@ -176,7 +176,7 @@ fun runInstallCommand(
         "'$DEVRIG_MCP_SERVER_NAME' registration (user scope).")
     out.println("  - ${agent.displayName} will launch this command to start it:")
     out.println("      $renderedCommand")
-    out.println("  - It points at the stable ~/.mcp-steroid/bin launcher, so it survives devrig upgrades")
+    out.println("  - It points at the stable ~/$DEVRIG_HOME_DIR_NAME/bin launcher, so it survives devrig upgrades")
     out.println("    without re-registering.")
     out.println()
     out.println("Re-running install is safe — existing devrig entries are replaced.")
