@@ -21,10 +21,11 @@ val classFqn = "com.example.BaseType" // TODO: Set base class/interface FQN
 val methodName = "doWork" // TODO: Set method name or leave as-is
 
 
-val hierarchyData = readAction {
+// Inheritor and override searches read indexes — the whole query runs in smartReadAction.
+val hierarchyData = smartReadAction {
     val baseClass = JavaPsiFacade.getInstance(project)
         .findClass(classFqn, GlobalSearchScope.projectScope(project))
-        ?: return@readAction null
+        ?: return@smartReadAction null
     val inheritors = ClassInheritorsSearch.search(
         baseClass,
         GlobalSearchScope.projectScope(project),

@@ -21,16 +21,17 @@ data class PushDownPlan(
     val member: PsiMember
 )
 
-val (summary, plan) = readAction {
+// The plan phase runs inheritor discovery (index-backed) — smartReadAction, not readAction.
+val (summary, plan) = smartReadAction {
     val facade = JavaPsiFacade.getInstance(project)
     val scope = GlobalSearchScope.projectScope(project)
 
     val sourceClass = facade.findClass(sourceClassFqn, scope)
-        ?: return@readAction "Source class not found: $sourceClassFqn" to null
+        ?: return@smartReadAction "Source class not found: $sourceClassFqn" to null
 
     val inheritors = ClassInheritorsSearch.search(sourceClass, scope, false).findAll()
     if (inheritors.isEmpty()) {
-        return@readAction "No inheritors found for $sourceClassFqn" to null
+        return@smartReadAction "No inheritors found for $sourceClassFqn" to null
     }
 
     val member: PsiMember? =
@@ -38,7 +39,7 @@ val (summary, plan) = readAction {
             ?: sourceClass.findFieldByName(memberName, false)
 
     if (member == null) {
-        return@readAction "Member not found: $memberName in $sourceClassFqn" to null
+        return@smartReadAction "Member not found: $memberName in $sourceClassFqn" to null
     }
 
     val memberType = when (member) {

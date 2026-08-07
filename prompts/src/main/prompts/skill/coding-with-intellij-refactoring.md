@@ -535,22 +535,21 @@ import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 
-// Before adding a field to CreateReleaseCommand — find every constructor call site first
-val cmdClass = readAction {
-    JavaPsiFacade.getInstance(project).findClass(
+// Before adding a field to CreateReleaseCommand — find every constructor call site first.
+// The class lookup and the reference search both read indexes, so one smartReadAction
+// owns the whole query and its printed snapshot.
+smartReadAction {
+    val cmdClass = JavaPsiFacade.getInstance(project).findClass(
         "com.example.commands.CreateReleaseCommand",
         GlobalSearchScope.projectScope(project)
     )
+    if (cmdClass != null) {
+        ReferencesSearch.search(cmdClass, GlobalSearchScope.projectScope(project)).findAll().forEach { ref ->
+            val file = ref.element.containingFile.virtualFile.path.substringAfterLast('/')
+            println("$file:${ref.element.textOffset} → " + ref.element.parent.text.take(120))
+        }
+    } else println("class not found — check FQN")
 }
-if (cmdClass != null) {
-    val usages = readAction {
-        ReferencesSearch.search(cmdClass, GlobalSearchScope.projectScope(project)).findAll()
-    }
-    usages.forEach { ref ->
-        val file = ref.element.containingFile.virtualFile.path.substringAfterLast('/')
-        println("$file:${ref.element.textOffset} → " + ref.element.parent.text.take(120))
-    }
-} else println("class not found — check FQN")
 // Fix every listed call site BEFORE running the compiler.
 // This 1 call replaces reading 3-5 files just to find constructors.
 ```
