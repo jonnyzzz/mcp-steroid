@@ -274,6 +274,47 @@ class OutputFormattersTest {
     }
 
     @Test
+    fun `formatToon renders heterogeneous keysets as the exact documented fallback`() {
+        // Issue #459: the prompt corpus used to claim heterogeneous maps are
+        // rejected. They are accepted; this pins the exact shape the corpus
+        // now documents, so a formatter change forces a docs update.
+        val out = formatToon(listOf(
+            mapOf("a" to 1),
+            mapOf("b" to 2),
+        ))
+        assertEquals(
+            """
+            [2]:
+              a: 1
+              b: 2
+            """.trimIndent(),
+            out,
+        )
+    }
+
+    @Test
+    fun `formatToon accepts a widened record that only some elements carry`() {
+        // The realistic heterogeneous case: inspection / search records where
+        // an optional field is present on some rows only. No exception, no
+        // silent data loss — every key of every element is emitted.
+        val out = formatToon(listOf(
+            linkedMapOf("path" to "/a.kt", "line" to 1),
+            linkedMapOf("path" to "/b.kt", "line" to 2, "quickFix" to "RemoveCast"),
+        ))
+        assertEquals(
+            """
+            [2]:
+              path: /a.kt
+              line: 1
+              path: /b.kt
+              line: 2
+              quickFix: RemoveCast
+            """.trimIndent(),
+            out,
+        )
+    }
+
+    @Test
     fun `formatToon emits list of primitives as single comma-joined line`() {
         assertEquals("[3]: 1,2,3", formatToon(listOf(1, 2, 3)))
         assertEquals("[2]: alpha,beta", formatToon(listOf("alpha", "beta")))

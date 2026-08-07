@@ -111,6 +111,10 @@ interface McpScriptContext {
      * equivalent JSON for that case while preserving accuracy on extraction
      * tasks (https://github.com/toon-format/toon).
      *
+     * A list whose maps all share one key set gets the compact tabular
+     * encoding — a `[N]{columns}:` header followed by one comma-joined row
+     * per element, with the column order taken from the first map:
+     *
      * ```kotlin
      * printToon(listOf(
      *   mapOf("id" to 1, "name" to "Alice"),
@@ -119,6 +123,19 @@ interface McpScriptContext {
      * // [2]{id,name}:
      * //   1,Alice
      * //   2,Bob
+     * ```
+     *
+     * Heterogeneous key sets are **accepted**, not rejected: the list falls
+     * back to the less compact per-element block form, which preserves every
+     * key of every element. Callers must not pad naturally ragged records
+     * (optional quick-fix, optional enclosing symbol) into a common key set
+     * just to satisfy the tabular form — see issue #459:
+     *
+     * ```kotlin
+     * printToon(listOf(mapOf("a" to 1), mapOf("b" to 2)))
+     * // [2]:
+     * //   a: 1
+     * //   b: 2
      * ```
      */
     fun printToon(value: Any?)

@@ -46,7 +46,7 @@ Reflection (`Class.forName`, `getDeclaredField`, `setAccessible(true)`) is fine 
 | Run Maven tests | `MavenRunConfigurationType.runConfiguration()` + `SMTRunnerEventsListener` | Structured pass/fail; Bash `./mvnw test` cold-starts ~31 s per run |
 | Run Gradle tests | `ExternalSystemUtil.runTask()` or `GradleRunConfiguration` through the IDE runner | See `mcp-steroid://skill/execute-code-gradle`; same cold-start cost applies |
 | Maven dependency sync | `MavenProjectsManager.forceUpdateAllProjectsOrFindAllAvailablePomFiles()` | No CLI equivalent |
-| **Emit tabular results** (find-references, call-hierarchy, project-search, document-symbols, file inventories) | `printCsv(headers, rows, dictColumns = setOf("path"))` for CSV with a path-dictionary preamble; `printToon(listOf(mapOf(...)))` for TOON array-of-records | Token-efficient (`dictColumns` dedupes repeated long values; TOON is a drop-in for `printJson` on uniform-shape lists). Full doc: `mcp-steroid://skill/coding-with-intellij-context-api` → "Tabular Output". |
+| **Emit tabular results** (find-references, call-hierarchy, project-search, document-symbols, file inventories) | `printCsv(headers, rows, dictColumns = setOf("path"))` for CSV with a path-dictionary preamble; `printToon(listOf(mapOf(...)))` for TOON array-of-records | Token-efficient (`dictColumns` dedupes repeated long values; TOON is a drop-in for `printJson` on any value and cheapest on uniform-shape lists — ragged key sets are accepted, just less compact). Full doc: `mcp-steroid://skill/coding-with-intellij-context-api` → "Tabular Output". |
 
 **Native tools only where MCP Steroid genuinely does not apply** — keep this list tight, and prefer the IDE whenever the operation touches the project model:
 

@@ -278,9 +278,11 @@ printCsv(
 )
 
 // TOON — Token-Oriented Object Notation; https://github.com/toon-format/toon.
-// printToon(value: Any?) — drop-in for printJson on uniform-shape lists.
-// Pass List<Map<String, Any?>>; column order comes from the FIRST map's keys, and every
-// subsequent map must have the same key set. Do NOT pass headers / rows / dictColumns — that's printCsv.
+// printToon(value: Any?) — drop-in for printJson on any value; cheapest on uniform-shape lists.
+// Pass List<Map<String, Any?>>. Same key set in every map -> compact [N]{cols}: form, column order
+// from the FIRST map's keys. Different key sets are ACCEPTED too -> less compact per-element block
+// ([N]: plus `key: value` lines), so never normalize naturally ragged records just to get the
+// compact form. Do NOT pass headers / rows / dictColumns — that's printCsv.
 printToon(listOf(mapOf("path" to "/abs/A.kt", "line" to 17), mapOf("path" to "/abs/B.kt", "line" to 42)))
 ```
 

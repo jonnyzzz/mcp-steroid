@@ -67,11 +67,14 @@ printJson(mapOf("key" to "value"))       // Serialize to pretty JSON (uses Jacks
 //   printToon(value: Any?)
 //     TOON (Token-Oriented Object Notation — https://github.com/toon-format/toon).
 //     Drop-in replacement for `printJson` when the data is array-of-records
-//     shaped. Pass a `List<Map<String, Any?>>` — the COLUMN ORDER is taken
-//     from the FIRST map's key order, and every subsequent map is checked
-//     for the same key set. `printToon` does NOT take `headers` / `rows` /
-//     `dictColumns` — that's `printCsv`'s shape; `printToon` infers
-//     everything from the data.
+//     shaped. Pass a `List<Map<String, Any?>>`. When every map has the SAME
+//     key set you get the compact `[N]{cols}:` form, with COLUMN ORDER taken
+//     from the FIRST map's key order. Maps with DIFFERENT key sets are
+//     accepted too — they render as the less compact per-element block form
+//     (see "Tabular Output" below), so do NOT normalize naturally ragged
+//     records just to reach the compact form. `printToon` does NOT take
+//     `headers` / `rows` / `dictColumns` — that's `printCsv`'s shape;
+//     `printToon` infers everything from the data.
 printCsv(
     headers = listOf("idx", "path", "line"),
     rows = listOf(listOf(1, "/abs/A.kt", 17), listOf(2, "/abs/B.kt", 42)),
@@ -99,7 +102,7 @@ inventories). Same data, two formats — pick by the heuristic below.
 | Helper      | Signature                                                                                | Row shape                                             |
 |-------------|------------------------------------------------------------------------------------------|-------------------------------------------------------|
 | `printCsv`  | `printCsv(headers: List<String>, rows: Iterable<List<Any?>>, dictColumns: Set<String> = emptySet())` | `List<List<Any?>>` — **positional**, parallel to `headers` |
-| `printToon` | `printToon(value: Any?)`                                                                 | `List<Map<String, Any?>>` — **keyed**, columns inferred from first map's key order |
+| `printToon` | `printToon(value: Any?)`                                                                 | `List<Map<String, Any?>>` — **keyed**, columns inferred from first map's key order; ragged key sets allowed |
 
 **Choose by repetition shape:**
 
@@ -136,6 +139,34 @@ becomes `""`. The TOON form follows
 [toon-format/toon](https://github.com/toon-format/toon); the array-of-
 records shape (`[N]{cols}:` header + comma rows) is what `printToon`
 emits when every map in the list has the same key set.
+
+**Ragged key sets are supported — do not normalize for the formatter.**
+When the maps in the list do *not* share one key set, `printToon` does not
+fail; it falls back to a per-element block (`[N]:` followed by
+`key: value` lines for each element, every key preserved). That is the
+right output for naturally heterogeneous records — inspection results
+where only some rows carry a quick-fix, search hits with an optional
+enclosing symbol. Spending code on padding every record to a common key
+set buys nothing but the compact header:
+
+```kotlin
+// printToon(listOf(
+//   mapOf("path" to "/a.kt", "line" to 1),
+//   mapOf("path" to "/b.kt", "line" to 2, "quickFix" to "RemoveCast"),
+// ))
+//
+// emits the per-element fallback (NOT [2]{path,line}:):
+//   [2]:
+//     path: /a.kt
+//     line: 1
+//     path: /b.kt
+//     line: 2
+//     quickFix: RemoveCast
+```
+
+Reach for a uniform key set when you want the compact tabular encoding
+for its own sake (it is the cheaper form), not because a ragged list
+would be rejected.
 
 **End-to-end example** — discover `.kt` files once, emit the same record
 list both ways. `findProjectFiles` is a `suspend` resolver; it stays

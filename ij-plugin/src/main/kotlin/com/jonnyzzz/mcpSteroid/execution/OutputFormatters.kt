@@ -98,10 +98,15 @@ private fun csvCell(value: String): String {
  * Format [value] as TOON — Token-Oriented Object Notation. Minimal
  * implementation covering the shapes that actually show up in the
  * find-references / call-hierarchy / project-search recipes: primitives,
- * lists of primitives, lists of uniform-shape maps, single maps. Mixed /
- * non-uniform lists fall back to one indented item per line; that's
- * acceptable for the minimal ship — the dominant case is uniform array-
- * of-records (the whole reason TOON exists).
+ * lists of primitives, lists of uniform-shape maps, single maps. The
+ * dominant case is uniform array-of-records (the whole reason TOON exists)
+ * and it gets the compact `[N]{cols}:` encoding.
+ *
+ * Mixed / non-uniform lists are a **supported input**, not a rejected one:
+ * they fall back to one indented item per line, preserving every key of
+ * every element. That fallback is part of the documented contract (issue
+ * #459) — the agent-facing prompts tell callers not to normalize ragged
+ * records to reach the compact form, so this branch must keep working.
  *
  * Spec reference: [toon-format/toon on GitHub](https://github.com/toon-format/toon).
  */
