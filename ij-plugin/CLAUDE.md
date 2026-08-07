@@ -38,13 +38,6 @@ must be public and stable.** Before using a class/method/field/topic/extension p
 annotated `@ApiStatus.Internal` (and prefer not `@ApiStatus.Experimental`). Internal APIs break without
 notice across IDE releases and are off-limits even when they look convenient.
 
-- **Known verifier artifact — Kotlin bridges to deprecated interface defaults.** `verifyPlugin` reports 3
-  deprecated hits on `StatusBarWidget.getPresentation(PlatformType)` from
-  `onboarding/DevrigStatusBarWidget.kt`. We implement only the non-deprecated `getPresentation()`; because
-  `StatusBarWidget` is a *Kotlin* interface whose deprecated overload has a default body, the Kotlin
-  compiler materialises a bridge override in every Kotlin implementor. Do not "fix" it with
-  `@Suppress("DEPRECATION")` (banned) or by overriding the deprecated overload (that would be a real
-  usage); only a Java rewrite of the widget removes it. See the class KDoc.
 - **Verify it.** Check the declaration in `~/Work/intellij` (`grep -n "@ApiStatus" <File>`), or via
   `steroid_execute_code` + PSI on the open `intellij` project. If it's `@ApiStatus.Internal`, find the
   public replacement; if none exists, that's a design constraint to surface, not to bypass.

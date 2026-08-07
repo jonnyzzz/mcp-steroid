@@ -46,25 +46,27 @@ Consumers of the bundled `ij-plugin.zip` (all of them stay):
 | `BackendProvisionCommand.kt:208` | prints where to take the plugin from and where to put it |
 | `PluginCompatibility.kt:88` | reads `since-build`/`until-build` for the version-skew check |
 
-Note `devrig connect ide` (the claude-first path) never touches this archive — it asks the running IDE
+Note `devrig install plugin` (the claude-first path) never touches this archive — it asks the running IDE
 to install from Marketplace via `/api/installPlugin`. It is unaffected by anything here.
 
 ## What actually follows from the decision
 
 > **Superseded in part (2026-08-01).** The gaps below were addressed, but not all in the shape proposed
 > here. The offer moved to the **settings page** rather than being made louder — a balloon has no room to
-> justify a 611 MB download, and a status-bar widget is not ours to take uninvited (both it and the
-> startup notification are now behind `mcp.steroid.devrig.widget.enabled`, off by default). The install
-> also no longer runs `devrig connect claude`: registering an agent is a separate, explicit step. See
-> `ij-plugin/README.md` for what ships. The measurements above stand.
+> justify a 611 MB download, and a status-bar widget is not ours to take uninvited (the widget was later
+> deleted outright; the startup notification is behind `mcp.steroid.devrig.widget.enabled`, off by
+> default). The install also no longer registers an agent (the shipped verb is `devrig install claude`):
+> that is a separate, explicit step. See `ij-plugin/README.md` for what ships. The measurements above
+> stand.
 
 The plugin is a **migrator**. Mechanism-wise that already exists on the `claude-plugin` branch:
 
 - `DevrigSetup.kt:26-28` — `installerArgv()` builds exactly the canonical one-liner
-  (`/bin/sh -c "curl -fsSL https://mcp-steroid.jonnyzzz.com/install.sh | sh"`, and the PowerShell
+  (`/bin/sh -c "curl -fsSL https://devrig.dev/install.sh | sh"`, and the PowerShell
   `irm … | iex` on Windows);
-- `DevrigSetupRunner.runEnable()` — runs it in a background task, then `devrig connect claude`,
-  then reports the outcome through the onboarding notification group;
+- `DevrigSetupRunner.runEnable()` — runs it in a background task, then the agent registration (the
+  shipped verb is `devrig install claude`), then reports the outcome through the onboarding
+  notification group;
 - `DevrigOnboardingService` — decides whether to offer at all.
 
 So the remaining work is **not** the mechanism. It is these gaps:
