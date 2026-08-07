@@ -159,7 +159,13 @@ class CodeEvalManager(
                     ?.let { line -> "\n    $line" }
                     .orEmpty()
                 when(it.severity) {
-                    CompilerMessageRenderer.Severity.DEBUG,
+                    // kotlinc LOGGING chatter (BTA DEBUG): environment boot lines
+                    // ("Using Kotlin home directory", the 45-entry "Loading modules:
+                    // […]" dump) that plain kotlinc prints only under -verbose, and
+                    // that repeat on EVERY compile. Not forwarded to the agent
+                    // (#463) — persistCompilerMessages below records every message
+                    // with its severity in the execution folder's kotlin.txt.
+                    CompilerMessageRenderer.Severity.DEBUG -> Unit
                     CompilerMessageRenderer.Severity.INFO -> resultBuilder
                         .logProgress("Compiler output: $message$where")
                     CompilerMessageRenderer.Severity.WARNING -> resultBuilder
