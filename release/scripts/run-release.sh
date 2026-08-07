@@ -222,6 +222,16 @@ EOF
   rm -f "$collect_prompt" "$review_prompt"
 }
 
+# GitHub renders release bodies in comment-style GFM: every single newline
+# becomes <br>, so hard-wrapped notes show spurious mid-sentence line breaks
+# on the release page (seen live on v0.101). Unwrap wrapped prose into single
+# physical lines; code fences and markdown structure are preserved.
+unwrap_release_notes() {
+  local src="$1"
+  local dst="$2"
+  python3 "$ROOT_DIR/release/scripts/unwrap-release-notes.py" < "$src" > "$dst"
+}
+
 commit_release_notes_if_needed() {
   if [[ "$RUN_NOTES" != "1" ]]; then
     return 0
@@ -234,6 +244,12 @@ commit_release_notes_if_needed() {
     echo "[DRY-RUN] Release notes commit skipped."
     return 0
   fi
+
+  # Normalize before committing so the committed notes file is canonical.
+  local unwrapped
+  unwrapped="$(mktemp -t "release-notes-unwrap.${VERSION}.XXXXXX")"
+  unwrap_release_notes "$RELEASE_NOTES_FILE" "$unwrapped"
+  mv "$unwrapped" "$RELEASE_NOTES_FILE"
 
   git add -- "$RELEASE_NOTES_FILE"
   if git diff --cached --quiet -- "$RELEASE_NOTES_FILE"; then
@@ -399,10 +415,16 @@ if [[ "$RUN_PUBLISH" == "1" ]]; then
   # gh uses the source filename as the asset name — EULA is uploaded as "EULA",
   # the plugin zip as mcp-steroid-<version>-<hash>.zip, and the devrig CLI zip as
   # devrig-<version>-<hash>.zip.
+  # Normalize again right before publish so a hand-edited or pre-existing
+  # wrapped notes file (e.g. under --skip-notes) still publishes without
+  # newline-><br> mid-sentence breaks in the GitHub release body.
+  PUBLISH_NOTES_FILE="$(mktemp -t "release-notes-publish.${VERSION}.XXXXXX")"
+  unwrap_release_notes "$RELEASE_NOTES_FILE" "$PUBLISH_NOTES_FILE"
+
   gh release create "$RELEASE_TAG" "$RELEASE_ZIP_FILE" "$RELEASE_DEVRIG_ZIP_FILE" "$ROOT_DIR/EULA" \
     --repo jonnyzzz/mcp-steroid \
     --target "$PUBLISH_TARGET" \
-    --notes-file "$RELEASE_NOTES_FILE"
+    --notes-file "$PUBLISH_NOTES_FILE"
 
   # Tag both repos
   git tag -a "$RELEASE_TAG" -m "release: $VERSION" HEAD 2>/dev/null || true

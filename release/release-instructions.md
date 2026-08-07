@@ -198,6 +198,10 @@ release range (these are easy to miss — check the body and the matching commit
 
 Create `release/notes/<version>.md` with user-facing prose (no raw commit hashes).
 Follow the style of previous notes files. Include segues to any relevant blog posts.
+Never hard-wrap prose: GitHub renders release bodies with newline→`<br>`, so each
+paragraph, bullet, and blockquote must be ONE physical line no matter how long;
+only fenced code blocks may contain manual line breaks
+(`release/scripts/unwrap-release-notes.py` normalizes existing wrapped files).
 
 If external contributors participated in this release, add a **Contributors** section:
 ```markdown
@@ -518,6 +522,9 @@ The website template automatically renders an obsolete banner on older release p
 ## Notes
 
 - Release notes format: user-friendly prose with section headers, no raw commit hashes.
+  Never hard-wrap prose — GitHub renders release bodies with newline→`<br>`; each
+  paragraph, bullet, and blockquote stays on one physical line (only fenced code blocks
+  may contain manual line breaks).
 - All links in release pages must use full URLs (`https://...`) — release content is also
   shown on GitHub where relative links break.
 - Custom plugin repository: `https://devrig.dev/updatePlugins.xml`

@@ -14,6 +14,10 @@ Goal:
 Rules:
 - Do not invent changes not present in git history.
 - Keep sections and concise bullets.
+- Never hard-wrap prose. GitHub renders release bodies with newline→`<br>`,
+  so each paragraph, bullet, and blockquote must be ONE physical line no
+  matter how long; only fenced code blocks may contain manual line breaks.
+  If the file contains hard-wrapped prose, unwrap it.
 - Update the same release notes file in place (`release/notes/<version>.md`).
 - Do not modify source code outside that notes file.
 

@@ -28,6 +28,10 @@ Requirements:
 8. Write output directly to the provided release notes file (`release/notes/<version>.md`).
 9. If file exists, update it in place.
 10. Do not edit source code outside the notes file and `CONTRIBUTORS.md`.
+11. Never hard-wrap prose. GitHub renders release bodies with newline→`<br>`,
+    so each paragraph, bullet, and blockquote must be ONE physical line no
+    matter how long; only fenced code blocks may contain manual line breaks.
+    If the file contains hard-wrapped prose, unwrap it.
 
 Return:
 - previous tag
