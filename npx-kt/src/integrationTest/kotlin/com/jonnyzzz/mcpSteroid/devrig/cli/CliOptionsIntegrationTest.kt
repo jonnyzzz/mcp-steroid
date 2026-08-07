@@ -2,7 +2,9 @@
 package com.jonnyzzz.mcpSteroid.devrig.cli
 
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
+import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -391,6 +393,43 @@ class CliOptionsIntegrationTest {
         assertTrue(download.stdout.contains("--version"), download.stdout)
         assertTrue(download.stdout.contains("--json"), download.stdout)
     }
+
+    // -------------------------------- --debug -------------------------------
+
+    @Test
+    fun `--debug logs to stderr and gives this process its own pid-named log file`() {
+        // jonnyzzz/mcp-steroid#462: logback pins every logback.xml substitution at its first getLogger
+        // call, which happens while the command tree is built — so the properties set after parsing set
+        // nothing. `--debug` printed zero bytes, every process wrote the shared devrig-session.log, and
+        // every line read `[pid:?]`. All three promises are asserted here against the packaged launcher.
+        val r = runLauncher("backend", "--debug")
+        assertEquals(0, r.exitCode, "backend --debug must exit 0; stdout=\n${r.stdout}\nstderr=\n${r.stderr}")
+
+        assertTrue(
+            r.stderr.contains("Starting Devrig"),
+            "--debug must put the startup line on stderr; got:\n${r.stderr}",
+        )
+        val pid = Regex("""\[pid:(\d+)]""").find(r.stderr)?.groupValues?.get(1)
+            ?: error("log lines must carry this process's pid, not `[pid:?]`; got:\n${r.stderr}")
+
+        // The pid from the log line ties both halves together: the file this very run wrote must be the
+        // per-pid one Log.kt promises, and the shared fallback name must not appear at all.
+        val logs = shellInContainer("ls /home/agent/.mcp-steroid/logs")
+        assertTrue(
+            Regex("""devrig-\d{4}-\d{2}-\d{2}-\d{6}-pid$pid\.log""").containsMatchIn(logs),
+            "run with pid $pid must own a <timestamp>-pid$pid log file so a log monitor sees it; got:\n$logs",
+        )
+        assertTrue(
+            "devrig-session.log" !in logs,
+            "devrig-session.log means the session property was unset at logback init; got:\n$logs",
+        )
+    }
+
+    /** Runs a plain shell command inside the CLI container (not the launcher) and returns its stdout. */
+    private fun shellInContainer(script: String): String =
+        cli.container.startProcessInContainer {
+            args("sh", "-c", script).description(script).quietly()
+        }.awaitForProcessFinish().assertExitCode(0) { "in-container `$script` failed: $stderr" }.stdout
 
     private fun String.removeOptionalHeadliner(): String =
         if (startsWith("devrig v")) substringAfter("\n\n", this).trimStart('\n') else this

@@ -31,6 +31,11 @@ fun runDevrigMain(
     terminal: Terminal = Terminal(),
     parseCommand: (Array<String>, Terminal) -> DevrigCliInvocation = ::parseDevrigCommand,
 ): Int {
+    // FIRST, before anything can reach SLF4J: logback pins every logback.xml substitution at its first
+    // getLogger call, and command-tree construction below makes that call (a tool handler holds a logger
+    // field). Publishing these after parsing published nothing at all — see #462.
+    configureLoggingSystemProperties(rawArgs)
+
     // Construct the terminal while stdout still points at the user's destination. Parsing happens
     // after stdout is guarded for MCP purity, but color auto-detection must follow stdout, not stderr.
     // Replace stdout immediately. MCP stdio reserves the original stdout for
@@ -53,8 +58,9 @@ fun runDevrigMain(
 
         val homePaths = resolveHomePathsOrDie()
 
-        // Setup logging. That is essential to avoid logger usages before this statement.
-        configureLoggingAndLogStarted(homePaths, rawArgs.toList(), command.debug)
+        // Logging itself was configured at the top of this function; this only records the startup line,
+        // which needs a validated home.
+        configureLoggingAndLogStarted(homePaths, rawArgs.toList())
 
         val lifetime = CloseableStackHost()
         try {

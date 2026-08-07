@@ -338,18 +338,15 @@
   receiver). Folding changes marker discovery under explicit test homes (today it escapes the sandbox
   on purpose — see `GeneratedToolRuntimeTestSupport`), so it is a design decision, not a cleanup.
 
-- [ ] **`devrig mcp` log files all collapse onto `devrig-session.log`, and every line reads `[pid:?]`**
-  (spotted while fixing #461, pre-existing and unrelated to it). `configureLoggingAndLogStarted` sets
-  `devrig.log.dir` / `devrig.log.session` / `devrig.pid` before the first *intended* SLF4J call, but
-  logback has already initialised by then — the appender resolves the `${devrig.log.session:-session}`
-  and `${devrig.pid:-?}` defaults and pins them. Consequence: concurrent devrig processes share one
-  `~/.mcp-steroid/logs/devrig-session.log` (the per-pid file a log monitor is supposed to detect never
-  appears) and no log line is attributable to a process. Evidence: that file locally spans 10:34
-  `[Test worker]` lines through a 17:25 `devrig mcp` WARN, all `[pid:?]`. Find whoever touches SLF4J
-  before `configureLoggingAndLogStarted` (Clikt parsing / `resolveHomePathsOrDie` / a static
-  initialiser) and either set the properties earlier or reconfigure logback explicitly afterwards.
-  Note the same file shows Gradle test JVMs logging into the developer's REAL `~/.mcp-steroid/logs` —
-  worth checking separately.
+- [x] **`devrig mcp` log files all collapse onto `devrig-session.log`, and every line reads `[pid:?]`**
+  — FIXED as #462: `configureLoggingSystemProperties` now publishes the properties as the first
+  statement of `runDevrigMain`, before command-tree construction can reach SLF4J (the first getLogger
+  came from `FetchResourceToolHandler`'s logger field, confirmed by class-load order).
+- [ ] **Gradle test JVMs log into the developer's REAL `~/.mcp-steroid/logs`** (spotted while fixing
+  #462, still open). `~/.mcp-steroid/logs/devrig-session.log` locally carries `[Test worker]` lines from
+  Ktor/`:npx-kt:test` runs — unit tests should never write into the real devrig home. Find which test
+  path initialises logback without redirecting `devrig.log.dir` (a `systemProperty` on the test task
+  pointing at `build/` would do it) and pin it with a test.
 
 - [ ] **stdio framing follow-ups noticed while fixing #461** (both pre-existing, neither blocking).
   (a) `FramingBuffer.append` grows without bound: a peer that never sends a newline (binary dump, a
@@ -359,3 +356,12 @@
   mid-frame") rather than dispatched. That is spec-faithful (newlines delimit frames) and beats the
   old silence, but a tolerant reading would dispatch parseable EOF residue instead. Deliberate choice,
   worth revisiting only if a real client trips on it.
+
+- [ ] **`--debug` inside a Clikt `@argfile` still does not enable logging** (residual after the #462 fix).
+  Logging verbosity is now read straight off argv (`Array<String>.debugRequested()`) before Clikt runs,
+  because logback pins its configuration during command-tree construction. Clikt's `expandArgumentFiles`
+  defaults to on, so `devrig backend @args.txt` with `--debug` in the file parses to
+  `DevrigCliInvocation.debug = true` while the argv scan sees only `@args.txt` — verified: 0 bytes on
+  stderr. Left as is deliberately: the parsed flag has no other consumer, `@argfile` is not a documented
+  devrig invocation form, and the alternative is a logback `reset()` + `JoranConfigurator` re-read after
+  parsing. Pick that up only if a real client trips on it.

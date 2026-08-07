@@ -160,7 +160,12 @@ private fun UsageError.withCuratedMissingHints(command: SchemaToolCliCommand): U
     return UsageError(hint, paramName = name).also { it.context = context }
 }
 
-private fun Array<String>.debugRequested(): Boolean = devrigDebugEnvEnabled() || any { it == "--debug" }
+/**
+ * Was diagnostics asked for? Read straight off argv (and the env) so logging can be configured before
+ * Clikt runs — logback pins its configuration on the first getLogger call, which happens during
+ * command-tree construction (#462). [configureLoggingSystemProperties] is the caller with that need.
+ */
+fun Array<String>.debugRequested(): Boolean = devrigDebugEnvEnabled() || any { it == "--debug" }
 
 /** Exact framework flag only, before the conventional end-of-options marker. Values such as
  * `--reason=--json` are data, not a presentation request. */
