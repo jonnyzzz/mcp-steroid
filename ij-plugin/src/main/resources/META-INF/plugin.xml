@@ -141,8 +141,8 @@
             description="Toggles minimalistic analytics from the plugin"/>
 
         <!-- Kotlinc configuration -->
-        <registryKey key="mcp.steroid.kotlinc.parameters" defaultValue="-language-version 2.3 -api-version 2.3"
-            description="Additional kotlinc command-line parameters (space-separated). Default: -language-version 2.3 -api-version 2.3 — the Kotlin bundled by the oldest supported IDE (2026.1 ships 2.3.20). For example: -Xskip-metadata-version-check"/>
+        <registryKey key="mcp.steroid.kotlinc.parameters" defaultValue="-language-version 2.3 -api-version 2.3 -Xdisable-default-scripting-plugin"
+            description="Additional kotlinc command-line parameters (space-separated). Default: -language-version 2.3 -api-version 2.3 — the Kotlin bundled by the oldest supported IDE (2026.1 ships 2.3.20) — plus -Xdisable-default-scripting-plugin, because the bundled kotlinc/ folder ships no kotlin-scripting-* jars and the default scripting-plugin probe would log a ClassNotFoundException on every compilation. For example: -Xskip-metadata-version-check"/>
 
         <!-- Start MCP server when a project opens (writes URL files, runs analytics) -->
         <postStartupActivity

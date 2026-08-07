@@ -53,6 +53,29 @@ class CodeEvalManagerTest: BasePlatformTestCase()  {
         )
     }
 
+    fun testDefaultCompileEmitsNoScriptingPluginProbeNoise(): Unit = timeoutRunBlocking(5.minutes) {
+        // #463: kotlinc's default scripting-plugin auto-probe fails on every
+        // compilation (the plugin bundles no kotlin-scripting-* jars) and used to
+        // spam DEBUG-severity "Exception on loading scripting plugin:
+        // ClassNotFoundException" + "Scripting plugin will not be loaded" lines
+        // into the forwarded compiler progress. The registry default carries
+        // -Xdisable-default-scripting-plugin to suppress the probe; this pins the
+        // end-to-end effect on a plain compile with default settings.
+        val code = """
+            println("no scripting probe expected")
+        """.trimIndent()
+        val execId = project.executionStorage.writeNewExecution(testExecParams(code))
+        val result = TestResultBuilder()
+        val data = project.codeEvalManager.evalCode(execId, code, result)
+        Assert.assertNotNull("Trivial script must compile. Result: $result", data)
+        val probeLines = (result.progressMessages + result.messages)
+            .filter { it.contains("scripting plugin", ignoreCase = true) }
+        Assert.assertTrue(
+            "Compiler output must not carry the scripting-plugin probe noise, got: $probeLines",
+            probeLines.isEmpty(),
+        )
+    }
+
     fun testWarningCarryingScriptCompilesWithoutWerror(): Unit = timeoutRunBlocking(5.minutes) {
         // Companion to the -Werror canary: the SAME source must compile fine with
         // the default registry value — proving the canary fails on -Werror alone.

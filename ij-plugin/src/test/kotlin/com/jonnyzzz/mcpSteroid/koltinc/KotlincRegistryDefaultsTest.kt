@@ -11,8 +11,15 @@ class KotlincRegistryDefaultsTest : BasePlatformTestCase() {
         // sinceBuild: the pin must stay at the FLOOR of the supported IDE range so a
         // script compiles identically on every IDE and its metadata stays readable by
         // the oldest bundled kotlin-reflect.
+        //
+        // -Xdisable-default-scripting-plugin: the plugin's kotlinc/ distribution
+        // deliberately ships no kotlin-scripting-* jars, so kotlinc's default
+        // scripting-plugin auto-probe throws ClassNotFoundException and logs
+        // "Scripting plugin will not be loaded" on EVERY compilation (#463).
+        // Scripts compile as plain classes (CodeButcher wraps them), so the
+        // scripting plugin is never needed — disable the probe outright.
         assertEquals(
-            "-language-version 2.3 -api-version 2.3",
+            "-language-version 2.3 -api-version 2.3 -Xdisable-default-scripting-plugin",
             Registry.stringValue("mcp.steroid.kotlinc.parameters")
         )
     }
