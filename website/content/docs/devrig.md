@@ -66,7 +66,9 @@ Run `devrig --help` (or `devrig -h`) for the authoritative usage, and
 same command tree that performs the work, so every nested command has focused
 help such as `devrig install --help` and `devrig backend download --help`.
 The equivalent discoverable route is `devrig help <command>`, including nested
-paths such as `devrig help backend download`.
+paths such as `devrig help backend download`. `devrig tools` prints the full
+MCP-tools-as-CLI reference — every tool command's usage line and flags on one
+page, written for coding agents.
 
 If required values are missing, devrig prints that focused help and identifies all missing values in one
 pass, including allowed enum values and alternatives such as `--code` / `--code-file`. Human output may
@@ -96,6 +98,7 @@ devrig
 │   ├── config [--json]
 │   ├── devrig
 │   └── plugin [--check]
+├── tools
 ├── help [<command>...]
 └── version [--json]
 ```

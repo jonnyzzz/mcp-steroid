@@ -29,10 +29,22 @@ class DevrigCliHelpTest {
         assertTrue(result.stdout.contains("Usage: devrig"), result.stdout)
         assertTrue(result.stdout.contains("Commands:"), result.stdout)
         val visibleTools = devrigCliTools().filterNot { it.cli.hidden }
-        for (command in listOf("backend", "install", "mcp", "help", "version") + visibleTools.map { it.cli.name }) {
+        for (command in listOf("backend", "install", "mcp", "tools", "help", "version") + visibleTools.map { it.cli.name }) {
             assertTrue(result.stdout.contains(command), "missing $command in:\n${result.stdout}")
         }
-        for (tool in visibleTools.filter { it.cli.aliases.isNotEmpty() }) {
+        assertTrue(!result.stdout.contains("mpc"), result.stdout)
+        assertTrue(result.stdout.contains("--json"), result.stdout)
+    }
+
+    @Test
+    fun `the tools reference advertises every declared command alias`() {
+        // The alias notes moved out of root help together with the MCP-tools reference; `devrig tools`
+        // is now the surface that must advertise them.
+        val result = runHelp("tools")
+
+        assertEquals(0, result.exitCode)
+        assertTrue(result.stderr.isEmpty(), result.stderr)
+        for (tool in devrigCliTools().filterNot { it.cli.hidden }.filter { it.cli.aliases.isNotEmpty() }) {
             val aliasNote = if (tool.cli.aliases.size == 1) {
                 "(alias: ${tool.cli.aliases.single()})"
             } else {
@@ -40,8 +52,6 @@ class DevrigCliHelpTest {
             }
             assertTrue(aliasNote in result.stdout, "missing $aliasNote in:\n${result.stdout}")
         }
-        assertTrue(!result.stdout.contains("mpc"), result.stdout)
-        assertTrue(result.stdout.contains("--json"), result.stdout)
     }
 
     @Test

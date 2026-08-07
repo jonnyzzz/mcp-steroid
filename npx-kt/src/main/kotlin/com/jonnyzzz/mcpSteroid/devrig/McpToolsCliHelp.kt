@@ -23,7 +23,7 @@ const val DEVRIG_OUT_FLAG_HELP: String =
 private const val HELP_WIDTH = 100
 
 /**
- * Renders the "MCP tools as CLI" block of the global `devrig --help` banner from the tools' own
+ * Renders the "MCP tools as CLI" reference that `devrig tools` prints from the tools' own
  * declarations — [CliToolSpec.cli] and the parameters `asCliParams()` exposes — and from nothing else.
  * Adding a tool, a parameter, a file source or a tool-scoped option surfaces here with no edit to this
  * file; conversely, nothing here can describe a flag that the command line does not actually accept.

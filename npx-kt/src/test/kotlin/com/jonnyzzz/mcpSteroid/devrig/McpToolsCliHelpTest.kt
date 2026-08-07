@@ -1,14 +1,16 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import java.nio.file.Path
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * The "MCP tools as CLI" section of the global `devrig --help` banner is GENERATED from each tool's own
+ * The "MCP tools as CLI" reference `devrig tools` prints is GENERATED from each tool's own
  * declaration — its [com.jonnyzzz.mcpSteroid.mcp.CliCommandSpec] and the parameters `asCliParams()`
  * exposes — and never hand-written (PR #272 review r3579479002: "re-use information from the MCP tools to
  * generate these texts").
@@ -20,6 +22,8 @@ import kotlin.test.assertTrue
  *    wording that silently rots. Three defects on this branch survived substring assertions.
  */
 class McpToolsCliHelpTest {
+    @TempDir
+    lateinit var testHome: Path
 
     private fun section(): String = renderMcpToolsCliSection(devrigCliTools())
 
@@ -27,6 +31,14 @@ class McpToolsCliHelpTest {
         val invocation = parseDevrigCommand(arrayOf("--help"))
         assertEquals("help", invocation.commandPath)
         return requireNotNull(invocation.informationalText).trimEnd() + "\n"
+    }
+
+    private fun toolsCommandOutput(): String {
+        val invocation = parseDevrigCommand(arrayOf("tools"))
+        assertEquals("devrig tools", invocation.commandPath)
+        val run = runCliForToolTest(testHome, invocation)
+        assertEquals(0, run.exit, "devrig tools must succeed; stderr:\n${run.stderr}")
+        return run.stdout
     }
 
     private fun visibleTools() = devrigCliTools().filterNot { it.cli.hidden }
@@ -239,19 +251,24 @@ class McpToolsCliHelpTest {
     }
 
     @Test
-    fun `the framework flags are documented under exactly one heading`() {
-        val help = globalHelp()
-        for ((flag, expectedCount) in mapOf("--debug" to 2, "--json" to 2, "--out" to 1)) {
+    fun `the framework flags are documented under exactly one heading per surface`() {
+        // Root help documents --debug and --json once each, in its own Options list; --out is registered
+        // only on image-producing tool commands, so the root banner must not mention it at all. The
+        // `devrig tools` reference documents each of the three exactly once, in the scoped footer.
+        val documented = { text: String, flag: String ->
             // A line that *documents* the flag opens with it; the flag may carry a metavar (`--out=<path>`).
-            val documented = help.lines().filter { line ->
-                val text = line.trimStart()
-                text.startsWith(flag) && (text.length == flag.length || text[flag.length] in " =")
+            text.lines().count { line ->
+                val trimmed = line.trimStart()
+                trimmed.startsWith(flag) && (trimmed.length == flag.length || trimmed[flag.length] in " =")
             }
-            assertEquals(
-                expectedCount,
-                documented.size,
-                "$flag must appear in the root options and/or generated-tool framework section as scoped:\n$help",
-            )
+        }
+        val help = globalHelp()
+        for ((flag, expectedCount) in mapOf("--debug" to 1, "--json" to 1, "--out" to 0)) {
+            assertEquals(expectedCount, documented(help, flag), "$flag in the root banner:\n$help")
+        }
+        val reference = toolsCommandOutput()
+        for ((flag, expectedCount) in mapOf("--debug" to 1, "--json" to 1, "--out" to 1)) {
+            assertEquals(expectedCount, documented(reference, flag), "$flag in the tools reference:\n$reference")
         }
         assertFalse(
             "Options applicable to every mode:" in help,
@@ -277,23 +294,35 @@ class McpToolsCliHelpTest {
     }
 
     @Test
-    fun `printHelp embeds the generated section verbatim`() {
-        assertTrue(section() in globalHelp(), "the global banner must embed the generated section:\n${globalHelp()}")
+    fun `devrig tools prints the generated section verbatim`() {
+        assertTrue(
+            section() in toolsCommandOutput(),
+            "`devrig tools` must print the generated section:\n${toolsCommandOutput()}",
+        )
     }
 
     @Test
-    fun `the unified command tree and generated tool section coexist in root help`() {
+    fun `devrig tools rejects --json, because the reference is prose`() {
+        assertEquals("parse-error", parseDevrigCommand(arrayOf("tools", "--json")).commandPath)
+    }
+
+    @Test
+    fun `root help stays an index and points at the tools reference`() {
         val help = globalHelp()
         for (marker in listOf(
             "Usage: devrig",
             "Commands:",
             "backend",
             "install",
-            "MCP tools as CLI",
+            "devrig tools",
             "DEVRIG_JVM_OPTS",
         )) {
-            assertTrue(marker in help, "unified help lost '$marker':\n$help")
+            assertTrue(marker in help, "root help lost '$marker':\n$help")
         }
+        assertFalse(
+            "MCP tools as CLI" in help,
+            "the per-tool reference lives in `devrig tools`; embedding it buried the command index:\n$help",
+        )
         assertFalse("devrig mpc" in help, "the hidden mpc alias must stay unadvertised:\n$help")
     }
 

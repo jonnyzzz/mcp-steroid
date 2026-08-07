@@ -68,6 +68,7 @@ The command tree is discoverable from either direction:
 
 ```bash
 devrig --help
+devrig tools
 devrig help execute_code
 devrig list_projects --json
 devrig open_project --project_path="$PWD" --task_id=demo-open --reason="open current project from CLI" --wait --json

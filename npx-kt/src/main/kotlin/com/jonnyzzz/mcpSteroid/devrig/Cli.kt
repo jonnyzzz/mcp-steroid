@@ -375,14 +375,15 @@ fun toolAliasMap(tools: List<CliToolSpec>): Map<String, List<String>> {
     return pairs.associate { (alias, name) -> alias to listOf(name) }
 }
 
-private fun rootEpilog(tools: List<CliToolSpec>): String = buildString {
+private fun rootEpilog(): String = buildString {
     appendLine("Human output uses terminal colors automatically. JSON output never contains ANSI styling.")
     appendLine()
     appendLine("Environment variables: DEVRIG_DEBUG enables diagnostics and the launcher debugger;")
     appendLine("DEVRIG_JAVA_HOME selects the devrig runtime; DEVRIG_JVM_OPTS adds JVM options,")
     appendLine("for example -Xmx512m.")
     appendLine()
-    append(renderMcpToolsCliSection(tools).trimEnd())
+    appendLine("Run `devrig tools` for the MCP-tools-as-CLI reference (written for coding agents),")
+    append("or `devrig <command> --help` for one command's full option list.")
 }.trimEnd()
 
 class DevrigRootCommand(
@@ -395,7 +396,7 @@ class DevrigRootCommand(
     selected = selected,
     parent = null,
     invokeWithoutSubcommand = true,
-    epilog = rootEpilog(tools),
+    epilog = rootEpilog(),
 ) {
     private val versionFlag by option("--version", "-v", help = "Print the devrig version and exit.").flag()
 
@@ -422,6 +423,7 @@ class DevrigRootCommand(
             backend,
             install,
             *schemaToolCliCommands(selected, this, tools).toTypedArray(),
+            ToolsCommand(selected, this, tools),
             HelpCommand(selected, this),
             VersionCommand(selected, this),
         )
@@ -587,6 +589,30 @@ private class InstallPluginCommand(
     override fun runCommand() {
         select(DevrigCliMode.INSTALL, supportsJson = false) {
             runInstallPluginCommand(checkFlag)
+        }
+    }
+}
+
+/**
+ * `devrig tools` prints the generated "MCP tools as CLI" reference ([renderMcpToolsCliSection]). The
+ * reference used to ride as the epilog of root `--help`, where its ~90 lines buried the command index it
+ * was appended to; the root banner now stays an index and points here. It is prose for an agent to read,
+ * not a result, so `--json` is refused rather than accepted-and-ignored.
+ */
+private class ToolsCommand(
+    selected: SelectedDevrigInvocation,
+    parent: DevrigCliktCommand,
+    private val tools: List<CliToolSpec>,
+) : DevrigCliktCommand(
+    name = "tools",
+    help = "Print the MCP-tools-as-CLI reference for coding agents.",
+    selected = selected,
+    parent = parent,
+) {
+    override fun runCommand() {
+        select(DevrigCliMode.INFORMATIONAL, supportsJson = false) {
+            mcpStdout.println(renderMcpToolsCliSection(tools).trimEnd())
+            0
         }
     }
 }

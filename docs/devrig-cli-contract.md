@@ -39,6 +39,7 @@ devrig
 │   ├── devrig
 │   └── plugin
 ├── mcp
+├── tools
 ├── version
 └── help <command> [<subcommand> ...]
 ```
@@ -58,12 +59,17 @@ Every command and nested action has both routes:
 devrig <command> --help
 devrig help <command>
 devrig help backend download
+devrig tools
 ```
 
-Root help is an index and a usable first step. Focused help shows the actual schema-derived parameters,
-required choices, defaults, numeric ranges, enum values, aliases, file-input alternatives, and a runnable
-usage shape. When parameters are missing or invalid, devrig prints the relevant focused help and names all
-missing values in one pass. For example, an incomplete `execute_code` call identifies
+Root help is an index and a usable first step: the generated command tree, devrig's own options, the
+environment variables, and a pointer to the deeper routes — nothing else. The complete generated
+"MCP tools as CLI" reference (every tool command's usage line, per-flag synopses, aliases, and the scoped
+framework flags) is printed by `devrig tools`. That reference is written for coding agents; it used to
+ride as the root-help epilog, where it buried the index. Focused help shows the actual schema-derived
+parameters, required choices, defaults, numeric ranges, enum values, aliases, file-input alternatives,
+and a runnable usage shape. When parameters are missing or invalid, devrig prints the relevant focused
+help and names all missing values in one pass. For example, an incomplete `execute_code` call identifies
 `--project_name`, `--task_id`, `--reason`, and the `--code` / `--code-file` choice rather than failing one
 field at a time.
 

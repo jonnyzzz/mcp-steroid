@@ -287,12 +287,27 @@ class CliOptionsIntegrationTest {
     }
 
     @Test
-    fun `the global banner carries the generated MCP-tools section`() {
+    fun `the global banner points at the tools reference instead of embedding it`() {
         val r = runLauncher("--help")
 
         assertTrue(
+            r.stdout.contains("devrig tools"),
+            "the banner must point agents at `devrig tools`; got:\n${r.stdout}",
+        )
+        assertTrue(
+            !r.stdout.contains("MCP tools as CLI"),
+            "the per-tool reference lives in `devrig tools`, not the banner; got:\n${r.stdout}",
+        )
+    }
+
+    @Test
+    fun `the tools command carries the generated MCP-tools section`() {
+        val r = runLauncher("tools")
+
+        assertEquals(0, r.exitCode, "stdout=\n${r.stdout}\nstderr=\n${r.stderr}")
+        assertTrue(
             r.stdout.contains("MCP tools as CLI"),
-            "the banner must embed the generated section; got:\n${r.stdout}",
+            "`devrig tools` must print the generated section; got:\n${r.stdout}",
         )
         for (tool in listOf("devrig list_projects", "devrig execute_code", "devrig take_screenshot")) {
             assertTrue(r.stdout.contains(tool), "the generated section must advertise `$tool`; got:\n${r.stdout}")
@@ -301,6 +316,7 @@ class CliOptionsIntegrationTest {
             r.stdout.contains("devrig list_projects (aliases: projects, project)"),
             "the generated section must advertise both project aliases; got:\n${r.stdout}",
         )
+        assertTrue(r.stderr.isBlank(), "the reference must keep stderr clean; got:\n${r.stderr}")
     }
 
     @Test
