@@ -21,7 +21,8 @@ import kotlin.time.Duration.Companion.hours
  *
  * Lives in `:devrig-common` rather than with devrig's updater because the IDE plugin installs devrig too
  * (`ij-plugin` `onboarding/DevrigSetup.kt`). Both halves must see the same markers, or a devrig
- * session and an IDE could each start a ~611 MB install of the same thing at the same time. Nothing
+ * session and an IDE could each start a multi-hundred-megabyte install of the same thing at the same
+ * time. Nothing
  * here is IDE- or CLI-specific: file names, pids and mtimes.
  */
 class UpdateCoordination(
@@ -136,37 +137,32 @@ class UpdateCoordination(
         }
     }
 
-    private fun writeJsonAtomically(target: Path, content: String) =
-        writeTextAtomically(target, content, stagingPid = ownPid)
-}
-
-/**
- * Write [content] (UTF-8) so [target] is never observed half-written: stage into a
- * `.tmp.<pid>.<target-name>` sibling — the SAME directory, because a rename is only atomic within one
- * file system — then move it over the target, falling back to a plain move where the file system
- * cannot do an atomic replace. Creates [target]'s parent directory itself, so callers never have to
- * pre-create it. Content-agnostic: the update markers and the agents' own config files
- * (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`) all go through here. The
- * staging name matches [parseStagingFilePid], so a crash leftover inside the update dir is swept by
- * [UpdateCoordination.gc].
- */
-fun writeTextAtomically(target: Path, content: String, stagingPid: Long = ProcessHandle.current().pid()) {
-    target.parent?.let { Files.createDirectories(it) }
-    val tmp = target.resolveSibling(".tmp.$stagingPid.${target.name}")
-    try {
-        Files.writeString(tmp, content)
+    /**
+     * Write [content] (UTF-8) so [target] is never observed half-written: stage into a
+     * `.tmp.<pid>.<target-name>` sibling — the SAME directory, because a rename is only atomic within
+     * one file system — then move it over the target, falling back to a plain move where the file
+     * system cannot do an atomic replace. Creates [target]'s parent directory itself, so callers never
+     * have to pre-create the update dir. The staging name matches [parseStagingFilePid], so a crash
+     * leftover is swept by [gc].
+     */
+    private fun writeJsonAtomically(target: Path, content: String) {
+        target.parent?.let { Files.createDirectories(it) }
+        val tmp = target.resolveSibling(".tmp.$ownPid.${target.name}")
         try {
-            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
-            System.err.println("[mcp-steroid] atomic move unsupported (${e.message}); using a plain move")
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
-        }
-    } finally {
-        if (Files.exists(tmp)) {
+            Files.writeString(tmp, content)
             try {
-                Files.deleteIfExists(tmp)
-            } catch (e: Exception) {
-                System.err.println("[mcp-steroid] could not remove staging file $tmp: $e")
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                System.err.println("[mcp-steroid] atomic move unsupported (${e.message}); using a plain move")
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            if (Files.exists(tmp)) {
+                try {
+                    Files.deleteIfExists(tmp)
+                } catch (e: Exception) {
+                    System.err.println("[mcp-steroid] could not remove staging file $tmp: $e")
+                }
             }
         }
     }

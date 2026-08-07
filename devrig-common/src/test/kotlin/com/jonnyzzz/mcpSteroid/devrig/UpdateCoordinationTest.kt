@@ -64,7 +64,7 @@ class UpdateCoordinationTest {
 
         livePids -= 100L
         assertFalse(c.anyLiveInProgressMarker(), "a dead-pid marker must not read as live")
-        assertEquals(emptyList<Long>(), c.liveInProgressPids())
+        assertEquals(emptyList(), c.liveInProgressPids())
     }
 
     @Test
@@ -99,33 +99,36 @@ class UpdateCoordinationTest {
         assertFalse(c.anyLiveInProgressMarker(), "a dead filename pid retires it even when young")
     }
 
-    // ── the shared atomic write (markers here, agent configs in AgentMcpEnablement) ─────────────
+    // ── the shared atomic write behind every marker ──────────────────────────────────────────────
 
     @Test
-    fun `writeTextAtomically replaces the target and cleans its staging sibling up`(@TempDir dir: Path) {
-        val target = dir.resolve("config.json")
+    fun `a marker write replaces the target and cleans its staging sibling up`(@TempDir dir: Path) {
+        val c = coordination(dir)
+        val target = c.updatedMarker("0.102")
         Files.writeString(target, "old")
 
-        writeTextAtomically(target, "new", stagingPid = 4242L)
+        c.writeUpdatedMarker("0.102", stateInfo(target = "0.102"))
 
-        assertEquals("new", Files.readString(target))
+        assertEquals(updateJson.encodeToString(UpdateStateInfo.serializer(), stateInfo(target = "0.102")), Files.readString(target))
         val leftovers = Files.list(dir).use { paths ->
-            paths.map { it.fileName.toString() }.filter { it != "config.json" }.toList()
+            paths.map { it.fileName.toString() }.filter { it != target.fileName.toString() }.toList()
         }
         assertEquals(emptyList(), leftovers, "no staging residue may remain next to the target")
         // A crash leftover inside the update dir must stay recognizable to the GC sweep.
-        assertEquals(4242L, parseStagingFilePid(".tmp.4242.config.json"))
+        assertEquals(4242L, parseStagingFilePid(".tmp.4242.updated-0.102"))
     }
 
     @Test
-    fun `writeTextAtomically creates the target's parent directory itself`(@TempDir dir: Path) {
-        // Callers (marker writes, agent-config patches) must not have to pre-create the directory.
-        val target = dir.resolve("not").resolve("yet").resolve("config.json")
-        assertFalse(target.parent.exists())
+    fun `a marker write creates the update directory itself`(@TempDir dir: Path) {
+        // Callers (the devrig updater, the IDE plugin's DevrigSetup) must not have to pre-create
+        // ~/.mcp-steroid/update — the first marker write is what brings the directory into being.
+        val updateDir = dir.resolve("not").resolve("yet")
+        assertFalse(updateDir.exists())
+        val c = coordination(updateDir)
 
-        writeTextAtomically(target, "content", stagingPid = 4242L)
+        c.writeInProgressMarker("0.102", stateInfo())
 
-        assertEquals("content", Files.readString(target))
+        assertEquals(updateJson.encodeToString(UpdateStateInfo.serializer(), stateInfo()), Files.readString(c.inProgressMarker("0.102")))
     }
 
     // ── completion record ────────────────────────────────────────────────────────────────────────

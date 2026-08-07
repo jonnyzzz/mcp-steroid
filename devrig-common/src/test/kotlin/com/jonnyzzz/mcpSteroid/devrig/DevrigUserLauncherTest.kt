@@ -10,45 +10,45 @@ class DevrigUserLauncherTest {
 
     @Test
     fun `the launcher path is per-OS under the shared bin dir`() {
+        // No literal absolute expectations: path() runs toAbsolutePath(), which prepends a drive
+        // letter to "/home/u/…" on a Windows JVM — assert the per-OS file name and the parent dir.
         val home = HomePaths(Path.of("/home/u/.mcp-steroid"))
-        assertEquals(Path.of("/home/u/.mcp-steroid/bin/devrig"), DevrigUserLauncher.path(home, windows = false))
-        assertEquals(Path.of("/home/u/.mcp-steroid/bin/devrig.cmd"), DevrigUserLauncher.path(home, windows = true))
+        val posix = DevrigUserLauncher.path(home, windows = false)
+        val windows = DevrigUserLauncher.path(home, windows = true)
+        assertEquals("devrig", posix.fileName.toString())
+        assertEquals("devrig.cmd", windows.fileName.toString())
+        assertEquals(home.binDir.toAbsolutePath().normalize(), posix.parent)
+        assertEquals(posix.parent, windows.parent)
     }
 
     @Test
-    fun `devrigStdioMcpCommand execs the launcher directly on POSIX`() {
-        val command = devrigStdioMcpCommand("/home/user/.mcp-steroid/bin/devrig", windows = false)
+    fun `invocation execs the launcher directly on POSIX with mcp as the default verb`() {
+        val home = HomePaths(Path.of("/home/user/.mcp-steroid"))
 
-        assertEquals("/home/user/.mcp-steroid/bin/devrig", command.command)
+        val command = DevrigUserLauncher.invocation(home, windows = false)
+
+        assertEquals(DevrigUserLauncher.path(home, windows = false).toString(), command.command)
         assertEquals(listOf("mcp"), command.args)
     }
 
     @Test
-    fun `devrigStdioMcpCommand wraps the cmd launcher and quotes a path with spaces`() {
+    fun `invocation wraps the cmd launcher and quotes a path with spaces`() {
         // A .cmd is not executable as a process image, so it goes through cmd.exe; /d skips AutoRun.
         // cmd.exe parses everything after /c as ONE command line, so an unquoted "First Last" would split.
-        val command = devrigStdioMcpCommand("C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd", windows = true)
+        // The launcher path is asserted via DevrigUserLauncher.path (pinned above) because a literal
+        // C:\ shape cannot be rendered by java.nio.file.Path on a POSIX JVM.
+        val home = HomePaths(Path.of("/Users/First Last/.mcp-steroid"))
+        val launcher = DevrigUserLauncher.path(home, windows = true).toString()
+
+        val command = DevrigUserLauncher.invocation(home, windows = true)
 
         assertEquals("cmd.exe", command.command)
-        assertEquals(
-            listOf("/d", "/c", "\"C:\\Users\\First Last\\.mcp-steroid\\bin\\devrig.cmd\" mcp"),
-            command.args,
-        )
+        assertEquals(listOf("/d", "/c", "\"$launcher\" mcp"), command.args)
     }
 
     // Display policy for user-visible devrig paths: the REAL absolute home (never `~`), OS-native
     // separators — so what the settings page shows equals what its copy buttons put on the clipboard.
     // POSIX and Windows are pinned as explicit methods (no parameterized tests in this repo).
-
-    @Test
-    fun `devrigHomeDisplayPath renders the real home on POSIX`() {
-        assertEquals("/home/user/.mcp-steroid", devrigHomeDisplayPath("/home/user", windows = false))
-    }
-
-    @Test
-    fun `devrigHomeDisplayPath renders the real home with backslashes on Windows`() {
-        assertEquals("C:\\Users\\me\\.mcp-steroid", devrigHomeDisplayPath("C:\\Users\\me", windows = true))
-    }
 
     @Test
     fun `devrigLauncherDisplayPath names the plain launcher on POSIX`() {
