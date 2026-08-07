@@ -17,6 +17,9 @@ import kotlin.io.path.isRegularFile
 private const val DEVRIG_MCP_SERVER_NAME = "mcp-steroid"
 private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
 
+/** Exit code of `devrig install <agent> --check` when install would change anything (drift detected). */
+const val INSTALL_CHECK_DRIFT_EXIT_CODE = 1
+
 /**
  * `devrig install devrig` — one behavior, same result on every call (issue #398): re-register devrig's
  * own `~/.mcp-steroid/bin/devrig`(`.cmd`) launcher + PATH, then print ONE info message with the next
@@ -234,22 +237,6 @@ fun runInstallCommand(
         return addResult.exitCode
     }
 
-    // A registration can be present and switched off in the agent's own config, where `mcp list` never
-    // mentions it. Install means "make this work", so clearing that is part of the job — and it is the
-    // only way to undo it: none of the three CLIs has an enable verb.
-    val disabled = disabledRegistrationFor(agent)
-    if (disabled != null) {
-        out.println()
-        out.println("It was switched off (${disabled.description}) — switching it back on…")
-        if (enableRegistrationFor(agent)) {
-            out.println("  enabled.")
-        } else {
-            err.println(
-                "  could NOT enable it automatically. Edit the config yourself: ${disabled.description}.",
-            )
-        }
-    }
-
     out.println()
     out.println("Done — '$DEVRIG_MCP_SERVER_NAME' is registered for ${agent.displayName}.")
     out.println("  Command ${agent.displayName} will run: $renderedCommand")
@@ -346,8 +333,6 @@ fun runInstallCheckCommand(
     ideReachability: () -> IdeReachabilityReport,
     /** Non-null = the devrig launcher does not exist yet at this path (reported as a diagnostic). */
     missingLauncherPath: Path? = null,
-    /** Seam: reads the agent's own config for a switched-off registration. */
-    disabledRegistration: () -> DisabledRegistration? = { disabledRegistrationFor(command.agent) },
 ): Int {
     val renderedCommand = "${mcpCommand.command} ${mcpCommand.args.joinToString(" ")}"
 
@@ -411,34 +396,12 @@ fun runInstallCheckCommand(
     reportIdeReachability(out, err, ideReachability)
     out.println()
 
-    // Registered correctly is not the same as in use: every agent can keep a server configured and
-    // switched off, and none of them mentions that in `mcp list` — see AgentMcpEnablement.kt.
-    //
-    // Only asked once the registration is otherwise canonical, and deliberately so: with a missing or
-    // stale entry, "switched off" is not the headline — the entry is what needs fixing first. Install
-    // repairs both in one run either way, so the only thing at stake is which word the user is told, and
-    // drift is the more actionable one.
-    val disabled = if (canonical) disabledRegistration() else null
-    if (disabled != null) {
-        out.println("But it is switched OFF: ${disabled.description}.")
-        out.println()
-    }
-
-    return when {
-        disabled != null -> {
-            out.println(
-                "Registered but disabled — run 'devrig install ${agent.binary}' to switch it back on.",
-            )
-            INSTALL_CHECK_DISABLED_EXIT_CODE
-        }
-        canonical -> {
-            out.println("No drift — '$DEVRIG_MCP_SERVER_NAME' is registered canonically for ${agent.displayName}.")
-            0
-        }
-        else -> {
-            out.println("Drift detected — run 'devrig install ${agent.binary}' to repair.")
-            INSTALL_CHECK_DRIFT_EXIT_CODE
-        }
+    return if (canonical) {
+        out.println("No drift — '$DEVRIG_MCP_SERVER_NAME' is registered canonically for ${agent.displayName}.")
+        0
+    } else {
+        out.println("Drift detected — run 'devrig install ${agent.binary}' to repair.")
+        INSTALL_CHECK_DRIFT_EXIT_CODE
     }
 }
 
