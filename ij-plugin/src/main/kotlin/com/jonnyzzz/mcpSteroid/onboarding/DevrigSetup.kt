@@ -55,7 +55,7 @@ import kotlin.time.Duration.Companion.seconds
  * doing it here would mean the IDE edits another product's configuration on the strength of a click that
  * said "install devrig", and there is more than one agent to choose from anyway.
  *
- * The installer's own output drives the progress indicator — it is a ~611 MB download, so a static
+ * The installer's own output drives the progress indicator — it is a multi-hundred-megabyte download, so a static
  * "Downloading…" label for up to 30 minutes is indistinguishable from a hang. Its `[mcp-steroid] ` lines
  * become the phase text ([parseInstallerLine]) and the size it announces becomes the denominator for a
  * real fraction, measured from the staging files it writes under `~/.mcp-steroid/binaries`.
@@ -145,7 +145,7 @@ class DevrigSetupRunner(
      *
      * Takes part in devrig's own update coordination (`~/.mcp-steroid/update`, [UpdateCoordination])
      * rather than running blind. devrig self-updates by running the very same installer, so without
-     * this an IDE and a devrig session could each start a ~611 MB download of the same thing: the
+     * this an IDE and a devrig session could each start a full multi-hundred-megabyte download of the same thing: the
      * installer tolerates that (staging files are per-pid and the promote is atomic) but does not
      * dedupe it, so both would download in full. Concretely: yield while another process holds a live
      * marker, announce our own while we run, and leave an `updated-<version>` record so a running
@@ -299,13 +299,11 @@ class DevrigSetupRunner(
 
     private data class CommandResult(
         val exitCode: Int,
-        val stdout: String,
-        val stderr: String,
+        /** The process's merged stdout+stderr tail, as captured by [streamProcess]. */
+        val output: String,
         val isTimeout: Boolean,
         val isCancelled: Boolean = false,
-    ) {
-        val output: String get() = stderr.ifBlank { stdout }
-    }
+    )
 
     /**
      * Runs the installer, handing every completed output line to [onLine] as it arrives rather than
@@ -385,10 +383,10 @@ class DevrigSetupRunner(
         if (cancelled || timedOut) {
             handler.destroyProcess()
             return CommandResult(
-                exitCode = -1, stdout = "", stderr = output, isTimeout = timedOut, isCancelled = cancelled,
+                exitCode = -1, output = output, isTimeout = timedOut, isCancelled = cancelled,
             )
         }
-        return CommandResult(exitCode = handler.exitCode ?: -1, stdout = "", stderr = output, isTimeout = false)
+        return CommandResult(exitCode = handler.exitCode ?: -1, output = output, isTimeout = false)
     }
 
     private fun writeFailureMarker(userHome: Path, reason: String) {
@@ -552,9 +550,10 @@ class DevrigSetupRunner(
         ): Boolean = Files.isRegularFile(devrigBinPath(userHome, windows))
 
         /**
-         * Marker the claude-plugin's own install wrapper writes on failure (`bin/install-devrig`), read by
-         * its SessionStart hook and `/devrig:status`. The IDE-side install writes the SAME marker, so a
-         * failure is visible from the agent side no matter which half of the product attempted the install.
+         * Marker the claude-plugin's own install wrapper writes on failure (`bin/install-devrig`). Its
+         * readers — the SessionStart hook and `/devrig:status` — arrive with the (unmerged) claude-plugin
+         * branch; the IDE-side install writes the SAME marker now, so once they land, a failure is visible
+         * from the agent side no matter which half of the product attempted the install.
          * Lives in the plugin↔devrig marker directory ([PidMarker.markerDirectory]).
          */
         fun devrigInstallFailedMarker(userHome: Path): Path =

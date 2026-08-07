@@ -81,10 +81,6 @@ class McpSteroidNotifications {
         return notification
     }
 
-    /** The live (not yet expired) notification of [kind], or null. For tests and future callers. */
-    fun pendingNotification(kind: McpSteroidNotificationKind): Notification? =
-        pending[kind]?.takeUnless { it.isExpired }
-
     companion object {
         fun getInstance(): McpSteroidNotifications = service()
     }

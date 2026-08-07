@@ -494,10 +494,10 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
     }
 
     /**
-     * "What is devrig?" (settings page) and "Learn more" (status-bar popup) both go to the devrig site
-     * ROOT — no sub-URL or doc path — with the IDE build attached as a query parameter, so the site can
-     * tell which IDE sent the visitor (owner click-testing feedback). The build is injectable precisely
-     * so this test can pin the exact shape.
+     * The settings page's "What is devrig?" link goes to the devrig site ROOT — no sub-URL or doc
+     * path — with the IDE build attached as a query parameter, so the site can tell which IDE sent
+     * the visitor (owner click-testing feedback). The build is injectable precisely so this test can
+     * pin the exact shape.
      */
     fun `test the what-is-devrig link targets the site root with the IDE build as a query param`() {
         assertEquals(

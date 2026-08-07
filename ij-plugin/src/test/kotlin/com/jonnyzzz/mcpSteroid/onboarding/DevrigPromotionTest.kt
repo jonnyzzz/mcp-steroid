@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.onboarding
 
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
@@ -46,19 +47,55 @@ class DevrigPromotionTest : BasePlatformTestCase() {
         )
     }
 
-    // --- the balloon body: the cost disclosure a one-click install surface owes the user ---
-    // The Install button starts a ~611 MB download into the devrig home; the settings page disclosed
-    // that cost and destination, so the balloon — an identical one-click surface — must too.
+    // --- the balloon body: it says what devrig IS, in the website's framing, and nothing machine-local ---
 
-    fun `test the install offer balloon discloses the download size and destination`() {
-        val body = DevrigPromotion.devrigInstallOfferBody("/home/user/.mcp-steroid")
-        assertTrue(body, body.contains("Downloads ~611 MB into <code>/home/user/.mcp-steroid</code>."))
+    fun `test the balloon says what devrig is`() {
+        // Owner call: the body explains devrig — the CLI and MCP tooling connecting an agent to this
+        // IDE — grounded in the published website pitch.
+        val body = DevrigPromotion.devrigInstallOfferBody()
+        assertTrue(body, body.contains("CLI and MCP"))
+        assertTrue(body, body.contains("Claude Code, Codex"))
     }
 
-    fun `test the balloon still says what devrig is for`() {
-        // The disclosure is appended, not a replacement: the body must keep explaining the value first.
-        val body = DevrigPromotion.devrigInstallOfferBody("/home/user/.mcp-steroid")
-        assertTrue(body, body.contains("bridges"))
-        assertTrue(body, body.indexOf("bridges") < body.indexOf("Downloads"))
+    fun `test the balloon carries no download size and no local path`() {
+        // Owner call: the old size figure was wrong and the devrig-home computation was not correct
+        // either; this class must not compute machine state for copy at all.
+        val body = DevrigPromotion.devrigInstallOfferBody()
+        assertFalse("no size claim: $body", body.contains("MB"))
+        assertFalse("no local path: $body", body.contains(".mcp-steroid"))
+        assertFalse("no home path: $body", body.contains("/home/") || body.contains("\\Users\\"))
+    }
+
+    /**
+     * The balloon's "What is devrig?" link goes to the site ROOT with the IDE build under a parameter
+     * of its own — `fromIntelliJInstallAction`, distinct from the settings page's `fromIntelliJ` — so
+     * the site can tell the balloon apart from the settings link. The build is injectable precisely
+     * so this test can pin the exact shape.
+     */
+    fun `test the install offer site link targets the site root with its own query param`() {
+        assertEquals(
+            "https://devrig.dev/?fromIntelliJInstallAction=IU-261.25134.95",
+            DevrigPromotion.installOfferSiteUrl("IU-261.25134.95"),
+        )
+
+        // The parameter name stays pinned on its own: the site keys its attribution on it.
+        assertEquals("fromIntelliJInstallAction", DevrigPromotion.FROM_INTELLIJ_INSTALL_ACTION_PARAM)
+
+        // The build value is URL-encoded, so an unexpected build string cannot corrupt the query.
+        assertEquals(
+            "https://devrig.dev/?fromIntelliJInstallAction=IU-261%2F95%26x",
+            DevrigPromotion.installOfferSiteUrl("IU-261/95&x"),
+        )
+
+        // Production callers take the default — the running IDE's own build.
+        val build = ApplicationInfo.getInstance().build.asString()
+        assertEquals(
+            DevrigPromotion.installOfferSiteUrl(build),
+            DevrigPromotion.installOfferSiteUrl(),
+        )
+        assertTrue(
+            "the default URL must start with the root + param prefix; got '${DevrigPromotion.installOfferSiteUrl()}'",
+            DevrigPromotion.installOfferSiteUrl().startsWith("https://devrig.dev/?fromIntelliJInstallAction="),
+        )
     }
 }

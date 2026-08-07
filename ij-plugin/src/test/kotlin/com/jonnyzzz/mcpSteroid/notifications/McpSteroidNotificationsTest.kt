@@ -54,16 +54,14 @@ class McpSteroidNotificationsTest : BasePlatformTestCase() {
         )
     }
 
+    // The service exposes nothing beyond notify() on purpose (no test-only accessors); every contract
+    // below is observed through the returned Notification objects' own expiry state.
+
     fun `test a second notification of the same kind expires the first`() {
         val first = show(McpSteroidNotificationKind.DEVRIG_INSTALL, "first")
         val second = show(McpSteroidNotificationKind.DEVRIG_INSTALL, "second")
         assertTrue("the superseded notification must be expired", first.isExpired)
         assertFalse("the newest notification must stay live", second.isExpired)
-        assertSame(
-            "the newest notification is the tracked one",
-            second,
-            McpSteroidNotifications.getInstance().pendingNotification(McpSteroidNotificationKind.DEVRIG_INSTALL),
-        )
     }
 
     fun `test different kinds never expire each other`() {
@@ -73,26 +71,27 @@ class McpSteroidNotificationsTest : BasePlatformTestCase() {
         assertFalse(update.isExpired)
     }
 
-    fun `test an expired notification is dropped from tracking`() {
-        val offer = show(McpSteroidNotificationKind.DEVRIG_INSTALL_OFFER)
-        // However it expires — user close, an expiring action, a successor — tracking must let go of it.
+    fun `test a fresh notification after a user-expired one shows live`() {
+        // The tracking map exists for double-balloon prevention, nothing else; after the user closes a
+        // notification, the visible contract is simply that the next notify() of the kind is a fresh
+        // live balloon and the closed one stays closed.
+        val offer = show(McpSteroidNotificationKind.DEVRIG_INSTALL_OFFER, "first")
         offer.expire()
-        assertNull(
-            "an expired notification must not be reported as pending",
-            McpSteroidNotifications.getInstance().pendingNotification(McpSteroidNotificationKind.DEVRIG_INSTALL_OFFER),
-        )
+        val next = show(McpSteroidNotificationKind.DEVRIG_INSTALL_OFFER, "second")
+        assertFalse("a fresh notification after expiry must be live", next.isExpired)
+        assertTrue("the user-closed notification must stay expired", offer.isExpired)
     }
 
     fun `test expiring the superseded notification does not untrack its successor`() {
         // The whenExpired cleanup uses the two-arg remove on purpose: when a successor already replaced
-        // the map entry, the OLD notification's expiry must not remove the NEW one.
+        // the map entry, the OLD notification's expiry must not remove the NEW one. Observable through
+        // notify() alone: were the successor untracked (one-arg remove bug), a THIRD notification could
+        // not expire it — leaving two live balloons of the same kind.
         val first = show(McpSteroidNotificationKind.PLUGIN_UPDATE, "first")
         val second = show(McpSteroidNotificationKind.PLUGIN_UPDATE, "second")
         first.expire() // idempotent: notify() already expired it
-        assertSame(
-            "the successor must stay tracked after the superseded one expires",
-            second,
-            McpSteroidNotifications.getInstance().pendingNotification(McpSteroidNotificationKind.PLUGIN_UPDATE),
-        )
+        val third = show(McpSteroidNotificationKind.PLUGIN_UPDATE, "third")
+        assertTrue("the successor must have stayed tracked, so the third supersedes it", second.isExpired)
+        assertFalse("the newest notification must stay live", third.isExpired)
     }
 }
