@@ -34,11 +34,11 @@ rather than mirroring their contents into per-folder guides):
   register it on PATH, NOTHING else — never auto-register devrig with
   agents, never auto-install the IDE plugin; those commands are only
   promoted to the user in the `devrig install devrig` info message.
-- [`devrig-deployment-spec.md`](devrig-deployment-spec.md) — locked v7
-  design for `~/.mcp-steroid/` install layout: wrapper-driven
-  content-addressed cache, bundled Corretto JDK, two-key signed
-  self-update, auto-GC, agent registration wizard, dev-mode
-  pre-population, and a native-binary alternative appendix.
+- [`devrig-deployment-spec.md`](devrig-deployment-spec.md) — historical v7
+  design record for `~/.mcp-steroid/` layout, wrapper ownership, the bundled runtime,
+  cache/GC ideas, and a native-binary alternative. Its wizard and `upgrade` proposals are
+  superseded; current install behavior lives in `install-scripts-contract.md`, current commands in
+  `devrig-cli-contract.md`, and current updates in `updates-check/devrig-auto-update.md`.
 - [`devrig-remote-development-backend-e2e.md`](devrig-remote-development-backend-e2e.md) —
   shipped IU-262 native Remote Development backend contract, Docker fixture, lifecycle evidence,
   and follow-up risks.

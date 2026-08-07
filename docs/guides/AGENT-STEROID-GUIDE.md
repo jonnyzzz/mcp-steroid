@@ -26,7 +26,8 @@ The IDE has indexed everything. It knows the code better than any file search. *
 > stick to its naming.
 
 ### `steroid_list_projects`
-List all open projects in the IDE. Use this to get project names for `steroid_execute_code`.
+List all open projects in the IDE. Use the opaque `project_name` routing key for
+`steroid_execute_code`; the separate `name` field is human-readable information only.
 
 There is **no top-level `ide`/`plugin`/`pid` header** in the response.
 Every `projects[]` entry carries a `backend_name` that identifies which
@@ -49,7 +50,7 @@ entry names its owning backend via `backend_name`.
 | `windowId` | Unique window identifier for screenshot/input targeting |
 | `modalDialogShowing` | **True if any modal dialog is showing in IDE** |
 | `indexingInProgress` | **True if project is indexing (dumb mode)** |
-| `projectInitialized` | **True if project is fully initialized** |
+| `projectInitialized` | **True if the IDE project is initialized; does not prove Maven/Gradle model readiness** |
 | `isActive` | Whether window is currently focused |
 | `isVisible` | Whether window is visible |
 | `backend_name` | The backend (IDE) this window belongs to |
@@ -64,7 +65,9 @@ entry names its owning backend via `backend_name`.
 | `project_name` | Routing key of the associated project |
 | `backend_name` | The backend (IDE) this task runs in |
 
-Use the modality/indexing fields and `backgroundTasks` to poll for project readiness after `steroid_open_project`.
+For an attended frontend, use the modality/indexing fields and `backgroundTasks` as UI-readiness signals
+after `steroid_open_project`. Establish routing through `steroid_list_projects`; Maven/Gradle model
+configuration remains a separate readiness gate.
 
 ### `steroid_take_screenshot`
 Capture a screenshot of the IDE frame and return image content.
@@ -134,7 +137,9 @@ The sub-agent pattern prevents context rot from failed code attempts and allows 
 Provide feedback on execution results. Use after `steroid_execute_code` to rate success.
 
 ### `steroid_open_project`
-Open a project in the IDE. This tool initiates the project opening process and returns quickly.
+Open a project in the IDE. The project-open request is asynchronous. If devrig must start a managed
+backend first, the call can block until that backend's MCP endpoint becomes reachable before forwarding
+the request.
 
 **IMPORTANT**: Project opening is **ASYNCHRONOUS**. A project route, an attended frontend window, and
 Maven/Gradle configuration are separate readiness signals. A Remote Development backend can be fully useful
@@ -691,7 +696,7 @@ println("Created src/Example.cs")
 
 ### Further Reading
 
-- [C# Examples for Rider](../rider-integration/CSHARP-EXAMPLES.md)
+- [Working with Rider and C# projects](#working-with-rider-and-c-projects)
 - [Rider Plugin Development](https://plugins.jetbrains.com/docs/intellij/rider.html)
 
 ## Error Handling

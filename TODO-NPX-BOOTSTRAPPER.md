@@ -9,18 +9,19 @@
 > installer epic's `:site-gen` (branch `installer/version-json-driven`) carries the live JDK-pinning. If
 > this bootstrapper is built, revive the pattern from there rather than expecting either module to exist.
 
-## 2026-05-28 — Design phase complete; spec at v7 (commit b403efb7)
+## 2026-05-28 — Historical v7 design phase (commit b403efb7)
 
-**Authoritative design:**
-[`docs/devrig-deployment-spec.md`](docs/devrig-deployment-spec.md). The spec
+**Historical design record:**
+[`docs/devrig-deployment-spec.md`](docs/devrig-deployment-spec.md). The document
 was iterated through seven rounds, including a three-agent (claude/codex/
 gemini) quorum review via `run-agent.sh` and an MCP-spec-grounded
-verdict on mid-session restart. v7 is locked. The older roadmap below
-predates the spec and is preserved for context only — when there's a
-conflict, the spec wins.
+verdict on mid-session restart. Its wizard, `--yes`, and `upgrade` proposals were not adopted. Current
+behavior is governed by [`docs/install-scripts-contract.md`](docs/install-scripts-contract.md),
+[`docs/devrig-cli-contract.md`](docs/devrig-cli-contract.md), and
+[`docs/updates-check/devrig-auto-update.md`](docs/updates-check/devrig-auto-update.md). The v7 list and
+older roadmap below are preserved for history, not as an implementation backlog.
 
-**Key design decisions locked in v7** (everything below this line is now
-a spec section, not a TODO):
+**Key decisions recorded in v7** (historical; some shipped and others were superseded):
 
 - Wrapper at `~/.mcp-steroid/bin/devrig` (POSIX shell) +
   `~/.mcp-steroid/bin/devrig.cmd` (Windows CMD — implemented CMD-only in
@@ -51,8 +52,8 @@ a spec section, not a TODO):
   only file op that succeeds against an in-use script on Windows).
 - All wrapper output to **stderr only** — stdout is reserved for the
   JVM's MCP protocol traffic after `exec`.
-- Agent registration wizard lives in the inner Java binary (probe PATH
-  + `<agent> --version` with timeout, prompt to register/re-register).
+- The proposed inner-Java agent-registration wizard was superseded. Bare `devrig install` now lists
+  targets non-interactively; only an explicit `devrig install <agent>` changes agent configuration.
 - `./gradlew deployNpx` pre-populates the cache so dev mode never hits
   the network; signature verification deliberately disabled in dev.
 - **Native binary alternative** (Go / Rust / GraalVM native-image of
@@ -62,7 +63,7 @@ a spec section, not a TODO):
   finding: `curl` does NOT set `com.apple.quarantine` xattr on macOS,
   so a curl-installed native binary would not need notarization.
 
-**Implementation phasing** (from the spec):
+**Historical implementation phasing** (from the v7 proposal; do not use as a current backlog):
 
 | Phase | Scope | LOC |
 |---|---|---|
@@ -70,7 +71,7 @@ a spec section, not a TODO):
 | **2** (before public release) | Key generation playbook, two-key `releaseDevrig`, `devrig upgrade` Java subcommand, GH Pages publish, weekly URL-liveness GH Action, sig-verify test suite | ~400 |
 | **3** (nice) | Standalone `install.sh` / `install.ps1` shims, key-rotation docs | ~80 |
 
-**Status: design done, implementation pending user go-ahead.**
+**Status: closed as a historical plan; use the current contracts linked above.**
 
 ---
 
@@ -78,9 +79,9 @@ a spec section, not a TODO):
 
 ## Current status after devrig rename (2026-05-19)
 
-> **Contract reference.** The devrig CLI's project/backend naming,
-> JSON output schemas, and on-demand routing model are now specified
-> in [`docs/devrig-naming.md`](docs/devrig-naming.md). Any
+> **Contract reference.** The devrig CLI grammar, aliases, help/recovery, direct-tool commands, and JSON
+> envelopes are specified in [`docs/devrig-cli-contract.md`](docs/devrig-cli-contract.md); project/backend
+> identifiers and routing are specified in [`docs/devrig-naming.md`](docs/devrig-naming.md). Any
 > bootstrapper work that touches discovery, MCP routing, or the
 > public CLI surface must keep that contract intact. The on-demand
 > rebuild decision (no background scanners in the devrig process) is

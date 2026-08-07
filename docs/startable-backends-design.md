@@ -162,9 +162,12 @@ sources — no `BackendRow`:
 4. **footer** — how to download/install more (`devrig backend download …`); group 4 is advertised
    here, never enumerated.
 
-`backend --json` / `project --json` reshape from one `backends[]` (of `BackendInfo`) to the three
-explicit groups. **No back-compat shape needed** (no external consumers; output just has to be
-valid JSON).
+`backend --json` reshapes the old single `backends[]` inventory (of `BackendInfo`) into the three
+explicit lifecycle groups. **No back-compat shape was needed** for that backend inventory.
+
+**Superseded CLI route (#450):** `project` and `projects` now alias the schema-generated
+`list_projects` leaf; they do not share the backend-inventory shape. Their JSON uses the generated
+`{tool, command, isError, data}` envelope and reports canonical `command: "list_projects"`.
 
 Each backend entry in `--json` output carries a `"compatible": <bool>` field:
 - `mcpSteroidBackends` entries: always `"compatible": true` (only S1 markers with `ideHome` reach here).

@@ -142,7 +142,7 @@ a second command definition.
 | Command | Purpose and important inputs |
 |---|---|
 | `devrig list_projects` | Lists open projects and the routing keys accepted by `--project_name`. |
-| `devrig list_windows` | Lists IDE windows, readiness, and background tasks. |
+| `devrig list_windows` | Lists attended IDE windows, modal/indexing/initialization state, and background tasks; it is not a project-routing or Maven/Gradle readiness gate. |
 | `devrig execute_code` | Runs Kotlin in an IDE. Requires `--project_name`, `--task_id`, `--reason`, and either `--code` or `--code-file`; accepts `--modal`, `--timeout`, and `--out`. Quote inline Kotlin for the shell, for example `--code='println("hello")'`, or prefer `--code-file`; use `--code-file=-` for stdin. |
 | `devrig execute_feedback` | Rates an execution. Requires `--project_name`, `--task_id`, `--success_rating`, and `--explanation`; accepts the exact optional `--execution_id`, and code can also come from `--code-file`. |
 | `devrig take_screenshot` | Captures an IDE image. Requires `--project_name`, `--task_id`, and `--reason`; accepts `--window_id` and `--out`. |

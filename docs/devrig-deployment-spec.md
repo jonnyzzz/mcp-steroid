@@ -1,6 +1,15 @@
 # devrig deployment & update spec (v7 — Properties manifest, native-binary appendix)
 
-Author: Eugene Petrenko · Status: design ready for implementation
+Author: Eugene Petrenko · Status: historical v7 design record; parts are superseded
+
+> **Current-contract note (2026-08):** this document preserves the v7 design history and remains useful
+> for install-layout and wrapper rationale, but it is not the authority for today's commands. The
+> bootstrap installers only install devrig and register its launcher on `PATH`; they never register
+> agents or install the IDE plugin. Bare `devrig install` is a non-interactive target inventory, while
+> agent registration is explicit through `devrig install <agent>` (`claude`, `codex`, or `gemini`). There is no `--yes`
+> wizard mode or `devrig upgrade` command. See [`install-scripts-contract.md`](install-scripts-contract.md),
+> [`devrig-cli-contract.md`](devrig-cli-contract.md), and
+> [`updates-check/devrig-auto-update.md`](updates-check/devrig-auto-update.md) for the current contracts.
 
 > **Implementation note (2026-06, PR #117):** the Windows user launcher is
 > **CMD-only** (`~/.mcp-steroid/bin/devrig.cmd`); PowerShell is used only by the
@@ -17,17 +26,16 @@ Author: Eugene Petrenko · Status: design ready for implementation
 > verbatim unpack (no strip), Properties-format manifest, native-binary
 > alternative analyzed.
 
-## What the user gets
+## What the user gets now
 
 ```sh
-curl -fsSL https://devrig.dev/install.sh | sh -s install
+curl -fsSL https://devrig.dev/install.sh | sh
 ```
 
-A self-updating launcher at `~/.mcp-steroid/bin/devrig` (or `devrig.cmd`
-on Windows) registered with whichever of Claude / Codex / Gemini are on
-PATH. The mcp-steroid Java binary + a matching Amazon Corretto JDK are
-cached under `~/.mcp-steroid/binaries/`. After install, **zero network
-calls** unless `devrig upgrade` is run or a cache directory is missing.
+A stable launcher at `~/.mcp-steroid/bin/devrig` (or `devrig.cmd` on Windows), plus the devrig Java
+distribution and bundled runtime cached under `~/.mcp-steroid/binaries/`. Installation does not change
+agent configuration. Users register an agent explicitly with `devrig install <agent>`; long-lived
+`devrig mcp` sessions apply promoted updates through the official install scripts.
 
 > **Implementation note (PR #117/#124, revised for #398):** the install script
 > no longer writes `bin/devrig` itself (the "bootstrap mode → write the script's
@@ -300,11 +308,12 @@ Same script doubles as installer. When invoked NOT from
 6. exec  ~/.mcp-steroid/binaries/devrig-<os>-<cpu>-<sha>/<binSubpath>  install ${@:2}
 ```
 
-The exec'd inner devrig runs the agent wizard (next section).
+The v7 proposal had the inner devrig run the wizard described below. That wizard was not implemented;
+the current installer delegates only to non-interactive `devrig install devrig`.
 
-## Agent registration wizard (inner Java)
+## Historical v7 agent-registration wizard (superseded)
 
-`devrig install` (no args) — interactive:
+The v7 proposal made `devrig install` interactive:
 
 ```
 For each agent in [claude, codex, gemini]:
@@ -321,8 +330,9 @@ For each agent in [claude, codex, gemini]:
      stderr "  ✓ claude — registered (user scope)"
 ```
 
-`devrig install <agent>` — direct non-interactive (current behavior).
-`devrig install --yes` — wizard with no prompts; registers every available agent.
+Current behavior is different: `devrig install` lists install targets without prompting (and supports
+`--json`), while `devrig install <agent>` performs one explicit non-interactive registration. The proposed
+`devrig install --yes` mode does not exist.
 
 ## Agent config shape
 
@@ -342,7 +352,10 @@ Windows:
 
 **No JAVA_HOME** — wrapper sets it from `version.properties` on each launch.
 
-## `devrig upgrade` (inner Java)
+## Historical v7 `devrig upgrade` proposal (superseded)
+
+This command was not implemented; the current updater uses the install-script flow linked in the
+current-contract note above. The algorithm below is retained only as design history.
 
 ```
 1. GET https://devrig.dev/version.properties
@@ -409,11 +422,12 @@ Dev mode pre-populates the cache so the wrapper does no network at all:
      - real Corretto URL for JDK (or local file:// if pre-downloaded)
 7. Write wrapper scripts to ~/.mcp-steroid/bin/
 8. NO version.properties.signatures.  NO allowed_signers.
-9. Stderr hint: run `~/.mcp-steroid/bin/devrig install` for the agent wizard.
+9. Stderr hint: show the copyable explicit `devrig install <agent>` next steps; never run a wizard.
 ```
 
-`devrig upgrade` detects missing `allowed_signers` → exits with
-"upgrade not available in dev mode."
+The proposed `devrig upgrade` command does not exist. Current release builds update through the
+install-script flow documented in `updates-check/devrig-auto-update.md`; dev/SNAPSHOT builds skip that
+automatic updater.
 
 Auto-GC (above) sweeps old dev shas, keeping the most-recent previous one.
 
@@ -434,7 +448,7 @@ multi-process race scenarios + cross-OS smoke). Switch parser tests from
 JSON to Properties. Add auto-GC tests to inner-Java suite (in addition to
 the now-removed prune suite).
 
-## Phasing
+## Historical v7 phasing
 
 | Phase | Scope | LOC |
 |---|---|---|

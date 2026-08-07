@@ -29,22 +29,24 @@ println(openProjectJson)
 
 The tool will:
 1. Mark the project path as trusted (skips trust dialog)
-2. Initiate project opening in the background
-3. Return immediately with next steps
+2. If needed, start a managed backend and wait until its MCP endpoint is reachable
+3. Initiate project opening in the background and return next steps; a cold managed-backend start can
+   therefore make the call block even though project opening itself remains asynchronous
 
-### Step 2: Wait for Project to Load
+### Step 2: Wait for the Project Route
 
-Poll `steroid_list_projects` until the target path appears. Backend startup, first open, and indexing can
-take minutes; a fixed sleep is not a readiness check. The time depends on:
+Poll `steroid_list_projects` until the target path appears. Backend startup and first project creation can
+take minutes; a fixed sleep is not a readiness check. Route appearance is not proof that indexing or the
+Maven/Gradle model is ready. The time depends on:
 - Project size
-- Number of files to index
+- Backend cold-start work
 - Installed plugins
 
 Keep the fresh opaque `project_name` returned for that path. If a frontend exists, `steroid_list_windows`
 can additionally report IDE indexing and modal state. A frontendless Remote Development backend needs no
 window or screenshot.
 
-### Step 3: Verify Project is Open
+### Step 3: Verify the Project Route
 
 Call `steroid_list_projects` to verify:
 

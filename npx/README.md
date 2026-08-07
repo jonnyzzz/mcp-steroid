@@ -13,8 +13,10 @@ npx devrig --help
 
 devrig is a stateless stdio MCP server + CLI that discovers running
 IntelliJ instances on the host and routes MCP tool calls to them.
-The project / backend naming contract, the on-demand routing model,
-and the JSON output schemas are specified in
-[`docs/devrig-naming.md`](../docs/devrig-naming.md) (with the
-rationale for on-demand vs background scanning in
-[`docs/devrig-scanning-research.md`](../docs/devrig-scanning-research.md)).
+The command grammar, aliases, schema-generated direct-tool help, recovery behavior,
+and human/JSON output contracts are specified in
+[`docs/devrig-cli-contract.md`](../docs/devrig-cli-contract.md). Project/backend
+identifiers and routing are specified separately in
+[`docs/devrig-naming.md`](../docs/devrig-naming.md), with the rationale for
+on-demand rather than background scanning in
+[`docs/devrig-scanning-research.md`](../docs/devrig-scanning-research.md).
