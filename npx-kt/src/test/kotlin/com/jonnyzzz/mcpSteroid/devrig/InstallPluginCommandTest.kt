@@ -9,16 +9,13 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.ContentType
-import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.uri
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
-import java.net.ServerSocket
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -41,8 +38,9 @@ class InstallPluginCommandTest {
 
     @Test
     fun `checkCompatibility parses the single-id compatible=true form`() = runBlocking {
-        val port = freePort()
-        servers += installPluginServer(port, compatibleBody = """{"compatible": true}""")
+        val started = installPluginServer(compatibleBody = """{"compatible": true}""")
+        servers += started.server
+        val port = started.port
         val client = KtorPluginRestClient(httpClient())
 
         assertEquals(true, client.checkCompatibility("http://127.0.0.1:$port", MCP_STEROID_PLUGIN_ID))
@@ -50,8 +48,9 @@ class InstallPluginCommandTest {
 
     @Test
     fun `checkCompatibility parses compatible=false`() = runBlocking {
-        val port = freePort()
-        servers += installPluginServer(port, compatibleBody = """{"compatible": false}""")
+        val started = installPluginServer(compatibleBody = """{"compatible": false}""")
+        servers += started.server
+        val port = started.port
         val client = KtorPluginRestClient(httpClient())
 
         assertEquals(false, client.checkCompatibility("http://127.0.0.1:$port", MCP_STEROID_PLUGIN_ID))
@@ -61,14 +60,15 @@ class InstallPluginCommandTest {
     fun `checkCompatibility returns null when the IDE is unreachable`() = runBlocking {
         val client = KtorPluginRestClient(httpClient())
         // Nothing is bound on this port — a refused connection must surface as null, not an exception.
-        assertNull(client.checkCompatibility("http://127.0.0.1:${freePort()}", MCP_STEROID_PLUGIN_ID))
+        assertNull(client.checkCompatibility("http://127.0.0.1:${unboundPort()}", MCP_STEROID_PLUGIN_ID))
     }
 
     @Test
     fun `requestInstall hits action=install with a localhost Origin and returns true on 200`() = runBlocking {
-        val port = freePort()
         val recorded = RecordedRequests()
-        servers += installPluginServer(port, compatibleBody = """{"compatible": true}""", recorded = recorded)
+        val started = installPluginServer(compatibleBody = """{"compatible": true}""", recorded = recorded)
+        servers += started.server
+        val port = started.port
         val client = KtorPluginRestClient(httpClient())
 
         assertTrue(client.requestInstall("http://127.0.0.1:$port", MCP_STEROID_PLUGIN_ID))
@@ -219,7 +219,7 @@ class InstallPluginCommandTest {
         backendName = "mock-backend-name-$pid",
     )
 
-    private fun freePort(): Int = ServerSocket(0).use { it.localPort }
+
 
     private fun httpClient(): HttpClient = HttpClient(CIO) {
         install(HttpTimeout) {
@@ -236,10 +236,9 @@ class InstallPluginCommandTest {
     }
 
     private fun installPluginServer(
-        port: Int,
         compatibleBody: String,
         recorded: RecordedRequests = RecordedRequests(),
-    ): EmbeddedServer<*, *> = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
+    ): TestHttpServer = startTestHttpServer {
         routing {
             get("/api/installPlugin") {
                 val action = call.request.queryParameters["action"]
@@ -252,7 +251,7 @@ class InstallPluginCommandTest {
                 }
             }
         }
-    }.also { it.start(wait = false) }
+    }
 
     private class FakePluginRestClient(
         private val compatibility: (String) -> Boolean?,

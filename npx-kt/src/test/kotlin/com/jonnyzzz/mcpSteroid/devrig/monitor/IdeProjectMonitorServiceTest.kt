@@ -14,10 +14,8 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.http.ContentType
-import io.ktor.server.application.ApplicationStarted
-import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
+import com.jonnyzzz.mcpSteroid.devrig.startTestHttpServer
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -31,7 +29,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
@@ -62,16 +59,16 @@ class IdeProjectMonitorServiceTest {
 
     @BeforeEach
     fun setUp() {
-        port = freePort()
-        server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
+        val started = startTestHttpServer {
             routing {
                 get("$DEVRIG_RPC_PATH_PREFIX/projects") {
                     receivedAuthHeaders += call.request.headers["Authorization"]
                     call.respondText(projectsJson.toString(), ContentType.Application.Json)
                 }
             }
-        }.also { it.start(wait = false) }
-        runBlocking { server.monitor.subscribe(ApplicationStarted) {} }
+        }
+        server = started.server
+        port = started.port
 
         httpClient = HttpClient(CIO) {
             install(HttpTimeout) {
@@ -153,5 +150,5 @@ class IdeProjectMonitorServiceTest {
     private fun projectsResponse(projects: List<String>): String =
         """{"projects":[${projects.joinToString(",")}]}"""
 
-    private fun freePort(): Int = ServerSocket(0).use { it.localPort }
+
 }

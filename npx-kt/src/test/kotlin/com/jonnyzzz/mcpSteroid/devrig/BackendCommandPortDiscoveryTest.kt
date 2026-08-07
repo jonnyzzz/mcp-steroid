@@ -6,10 +6,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.ContentType
-import io.ktor.server.application.ApplicationStarted
-import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -54,15 +51,15 @@ class BackendCommandPortDiscoveryTest {
 
     @BeforeEach
     fun setUp() {
-        port = ServerSocket(0).use { it.localPort }
-        server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
+        val started = startTestHttpServer {
             routing {
                 get("/api/about") {
                     call.respondText(aboutBody, ContentType.Application.Json)
                 }
             }
-        }.also { it.start(wait = false) }
-        runBlocking { server.monitor.subscribe(ApplicationStarted) {} }
+        }
+        server = started.server
+        port = started.port
 
         httpClient = HttpClient(CIO) {
             install(HttpTimeout) {

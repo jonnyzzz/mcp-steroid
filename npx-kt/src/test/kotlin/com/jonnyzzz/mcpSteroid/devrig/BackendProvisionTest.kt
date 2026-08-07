@@ -11,16 +11,12 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.ContentType
-import io.ktor.server.application.ApplicationStarted
-import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.notExists
@@ -278,10 +274,8 @@ class BackendProvisionTest {
     fun `provision resolves port id and computes manual instruction paths without installing plugin`(@TempDir tempDir: Path) = runBlocking {
         val sourcePlugin = tempDir.resolve("source-plugin.zip")
         Files.writeString(sourcePlugin, "fake plugin zip")
-        val port = ServerSocket(0).use { it.localPort }
         val installPluginCalls = mutableListOf<Unit>()
-        val server = ideServer(
-            port = port,
+        val started = ideServer(
             aboutBody = """
                 {
                   "name": "IntelliJ IDEA 2026.1.1",
@@ -293,7 +287,8 @@ class BackendProvisionTest {
             """.trimIndent(),
             installPluginCalls = installPluginCalls,
         )
-        servers += server
+        servers += started.server
+        val port = started.port
         val httpClient = httpClient()
         clients += httpClient
 
@@ -476,11 +471,10 @@ class BackendProvisionTest {
     }
 
     private fun ideServer(
-        port: Int,
         aboutBody: String,
         installPluginCalls: MutableList<Unit>,
-    ): EmbeddedServer<*, *> {
-        val server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
+    ): TestHttpServer {
+        return startTestHttpServer {
             routing {
                 get("/api/about") {
                     call.respondText(aboutBody, ContentType.Application.Json)
@@ -490,9 +484,7 @@ class BackendProvisionTest {
                     call.respondText("{}", ContentType.Application.Json)
                 }
             }
-        }.also { it.start(wait = false) }
-        runBlocking { server.monitor.subscribe(ApplicationStarted) {} }
-        return server
+        }
     }
 
     private class FixedBundledPluginResolver(private val zip: Path) : BundledPluginResolver {

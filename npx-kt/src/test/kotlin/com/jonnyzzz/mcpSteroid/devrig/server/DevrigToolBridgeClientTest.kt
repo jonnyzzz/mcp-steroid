@@ -12,6 +12,7 @@ import com.jonnyzzz.mcpSteroid.devrig.InstalledBackend
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.startableBackendName
+import com.jonnyzzz.mcpSteroid.devrig.startTestHttpServer
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
@@ -32,16 +33,12 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.ApplicationStarted
-import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
@@ -82,8 +79,7 @@ class DevrigToolBridgeClientTest {
 
     @BeforeEach
     fun setUp() {
-        port = freePort()
-        server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
+        val started = startTestHttpServer {
             routing {
                 post("/api/jonnyzzz/mcp-steroid/v1/tools/call/stream") {
                     receivedAuth = call.request.headers["Authorization"]
@@ -122,8 +118,9 @@ class DevrigToolBridgeClientTest {
                     }
                 }
             }
-        }.also { it.start(wait = false) }
-        runBlocking { server.monitor.subscribe(ApplicationStarted) {} }
+        }
+        server = started.server
+        port = started.port
 
         httpClient = HttpClient(CIO) {
             install(HttpTimeout) {
@@ -143,8 +140,10 @@ class DevrigToolBridgeClientTest {
         holdStreamRelease = null
         httpStatus = HttpStatusCode.OK
         httpBody = ""
-        httpClient.close()
-        server.stop(0L, 0L)
+        // Guarded: when setUp fails these were never assigned, and an
+        // UninitializedPropertyAccessException from teardown would bury the real cause (#477).
+        if (::httpClient.isInitialized) httpClient.close()
+        if (::server.isInitialized) server.stop(0L, 0L)
     }
 
     @Test
@@ -990,7 +989,7 @@ class DevrigToolBridgeClientTest {
         )
 }
 
-private fun freePort(): Int = ServerSocket(0).use { it.localPort }
+
 
 private fun ToolCallResult.errorText(): String =
     (content.single() as ContentItem.Text).text

@@ -7,6 +7,7 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
+import com.jonnyzzz.mcpSteroid.devrig.startTestHttpServer
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
@@ -17,13 +18,10 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.ContentType
-import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -148,12 +146,10 @@ class DevrigListToolHandlersTest {
     fun `list_windows binds every window and background task to its source pid backend_name`(
         @TempDir tempDir: Path,
     ) {
-        val port = freePort()
-        // The server is deliberately created OUTSIDE runBlocking: inside it, `embeddedServer` resolves
-        // to the CoroutineScope extension, the server becomes a child of the test coroutine, and
-        // runBlocking then waits forever for it (the AfterEach stop can never run). Top-level call ==
-        // standalone server lifecycle, stopped in tearDown.
-        server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
+        // startTestHttpServer binds port 0 and reports what it bound: no probe-then-bind window, and a
+        // startup failure surfaces here instead of as a cancelled coroutine later (#477). It also keeps
+        // the standalone (non-child) server lifecycle this test needs — see its KDoc.
+        val started = startTestHttpServer {
             routing {
                 get("/api/jonnyzzz/mcp-steroid/v1/windows") {
                     // One embedded server plays both IDEs — the bearer token tells which pid is asked.
@@ -165,7 +161,9 @@ class DevrigListToolHandlersTest {
                     call.respondText(windowsResponseJson(pid), ContentType.Application.Json)
                 }
             }
-        }.also { it.start(wait = false) }
+        }
+        server = started.server
+        val port = started.port
 
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
@@ -270,4 +268,4 @@ class DevrigListToolHandlersTest {
     )
 }
 
-private fun freePort(): Int = ServerSocket(0).use { it.localPort }
+
