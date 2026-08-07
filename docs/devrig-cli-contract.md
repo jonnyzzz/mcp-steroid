@@ -107,6 +107,14 @@ The default presentation is for people: headings, tables, hints, and terminal co
 Diagnostics and progress go to stderr. Stdout is reserved for the requested result, and `devrig mcp`
 writes no presentation bytes to stdout before the JSON-RPC stdio server takes over.
 
+`devrig mcp` never lets bad input from the client end the session. Bytes on stdin that cannot begin a
+JSON-RPC frame — a stray log line, a BOM, a header block with no usable `Content-Length` — are
+discarded a run at a time; each one draws a JSON-RPC 2.0 §4.2 parse error (`code: -32700`, `id: null`)
+on stdout and a WARN naming the offending text (truncated) on stderr and in the log file. Frames that
+follow are still parsed and answered. Residue left when stdin ends mid-frame is reported the same way.
+A session that only saw garbage still exits 0: stdin reaching EOF is a normal shutdown, and the
+evidence is in the parse errors and the log.
+
 Commands that advertise `--json` emit one ANSI-free JSON document. Every schema-generated MCP-tool
 command uses this envelope:
 

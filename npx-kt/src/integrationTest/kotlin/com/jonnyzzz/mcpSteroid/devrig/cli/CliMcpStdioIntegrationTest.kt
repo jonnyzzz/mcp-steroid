@@ -1,13 +1,18 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig.cli
 
+import com.jonnyzzz.mcpSteroid.mcp.JsonRpcErrorCodes
 import com.jonnyzzz.mcpSteroid.mcp.MCP_PROTOCOL_VERSION
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackDriver
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.StdioMcpProcess
+import com.jonnyzzz.mcpSteroid.testHelper.StdoutCleanlinessHarness
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -182,6 +187,52 @@ class CliMcpStdioIntegrationTest {
         // alive (i.e. the server didn't crash on the notification handling).
         val pingResponse = process.request("ping", buildJsonObject {})
         assertNull(pingResponse["error"], "ping after notification must succeed: $pingResponse")
+    }
+
+    @Test
+    fun `a malformed line on stdin does not brick the session`() {
+        // jonnyzzz/mcp-steroid#461: `(echo 'this is not json'; echo '<initialize>') | devrig mcp`
+        // wrote ZERO bytes and exited 0 — the handshake queued behind the stray line was never
+        // parsed, and nothing on stderr named the cause. A client-side CRLF, BOM, or wrapper
+        // log line bricked the whole session invisibly.
+        val garbage = "this is not json"
+        val stdin = "$garbage\n".toByteArray(Charsets.UTF_8) + StdoutCleanlinessHarness.handshakeBytes
+
+        val result = cli.runMpcWithStdin(stdin)
+
+        assertEquals(
+            0,
+            result.exitCode,
+            "devrig mcp must still shut down cleanly\nstdout=\n${result.stdout}\nstderr=\n${result.stderr}",
+        )
+        // Every handshake id round-trips — i.e. the stray line cost no requests — and every
+        // stdout line is still a bare JSON-RPC envelope.
+        StdoutCleanlinessHarness.assertStdoutClean(
+            stdout = result.stdout,
+            variantLabel = "docker:linux",
+            stderrForDiagnostics = result.stderr,
+        )
+
+        val frames = result.stdout.lineSequence()
+            .filter { it.isNotBlank() }
+            .map { Json.parseToJsonElement(it).jsonObject }
+            .toList()
+        val parseErrors = frames.filter {
+            it["error"]?.jsonObject?.get("code")?.jsonPrimitive?.int == JsonRpcErrorCodes.PARSE_ERROR
+        }
+        assertEquals(
+            1,
+            parseErrors.size,
+            "the stray line must draw exactly one -32700 (JSON-RPC 2.0 §4.2)\nstdout=\n${result.stdout}",
+        )
+        assertTrue(
+            parseErrors.single()["id"] is JsonNull,
+            "a parse error has no addressable request: ${parseErrors.single()}",
+        )
+        assertTrue(
+            garbage in result.stderr,
+            "stderr must name the offending line so a hung client is diagnosable\nstderr=\n${result.stderr}",
+        )
     }
 
     companion object {

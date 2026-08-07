@@ -52,9 +52,14 @@ import java.io.OutputStream
  *      client's response while the handler is parked.
  *   3. The output framing mode is locked on the **first inbound frame** ("framed" or
  *      "ndjson"); subsequent writes match that mode.
- *   4. On EOF (or [IOException]) the reader exits and the session is closed (which
- *      drains its channels). The surrounding `coroutineScope` waits for all in-flight
- *      dispatch coroutines and pump coroutines to finish before returning.
+ *   4. Bytes that can never begin a frame (a stray log line, a BOM, a header block with no
+ *      usable `Content-Length`) are discarded a run at a time, each answered with a
+ *      `-32700` parse error and logged at WARN. The session keeps serving — the frames
+ *      queued behind the garbage still get answered (jonnyzzz/mcp-steroid#461).
+ *   5. On EOF (or [IOException]) the reader exits, any unparsed residue is reported the
+ *      same way, and the session is closed (which drains its channels). The surrounding
+ *      `coroutineScope` waits for all in-flight dispatch coroutines and pump coroutines to
+ *      finish before returning.
  */
 class McpStdioServer(
     private val server: McpServerCore,
@@ -156,7 +161,15 @@ class McpStdioServer(
             if (n == 0) continue       // 0-byte read is unusual for blocking InputStream; defend against it
             buffer.append(buf, n)
             while (true) {
-                val frame = buffer.readNextFrame() ?: break
+                val frame = buffer.readNextFrame()
+                if (frame == null) {
+                    // Bytes that can never start a frame used to sit at the head of the
+                    // buffer forever, hiding every valid frame queued behind them (#461).
+                    // Discard the run, answer it, and keep reading.
+                    val unparsable = buffer.readNextUnparsableChunk() ?: break
+                    reportUnparsableInput(unparsable, "input is not a JSON-RPC message")
+                    continue
+                }
                 if (outputMode == null) outputMode = frame.mode
                 if (frame.payloadText.isBlank()) continue
                 val payload = frame.payloadText
@@ -169,6 +182,27 @@ class McpStdioServer(
                 }
             }
         }
+        // Anything left over means stdin ended mid-frame: an unterminated line, or a frame
+        // whose declared body never arrived. Reported, never swallowed — silence here is
+        // what made #461 undiagnosable. Skipped under cancellation: the streams are being
+        // torn down and a diagnostic write would only fail.
+        if (currentCoroutineContext().isActive) {
+            reportUnparsableInput(buffer.drain().trim(), "stdin ended mid-frame")
+        }
+    }
+
+    /**
+     * Answers input that never formed a frame with the JSON-RPC 2.0 §4.2 parse error
+     * (`-32700`, `id: null`) and records the offending bytes at WARN — which reaches both
+     * stderr and the log file, the two places a stuck client is debugged from. Blank
+     * [text] is stray line breaks between frames: noise, not a protocol error.
+     */
+    private suspend fun reportUnparsableInput(text: String, reason: String) {
+        if (text.isBlank()) return
+        val excerpt = text.take(MAX_REPORTED_CHARS)
+        val elision = if (text.length > MAX_REPORTED_CHARS) " ...(${text.length} chars total)" else ""
+        log.warn("[MCP stdio] $reason, discarding unparsable input: $excerpt$elision")
+        writeFrame(encodeError(JsonRpcErrorCodes.PARSE_ERROR, "Parse error: $reason: $excerpt$elision"))
     }
 
     /**
@@ -210,7 +244,7 @@ class McpStdioServer(
             throw e
         } catch (e: Exception) {
             log.warn("[MCP stdio] handler failed", e)
-            encodeInternalError(e.message ?: "Internal error")
+            encodeError(JsonRpcErrorCodes.INTERNAL_ERROR, e.message ?: "Internal error")
         }
         if (response != null) writeFrame(response)
     }
@@ -238,16 +272,24 @@ class McpStdioServer(
         }
     }
 
-    private fun encodeInternalError(message: String): String {
+    /** JSON-RPC 2.0 error response with a null id — for failures with no addressable request. */
+    private fun encodeError(code: Int, message: String): String {
         val response = JsonRpcResponse(
             id = JsonNull,
-            error = JsonRpcError(code = JsonRpcErrorCodes.INTERNAL_ERROR, message = message)
+            error = JsonRpcError(code = code, message = message)
         )
         return McpJson.encodeToString(JsonRpcResponse.serializer(), response)
     }
 
     private companion object {
         private const val READ_BUFFER_SIZE = 8192
+
+        /**
+         * How much of an unparsable input run is echoed into the WARN and the `-32700`
+         * message. Enough to recognise a BOM, a CRLF, or a stray log line; short enough
+         * that a megabyte of garbage can't blow up the log or the response.
+         */
+        private const val MAX_REPORTED_CHARS = 200
     }
 }
 

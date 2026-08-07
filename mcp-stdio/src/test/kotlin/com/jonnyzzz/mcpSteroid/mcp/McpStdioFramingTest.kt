@@ -425,4 +425,119 @@ class McpStdioFramingTest {
     fun `encodeNdjsonMessage empty payload is just a newline`() {
         assertEquals("\n", encodeNdjsonMessage(""))
     }
+
+    // -------------------------------------------------------------------------
+    // readNextUnparsableChunk — jonnyzzz/mcp-steroid#461
+    //
+    // A leading byte run that can never begin a frame used to jam the buffer
+    // forever: `readNextFrame` kept returning null, so every valid frame queued
+    // behind the garbage was never seen. These tests pin the discard contract
+    // that lets the transport report the garbage and carry on.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `garbage line is discarded so the frame behind it can be read`() {
+        val buf = FramingBuffer()
+        buf.append("this is not json\n{\"id\":\"1\"}\n".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextFrame(), "a non-JSON prefix is not a frame")
+        assertEquals("this is not json", buf.readNextUnparsableChunk())
+        val frame = buf.readNextFrame()
+        assertNotNull(frame)
+        assertEquals("""{"id":"1"}""", frame.payloadText)
+        assertEquals("ndjson", frame.mode)
+    }
+
+    @Test
+    fun `garbage line with CRLF ending is discarded without the line break`() {
+        val buf = FramingBuffer()
+        buf.append("this is not json\r\n{\"id\":\"1\"}\n".toByteArray(Charsets.UTF_8))
+        assertEquals("this is not json", buf.readNextUnparsableChunk())
+        assertEquals("""{"id":"1"}""", buf.readNextFrame()?.payloadText)
+    }
+
+    @Test
+    fun `a BOM before the payload is discarded as one garbage line`() {
+        val buf = FramingBuffer()
+        buf.append("\uFEFF{\"id\":\"1\"}\n{\"id\":\"2\"}\n".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextFrame(), "a BOM-prefixed line does not start like JSON")
+        assertEquals("\uFEFF{\"id\":\"1\"}", buf.readNextUnparsableChunk())
+        assertEquals("""{"id":"2"}""", buf.readNextFrame()?.payloadText)
+    }
+
+    @Test
+    fun `empty buffer has nothing to discard`() {
+        assertNull(FramingBuffer().readNextUnparsableChunk())
+    }
+
+    @Test
+    fun `a partial ndjson line is never discarded`() {
+        val buf = FramingBuffer()
+        buf.append("{\"id\":\"1\",".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextUnparsableChunk(), "the rest of the line may still arrive")
+    }
+
+    @Test
+    fun `partial framed headers are never discarded`() {
+        val buf = FramingBuffer()
+        buf.append("Content-Length: 10\r\n".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextUnparsableChunk(), "the header block is still arriving")
+    }
+
+    @Test
+    fun `a framed message whose body is still arriving is never discarded`() {
+        val buf = FramingBuffer()
+        buf.append("Content-Length: 20\r\n\r\npartial".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextUnparsableChunk(), "the declared body is still arriving")
+    }
+
+    @Test
+    fun `a leading Content-Type header is never discarded`() {
+        val buf = FramingBuffer()
+        buf.append("Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextUnparsableChunk(), "Content-Type may precede Content-Length")
+    }
+
+    @Test
+    fun `a header block without a usable content-length is discarded whole`() {
+        val buf = FramingBuffer()
+        buf.append("Content-Length: xyz\r\n\r\n{}\n".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextFrame())
+        assertEquals("Content-Length: xyz", buf.readNextUnparsableChunk())
+        assertEquals("{}", buf.readNextFrame()?.payloadText)
+    }
+
+    @Test
+    fun `a blank leading line is discarded as empty text`() {
+        val buf = FramingBuffer()
+        buf.append("\nthis is not json\n".toByteArray(Charsets.UTF_8))
+        assertEquals("", buf.readNextUnparsableChunk(), "a stray blank line is noise, not a protocol error")
+        assertEquals("this is not json", buf.readNextUnparsableChunk())
+        assertTrue(buf.isEmpty())
+    }
+
+    // -------------------------------------------------------------------------
+    // drain — residue diagnostics at EOF (jonnyzzz/mcp-steroid#461)
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `an unterminated garbage line is only surfaced by drain`() {
+        val buf = FramingBuffer()
+        buf.append("this is not json".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextUnparsableChunk(), "an unterminated line may still grow")
+        assertEquals("this is not json", buf.drain())
+        assertTrue(buf.isEmpty())
+    }
+
+    @Test
+    fun `drain surfaces a truncated framed body`() {
+        val buf = FramingBuffer()
+        buf.append("Content-Length: 20\r\n\r\npartial".toByteArray(Charsets.UTF_8))
+        assertEquals("Content-Length: 20\r\n\r\npartial", buf.drain())
+        assertTrue(buf.isEmpty())
+    }
+
+    @Test
+    fun `drain on an empty buffer is empty text`() {
+        assertEquals("", FramingBuffer().drain())
+    }
 }

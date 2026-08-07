@@ -71,6 +71,11 @@ class McpStdioServerProtocolTest {
             inputBytes.write(encodeNdjsonMessage(jsonStr).toByteArray(Charsets.UTF_8))
         }
 
+        /** Writes [text] to stdin verbatim — no framing, no trailing newline. */
+        fun sendRaw(text: String) {
+            inputBytes.write(text.toByteArray(Charsets.UTF_8))
+        }
+
         suspend fun runRaw(): ByteArray {
             val outputBuffer = ByteArrayOutputStream()
             val input = ByteArrayInputStream(inputBytes.toByteArray())
@@ -1321,6 +1326,88 @@ class McpStdioServerProtocolTest {
         // Three parse errors + one valid response.
         assertEquals(3, responses.count { it["error"] != null })
         assertEquals(1, responses.count { it["result"] != null })
+    }
+
+    // ---- Unparsable (non-JSON) input recovery — jonnyzzz/mcp-steroid#461 -----
+
+    @Test
+    fun `garbage line before initialize gets a parse error and initialize is still answered`() = runTest {
+        // #461: one non-JSON line on stdin used to jam the framing buffer forever — the
+        // `initialize` behind it was never parsed, nothing was written, and the process
+        // exited 0. The line must produce -32700 and the session must survive it.
+        val h = StdioHarness()
+        h.sendRaw("this is not json\n")
+        h.sendNdjson(init("1"))
+
+        val responses = h.runAndGetObjects()
+        assertEquals(2, responses.size, "expected a parse error plus the initialize result: $responses")
+        assertEquals(JsonRpcErrorCodes.PARSE_ERROR, (responses[0]["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals("1", responses[1]["id"]?.jsonPrimitive?.content)
+        assertNotNull(responses[1]["result"], "initialize must still be answered: ${responses[1]}")
+    }
+
+    @Test
+    fun `the parse error for an unframed garbage line is itself ndjson`() = runTest {
+        // Nothing has locked the output mode yet, and MCP stdio is NDJSON — the error
+        // must not go out with a Content-Length header a spec-only client can't read.
+        val h = StdioHarness()
+        h.sendRaw("this is not json\n")
+        val raw = h.runRaw().toString(Charsets.UTF_8)
+        assertTrue(raw.startsWith("{"), "parse error must be a bare NDJSON line: $raw")
+        assertTrue(raw.endsWith("\n"), "NDJSON frames are newline-terminated: $raw")
+    }
+
+    @Test
+    fun `garbage between two valid frames is reported without dropping either`() = runTest {
+        val h = StdioHarness()
+        h.sendNdjson(req("before", "ping"))
+        h.sendRaw("2026-08-07 INFO wrapper script says hello\n")
+        h.sendNdjson(req("after", "ping"))
+
+        // Dispatch of non-initialize requests is concurrent, so assert on the set of
+        // responses, not their order.
+        val responses = h.runAndGetObjects()
+        assertEquals(3, responses.size, "both pings plus one parse error: $responses")
+        assertEquals(
+            setOf("before", "after"),
+            responses.mapNotNull { it["id"]?.jsonPrimitive?.contentOrNull }.toSet(),
+            "the frames on either side of the garbage must both be answered: $responses",
+        )
+        val errors = responses.filter { it["error"] != null }
+        assertEquals(1, errors.size, "exactly one parse error: $responses")
+        assertEquals(JsonRpcErrorCodes.PARSE_ERROR, (errors[0]["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `unterminated garbage at EOF still gets a parse error`() = runTest {
+        // No trailing newline: the line can only be judged once stdin ends.
+        val h = StdioHarness()
+        h.sendRaw("this is not json")
+        val responses = h.runAndGetObjects()
+        assertEquals(1, responses.size, "EOF residue must be reported, not silently dropped: $responses")
+        assertEquals(JsonRpcErrorCodes.PARSE_ERROR, (responses[0]["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `a framed body truncated by EOF gets a parse error`() = runTest {
+        // A client that dies mid-frame leaves a legal header with a short body. That is
+        // evidence worth reporting, not a clean shutdown.
+        val h = StdioHarness()
+        h.sendRaw("Content-Length: 200\r\n\r\n{\"jsonrpc\":\"2.0\"")
+        val responses = h.runAndGetObjects()
+        assertEquals(1, responses.size, "truncated final frame must be reported: $responses")
+        assertEquals(JsonRpcErrorCodes.PARSE_ERROR, (responses[0]["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `a trailing newline after the last frame is not a parse error`() = runTest {
+        // Stray line breaks between frames are noise, not protocol errors.
+        val h = StdioHarness()
+        h.sendNdjson(req("1", "ping"))
+        h.sendRaw("\n\n")
+        val responses = h.runAndGetObjects()
+        assertEquals(1, responses.size, "blank lines must not produce parse errors: $responses")
+        assertNull(responses[0]["error"])
     }
 
     // ---- params shape -------------------------------------------------------

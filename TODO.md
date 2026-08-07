@@ -337,3 +337,25 @@
   "everything through HomePaths" reading would fold it in as `home.resolve("markers")` over the
   receiver). Folding changes marker discovery under explicit test homes (today it escapes the sandbox
   on purpose — see `GeneratedToolRuntimeTestSupport`), so it is a design decision, not a cleanup.
+
+- [ ] **`devrig mcp` log files all collapse onto `devrig-session.log`, and every line reads `[pid:?]`**
+  (spotted while fixing #461, pre-existing and unrelated to it). `configureLoggingAndLogStarted` sets
+  `devrig.log.dir` / `devrig.log.session` / `devrig.pid` before the first *intended* SLF4J call, but
+  logback has already initialised by then — the appender resolves the `${devrig.log.session:-session}`
+  and `${devrig.pid:-?}` defaults and pins them. Consequence: concurrent devrig processes share one
+  `~/.mcp-steroid/logs/devrig-session.log` (the per-pid file a log monitor is supposed to detect never
+  appears) and no log line is attributable to a process. Evidence: that file locally spans 10:34
+  `[Test worker]` lines through a 17:25 `devrig mcp` WARN, all `[pid:?]`. Find whoever touches SLF4J
+  before `configureLoggingAndLogStarted` (Clikt parsing / `resolveHomePathsOrDie` / a static
+  initialiser) and either set the properties earlier or reconfigure logback explicitly afterwards.
+  Note the same file shows Gradle test JVMs logging into the developer's REAL `~/.mcp-steroid/logs` —
+  worth checking separately.
+
+- [ ] **stdio framing follow-ups noticed while fixing #461** (both pre-existing, neither blocking).
+  (a) `FramingBuffer.append` grows without bound: a peer that never sends a newline (binary dump, a
+  huge single line) makes devrig buffer it all. A cap — discard-and-report past N MiB, reusing the
+  new `readNextUnparsableChunk` reporting path — would bound it.
+  (b) A final NDJSON message with no trailing newline is now answered with `-32700` ("stdin ended
+  mid-frame") rather than dispatched. That is spec-faithful (newlines delimit frames) and beats the
+  old silence, but a tolerant reading would dispatch parseable EOF residue instead. Deliberate choice,
+  worth revisiting only if a real client trips on it.
