@@ -6,7 +6,9 @@ Finding callers is platform-level: resolve the PSI element at a position, then w
 `ReferencesSearch.search(element)` — it is language-agnostic and returns the references for
 Java, Kotlin, Python, Go, JavaScript, and any other language whose PSI the IDE frontend owns.
 The enclosing-declaration lookup uses `PsiNameIdentifierOwner`, which every language's named
-declarations implement.
+declarations implement. The whole recipe runs inside `smartReadAction { }` — reference
+search is index-backed, and dumb mode can re-enter at any moment after the automatic
+smart-mode wait, so a plain read action risks `IndexNotReadyException`.
 
 ```kotlin
 import com.intellij.psi.search.searches.ReferencesSearch
@@ -19,17 +21,17 @@ val column = 15   // TODO: 1-based column number
 val maxResults = 20
 
 
-val result = readAction {
+val result = smartReadAction {
     val virtualFile = findFile(filePath)
-        ?: return@readAction "File not found: $filePath"
+        ?: return@smartReadAction "File not found: $filePath"
     val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
-        ?: return@readAction "Cannot parse file: $filePath"
+        ?: return@smartReadAction "Cannot parse file: $filePath"
     val document = FileDocumentManager.getInstance().getDocument(virtualFile)
-        ?: return@readAction "Cannot get document for: $filePath"
+        ?: return@smartReadAction "Cannot get document for: $filePath"
 
     val offset = document.getLineStartOffset(line - 1) + (column - 1)
     val element = psiFile.findElementAt(offset)
-        ?: return@readAction "No element at position ($line:$column)"
+        ?: return@smartReadAction "No element at position ($line:$column)"
 
     // Position on a *usage*: resolve the reference to its declaration.
     // Position on the *declaration* itself: take the enclosing named declaration.
@@ -38,7 +40,7 @@ val result = readAction {
         .firstOrNull()
         ?.resolve()
         ?: PsiTreeUtil.getParentOfType(element, PsiNameIdentifierOwner::class.java, false)
-        ?: return@readAction "No declaration or reference at position ($line:$column)"
+        ?: return@smartReadAction "No declaration or reference at position ($line:$column)"
 
     val targetName = (target as? PsiNamedElement)?.name ?: target.text.take(40)
     val refs = ReferencesSearch.search(target, projectScope()).findAll()
@@ -99,24 +101,24 @@ val column = 15   // TODO: 1-based column number
 val maxResults = 20
 
 
-val result = readAction {
+val result = smartReadAction {
     val virtualFile = findFile(filePath)
-        ?: return@readAction "File not found: $filePath"
+        ?: return@smartReadAction "File not found: $filePath"
     val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
-        ?: return@readAction "Cannot parse file: $filePath"
+        ?: return@smartReadAction "Cannot parse file: $filePath"
     val document = FileDocumentManager.getInstance().getDocument(virtualFile)
-        ?: return@readAction "Cannot get document for: $filePath"
+        ?: return@smartReadAction "Cannot get document for: $filePath"
 
     val offset = document.getLineStartOffset(line - 1) + (column - 1)
     val element = psiFile.findElementAt(offset)
-        ?: return@readAction "No element at position ($line:$column)"
+        ?: return@smartReadAction "No element at position ($line:$column)"
 
     val reference = generateSequence(element) { it.parent }
         .mapNotNull { it.reference }
         .firstOrNull()
     val method = (reference?.resolve() as? PsiMethod)
         ?: PsiTreeUtil.getParentOfType(element, PsiMethod::class.java, false)
-        ?: return@readAction "No method found at position ($line:$column)"
+        ?: return@smartReadAction "No method found at position ($line:$column)"
 
     val refs = MethodReferencesSearch.search(method, projectScope(), true).findAll()
     if (refs.isEmpty()) {

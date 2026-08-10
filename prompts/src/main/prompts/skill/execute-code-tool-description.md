@@ -46,7 +46,7 @@ literal anchors keep failing): the IDE's tolerance-matching patch engine — fet
 | **One literal-text edit, single file** | `val vf = findProjectFile(p) ?: error("not found: $p"); writeAction { VfsUtil.saveText(vf, String(vf.contentsToByteArray(), vf.charset).replace(OLD, NEW)) }; println("saved: $p")` |
 | **Find files by extension** | `readAction { FilenameIndex.getAllFilesByExt(project, "java", projectScope()) }` — not `Bash find … -name "*.java"` |
 | **Find files by exact name** | `readAction { FilenameIndex.getVirtualFilesByName("UserService.java", projectScope()) }` |
-| **Find all references to a symbol** | `readAction { ReferencesSearch.search(psiElement, projectScope()).findAll() }` — type-aware; Grep over source text is a fallback |
+| **Find all references to a symbol** | `smartReadAction { ReferencesSearch.search(psiElement, projectScope()).findAll() }` — type-aware; index-backed, so smart read (a plain read action risks `IndexNotReadyException`); Grep over source text is a fallback |
 | **Read file content (any size)** | `String((findProjectFile(p) ?: error("not found: $p")).contentsToByteArray(), charset)` — accepts relative or absolute paths, always re-reads from disk when called at the script top level; the next semantic query sees what you read |
 | **Grep content inside project files** | `readAction { FilenameIndex.getAllFilesByExt(project, ext, scope).flatMap { vf -> Regex(pat).findAll(String(vf.contentsToByteArray(), vf.charset)) … } }` in ONE call |
 | **Run Maven / Gradle tests** | IDE runner — see `mcp-steroid://skill/execute-code-maven` and `mcp-steroid://skill/execute-code-gradle`; Bash is only for shell-level final verification or IDE-runner fallback |
@@ -156,7 +156,7 @@ The wrap is required on EVERY new script — the IDE forgets the previous script
 |---|---|
 | Read any PSI element / walk a PSI tree / navigate references | `readAction { }` |
 | Use `FilenameIndex.*` (`getAllFilesByExt`, `getVirtualFilesByName`, `processAllFileNames`) | `readAction { }` |
-| Use `PsiSearchHelper.*`, `ReferencesSearch.*`, `ClassInheritorsSearch.*` | `readAction { }` |
+| Use `PsiSearchHelper.*`, `ReferencesSearch.*`, `ClassInheritorsSearch.*` | `smartReadAction { }` — index-backed searches; a plain read action can throw `IndexNotReadyException` when dumb mode re-enters |
 | Walk a VFS tree — `vf.children`, `vf.parent`, `vf.findChild(name)`, recursive `walk { }` | `readAction { }` |
 | Resolve `PsiManager.getInstance(project).findFile(vf)` / `findDirectory(vf)` and read `psiFile.text` / `firstChild` / `name` | `readAction { }` |
 | Get a `Document` from a `VirtualFile` via `FileDocumentManager.getInstance().getDocument(vf)` and read its text | `readAction { }` |

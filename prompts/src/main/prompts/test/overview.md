@@ -478,13 +478,14 @@ CRITICAL before writing controllers that throw custom exceptions — if no globa
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.AnnotatedElementsSearch
 val scope = GlobalSearchScope.projectScope(project)
-val adviceAnnotation = readAction {
-    JavaPsiFacade.getInstance(project).findClass("org.springframework.web.bind.annotation.ControllerAdvice", allScope())
+// Annotation lookup + search are index-backed — one smartReadAction owns the whole query
+val adviceClasses = smartReadAction {
+    val adviceAnnotation = JavaPsiFacade.getInstance(project).findClass("org.springframework.web.bind.annotation.ControllerAdvice", allScope())
         ?: JavaPsiFacade.getInstance(project).findClass("org.springframework.web.bind.annotation.RestControllerAdvice", allScope())
+    if (adviceAnnotation != null) {
+        AnnotatedElementsSearch.searchPsiClasses(adviceAnnotation, scope).findAll().toList()
+    } else emptyList()
 }
-val adviceClasses = if (adviceAnnotation != null) {
-    AnnotatedElementsSearch.searchPsiClasses(adviceAnnotation, scope).findAll().toList()
-} else emptyList()
 println("@ControllerAdvice classes: " + adviceClasses.map { it.qualifiedName })
 // Find which exceptions each @ExceptionHandler covers:
 adviceClasses.forEach { cls ->
