@@ -150,8 +150,8 @@ object CodeWrapperForCompilation {
             out.emit("  }")
             out.emit("  suspend fun $scriptContextFqn.${methodName}_code() {")
             out.emit("    //the rest of submitted code")
-            otherLines.forEachIndexed { i, line ->
-                out.emit("    $line")
+            indentOutsideRawStrings(otherLines).forEachIndexed { i, line ->
+                out.emit(line)
                 mapping[out.line] = extracted.otherLineNumbers[i]
             }
             out.emit("  }")
@@ -162,6 +162,38 @@ object CodeWrapperForCompilation {
         val lineMapping = LineMapping(mapping)
 
         return WrapResult(classFqn = clazzName, methodName = methodName, code = wrappedCode, lineMapping = lineMapping)
+    }
+
+
+    /**
+     * Indent body lines for readability of the generated file — but never a line that starts INSIDE a
+     * multi-line raw string, because there the indentation is not cosmetic, it is string CONTENT.
+     *
+     * Indenting unconditionally silently rewrote every `"""…"""` an agent submitted: continuation lines
+     * gained four leading spaces. Two consequences, both invisible at the call site. An anchor built from
+     * real file text stopped matching that file, so the multi-site edit recipe reported
+     * `anchor occurs 0 times` for text that was demonstrably there and threw away the whole batch. And a
+     * multi-line string written to a new file landed on disk misindented, which the project's own
+     * formatter then rewrote on the next build.
+     *
+     * Line count is preserved exactly — one input line stays one output line — so [LineMapping] is
+     * unaffected either way.
+     */
+    fun indentOutsideRawStrings(lines: List<String>): List<String> {
+        var insideRawString = false
+        return lines.map { line ->
+            val startsInsideRawString = insideRawString
+            var idx = 0
+            while (idx <= line.length - 3) {
+                if (line.startsWith("\"\"\"", idx)) {
+                    insideRawString = !insideRawString
+                    idx += 3
+                } else {
+                    idx++
+                }
+            }
+            if (startsInsideRawString) line else "    $line"
+        }
     }
 
     /**

@@ -43,6 +43,39 @@ class CodeWrapperForCompilationTest {
     }
 
     @Test
+    fun `a multi-line raw string keeps its exact content`() {
+        // The wrapper used to indent every body line by four spaces for cosmetics, which rewrote the
+        // CONTENT of any multi-line raw string: continuation lines gained four leading spaces. An agent
+        // that built an anchor out of real file text then searched for text that no longer existed, and
+        // `content.split(anchor)` found nothing. In the arena that discarded whole 36 KB edit batches on
+        // a `check(occurrences == 1)` whose anchor was, in the submitted code, perfectly correct.
+        val tripleQuote = "\"\"\""
+        val code = listOf(
+            "val anchor = $tripleQuote",
+            "    @Column(name = \"released_at\")",
+            "    private Instant releasedAt;",
+            tripleQuote,
+            "println(anchor.length)",
+        ).joinToString("\n")
+
+        val wrapped = CodeWrapperForCompilation.wrap(className = "Test", code = code).code
+        val lines = wrapped.lines()
+
+        assertTrue(
+            "the raw string's continuation line must stay at its original indentation:\n$wrapped",
+            lines.any { it == "    private Instant releasedAt;" },
+        )
+        assertTrue(
+            "no line inside the raw string may gain indentation:\n$wrapped",
+            lines.none { it == "        private Instant releasedAt;" },
+        )
+        assertTrue(
+            "code outside the raw string is still indented for readability:\n$wrapped",
+            lines.any { it == "    println(anchor.length)" },
+        )
+    }
+
+    @Test
     fun `line mapping maps import lines back to original positions`() {
         val code = """
             import foo.Bar
