@@ -345,7 +345,8 @@ class SchemaCliBindingTest {
 
     @Test
     fun `a CLI-only minimum is enforced at parse time`() {
-        // execute_code's timeout declares cliMinimum(1.0) and no schema minimum.
+        // execute_code's timeout declares cliMinimum(1.0) alongside the schema minimum=1 (#469);
+        // both agree, and the CLI-only bound alone must already reject at parse time.
         val timeout = toolParam(executeCode(), "timeout")
 
         assertFailsWith<UsageError> { BindingCommand(listOf(timeout)).parse(listOf("--timeout=0")) }

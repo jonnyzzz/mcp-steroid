@@ -10,8 +10,10 @@ import com.jonnyzzz.mcpSteroid.mcp.cliOptional
 import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.enumString
+import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.mcp.get
 import com.jonnyzzz.mcpSteroid.mcp.int
+import com.jonnyzzz.mcpSteroid.mcp.minimum
 import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
 import com.jonnyzzz.mcpSteroid.mcp.string
@@ -137,9 +139,10 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
 
     private val defaultTimeoutSeconds = 600
     val timeout = InputSchemaElement.param("timeout")
-        .description("Timeout in seconds for your script BODY (default: $defaultTimeoutSeconds, configurable via mcp.steroid.execution.timeout registry key). The smart_non_modal pre-flight steps have their own internal bounds not governed by this value: the commit and smart-mode waits (60s each) and the dialog-less modal-progress wait (120s, mcp.steroid.execution.dialogless.modal.wait.ms — emits progress notifications while the IDE settles).")
+        .description("Timeout in seconds for your script BODY (default: $defaultTimeoutSeconds; minimum 1). The smart_non_modal pre-flight steps have their own internal bounds not governed by this value: the commit and smart-mode waits (60s each) and the dialog-less modal-progress wait (120s, mcp.steroid.execution.dialogless.modal.wait.ms — emits progress notifications while the IDE settles).")
         .cliSynopsis("seconds to allow the script body to run (default 600)")
         .int()
+        .minimum(1)
         .withDefaultValue(defaultTimeoutSeconds)
         .cliMinimum(1.0)
         .registerToSchema()
@@ -178,6 +181,13 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         val reason = context[reason]
         val timeout = context[timeout]
         val modal = context[modal]
+
+        if (timeout <= 0) {
+            return ToolCallResult.errorResult(
+                "timeout=$timeout is out of range (must be a positive number of seconds; " +
+                    "omit it for the default $defaultTimeoutSeconds)"
+            )
+        }
 
         val execCodeParams = ExecCodeParams(
             taskId = taskId,
