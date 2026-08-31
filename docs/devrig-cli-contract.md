@@ -97,8 +97,9 @@ forwarded unchanged through `open_project`; `execute_feedback` forwards an optio
 CLI session can rate the exact execution it observed.
 
 For a schema-declared file source, `--<name>-file=<path>` reads that parameter from a file and
-`--<name>-file=-` reads stdin. File and stdin input must be non-empty, strict UTF-8, and no larger than
-10 MiB. Human mode announces a stdin read on stderr so a waiting process is understandable; JSON stdout
+`--<name>-file=-` reads stdin. File and stdin input must be non-blank (empty, whitespace-only, and
+BOM-only content is refused; a leading BOM is stripped), strict UTF-8, and no larger than 10 MiB. A blank
+inline value or a blank file path on a schema parameter fails at parse time the same way (#460). Human mode announces a stdin read on stderr so a waiting process is understandable; JSON stdout
 remains clean.
 
 ## Human and machine output

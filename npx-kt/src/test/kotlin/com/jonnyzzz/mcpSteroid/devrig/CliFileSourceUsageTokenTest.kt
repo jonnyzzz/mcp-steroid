@@ -17,7 +17,8 @@ import kotlin.test.assertTrue
  * [com.jonnyzzz.mcpSteroid.mcp.CliFileSource] — `execute_code`'s `code`. It is the case where the two
  * branches of the renderer test requiredness differently (`required && !cliOptional` without a file source,
  * plain `required` with one), and reading the renderer alone cannot tell you which is right. The parser
- * settles it: `SchemaCliBinding.parsed()` raises `MissingCliValue` on `required` alone, because a required
+ * settles it: the parse-time check `SchemaCliBinding` registers raises `MissingCliValue` when `required` and
+ * neither spelling supplied a non-blank token (#460), because a required
  * parameter offering a file source is `cliOptional` only so Clikt stops demanding the direct flag — not
  * because the value became optional.
  *
