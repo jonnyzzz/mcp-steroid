@@ -42,7 +42,7 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
 
         All keys are released at the end of the sequence.
 
-        The input is delivered to the window identified by window_id (from steroid_list_windows) and the focus is forced to that window.
+        The input is delivered to the window identified by window_id (a steroid_list_windows entry's windowId value) and the focus is forced to that window.
         Click coordinates with the screenshot target (e.g. @120,200) are interpreted relative to the window as reported by steroid_list_windows / steroid_take_screenshot.
     """.trimIndent()
     override val cliSynopsis = "send keyboard/mouse input to the IDE"

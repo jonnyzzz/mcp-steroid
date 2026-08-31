@@ -96,10 +96,12 @@ name, informational only), and `path`. To map a file/dir path to a project, pick
 
 ### `steroid_list_windows`
 List open IDE windows (and background tasks) and their associated projects. Some windows may not be tied to a project and a project can have multiple windows.
-Use this in multi-window setups to pick the correct `window_id` for screenshot/input tools. Each
-window and task entry references its project by `project_name` — the single routing key. Look up that
-project's human-readable `name` and `path` via `steroid_list_projects` by that key (they are not
-duplicated on window/task entries).
+Use this in multi-window setups to pick the correct window: each window entry carries a `windowId` —
+pass its value as the `window_id` input of the screenshot/input tools. Entries reference their
+project by `project_name` — the single routing key — and windows also carry the project's
+`project_path`; only the human-readable display `name` lives in `steroid_list_projects`. Any null
+field is omitted from the JSON entirely (never an explicit null): a window not tied to a project
+has no `project_name`/`project_path` keys, and each of the two can also be absent independently.
 
 ### `steroid_take_screenshot`
 Capture a screenshot of the IDE frame and return image content.
@@ -110,14 +112,14 @@ Capture a screenshot of the IDE frame and return image content.
 - `project_name` (required): the `project_name` from `steroid_list_projects` (a unique routing key, NOT the raw folder name)
 - `task_id` (required): Task identifier for logging
 - `reason` (required): Why the screenshot is needed
-- `window_id` (optional): Window id from `steroid_list_windows` to target a specific window
+- `window_id` (optional): the `windowId` value from a `steroid_list_windows` entry, to target a specific window
 
 **Artifacts (saved under the execution folder):**
 - `screenshot.png`
 - `screenshot-tree.md`
 - `screenshot-meta.json`
 
-The response includes `window_id` (also stored in `screenshot-meta.json`); pass it to `steroid_input` to target the same window. `window_id` is also returned by `steroid_list_windows`.
+The response includes `window_id` (also stored in `screenshot-meta.json`); pass it to `steroid_input` to target the same window. The same id appears as `windowId` on `steroid_list_windows` entries.
 
 ### `steroid_input`
 Send input events (keyboard + mouse) using a sequence string.
@@ -128,7 +130,7 @@ Send input events (keyboard + mouse) using a sequence string.
 - `project_name` (required): the `project_name` from `steroid_list_projects` (a unique routing key, NOT the raw folder name)
 - `task_id` (required): Task identifier for logging
 - `reason` (required): Why the input is needed
-- `window_id` (required): Window id from `steroid_list_windows` (also returned by `steroid_take_screenshot`)
+- `window_id` (required): the `windowId` value from a `steroid_list_windows` entry (the screenshot response echoes it as `window_id`)
 - `sequence` (required): Comma-separated or newline-separated input sequence (commas inside values are allowed unless they look like `, <step>:`; commas are optional when using newlines)
 
 **Sequence examples:**

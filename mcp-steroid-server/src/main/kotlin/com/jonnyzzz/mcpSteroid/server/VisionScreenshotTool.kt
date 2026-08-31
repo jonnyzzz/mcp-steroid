@@ -19,7 +19,7 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         HEAVY ENDPOINT: This is intended for debugging and tricky configuration only.
         Prefer steroid_execute_code for regular automation.
 
-        Use steroid_list_windows when multiple IDE windows are open and pass window_id to target a specific window.
+        Use steroid_list_windows when multiple IDE windows are open and pass an entry's windowId value as window_id to target a specific window.
 
         The screenshot and component tree are saved under the execution folder:
         - screenshot.png

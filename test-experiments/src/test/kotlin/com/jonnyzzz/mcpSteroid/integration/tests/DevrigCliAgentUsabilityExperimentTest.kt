@@ -1208,8 +1208,10 @@ class DevrigCliAgentUsabilityExperimentTest {
             "list_windows returned no window for project_name '$projectName': $this"
         }
         val selectedWindow = requireNotNull(window)
-        val id = selectedWindow["window_id"] ?: selectedWindow["windowId"]
-        assertTrue(id != null) { "list_windows returned a project window without a window id: $selectedWindow" }
+        // #456: the output key is camelCase windowId — pinned by ListWindowsToolSpecSchemaTest.
+        // No window_id fallback here: hedging both spellings would imply the contract is ambiguous.
+        val id = selectedWindow["windowId"]
+        assertTrue(id != null) { "list_windows returned a project window without a windowId: $selectedWindow" }
         return requireNotNull(id).jsonPrimitive.content
     }
 

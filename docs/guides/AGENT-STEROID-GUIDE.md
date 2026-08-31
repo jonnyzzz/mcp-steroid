@@ -36,7 +36,7 @@ IDE owns it. Backend discovery lives in `steroid_open_project` (see
 
 ### `steroid_list_windows`
 List open IDE windows and their associated projects. Some windows may not be tied to a project and a project can have multiple windows.
-Use this in multi-window setups to pick the right `project_name` and `window_id` for screenshot/input tools.
+Use this in multi-window setups to pick the right window: each entry's `project_name` is the routing key, and its `windowId` value is what you pass as the `window_id` input of the screenshot/input tools.
 
 Like `steroid_list_projects`, the response has **no top-level
 `ide`/`plugin`/`pid` header**. Every `windows[]` and `backgroundTasks[]`
@@ -45,7 +45,7 @@ entry names its owning backend via `backend_name`.
 **Response Fields (per window):**
 | Field | Description |
 |-------|-------------|
-| `project_name` | Project routing key — the same `project_name` as `steroid_list_projects` (null if not a project window) |
+| `project_name` | Project routing key — the same `project_name` as `steroid_list_projects` (omitted, not null, if not a project window) |
 | `project_path` | Project base path |
 | `windowId` | Unique window identifier for screenshot/input targeting |
 | `modalDialogShowing` | **True if any modal dialog is showing in IDE** |
@@ -78,14 +78,14 @@ Parameters:
 - `project_name` (required): Target project from `steroid_list_projects`
 - `task_id` (required): Task identifier for logging
 - `reason` (required): Why the screenshot is needed
-- `window_id` (optional): Window id from `steroid_list_windows` to target a specific window
+- `window_id` (optional): the `windowId` value from a `steroid_list_windows` entry, to target a specific window
 
 Artifacts saved under the execution folder:
 - `screenshot.png`
 - `screenshot-tree.md`
 - `screenshot-meta.json`
 
-The response includes `window_id` (also from `steroid_list_windows`); pass it to `steroid_input` to target the same window.
+The response includes `window_id` (the same id `steroid_list_windows` reports as `windowId`); pass it to `steroid_input` to target the same window.
 
 ### `steroid_input`
 Send input events (keyboard + mouse) using a sequence string.
@@ -96,7 +96,7 @@ Parameters:
 - `project_name` (required): Target project from `steroid_list_projects`
 - `task_id` (required): Task identifier for logging
 - `reason` (required): Why the input is needed
-- `window_id` (required): Window id from `steroid_list_windows` (also returned by `steroid_take_screenshot`)
+- `window_id` (required): the `windowId` value from a `steroid_list_windows` entry (the screenshot response echoes it as `window_id`)
 - `sequence` (required): Comma-separated or newline-separated input sequence (commas inside values are allowed unless they look like `, <step>:`; commas are optional when using newlines)
 
 Sequence examples:

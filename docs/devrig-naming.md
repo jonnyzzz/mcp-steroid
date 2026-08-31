@@ -490,11 +490,13 @@ snapshot is malformed; see the routing-service invariant below.
 
 `ListedProject.project_name` returned by `steroid_list_projects` is always the exposed routing key;
 `ListedProject.name` remains the raw IntelliJ project name for display only. Implementation:
-`DevrigListProjectsToolHandler` in `StubMcpSteroidTools.kt` (line numbers may shift with refactors).
+`DevrigListProjectsToolHandler` (its own file under `npx-kt/.../devrig/server/`; line numbers may
+shift with refactors).
 
-For `steroid_list_windows`, `DevrigProjectRoutingService.rewriteWindow`
-rewrites **only** `WindowInfo.projectName` to the exposed project name
-(or leaves it `null` when the window has no project context).
+For `steroid_list_windows`, devrig rewrites **only** the project name to
+the exposed routing key (or leaves it `null` when the window has no
+project context, or on a transient route-lookup miss):
+`DevrigListWindowsToolHandler.exposedProjectName()` + `WindowInfo.listed()`.
 
 `WindowInfo.windowId` is left **unchanged**. A `window_id` is never a
 standalone argument — it always travels together with a `project_name`.
@@ -502,6 +504,23 @@ Follow-up `steroid_input` / `steroid_take_screenshot` calls resolve the
 owning IDE via `project_name` and forward the original `window_id`
 verbatim (it is unique within that IDE). There is no window-id rewriting
 and no reverse map.
+
+**Spelling decision (#456):** on `steroid_list_windows` OUTPUT entries the
+key is camelCase `windowId` — deliberately. The #381 snake_case rename
+covers only the routing keys (`project_name`, `project_path`,
+`backend_name`); every other entry field (`isActive`,
+`modalDialogShowing`, `windowId`, …) is camelCase, so `windowId` is the
+consistent spelling. The #456-suggested alias is not free either:
+`@SerialName("window_id")` changes the EMITTED key (breaking for every
+reader of `windowId`, exactly like #381 was for the project keys) and
+`@JsonNames` only widens decoding — kotlinx has no dual-emit. A
+deliberate #381-style breaking rename remains open; until then the
+translation (output `windowId` → input `window_id` of
+`steroid_input`/`steroid_take_screenshot`) must be stated explicitly
+wherever the tools are described, and docs must never claim
+`list_windows` returns `window_id`. Pinned by
+`ListWindowsToolSpecSchemaTest` (serializer + tool description) and
+`ListWindowsMarkdownArticleContractTest` (skill article).
 
 ## Lifecycle subcommand JSON outputs
 
