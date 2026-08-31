@@ -48,7 +48,9 @@ the non-visual readiness path. Window flags also do not prove Maven/Gradle impor
 
 | Field | Description |
 |-------|-------------|
-| `project_name` | The single routing key for the window's project (null if not a project window). Look up that project's human-readable `name` and `path` via `steroid_list_projects` by this key. |
+| `project_name` | The single routing key for the window's project (omitted, not null, if not a project window). Only the human-readable display `name` needs `steroid_list_projects`. |
+| `project_path` | The project's base path, right on the entry. |
+| `windowId` | Window id — pass its value as the `window_id` input of `steroid_take_screenshot` / `steroid_input`. |
 | `modalDialogShowing` | True if any modal dialog is showing in IDE |
 | `indexingInProgress` | True if project is indexing (dumb mode) |
 | `projectInitialized` | True if the IDE project is initialized; does not prove Maven/Gradle model import |

@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  */
 class ListWindowsToolSpec(val handler: () -> ListWindowsToolHandler) : McpToolBase() {
     override val name = "steroid_list_windows"
-    override val description = "List open IDE windows and their background tasks, with per-window readiness (modal/indexing/initialized) and a `window_id` for screenshot/input targeting in multi-window setups. Each window and background-task entry references its project by `project_name` — the single routing key for the project-scoped tools; look up that project's human-readable `name` and `path` via steroid_list_projects by the key (they are not duplicated here). `project_name` is null for windows not tied to a project. Resolve an entry's `backend_name` to the owning IDE's identity (`intellij` = `{name, version, build}`) via the `backends` lookup in the same response."
+    override val description = "List open IDE windows and their background tasks, with per-window readiness (modal/indexing/initialized) and a `windowId` for screenshot/input targeting in multi-window setups — pass its value as the `window_id` input of the screenshot/input tools. Each window and background-task entry references its project by `project_name` — the single routing key for the project-scoped tools — and windows also carry the project's `project_path`; the project's human-readable display `name` lives in steroid_list_projects (not duplicated here). Any field whose value is unknown is omitted from the JSON entirely, never serialized as null — e.g. a standalone dialog window carries no `project_name`/`project_path` keys at all. Resolve an entry's `backend_name` to the owning IDE's identity (`intellij` = `{name, version, build}`) via the `backends` lookup in the same response."
     override val cliSynopsis = "list IDE windows, readiness, and background tasks"
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
@@ -60,11 +60,17 @@ data class ListedWindow(
     /**
      * The window's project routing KEY — the opaque, within-IDE-unique id you pass to the project-scoped
      * tools (`steroid_execute_code`, `steroid_take_screenshot`, `steroid_input`, …). The SAME `project_name`
-     * `steroid_list_projects` reports; look up the project's `name`/`path` there by this key. Null for
-     * windows not tied to a project. Treat it as opaque.
+     * `steroid_list_projects` reports; look up the project's display `name` there by this key (the
+     * `path` is already on this entry as `project_path`). Null in Kotlin for windows not tied to a
+     * project — on the wire the key is then ABSENT, never an explicit `null` (see below). Treat it
+     * as opaque.
      *
      * Serialized as snake_case `project_name`/`project_path` (#381) — one spelling of the routing key
      * across `steroid_list_projects` and `steroid_list_windows`, matching the sibling `backend_name`.
+     * Like every nullable field on this entry, a null is omitted from the JSON entirely (McpJson
+     * `explicitNulls = false`, #456) — consumers must treat an absent key and an explicit null the
+     * same way, and must not assume the name/path pair is always present or absent together (each
+     * side can be null independently: nullable `basePath` in-IDE, nullable exposed name via devrig).
      */
     @SerialName("project_name") val projectName: String?,
     @SerialName("project_path") val projectPath: String?,

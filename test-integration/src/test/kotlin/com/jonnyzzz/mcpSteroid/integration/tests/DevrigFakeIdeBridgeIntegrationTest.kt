@@ -158,8 +158,8 @@ class DevrigFakeIdeBridgeIntegrationTest {
         val window = McpJson.parseToJsonElement(windowsText).jsonObject["windows"]?.jsonArray?.single()?.jsonObject
             ?: error("list_windows result missing windows: $windowsText")
         // devrig rewrites only the window's project_name to the routed (hash-suffixed) name; windowId is
-        // forwarded as-is (DevrigProjectRoutingService.rewriteWindow — "window_id is unique within the IDE
-        // resolved by project_name; forward it as-is"). Snake_case key since #381.
+        // forwarded as-is (DevrigListWindowsToolHandler.exposedProjectName() + WindowInfo.listed() — a
+        // window id is unique within the IDE resolved by project_name). Snake_case project key since #381.
         assertEquals(projectName, window["project_name"]?.jsonPrimitive?.content)
         assertEquals("fake-window", window["windowId"]?.jsonPrimitive?.content, "windowId must be forwarded as-is: $window")
     }
