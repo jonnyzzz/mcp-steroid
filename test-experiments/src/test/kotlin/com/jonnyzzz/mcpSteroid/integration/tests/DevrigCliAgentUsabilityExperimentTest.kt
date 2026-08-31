@@ -1210,9 +1210,12 @@ class DevrigCliAgentUsabilityExperimentTest {
         val selectedWindow = requireNotNull(window)
         // #456: the output key is camelCase windowId — pinned by ListWindowsToolSpecSchemaTest.
         // No window_id fallback here: hedging both spellings would imply the contract is ambiguous.
-        val id = selectedWindow["windowId"]
-        assertTrue(id != null) { "list_windows returned a project window without a windowId: $selectedWindow" }
-        return requireNotNull(id).jsonPrimitive.content
+        // jsonPrimitive rejects JsonNull, so `"windowId": null` fails here instead of flowing on as
+        // the literal string "null".
+        val id = requireNotNull(selectedWindow["windowId"] as? JsonPrimitive) {
+            "list_windows returned a project window without a string windowId: $selectedWindow"
+        }
+        return id.content
     }
 
     private fun JsonObject.executionId(): String {

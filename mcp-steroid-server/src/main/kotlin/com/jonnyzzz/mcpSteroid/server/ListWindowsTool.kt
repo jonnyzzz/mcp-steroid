@@ -60,8 +60,10 @@ data class ListedWindow(
     /**
      * The window's project routing KEY — the opaque, within-IDE-unique id you pass to the project-scoped
      * tools (`steroid_execute_code`, `steroid_take_screenshot`, `steroid_input`, …). The SAME `project_name`
-     * `steroid_list_projects` reports; look up the project's `name`/`path` there by this key. Null for
-     * windows not tied to a project. Treat it as opaque.
+     * `steroid_list_projects` reports; look up the project's display `name` there by this key (the
+     * `path` is already on this entry as `project_path`). Null in Kotlin for windows not tied to a
+     * project — on the wire the key is then ABSENT, never an explicit `null` (see below). Treat it
+     * as opaque.
      *
      * Serialized as snake_case `project_name`/`project_path` (#381) — one spelling of the routing key
      * across `steroid_list_projects` and `steroid_list_windows`, matching the sibling `backend_name`.

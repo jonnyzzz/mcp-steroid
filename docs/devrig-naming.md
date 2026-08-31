@@ -507,14 +507,21 @@ and no reverse map.
 
 **Spelling decision (#456):** on `steroid_list_windows` OUTPUT entries the
 key is camelCase `windowId` — deliberately. The #381 snake_case rename
-covers only the routing keys (`project_name`, `project_path`,
-`backend_name`); every other entry field (`isActive`,
+covers only that set — the `project_name` routing key plus the two
+fields renamed alongside it (`project_path`, `backend_name`); every other entry field (`isActive`,
 `modalDialogShowing`, `windowId`, …) is camelCase, so `windowId` is the
 consistent spelling. The #456-suggested alias is not free either:
 `@SerialName("window_id")` changes the EMITTED key (breaking for every
 reader of `windowId`, exactly like #381 was for the project keys) and
-`@JsonNames` only widens decoding — kotlinx has no dual-emit. A
-deliberate #381-style breaking rename remains open; until then the
+`@JsonNames` only widens decoding — kotlinx has no dual-emit. The
+third option is additive and sits on the OTHER side: widen the INPUT so
+`steroid_input` / `steroid_take_screenshot` accept `windowId` as well as
+`window_id`. That emits no new key, breaks no reader, and removes the
+translation instead of documenting it — but `InputSchemaElement` has no
+parameter-alias mechanism today (`parseParameter` resolves one name, and
+`asCliParams()` derives one flag from it), so it is a real feature, not a
+doc fix. Logged in `TODO.md`; a deliberate #381-style breaking rename of
+the output key remains open too. Until either lands, the
 translation (output `windowId` → input `window_id` of
 `steroid_input`/`steroid_take_screenshot`) must be stated explicitly
 wherever the tools are described, and docs must never claim

@@ -54,6 +54,7 @@ object CommonToolParams {
         InputSchemaElement.param("window_id")
             .description("Window id identifying the target IDE window — the `windowId` value from a steroid_list_windows entry.")
             .cliSynopsis("window id from `devrig list_windows` to target")
+            .cliMissingHint("missing --window_id. Use an entry's `windowId` value from `devrig list_windows` (camelCase on output, snake_case as this flag).")
             .string()
 
     /** Required `reason` string with the audit-log convention: `Reason for $action. Required for audit logs.` */

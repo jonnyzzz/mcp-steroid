@@ -119,7 +119,7 @@ Capture a screenshot of the IDE frame and return image content.
 - `screenshot-tree.md`
 - `screenshot-meta.json`
 
-The response includes `window_id` (also stored in `screenshot-meta.json`); pass it to `steroid_input` to target the same window. The same id appears as `windowId` on `steroid_list_windows` entries.
+The response includes a `window_id:` line; pass its value to `steroid_input` to target the same window. The same id appears as `windowId` on `steroid_list_windows` entries and as `windowId` inside `screenshot-meta.json` — that file's keys are camelCase throughout (`windowId`, `projectName`, `projectPath`), unlike the snake_case routing keys of the list tools.
 
 ### `steroid_input`
 Send input events (keyboard + mouse) using a sequence string.

@@ -46,7 +46,7 @@ entry names its owning backend via `backend_name`.
 | Field | Description |
 |-------|-------------|
 | `project_name` | Project routing key — the same `project_name` as `steroid_list_projects` (omitted, not null, if not a project window) |
-| `project_path` | Project base path |
+| `project_path` | Project base path — on the entry itself, no `steroid_list_projects` call needed (omitted, not null, when unknown) |
 | `windowId` | Unique window identifier for screenshot/input targeting |
 | `modalDialogShowing` | **True if any modal dialog is showing in IDE** |
 | `indexingInProgress` | **True if project is indexing (dumb mode)** |
