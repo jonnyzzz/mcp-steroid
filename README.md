@@ -192,7 +192,7 @@ better recipes are. The full canonical statement lives in
 [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) and is mirrored at runtime
 as `mcp-steroid://skill/design-philosophy`.
 
-### 8 MCP Tools
+### MCP Tools
 
 | Tool | Description |
 |------|-------------|
@@ -205,17 +205,20 @@ as `mcp-steroid://skill/design-philosophy`.
 | **List Windows** (`steroid_list_windows`) | Enumerate IDE windows and components |
 | **Open Project** (`steroid_open_project`) | Open projects programmatically |
 
-### 58 MCP Resources
+### MCP Resources
 
 Comprehensive guides and examples covering:
 
-- **LSP Operations** (11) — Go to definition, find references, hover, completion
-- **IDE Power Operations** (22) — Refactorings, code generation, project analysis
-- **Debugger Integration** (7) — Breakpoints, thread control, debugging workflows
-- **Test Runner** (10) — Run tests, inspect results, navigate test trees
-- **VCS Operations** (3) — Git annotations, file history
-- **Project Workflows** (4) — Open projects with trust levels
-- **Skill Guides** (3) — IntelliJ API, debugger, and test runner guides
+- **LSP Operations** — Go to definition, find references, hover, completion
+- **IDE Power Operations** — Refactorings, code generation, project analysis
+- **Debugger Integration** — Breakpoints, thread control, debugging workflows
+- **Test Runner** — Run tests, inspect results, navigate test trees
+- **VCS Operations** — Git annotations, file history
+- **Project Workflows** — Open projects with trust levels
+- **Skill Guides** — IntelliJ API, debugger, and test runner guides
+
+The always-current index is served at runtime: fetch `mcp-steroid://prompt/skill`
+via `steroid_fetch_resource`.
 
 ---
 
