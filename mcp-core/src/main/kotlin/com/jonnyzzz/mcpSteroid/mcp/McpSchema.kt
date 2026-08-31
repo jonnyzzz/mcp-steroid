@@ -314,6 +314,10 @@ fun InputSchemaElement<Double?>.minimum(value: Double) = withExtra { put("minimu
 
 fun InputSchemaElement<Double?>.maximum(value: Double) = withExtra { put("maximum", value) }
 
+fun InputSchemaElement<Int?>.minimum(value: Int) = withExtra { put("minimum", value) }
+
+fun InputSchemaElement<Int?>.maximum(value: Int) = withExtra { put("maximum", value) }
+
 fun InputSchemaElement<Nothing>.stringArray() = InputSchemaElement(
     spec = spec.copy(
         type = "array",
