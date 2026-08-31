@@ -60,6 +60,52 @@ class McpServerCoreTest {
     }
 
     @Test
+    fun `test initialize echoes a supported older protocol version back`() = runBlocking {
+        val request = initializeRequest(protocolVersion = "2025-06-18")
+
+        val responseJson = server.handleMessage(request, session)
+        val response = McpJson.decodeFromString<JsonRpcResponse>(responseJson!!)
+        val result = McpJson.decodeFromJsonElement<InitializeResult>(response.result!!)
+
+        assertEquals("2025-06-18", result.protocolVersion,
+            "Server must echo the client's requested version when it is supported")
+    }
+
+    @Test
+    fun `test initialize falls back to latest for an unsupported protocol version`() = runBlocking {
+        val request = initializeRequest(protocolVersion = "1999-01-01")
+
+        val responseJson = server.handleMessage(request, session)
+        val response = McpJson.decodeFromString<JsonRpcResponse>(responseJson!!)
+        val result = McpJson.decodeFromJsonElement<InitializeResult>(response.result!!)
+
+        assertEquals(MCP_PROTOCOL_VERSION, result.protocolVersion,
+            "Server must reply with its own latest version when the client's is not supported")
+    }
+
+    @Test
+    fun `test initialize stores the negotiated protocol version on the session`() = runBlocking {
+        server.handleMessage(initializeRequest(protocolVersion = "2025-06-18"), session)
+
+        assertEquals("2025-06-18", session.negotiatedProtocolVersion,
+            "Session must carry the negotiated version so the transport can report it")
+    }
+
+    private fun initializeRequest(protocolVersion: String): String = buildJsonObject {
+        put("jsonrpc", "2.0")
+        put("id", 1)
+        put("method", "initialize")
+        putJsonObject("params") {
+            put("protocolVersion", protocolVersion)
+            putJsonObject("capabilities") {}
+            putJsonObject("clientInfo") {
+                put("name", "test-client")
+                put("version", "1.0.0")
+            }
+        }
+    }.toString()
+
+    @Test
     fun `test ping request returns empty object`() = runBlocking {
         val request = """{"jsonrpc":"2.0","id":1,"method":"ping"}"""
 

@@ -174,8 +174,10 @@ class McpStdioServerProtocolTest {
     // Helpers
     // =========================================================================
 
-    private fun init(id: String = "1") =
-        """{"jsonrpc":"2.0","id":"$id","method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}"""
+    private fun init(id: String = "1") = initWithVersion(id, MCP_PROTOCOL_VERSION)
+
+    private fun initWithVersion(id: String, protocolVersion: String) =
+        """{"jsonrpc":"2.0","id":"$id","method":"initialize","params":{"protocolVersion":"$protocolVersion","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}"""
 
     private fun req(id: String, method: String, params: String = "{}") =
         """{"jsonrpc":"2.0","id":"$id","method":"$method","params":$params}"""
@@ -212,6 +214,17 @@ class McpStdioServerProtocolTest {
         h.sendFramed(init())
         val result = h.runAndGetObjects()[0]["result"] as JsonObject
         assertEquals(MCP_PROTOCOL_VERSION, result["protocolVersion"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `initialize echoes a supported older protocol version over stdio`() = runTest {
+        // Regression for the Junie stdio client (issue #482): a client on an older
+        // supported revision must get that same revision back, not the server's latest,
+        // or it tears down the transport and no tools become available.
+        val h = StdioHarness()
+        h.sendFramed(initWithVersion("req-1", "2025-06-18"))
+        val result = h.runAndGetObjects()[0]["result"] as JsonObject
+        assertEquals("2025-06-18", result["protocolVersion"]?.jsonPrimitive?.content)
     }
 
     @Test
