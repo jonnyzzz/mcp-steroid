@@ -36,6 +36,9 @@ class CliFileSourceRuntimeTest {
     @TempDir
     lateinit var work: Path
 
+    /** EF BB BF — the UTF-8 encoding of U+FEFF. */
+    private val utf8Bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+
     /** Records the `code` the tool spec finally parsed, so a test can assert what the substitution produced. */
     private class RecordingExecuteCode : ExecuteCodeToolHandler {
         var seenCode: String? = null
@@ -147,9 +150,99 @@ class CliFileSourceRuntimeTest {
         assertEquals(CliExit.USAGE, run.exit, "stdout was:\n${run.stdout}")
         assertNull(seenCode, "the tool must not be called with an empty value read from an empty file")
         assertEquals(
-            "'code' was to be read from '$file', which is empty; put the value in the file or pass it directly",
+            "'code' was to be read from '$file', which is blank; put the value in the file or pass it directly",
             run.errorMessage(),
         )
+    }
+
+    @Test
+    fun `a whitespace-only file source fails as a usage error like the empty file`() {
+        // #460: a file holding only whitespace is the empty file in disguise — the blank payload the
+        // parse layer refuses inline (--code=) must not slip through the --code-file spelling.
+        val file = work.resolve("blank.kts")
+        Files.writeString(file, " \n\t\n")
+
+        val (run, seenCode) = runExecuteCode(file.toString())
+
+        assertEquals(CliExit.USAGE, run.exit, "stdout was:\n${run.stdout}")
+        assertNull(seenCode, "the tool must not be called with a blank value read from a whitespace-only file")
+        assertEquals(
+            "'code' was to be read from '$file', which is blank; put the value in the file or pass it directly",
+            run.errorMessage(),
+        )
+    }
+
+    @Test
+    fun `whitespace-only standard input fails as a usage error like empty stdin`() {
+        // #460: same rule through the stdin spelling — whitespace is not a script.
+        val (run, seenCode) = runExecuteCode("-", stdin = " \n\t\n".toByteArray())
+
+        assertEquals(CliExit.USAGE, run.exit, "stdout was:\n${run.stdout}")
+        assertNull(seenCode, "the tool must not be called with a blank value piped through stdin")
+        assertEquals(
+            "'code' was to be read from standard input ('-' given) but the piped input is blank; " +
+                "pipe the value or pass a file path instead",
+            run.errorMessage(),
+        )
+    }
+
+    @Test
+    fun `BOM-only standard input is blank, not content`() {
+        // #460 hardening: the same Windows encoding artifact through the stdin spelling.
+        val (run, seenCode) = runExecuteCode("-", stdin = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+
+        assertEquals(CliExit.USAGE, run.exit, "stdout was:\n${run.stdout}")
+        assertNull(seenCode, "BOM-only stdin must never ship as a script")
+        assertEquals(
+            "'code' was to be read from standard input ('-' given) but the piped input is blank; " +
+                "pipe the value or pass a file path instead",
+            run.errorMessage(),
+        )
+    }
+
+    @Test
+    fun `a double-BOM-only file is still blank`() {
+        // Files re-saved through two BOM-adding tools stack the marks; the strip is idempotent.
+        val file = work.resolve("double-bom.kts")
+        Files.write(file, utf8Bom + utf8Bom)
+
+        val (run, seenCode) = runExecuteCode(file.toString())
+
+        assertEquals(CliExit.USAGE, run.exit, "stdout was:\n${run.stdout}")
+        assertNull(seenCode, "a double-BOM-only file must never ship as a script")
+        assertEquals(
+            "'code' was to be read from '$file', which is blank; put the value in the file or pass it directly",
+            run.errorMessage(),
+        )
+    }
+
+    @Test
+    fun `a BOM-only file source is blank, not content`() {
+        // #460 hardening: U+FEFF is NOT whitespace, so isBlank alone misses it — a PowerShell
+        // redirect or Notepad save of an "empty" file writes exactly this. The shared decoder strips
+        // the BOM, so the payload registers as blank.
+        val file = work.resolve("bom-only.kts")
+        Files.write(file, utf8Bom)
+
+        val (run, seenCode) = runExecuteCode(file.toString())
+
+        assertEquals(CliExit.USAGE, run.exit, "stdout was:\n${run.stdout}")
+        assertNull(seenCode, "a BOM-only file must never ship as a script")
+        assertEquals(
+            "'code' was to be read from '$file', which is blank; put the value in the file or pass it directly",
+            run.errorMessage(),
+        )
+    }
+
+    @Test
+    fun `a BOM-prefixed script ships without the BOM`() {
+        val file = work.resolve("bom-code.kts")
+        Files.write(file, utf8Bom + "println(1)".toByteArray())
+
+        val (run, seenCode) = runExecuteCode(file.toString())
+
+        assertEquals(CliExit.OK, run.exit, "stdout was:\n${run.stdout}")
+        assertEquals("println(1)", seenCode, "the encoding artifact must not reach the compiler")
     }
 
     @Test

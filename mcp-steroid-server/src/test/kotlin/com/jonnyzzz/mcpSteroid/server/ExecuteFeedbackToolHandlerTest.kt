@@ -2,17 +2,12 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpSession
-import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
-import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
-import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.successTextResult
-import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -34,24 +29,54 @@ class ExecuteFeedbackToolHandlerTest {
                 }
             }
         }
-        val context = ToolCallContext(
-            params = ToolCallParams(name = spec.name, arguments = args),
-            session = McpSession(),
-            mcpProgressReporter = object : McpProgressReporter { override fun report(message: String) = Unit },
-        )
-        val result = runBlocking {
-            try {
-                spec.call(context)
-            } catch (e: ToolCallErrorException) {
-                e.toolCallResult
-            }
-        }
+        val result = callToolSpecForTest(spec, args)
 
         return if (result.isError) {
-            result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+            val text = result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+            // The registry converts a CRASH into isError text with a Stacktrace item; a validation error
+            // must never be one, so a crash fails every negative test here loudly instead of matching
+            // its substring assertions by accident.
+            assertFalse(text.contains("Stacktrace"), "validation must not crash: $text")
+            text
         } else {
             null
         }
+    }
+
+    @Test
+    fun `a supplied blank or BOM-only code snippet is rejected, matching the CLI verdict`() {
+        // #460: the devrig CLI refuses blank --code/--code-file spellings on this tool; the MCP
+        // boundary must give the same verdict for the same payload.
+        for (blank in listOf("", "   ", "\uFEFF")) {
+            val err = validate(
+                buildJsonObject {
+                    put("project_name", "proj")
+                    put("task_id", "t-1")
+                    put("success_rating", 0.75)
+                    put("explanation", "worked end-to-end")
+                    put("code", blank)
+                }
+            )
+            assertNotNull(err)
+            assertTrue(err!!.contains("blank"), "names the blank as the defect: $err")
+            assertTrue(err.contains("omit"), "offers omitting the optional field: $err")
+        }
+    }
+
+    @Test
+    fun `a BOM-only task_id is as missing as a whitespace one`() {
+        // #460: U+FEFF is not whitespace — isEffectivelyBlank is the one definition of blank, so the
+        // MCP verdict matches the CLI parse gate for the same payload.
+        val err = validate(
+            buildJsonObject {
+                put("project_name", "proj")
+                put("task_id", "\uFEFF")
+                put("success_rating", 0.75)
+                put("explanation", "worked end-to-end")
+            }
+        )
+        assertNotNull(err)
+        assertTrue(err!!.contains("task_id"), "mentions task_id: $err")
     }
 
     @Test

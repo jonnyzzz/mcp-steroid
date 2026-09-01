@@ -3,6 +3,12 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
+import com.jonnyzzz.mcpSteroid.mcp.McpSession
+import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistry
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -198,6 +204,20 @@ private fun assertJsonStringEquals(
         ?: error("$label must be a JSON primitive; was ${obj[key]}")
     assertTrue(primitive.isString, "$label must be a string primitive")
     assertEquals(expected, primitive.content, label)
+}
+
+/**
+ * Drives one spec through a real [McpToolRegistry.callTool] dispatch, so a validation test asserts on
+ * the exact envelope an MCP client would see — including the registry's catch chain (a
+ * `ToolCallErrorException` unwraps to its result; a generic exception gains the `Stacktrace:` content
+ * item, so a no-stack-trace assertion is actually falsifiable here). Shared by the per-tool
+ * argument-validation tests (`ExecuteFeedbackToolHandlerTest`, `ExecuteCodeToolBlankCodeTest`, …)
+ * instead of each re-rolling the same scaffold.
+ */
+fun callToolSpecForTest(spec: McpToolBase, arguments: JsonObject): ToolCallResult = runBlocking {
+    val registry = McpToolRegistry()
+    registry.registerTool(spec)
+    registry.callTool(ToolCallParams(name = spec.name, arguments = arguments), McpSession())
 }
 
 /** Convenience for `*ToolSpec` constructor lambdas that must never be invoked. */

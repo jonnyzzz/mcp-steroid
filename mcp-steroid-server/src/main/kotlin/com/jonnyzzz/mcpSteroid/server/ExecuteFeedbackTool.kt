@@ -9,6 +9,8 @@ import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.mcp.get
+import com.jonnyzzz.mcpSteroid.mcp.isEffectivelyBlank
+import com.jonnyzzz.mcpSteroid.mcp.trimLeadingBoms
 import com.jonnyzzz.mcpSteroid.mcp.maximum
 import com.jonnyzzz.mcpSteroid.mcp.minimum
 import com.jonnyzzz.mcpSteroid.mcp.number
@@ -89,11 +91,11 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val projectName = context[projectName]
-        if (projectName.isBlank()) {
+        if (projectName.isEffectivelyBlank()) {
             return ToolCallResult.errorResult("project_name is required (from the project-listing tool or command)")
         }
         val taskId = context[taskId]
-        if (taskId.isBlank()) {
+        if (taskId.isEffectivelyBlank()) {
             return ToolCallResult.errorResult("task_id is required (same id you passed to the code-execution tool or command)")
         }
         // Pre-check the raw arg so we can emit the helpful "do NOT send `rating`" hint
@@ -106,18 +108,25 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
             return ToolCallResult.errorResult("success_rating=$successRating is out of range (must be 0.00..1.00)")
         }
         val explanation = context[explanation]
-        if (explanation.isBlank()) {
+        if (explanation.isEffectivelyBlank()) {
             return ToolCallResult.errorResult("explanation is required (free-form: what worked, what didn't, what you'll try next)")
         }
         val executionId = context[executionId]
         val code = context[code]
+        // #460: a SUPPLIED blank snippet is a caller mistake, same verdict as the devrig CLI's blank
+        // --code/--code-file spellings — name it instead of storing whitespace; omit the field instead.
+        if (code != null && code.isEffectivelyBlank()) {
+            return ToolCallResult.errorResult("code was given blank — pass a non-empty snippet or omit the field")
+        }
 
         val params = FeedbackParams(
             taskId = taskId,
             executionId = executionId,
             successRating = successRating,
             explanation = explanation,
-            code = code,
+            // Same normalization execute_code applies: the stored snippet must byte-match the script
+            // the CLI's file spelling would deliver for the identical source.
+            code = code?.trimLeadingBoms(),
             executionBackend = context.executionBackendProvenance(),
         )
 
