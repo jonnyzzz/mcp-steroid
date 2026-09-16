@@ -1,5 +1,3 @@
-[![official JetBrains project](http://jb.gg/badges/incubator-flat-square.svg)](https://github.com/JetBrains#jetbrains-on-github)
-
 # MCP Steroid
 
 <p align="center">
