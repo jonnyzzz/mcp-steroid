@@ -82,6 +82,7 @@ object McpHttpTransport {
         val remoteHost = call.request.local.remoteHost
         log.info("[MCP] OPTIONS request from $remoteHost - returning CORS headers")
         addCorsHeaders(call)
+        setProtocolVersionHeader(call, MCP_PROTOCOL_VERSION)
         call.respond(HttpStatusCode.NoContent)
     }
 
@@ -96,8 +97,18 @@ object McpHttpTransport {
             "Content-Type, Accept, $SESSION_HEADER, $SESSION_NOTICE_HEADER, $PROTOCOL_VERSION_HEADER"
         )
         call.response.header("Access-Control-Expose-Headers", "$SESSION_HEADER, $SESSION_NOTICE_HEADER, $PROTOCOL_VERSION_HEADER")
-        // Per MCP 2025-11-25 spec: Include protocol version in all responses
-        call.response.header(PROTOCOL_VERSION_HEADER, MCP_PROTOCOL_VERSION)
+    }
+
+    /**
+     * Set the `MCP-Protocol-Version` response header. Per the MCP spec every response
+     * carries it; on a message exchange it MUST be the version negotiated for the
+     * session (so it matches the `initialize` result body), and on preflight / health /
+     * teardown responses with no session it is our latest. `ktor`'s [call.response.header]
+     * appends rather than replaces, so this must be the only place a value is set — never
+     * in [addCorsHeaders], which runs first for every verb.
+     */
+    private fun setProtocolVersionHeader(call: ApplicationCall, version: String) {
+        call.response.header(PROTOCOL_VERSION_HEADER, version)
     }
 
     private suspend fun handlePost(call: ApplicationCall, server: McpServerCore) {
@@ -197,6 +208,11 @@ object McpHttpTransport {
         try {
             val response = server.handleMessage(body, session)
 
+            // Set AFTER handleMessage: an `initialize` negotiates the version inside it,
+            // so the session carries the negotiated value only now. This makes the header
+            // match the version in the initialize result body.
+            setProtocolVersionHeader(call, session.negotiatedProtocolVersion)
+
             if (response != null) {
                 val truncatedResponse = if (response.length > 500) response.take(500) + "...[truncated]" else response
                 log.info("[MCP] Response: $truncatedResponse")
@@ -215,6 +231,7 @@ object McpHttpTransport {
                 message = "Internal error: ${t.message ?: t.javaClass.simpleName}",
             )
             try {
+                setProtocolVersionHeader(call, session.negotiatedProtocolVersion)
                 call.respondText(errorResponse, ContentType.Application.Json)
             } catch (e: CancellationException) {
                 throw e
@@ -261,6 +278,8 @@ object McpHttpTransport {
         val remoteHost = call.request.local.remoteHost
         val userAgent = call.request.userAgent() ?: "unknown"
         log.info("[MCP] GET request from $remoteHost (User-Agent: $userAgent)")
+
+        setProtocolVersionHeader(call, MCP_PROTOCOL_VERSION)
 
         val acceptHeader = call.request.accept()
 
@@ -316,6 +335,7 @@ object McpHttpTransport {
     }
 
     private suspend fun handleDelete(call: ApplicationCall, server: McpServerCore) {
+        setProtocolVersionHeader(call, MCP_PROTOCOL_VERSION)
         val sessionId = call.request.header(SESSION_HEADER)
         if (sessionId != null) {
             log.info("[MCP] Terminating session: $sessionId")

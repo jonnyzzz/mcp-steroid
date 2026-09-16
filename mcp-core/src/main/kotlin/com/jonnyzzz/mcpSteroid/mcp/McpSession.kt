@@ -39,6 +39,16 @@ class McpSession(
         private set
 
     /**
+     * The protocol revision negotiated during `initialize` — the client's requested
+     * version when we support it, otherwise our latest. Defaults to [MCP_PROTOCOL_VERSION]
+     * until negotiation completes. The HTTP transport reports this in the
+     * `MCP-Protocol-Version` response header so it matches the initialize result.
+     */
+    @Volatile
+    var negotiatedProtocolVersion: String = MCP_PROTOCOL_VERSION
+        private set
+
+    /**
      * Guards the once-per-session `mcp_session_initialized` beacon so a duplicate
      * `initialize` request does not double-fire the analytics event.
      */
@@ -59,6 +69,13 @@ class McpSession(
         clientInfo = info
         clientCapabilities = capabilities
         initialized = true
+    }
+
+    /**
+     * Record the protocol version negotiated during `initialize`.
+     */
+    fun markProtocolVersion(version: String) {
+        negotiatedProtocolVersion = version
     }
 
     /**

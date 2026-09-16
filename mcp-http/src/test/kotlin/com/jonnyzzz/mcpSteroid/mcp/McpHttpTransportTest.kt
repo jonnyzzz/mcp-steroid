@@ -1027,6 +1027,40 @@ class McpHttpTransportTest {
     }
 
     @Test
+    fun `test POST initialize with a supported older version negotiates it in body and header`() = runBlocking {
+        val request = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", 1)
+            put("method", "initialize")
+            putJsonObject("params") {
+                put("protocolVersion", "2025-06-18")
+                putJsonObject("capabilities") {}
+                putJsonObject("clientInfo") {
+                    put("name", "test-client")
+                    put("version", "1.0.0")
+                }
+            }
+        }
+
+        val response = client.post("http://localhost:$port/mcp") {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            setBody(request.toString())
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+
+        // The MCP-Protocol-Version header MUST match the negotiated version in the body,
+        // and both must be the client's requested version since we support it.
+        assertEquals("2025-06-18", response.headers[McpHttpTransport.PROTOCOL_VERSION_HEADER])
+
+        val result = McpJson.decodeFromJsonElement<InitializeResult>(
+            McpJson.decodeFromString<JsonRpcResponse>(response.bodyAsText()).result!!
+        )
+        assertEquals("2025-06-18", result.protocolVersion)
+    }
+
+    @Test
     fun `test GET response includes MCP-Protocol-Version header`() = runBlocking {
         val response = client.get("http://localhost:$port/mcp") {
             header(HttpHeaders.Accept, "application/json")

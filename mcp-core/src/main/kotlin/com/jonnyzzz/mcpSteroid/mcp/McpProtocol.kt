@@ -12,6 +12,20 @@ import kotlinx.serialization.json.*
  */
 
 const val MCP_PROTOCOL_VERSION = "2025-11-25"
+
+/**
+ * Protocol revisions this server can speak, newest first. Per the MCP spec
+ * (Lifecycle → Version Negotiation) the server MUST echo the client's requested
+ * `protocolVersion` when it is one of these, and only otherwise fall back to its
+ * own latest ([MCP_PROTOCOL_VERSION], the head of this list). Our request/response
+ * surface (initialize, tools, resources, prompts, ping, logging) is stable across
+ * these revisions, so echoing an older one is a truthful compatibility claim, not
+ * a downgrade of behavior. A client that cannot speak our latest (e.g. Junie on an
+ * older revision) tears down the transport when it receives a version it does not
+ * recognize — negotiation is what keeps it connected.
+ */
+val SUPPORTED_PROTOCOL_VERSIONS = listOf("2025-11-25", "2025-06-18", "2025-03-26")
+
 const val JSONRPC_VERSION = "2.0"
 
 // ==================== JSON-RPC Base Types ====================

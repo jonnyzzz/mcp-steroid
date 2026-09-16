@@ -215,8 +215,18 @@ class McpServerCore(
             }
         }
 
+        // Version negotiation (MCP Lifecycle → Version Negotiation): echo the client's
+        // requested revision when we support it; otherwise reply with our own latest and
+        // let the client decide whether it can proceed.
+        val negotiatedVersion = if (initParams.protocolVersion in SUPPORTED_PROTOCOL_VERSIONS) {
+            initParams.protocolVersion
+        } else {
+            MCP_PROTOCOL_VERSION
+        }
+        session.markProtocolVersion(negotiatedVersion)
+
         val result = InitializeResult(
-            protocolVersion = MCP_PROTOCOL_VERSION,
+            protocolVersion = negotiatedVersion,
             capabilities = capabilities,
             serverInfo = serverInfo,
             instructions = instructions
