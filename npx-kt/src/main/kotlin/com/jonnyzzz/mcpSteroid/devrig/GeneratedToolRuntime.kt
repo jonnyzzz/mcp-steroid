@@ -9,6 +9,8 @@ import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.isEffectivelyBlank
+import com.jonnyzzz.mcpSteroid.mcp.trimLeadingBoms
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.NoOpProgressReporter
@@ -432,11 +434,14 @@ private fun readCliFileSource(
     }
     // Same contract as the stdin branch below: an empty value must fail here with a message that names
     // the cause, instead of being forwarded for the tool to answer with its own confusing complaint.
-    if (bytes.isEmpty()) throw CliInputException(
-        "'$paramName' was to be read from '$file', which is empty; put the value in the file or pass it directly",
+    val text = decodeCliSourceBytes(paramName, bytes)
+    // #460: empty, whitespace-only, or BOM-only content is one fault class — the same blank payload
+    // the parse layer refuses inline must not slip through the file spelling.
+    if (text.isEffectivelyBlank()) throw CliInputException(
+        "'$paramName' was to be read from '$file', which is blank; put the value in the file or pass it directly",
         CliExit.USAGE,
     )
-    return decodeCliSourceBytes(paramName, bytes)
+    return text
 }
 
 /**
@@ -473,7 +478,14 @@ private fun readCliStdin(paramName: String, stdin: InputStream, announce: Boolea
             "pipe the value or pass a file path instead",
         CliExit.USAGE,
     )
-    return decodeCliSourceBytes(paramName, bytes)
+    val text = decodeCliSourceBytes(paramName, bytes)
+    // #460: same rule as the file branch above — whitespace- or BOM-only stdin is a blank payload.
+    if (text.isEffectivelyBlank()) throw CliInputException(
+        "'$paramName' was to be read from standard input ('$CLI_STDIN_PATH' given) but the piped input " +
+            "is blank; pipe the value or pass a file path instead",
+        CliExit.USAGE,
+    )
+    return text
 }
 
 /**
@@ -495,7 +507,7 @@ private fun decodeCliSourceBytes(paramName: String, bytes: ByteArray): String {
             "'$paramName' exceeds the ${CLI_FILE_SOURCE_MAX_BYTES / (1024 * 1024)} MB limit", CliExit.DATA_ERROR,
         )
     }
-    return try {
+    val text = try {
         Charsets.UTF_8.newDecoder()
             .onMalformedInput(CodingErrorAction.REPORT)
             .onUnmappableCharacter(CodingErrorAction.REPORT)
@@ -504,4 +516,9 @@ private fun decodeCliSourceBytes(paramName: String, bytes: ByteArray): String {
     } catch (e: CharacterCodingException) {
         throw CliInputException("'$paramName' is not valid UTF-8 text: ${e.message}", CliExit.IO_ERROR)
     }
+    // A UTF-8 BOM is an encoding artifact (Notepad, PowerShell redirects), not content: strip every
+    // leading one (files re-saved through two BOM-adding tools stack them) so a BOM-only file registers
+    // as blank (#460 — U+FEFF is NOT whitespace, so isBlank alone misses it) and a BOM-prefixed script
+    // reaches the compiler clean.
+    return text.trimLeadingBoms()
 }

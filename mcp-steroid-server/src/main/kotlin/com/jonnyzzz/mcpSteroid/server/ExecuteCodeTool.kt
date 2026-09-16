@@ -10,11 +10,14 @@ import com.jonnyzzz.mcpSteroid.mcp.cliOptional
 import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.enumString
+import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.mcp.get
 import com.jonnyzzz.mcpSteroid.mcp.int
+import com.jonnyzzz.mcpSteroid.mcp.isEffectivelyBlank
 import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
 import com.jonnyzzz.mcpSteroid.mcp.string
+import com.jonnyzzz.mcpSteroid.mcp.trimLeadingBoms
 import com.jonnyzzz.mcpSteroid.mcp.withDefaultValue
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
@@ -179,9 +182,22 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         val timeout = context[timeout]
         val modal = context[modal]
 
+        // #460: a blank script — whitespace or BOM-only (a pasted "empty" Windows file) — would burn a
+        // full pre-flight + compiler round-trip and an execution_id only to produce the (then
+        // misleading) no-output hint. The devrig CLI refuses blank --code/--code-file/stdin at its own
+        // boundary with the same isEffectivelyBlank definition; this guard covers direct MCP callers.
+        if (code.isEffectivelyBlank()) {
+            return ToolCallResult.errorResult(
+                "code must not be blank — pass a non-empty Kotlin script"
+            )
+        }
+
         val execCodeParams = ExecCodeParams(
             taskId = taskId,
-            code = code,
+            // A leading U+FEFF is an encoding artifact (a pasted Windows file), not script content —
+            // wrapped mid-file it would fail compilation with an invisible-character error. The CLI's
+            // file/stdin decoder strips it the same way; inline and direct-MCP code get it here.
+            code = code.trimLeadingBoms(),
             reason = reason,
             timeout = timeout,
             modal = modal,

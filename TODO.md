@@ -365,3 +365,16 @@
   stderr. Left as is deliberately: the parsed flag has no other consumer, `@argfile` is not a documented
   devrig invocation form, and the alternative is a logback `reset()` + `JoranConfigurator` re-read after
   parsing. Pick that up only if a real client trips on it.
+
+- [ ] **Declarative non-blank constraint on schema string parameters (#460 follow-up).** The blank-payload
+  rule now lives in three hand-synced layers: the CLI parse gates in `SchemaCliBinding.registerRequirednessChecks`
+  (file-source branch + the generic `cliRequired` blank gate), the content readers in `GeneratedToolRuntime`
+  (blank file/stdin, BOM strip in `decodeCliSourceBytes`), and per-tool MCP guards (`ExecuteCodeTool.call`'s
+  `code.isBlank()`, `ExecuteFeedbackTool.call`'s hand-rolled blank checks). A `.nonBlank()` builder on
+  `InputSchemaElement<String>` (the `required()`/`cliMinimum` idiom in mcp-core `McpSchema.kt`) would state
+  the rule once at the shared `context[param]` choke point for every tool and transport, let
+  `SchemaCliBinding` derive its CLI blank rule from the same spec flag, and close the remaining MCP-side
+  gaps a direct caller can still hit today: `task_id="  "`/`reason=""` on execute_code, `explanation=""`
+  on execute_feedback, `project_path=""` on open_project. The DEFINITION of blank is already unified —
+  `isEffectivelyBlank` in mcp-core (whitespace + BOM) backs the CLI parse gates, the file/stdin readers,
+  and execute_code's MCP guard — what is missing is declaring WHICH parameters it applies to, per schema.

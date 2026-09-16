@@ -553,6 +553,112 @@ class SchemaCliBindingTest {
     // ------------------------------- file sources -------------------------------
 
     @Test
+    fun `a blank inline value on a required file-source parameter counts as missing`() {
+        // #460: --code= and --code='   ' used to count as provided and ship an empty script to the
+        // backend. Blank routes through the same missing-value outcome as omitting the pair entirely.
+        for (blank in listOf("--code=", "--code=   ")) {
+            val error = assertFailsWith<UsageError> {
+                ToolCommand(executeCode()).parse(
+                    listOf(blank, "--task_id=t1", "--reason=r", "--project_name=key"),
+                )
+            }
+            assertTrue(
+                "'code' is required" in error.message.orEmpty(),
+                "expected the missing-code classification for '$blank'; got: ${error.message}",
+            )
+        }
+    }
+
+    @Test
+    fun `a blank file-source path on a required parameter counts as missing at parse`() {
+        // #460 sibling: --code-file= (empty path) used to count as provided and fail only at the
+        // file-read stage with a degenerate IO error; it must fail at parse like blank --code=.
+        val error = assertFailsWith<UsageError> {
+            ToolCommand(executeCode()).parse(
+                listOf("--code-file=", "--task_id=t1", "--reason=r", "--project_name=key"),
+            )
+        }
+        assertTrue(
+            "'code' is required" in error.message.orEmpty(),
+            "expected the missing-code classification for a blank --code-file=; got: ${error.message}",
+        )
+    }
+
+    @Test
+    fun `both spellings blank on a required parameter classify as missing, not as a conflict`() {
+        // #460: a wrapper expanding two empty shell variables supplied nothing — steer the caller to
+        // the missing-code guidance (curated hint), not toward removing one of the flags.
+        val error = assertFailsWith<MissingCliValue> {
+            ToolCommand(executeCode()).parse(
+                listOf("--code=", "--code-file=", "--task_id=t1", "--reason=r", "--project_name=key"),
+            )
+        }
+        assertTrue("'code' is required" in error.message.orEmpty(), error.message.orEmpty())
+    }
+
+    @Test
+    fun `a BOM-only inline value counts as missing — U+FEFF is not a payload`() {
+        // #460 hardening: a pasted "empty" Windows file is a BOM, which isBlank() alone misses. The
+        // inline spelling never passes through the file decoder, so the blank predicate itself must
+        // know the BOM (isEffectivelyBlank — the one cross-transport definition).
+        val error = assertFailsWith<MissingCliValue> {
+            ToolCommand(executeCode()).parse(
+                listOf("--code=\uFEFF", "--task_id=t1", "--reason=r", "--project_name=key"),
+            )
+        }
+        assertTrue("'code' is required" in error.message.orEmpty(), error.message.orEmpty())
+    }
+
+    @Test
+    fun `both spellings blank on an OPTIONAL parameter report the blank error, not the conflict`() {
+        // The caller effectively supplied nothing twice — "give either, not both" would send them
+        // deleting a flag and failing again; name the blank as the defect in one step.
+        val error = assertFailsWith<UsageError> {
+            ToolCommand(executeFeedback()).parse(
+                listOf(
+                    "--code=", "--code-file=",
+                    "--project_name=key", "--task_id=t1", "--success_rating=0.9", "--explanation=worked",
+                ),
+            )
+        }
+        assertTrue(
+            "given blank" in error.message.orEmpty() && "omit it" in error.message.orEmpty(),
+            "expected the blank-spelling error, got: ${error.message}",
+        )
+    }
+
+    @Test
+    fun `a blank spelling on an OPTIONAL file-source parameter is a parse error, not a payload`() {
+        // #460 sibling on execute_feedback's optional code: the content readers already reject blank
+        // files/stdin unconditionally, so the inline and path spellings must agree — a blank flag is
+        // a mistake to surface, not an empty payload to ship or an IO error to defer to.
+        val requiredArgs = arrayOf(
+            "--project_name=key", "--task_id=t1", "--success_rating=0.9", "--explanation=worked",
+        )
+        for (blank in listOf("--code=   ", "--code-file=")) {
+            val error = assertFailsWith<UsageError> {
+                ToolCommand(executeFeedback()).parse(listOf(blank, *requiredArgs))
+            }
+            assertTrue(
+                "given blank" in error.message.orEmpty() && "omit it" in error.message.orEmpty(),
+                "expected the blank-spelling error for '$blank'; got: ${error.message}",
+            )
+        }
+    }
+
+    @Test
+    fun `a blank inline value alongside a file source still reports the exclusivity error`() {
+        // Blank --code= plus --code-file is a scripting mistake, not a preference for the file: keep
+        // the strict "not both" report rather than silently picking the file.
+        val error = assertFailsWith<UsageError> {
+            ToolCommand(executeCode()).parse(
+                listOf("--code=", "--code-file=repro.kts", "--task_id=t1", "--reason=r", "--project_name=key"),
+            )
+        }
+        assertTrue("not both" in error.message.orEmpty(), error.message.orEmpty())
+    }
+
+    @Test
     fun `a file source flag yields a deferred path and no tool argument`() {
         val values = bind(
             executeCode(),

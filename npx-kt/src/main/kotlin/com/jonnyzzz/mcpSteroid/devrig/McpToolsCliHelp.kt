@@ -114,8 +114,9 @@ private fun StringBuilder.appendUsageLine(prefix: String, tokens: List<String>) 
  * through.
  *
  * A required parameter that ALSO declares a file source is parenthesized rather than left bare, because its
- * two spellings are alternatives of which exactly one is mandatory: `SchemaCliBinding.parsed()` raises
- * `MissingCliValue` on `value == null && path == null && spec.required`. Such a parameter is `cliOptional`
+ * two spellings are alternatives of which exactly one is mandatory: the parse-time check
+ * `SchemaCliBinding` registers for file-source parameters raises `MissingCliValue` when `spec.required`
+ * and neither spelling supplied a non-blank token (#460). Such a parameter is `cliOptional`
  * by construction (`ToolSchema.register` enforces the pairing) purely so Clikt stops demanding the direct
  * flag — testing `cliRequired` here would wrongly bracket it as omissible, so `cliOptional` must not weaken
  * the rule above.

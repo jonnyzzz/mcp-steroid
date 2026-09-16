@@ -39,6 +39,21 @@ class McpAsCliParseTest {
     }
 
     @Test
+    fun `execute_code rejects an explicit empty --code= at parse with the missing-code hint`() {
+        // #460: an empty (or blank) --code= used to count as provided and ship the empty script to the
+        // backend — a full compiler round-trip, a burned execution_id, and the misleading no-output
+        // hint — while every sibling required parameter treats an empty string as missing. Blank inline
+        // code must fail at parse time with the same curated missing-code hint as omitting it entirely.
+        for (blank in listOf("--code=", "--code=   ")) {
+            val error = parseError(
+                "execute_code", "--project_name=demo", blank, "--task_id=t", "--reason=r",
+            )
+            assertTrue("missing code" in error, "expected the curated missing-code hint for '$blank'; got:\n$error")
+            assertTrue("--code-file" in error, "the hint must offer the --code-file alternative; got:\n$error")
+        }
+    }
+
+    @Test
     fun `execute_feedback rejects NaN and Infinity success_rating at parse`() {
         for (badValue in listOf("NaN", "Infinity", "-Infinity")) {
             val error = parseError(

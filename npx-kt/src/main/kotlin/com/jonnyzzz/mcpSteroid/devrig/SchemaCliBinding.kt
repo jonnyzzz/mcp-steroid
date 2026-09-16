@@ -28,6 +28,7 @@ import com.jonnyzzz.mcpSteroid.mcp.CliExtraOption
 import com.jonnyzzz.mcpSteroid.mcp.CliOptionType
 import com.jonnyzzz.mcpSteroid.mcp.CliToolSpec
 import com.jonnyzzz.mcpSteroid.mcp.InputSchemaParamSpec
+import com.jonnyzzz.mcpSteroid.mcp.isEffectivelyBlank
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlinx.serialization.json.JsonArray
@@ -65,7 +66,9 @@ data class SchemaCliValues(
 )
 
 /**
- * A required parameter reached [SchemaCliBinding.parsed] with no value in any spelling the CLI accepts.
+ * A required parameter carried no usable value in any spelling the CLI accepts — raised by the
+ * parse-time checks [registerRequirednessChecks] registers, which run in Clikt's finalize pass (never
+ * by [SchemaCliBinding.parsed], which only copies already-validated values).
  * A distinct type rather than a plain [UsageError] so a command can tell "you left this out" — where the
  * parameter's own [InputSchemaParamSpec.cliMissingHint] is the better wording — apart from the exclusivity
  * failure ("you gave both"), which reports the same parameter name but must keep its own message.
@@ -313,12 +316,37 @@ private fun registerRequirednessChecks(
         command.registerCliParseCheck {
             val v = value()
             val path = filePath()
-            if (v != null && path != null) throw UsageError(
+            // #460: a blank spelling (--code=, --code-file=) is never a payload — it must neither ship
+            // an empty value to the backend nor defer the failure to the file-read stage. The generic
+            // blank rule for plain required parameters lives below under the `spec.cliRequired` gate —
+            // a change to what counts as blank must land in both.
+            // A blank PATH counts as not-given too: an empty-variable accident produces "" or spaces,
+            // never a real file name — the (Unix-only, pathological) file literally named ' ' loses to
+            // catching the accident at parse time; a conscious trade.
+            val valueEffective = v != null && !v.isBlankString()
+            val pathEffective = path != null && !path.isEffectivelyBlank()
+            // Nothing non-blank supplied on a required parameter — including the both-blank case, which
+            // must classify as missing (with the curated hint), not as an exclusivity conflict.
+            if (spec.required && !valueEffective && !pathEffective) throw MissingCliValue(
+                "'${spec.name}' is required: pass ${spec.cliParamName} or ${fileSource.flag}",
+                paramName = spec.cliParamName,
+            )
+            // Both spellings supplied and at least one carries a real value: silently preferring one
+            // would guess at intent. (Both-blank never reaches here: required both-blank is consumed
+            // above, optional both-blank falls through to the blank report below.)
+            if (v != null && path != null && (valueEffective || pathEffective)) throw UsageError(
                 "give either ${spec.cliParamName} or ${fileSource.flag} for '${spec.name}', not both",
                 paramName = spec.cliParamName,
             )
-            if (v == null && path == null && spec.required) throw MissingCliValue(
-                "'${spec.name}' is required: pass ${spec.cliParamName} or ${fileSource.flag}",
+            // A blank spelling that WAS supplied is a mistake to name (the content readers already
+            // reject blank files/stdin unconditionally): omit the flag, don't blank it. Only optional
+            // parameters actually reach this — every blank combination on a required one is consumed
+            // by the two checks above. This is deliberately narrower than the plain-optional rule
+            // ("a blank value for an optional string is left alone") — for a payload parameter every
+            // spelling must agree.
+            if (v.isBlankString() || (path != null && path.isEffectivelyBlank())) throw UsageError(
+                "'${spec.name}' was given blank: pass a non-empty ${spec.cliParamName} or " +
+                    "${fileSource.flag}, or omit it",
                 paramName = spec.cliParamName,
             )
         }
@@ -334,6 +362,9 @@ private fun registerRequirednessChecks(
     }
     if (spec.cliRequired) {
         command.registerCliParseCheck {
+            // The file-source branch above carries its own blank classification (a required file-source
+            // parameter is cliOptional by construction, so it never reaches this gate). What COUNTS as
+            // blank lives once in isEffectivelyBlank — only the classification spans the two gates.
             if (value().isBlankString()) throw MissingCliValue(
                 "'${spec.name}' must not be blank: pass a non-empty ${spec.cliParamName}",
                 paramName = spec.cliParamName,
@@ -561,8 +592,12 @@ val InputSchemaParamSpec.negativeCliFlag: String?
 /** An empty repetition means the flag never appeared, which must contribute no key at all. */
 private fun List<JsonPrimitive>.toJsonArrayOrNull(): JsonArray? = takeIf { it.isNotEmpty() }?.let { JsonArray(it) }
 
-/** A string value that is empty or whitespace only — supplied, yet carrying no usable value. */
-private fun JsonElement?.isBlankString(): Boolean = this is JsonPrimitive && isString && content.isBlank()
+/**
+ * A string value that is supplied yet carries no usable payload — empty, whitespace, or BOMs
+ * ([isEffectivelyBlank] is the one cross-transport definition of blank, #460).
+ */
+private fun JsonElement?.isBlankString(): Boolean =
+    this is JsonPrimitive && isString && content.isEffectivelyBlank()
 
 /** The only spelling of a boolean value the CLI accepts, for a boolean inside an array or a positional. */
 private val BOOLEAN_CHOICES = arrayOf("true" to true, "false" to false)
