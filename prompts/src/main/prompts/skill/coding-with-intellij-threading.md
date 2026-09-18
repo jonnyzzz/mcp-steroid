@@ -38,7 +38,7 @@ If you are about to write any of these in a `steroid_execute_code` script, you o
 | `JavaPsiFacade.getInstance(project).findClass(...)` / `findClasses(...)` / `findPackage(...)` | `readAction { }` (or `smartReadAction { }`) |
 | `PsiManager.getInstance(project).findFile(vf)` / `findDirectory(vf)` | `readAction { }` |
 | `psiFile.text` / `psiFile.firstChild` / `psiFile.children` / `psiFile.containingFile` | `readAction { }` |
-| `PsiSearchHelper.*`, `ReferencesSearch.*`, `ClassInheritorsSearch.*`, `MethodReferencesSearch.*` | `readAction { }` (or `smartReadAction { }` for index-dependent searches) |
+| `PsiSearchHelper.*`, `ReferencesSearch.*`, `ClassInheritorsSearch.*`, `MethodReferencesSearch.*` | `smartReadAction { }` — these searches read indexes; under a plain read action they fail with `IndexNotReadyException` when dumb mode re-enters |
 | `vf.children` / `vf.parent` / `vf.findChild(name)` / recursive `walk { }` over a `VirtualFile` | `readAction { }` |
 | `FileDocumentManager.getInstance().getDocument(vf)` and reading `document.text` / `lineCount` | `readAction { }` |
 | `ProjectRootManager.getInstance(project).contentRoots` / `contentSourceRoots` / `projectSdk` | `readAction { }` |

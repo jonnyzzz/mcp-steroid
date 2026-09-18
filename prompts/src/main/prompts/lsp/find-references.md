@@ -2,6 +2,11 @@ LSP: textDocument/references - Find All References
 
 This example demonstrates how to find all references to a symbol,
 
+The whole query — element resolution, the reference search, and the result snapshot — runs
+inside `smartReadAction { }`: reference search reads indexes, and the IDE can re-enter dumb
+mode at any moment, so a plain read action can fail nondeterministically with
+`IndexNotReadyException` mid-search.
+
 ```kotlin
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
@@ -12,30 +17,30 @@ val line = 10      // TODO: 1-based line number where symbol is defined
 val column = 15    // TODO: 1-based column number
 
 
-val result = readAction {
+val result = smartReadAction {
     // Find the virtual file
     val virtualFile = findFile(filePath)
-        ?: return@readAction "File not found: $filePath"
+        ?: return@smartReadAction "File not found: $filePath"
 
     // Get PSI file
     val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
-        ?: return@readAction "Cannot parse file: $filePath"
+        ?: return@smartReadAction "Cannot parse file: $filePath"
 
     // Get document to convert line/column to offset
     val document = FileDocumentManager.getInstance().getDocument(virtualFile)
-        ?: return@readAction "Cannot get document for: $filePath"
+        ?: return@smartReadAction "Cannot get document for: $filePath"
 
     // Convert line/column to offset
     val offset = document.getLineStartOffset(line - 1) + (column - 1)
 
     // Find element at position
     val element = psiFile.findElementAt(offset)
-        ?: return@readAction "No element at position ($line:$column)"
+        ?: return@smartReadAction "No element at position ($line:$column)"
 
     // Find the named element (declaration) at or around this position
     val namedElement = PsiTreeUtil.getParentOfType(element, PsiNamedElement::class.java, false)
         ?: element.reference?.resolve() as? PsiNamedElement
-        ?: return@readAction "No named element found at position"
+        ?: return@smartReadAction "No named element found at position"
 
     // Search for all references
     val references = ReferencesSearch.search(namedElement, projectScope()).findAll()

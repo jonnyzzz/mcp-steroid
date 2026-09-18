@@ -44,7 +44,10 @@ if (namedElement == null) {
 }
 
 val targetName = readAction { namedElement.name ?: "<unnamed>" }
-val usages = readAction { ReferencesSearch.search(namedElement).findAll() }
+// Discovery snapshot under smartReadAction — the reference search is index-backed.
+// The write-intent SafeDeleteProcessor phase below re-finds usages itself, so only
+// this discovery step needs smart mode.
+val usages = smartReadAction { ReferencesSearch.search(namedElement).findAll() }
 if (dryRun) {
     println("Safe delete prepared for: $targetName")
     println("Usages found: ${usages.size}")

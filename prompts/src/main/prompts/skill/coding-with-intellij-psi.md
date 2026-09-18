@@ -155,30 +155,36 @@ if (psiFile != null) {
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.search.GlobalSearchScope
 
-val cls = readAction {
-    JavaPsiFacade.getInstance(project).findClass(
+// Class lookup and reference search both read indexes — keep the whole query
+// and its result snapshot inside one smartReadAction block.
+smartReadAction {
+    val cls = JavaPsiFacade.getInstance(project).findClass(
         "com.example.domain.FeatureService",
         GlobalSearchScope.projectScope(project)
     )
-}
-ReferencesSearch.search(cls!!, projectScope()).findAll().forEach { ref ->
-    val snippet = ref.element.parent.text.take(80)
-    println("${ref.element.containingFile.name} → $snippet")
+    if (cls == null) {
+        println("class not found")
+        return@smartReadAction
+    }
+    ReferencesSearch.search(cls, projectScope()).findAll().forEach { ref ->
+        val snippet = ref.element.parent.text.take(80)
+        println("${ref.element.containingFile.name} → $snippet")
+    }
 }
 ```
 
 **CRITICAL when adding new fields to command/DTO objects** — find every call site first so you can update all constructors:
 ```kotlin[IU]
 import com.intellij.psi.search.searches.ReferencesSearch
-val cmdClass = readAction {
-    JavaPsiFacade.getInstance(project).findClass("com.example.CreateReleaseCommand", projectScope())
+smartReadAction {
+    val cmdClass = JavaPsiFacade.getInstance(project).findClass("com.example.CreateReleaseCommand", projectScope())
+    if (cmdClass != null) {
+        ReferencesSearch.search(cmdClass, projectScope()).findAll().forEach { ref ->
+            val file = ref.element.containingFile.virtualFile.path.substringAfterLast('/')
+            println("$file → " + ref.element.parent.text.take(100))
+        }
+    } else println("class not found")
 }
-if (cmdClass != null) {
-    ReferencesSearch.search(cmdClass, projectScope()).findAll().forEach { ref ->
-        val file = ref.element.containingFile.virtualFile.path.substringAfterLast('/')
-        println("$file → " + ref.element.parent.text.take(100))
-    }
-} else println("class not found")
 ```
 
 ### Find Usages — Kotlin
@@ -212,7 +218,7 @@ import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ClassInheritorsSearch
 
-readAction {
+smartReadAction {
     val baseClass = JavaPsiFacade.getInstance(project)
         .findClass("java.util.List", GlobalSearchScope.allScope(project))
 
@@ -238,11 +244,12 @@ readAction {
 ### Find All @Entity Classes
 ```kotlin[IU]
 import com.intellij.psi.search.searches.AnnotatedElementsSearch
-val entityAnnotation = readAction {
-    JavaPsiFacade.getInstance(project).findClass("jakarta.persistence.Entity", allScope())
+smartReadAction {
+    val entityAnnotation = JavaPsiFacade.getInstance(project).findClass("jakarta.persistence.Entity", allScope())
+        ?: error("jakarta.persistence.Entity not on the project classpath")
+    AnnotatedElementsSearch.searchPsiClasses(entityAnnotation, projectScope()).findAll()
+        .forEach { println(it.qualifiedName) }
 }
-AnnotatedElementsSearch.searchPsiClasses(entityAnnotation!!, projectScope()).findAll()
-    .forEach { println(it.qualifiedName) }
 ```
 
 ### Find @Repository Methods with @Query
@@ -312,12 +319,12 @@ val scope = GlobalSearchScope.moduleWithDependenciesScope(module)  // module + t
 val files = readAction { FilenameIndex.getVirtualFilesByName("PaymentService.java", scope) }
 println("Found ${files.size} files in module scope")
 
-// Step 3: Scope PSI/reference searches
-val targetClass = readAction {
-    JavaPsiFacade.getInstance(project).findClass("com.example.PaymentService", scope)
-}
-val usages = readAction {
-    ReferencesSearch.search(targetClass!!, scope).toList()
+// Step 3: Scope PSI/reference searches — index-backed, so one smartReadAction owns
+// the class lookup, the search, and the result snapshot
+val usages = smartReadAction {
+    val targetClass = JavaPsiFacade.getInstance(project).findClass("com.example.PaymentService", scope)
+        ?: error("class not found in module scope")
+    ReferencesSearch.search(targetClass, scope).toList()
 }
 println("${usages.size} usages in module")
 ```

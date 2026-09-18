@@ -232,7 +232,8 @@ import com.intellij.psi.search.GlobalSearchScope
 val scope = GlobalSearchScope.projectScope(project)
 val matchingFiles = mutableListOf<String>()
 val startMs = System.currentTimeMillis()
-readAction {
+// PsiSearchHelper reads the word index — smartReadAction, not plain readAction
+smartReadAction {
     PsiSearchHelper.getInstance(project).processAllFilesWithWord(
         "thisLogger", scope,
         { psiFile -> matchingFiles.add(psiFile.virtualFile.path); true },
@@ -250,7 +251,7 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.FilenameIndex
 val scope = GlobalSearchScope.projectScope(project)
 val matchingFiles = mutableListOf<String>()
-readAction {
+smartReadAction {
     PsiSearchHelper.getInstance(project).processAllFilesWithWord("/api/", scope, { psiFile ->
         matchingFiles.add(psiFile.virtualFile.path)
         true  // continue searching

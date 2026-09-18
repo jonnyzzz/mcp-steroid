@@ -38,20 +38,21 @@ queries instead of reading file contents. **1 PSI call replaces 5-10 VfsUtil.loa
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 
-// Inspect class structure — no file read needed:
-val cls = readAction {
-    JavaPsiFacade.getInstance(project).findClass(
+// Class lookup + reference search are index-backed — one smartReadAction owns the whole query:
+smartReadAction {
+    val cls = JavaPsiFacade.getInstance(project).findClass(
         "com.example.domain.FeatureService",
         GlobalSearchScope.projectScope(project)
-    )
-}
-cls?.methods?.forEach { m ->
-    val params = m.parameterList.parameters.joinToString { "${it.name}: ${it.type.presentableText}" }
-    println("${m.name}($params): ${m.returnType?.presentableText}")
-}
-// Find all callers (replaces grepping source files):
-ReferencesSearch.search(cls!!, projectScope()).findAll().forEach { ref ->
-    println("${ref.element.containingFile.name} → ${ref.element.parent.text.take(80)}")
+    ) ?: error("class not found")
+    // Inspect class structure — no file read needed:
+    cls.methods.forEach { m ->
+        val params = m.parameterList.parameters.joinToString { "${it.name}: ${it.type.presentableText}" }
+        println("${m.name}($params): ${m.returnType?.presentableText}")
+    }
+    // Find all callers (replaces grepping source files):
+    ReferencesSearch.search(cls, projectScope()).findAll().forEach { ref ->
+        println("${ref.element.containingFile.name} → ${ref.element.parent.text.take(80)}")
+    }
 }
 ```
 
@@ -238,33 +239,35 @@ println("Maven IDE runner: passed=$mvnPassed")
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.search.searches.AnnotatedElementsSearch
 
+// AnnotatedElementsSearch reads indexes — each query runs whole inside smartReadAction.
+
 // Find all JPA @Entity classes
-val entityClass = readAction {
-    JavaPsiFacade.getInstance(project).findClass("jakarta.persistence.Entity", allScope())
+smartReadAction {
+    val entityClass = JavaPsiFacade.getInstance(project).findClass("jakarta.persistence.Entity", allScope())
         ?: JavaPsiFacade.getInstance(project).findClass("javax.persistence.Entity", allScope())
-}
-if (entityClass != null) {
-    val entities = AnnotatedElementsSearch.searchPsiClasses(entityClass, projectScope()).findAll()
-    println("@Entity classes (${entities.size}):")
-    entities.forEach { println("  ${it.qualifiedName} in ${it.containingFile.virtualFile.path}") }
+    if (entityClass != null) {
+        val entities = AnnotatedElementsSearch.searchPsiClasses(entityClass, projectScope()).findAll()
+        println("@Entity classes (${entities.size}):")
+        entities.forEach { println("  ${it.qualifiedName} in ${it.containingFile.virtualFile.path}") }
+    }
 }
 
 // Find all Spring @Service classes
-val serviceClass = readAction {
-    JavaPsiFacade.getInstance(project).findClass("org.springframework.stereotype.Service", allScope())
-}
-if (serviceClass != null) {
-    AnnotatedElementsSearch.searchPsiClasses(serviceClass, projectScope()).findAll()
-        .forEach { println("@Service: ${it.qualifiedName}") }
+smartReadAction {
+    val serviceClass = JavaPsiFacade.getInstance(project).findClass("org.springframework.stereotype.Service", allScope())
+    if (serviceClass != null) {
+        AnnotatedElementsSearch.searchPsiClasses(serviceClass, projectScope()).findAll()
+            .forEach { println("@Service: ${it.qualifiedName}") }
+    }
 }
 
 // Find all @RestController classes
-val rcClass = readAction {
-    JavaPsiFacade.getInstance(project).findClass("org.springframework.web.bind.annotation.RestController", allScope())
-}
-if (rcClass != null) {
-    AnnotatedElementsSearch.searchPsiClasses(rcClass, projectScope()).findAll()
-        .forEach { println("@RestController: ${it.qualifiedName}") }
+smartReadAction {
+    val rcClass = JavaPsiFacade.getInstance(project).findClass("org.springframework.web.bind.annotation.RestController", allScope())
+    if (rcClass != null) {
+        AnnotatedElementsSearch.searchPsiClasses(rcClass, projectScope()).findAll()
+            .forEach { println("@RestController: ${it.qualifiedName}") }
+    }
 }
 ```
 
@@ -361,22 +364,23 @@ println("Use: ${persistencePrefix}.persistence.Entity")
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.search.GlobalSearchScope
 
-// Find every place that constructs or references CreateReleaseCommand
-val cmdClass = readAction {
-    JavaPsiFacade.getInstance(project).findClass(
+// Find every place that constructs or references CreateReleaseCommand.
+// Lookup + reference search read indexes — the whole query runs in one smartReadAction.
+smartReadAction {
+    val cmdClass = JavaPsiFacade.getInstance(project).findClass(
         "com.example.CreateReleaseCommand",
         GlobalSearchScope.projectScope(project)
     )
+    if (cmdClass != null) {
+        val refs = ReferencesSearch.search(cmdClass, projectScope()).findAll()
+        println("Found ${refs.size} usages:")
+        refs.forEach { ref ->
+            val file = ref.element.containingFile.virtualFile.path.substringAfterLast('/')
+            val snippet = ref.element.parent.text.take(100)
+            println("  $file → $snippet")
+        }
+    } else println("Class not found")
 }
-if (cmdClass != null) {
-    val refs = ReferencesSearch.search(cmdClass, projectScope()).findAll()
-    println("Found ${refs.size} usages:")
-    refs.forEach { ref ->
-        val file = ref.element.containingFile.virtualFile.path.substringAfterLast('/')
-        val snippet = ref.element.parent.text.take(100)
-        println("  $file → $snippet")
-    }
-} else println("Class not found")
 ```
 
 ### Add a Component to a Java Record via PSI (Whitespace-Safe)
@@ -397,19 +401,20 @@ import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 
-// Step 1: Find all call sites BEFORE modifying the record
-val cmdClass = readAction {
-    JavaPsiFacade.getInstance(project).findClass(
+// Step 1: Find all call sites BEFORE modifying the record — discovery is an index-backed
+// search, so it runs as a smartReadAction snapshot before the write phase below
+smartReadAction {
+    val cmdClass = JavaPsiFacade.getInstance(project).findClass(
         "com.example.CreateReleaseCommand",   // ← actual FQN
         GlobalSearchScope.projectScope(project)
     )
-}
-if (cmdClass != null) {
-    val refs = readAction { ReferencesSearch.search(cmdClass, projectScope()).findAll() }
-    println("Call sites to update (${refs.size}):")
-    refs.forEach { ref ->
-        println("  ${ref.element.containingFile.virtualFile.path.substringAfterLast('/')} → " +
-            ref.element.parent.text.take(120))
+    if (cmdClass != null) {
+        val refs = ReferencesSearch.search(cmdClass, projectScope()).findAll()
+        println("Call sites to update (${refs.size}):")
+        refs.forEach { ref ->
+            println("  ${ref.element.containingFile.virtualFile.path.substringAfterLast('/')} → " +
+                ref.element.parent.text.take(120))
+        }
     }
 }
 // ↑ Read this output, then update each call site — then proceed to add the record component below
@@ -516,34 +521,35 @@ import com.intellij.psi.search.searches.AnnotatedElementsSearch
 
 val scope = GlobalSearchScope.projectScope(project)
 
-// Step 1: Locate the advice annotation class (handles both @ControllerAdvice and @RestControllerAdvice)
-val adviceAnnotation = readAction {
-    JavaPsiFacade.getInstance(project).findClass(
+// Step 1: Locate the advice annotation class (handles both @ControllerAdvice and
+// @RestControllerAdvice) and collect the annotated classes. The annotation search reads
+// indexes, so the whole discovery runs in one smartReadAction; a null result means
+// Spring Web itself is missing from the classpath.
+val adviceClasses = smartReadAction {
+    val adviceAnnotation = JavaPsiFacade.getInstance(project).findClass(
         "org.springframework.web.bind.annotation.RestControllerAdvice", allScope()
     ) ?: JavaPsiFacade.getInstance(project).findClass(
         "org.springframework.web.bind.annotation.ControllerAdvice", allScope()
-    )
+    ) ?: return@smartReadAction null
+    AnnotatedElementsSearch.searchPsiClasses(adviceAnnotation, scope).findAll().toList()
 }
 
-if (adviceAnnotation == null) {
+if (adviceClasses == null) {
     println("ERROR: Spring Web not found on classpath — check pom.xml")
+} else if (adviceClasses.isEmpty()) {
+    println("WARNING: No @ControllerAdvice/@RestControllerAdvice found in project.")
+    println("Controllers throwing custom exceptions will return HTTP 500. Create a @RestControllerAdvice.")
 } else {
-    val adviceClasses = AnnotatedElementsSearch.searchPsiClasses(adviceAnnotation, scope).findAll().toList()
-    if (adviceClasses.isEmpty()) {
-        println("WARNING: No @ControllerAdvice/@RestControllerAdvice found in project.")
-        println("Controllers throwing custom exceptions will return HTTP 500. Create a @RestControllerAdvice.")
-    } else {
-        adviceClasses.forEach { cls ->
-            println("Found advice: ${cls.qualifiedName}")
-            readAction {
-                cls.methods.forEach { m ->
-                    val handler = m.annotations.firstOrNull { it.qualifiedName?.endsWith("ExceptionHandler") == true }
-                    if (handler != null) {
-                        val exTypes = handler.findAttributeValue("value")?.text ?: "(all)"
-                        val status = m.annotations.firstOrNull { it.qualifiedName?.endsWith("ResponseStatus") == true }
-                            ?.findAttributeValue("code")?.text ?: "?"
-                        println("  ${m.name} handles: $exTypes → HTTP $status")
-                    }
+    adviceClasses.forEach { cls ->
+        println("Found advice: ${cls.qualifiedName}")
+        readAction {
+            cls.methods.forEach { m ->
+                val handler = m.annotations.firstOrNull { it.qualifiedName?.endsWith("ExceptionHandler") == true }
+                if (handler != null) {
+                    val exTypes = handler.findAttributeValue("value")?.text ?: "(all)"
+                    val status = m.annotations.firstOrNull { it.qualifiedName?.endsWith("ResponseStatus") == true }
+                        ?.findAttributeValue("code")?.text ?: "?"
+                    println("  ${m.name} handles: $exTypes → HTTP $status")
                 }
             }
         }
@@ -700,7 +706,8 @@ println(if (generatedClass != null) "Found: " + generatedClass.containingFile?.v
 import com.intellij.psi.search.PsiSearchHelper
 val scope = GlobalSearchScope.projectScope(project)
 val usageFiles = mutableListOf<String>()
-readAction {
+// PsiSearchHelper reads the word index — smartReadAction, not plain readAction
+smartReadAction {
     PsiSearchHelper.getInstance(project).processAllFilesWithWord("UserDto", scope, { psiFile ->
         usageFiles.add(psiFile.virtualFile.path); true
     }, true)
@@ -728,7 +735,8 @@ import com.intellij.psi.search.FilenameIndex
 // Use this for plain identifiers, class names, annotation names, etc.
 val scope = GlobalSearchScope.projectScope(project)
 val matchingFiles = mutableListOf<String>()
-readAction {
+// PsiSearchHelper reads the word index — smartReadAction, not plain readAction
+smartReadAction {
     PsiSearchHelper.getInstance(project).processAllFilesWithWord("api", scope, { psiFile ->
         // Further filter if needed (e.g., only files that contain "/api/")
         if (psiFile.text.contains("/api/")) matchingFiles.add(psiFile.virtualFile.path)
