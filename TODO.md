@@ -365,3 +365,14 @@
   stderr. Left as is deliberately: the parsed flag has no other consumer, `@argfile` is not a documented
   devrig invocation form, and the alternative is a logback `reset()` + `JoranConfigurator` re-read after
   parsing. Pick that up only if a real client trips on it.
+
+- [ ] **Accept `windowId` as an input alias for `window_id` (#456 follow-up).** `steroid_list_windows`
+  emits camelCase `windowId`; `steroid_input` / `steroid_take_screenshot` take snake_case `window_id`.
+  Six doc surfaces now state the translation, which is the documentation fix, not the removal of the
+  problem — agents copy an output key into the next call. Renaming either side is breaking (the output
+  rename is #381-shaped; see `docs/devrig-naming.md` -> "Spelling decision (#456)"), but widening the
+  INPUT to accept both spellings is purely additive: it emits no new key and breaks no reader.
+  Blocked on `InputSchemaElement` having no parameter-alias mechanism — `parseParameter` resolves a
+  single name and `asCliParams()` derives one CLI flag from it, so this needs an `alias(name)` builder
+  threaded through both the MCP schema (`asMcpJson`, accept either key) and the devrig CLI parser.
+  Once it lands, the six doc mentions of the translation collapse to one sentence.

@@ -38,4 +38,7 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // ListWindowsGuideDriftTest reads docs/guides/AGENT-STEROID-GUIDE.md straight from the working
+    // tree, so it needs the repo root rather than the module dir.
+    systemProperty("mcp.repo.root", rootProject.layout.projectDirectory.asFile.absolutePath)
 }

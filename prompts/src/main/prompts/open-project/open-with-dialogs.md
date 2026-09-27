@@ -64,7 +64,7 @@ val inputJson = """
     "project_name": "existing-project-9fk2a0xq",
     "task_id": "handle-trust-dialog",
     "reason": "Clicking Trust Project button",
-    "window_id": "window_id_from_list_windows",
+    "window_id": "windowId_value_from_list_windows",
     "sequence": "click:Left@x,y"
   }
 }
