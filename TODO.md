@@ -62,13 +62,11 @@
     flake it (observed once during the quorum review). Make the runner's temp-file parent
     injectable and point the test at `@TempDir` for an isolated scan.
 
-- [ ] **Tool/resource counts drift across surfaces** (found during the 2026-07-31 plugin-description
-  rewrite review). The MCP tool surface is **8** (`docs/PHILOSOPHY.md` Tenet 1, canonical; confirmed
-  against live registrations), but root `CLAUDE.md` and `ij-plugin/CLAUDE.md` say "10 today", and
-  `README.md` still carries "### 8 MCP Tools" plus a stale "### 58 MCP Resources" heading with
-  per-category counts summing to 60 while there are 106 prompt articles. Reconcile the CLAUDE.md
-  numbers with PHILOSOPHY.md and de-count the README sections (headings without volatile numbers),
-  the way the Marketplace description now does.
+- [x] **Tool/resource counts drift across surfaces** (found during the 2026-07-31 plugin-description
+  rewrite review; issue #457). The CLAUDE.md numbers were reconciled with PHILOSOPHY.md ("8 today")
+  earlier; the README headings and the stale per-category resource counts (summing to 60 vs 106
+  prompt articles) are now de-counted the way the Marketplace description is, with a pointer to the
+  runtime index (`mcp-steroid://prompt/skill`) as the always-current source.
 
 - [ ] **KtBlock matrix ignores the production kotlinc language/api pin (drift).**
   `CodeEvalManager` compiles every `steroid_execute_code` script with the
